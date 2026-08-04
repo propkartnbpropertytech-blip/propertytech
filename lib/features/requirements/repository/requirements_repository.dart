@@ -45,10 +45,20 @@ class RequirementsRepository {
           r.createdBy == currentUser.id || r.adminId == currentUser.id
         ).toList();
       } else if (role != 'Super Admin') {
-        // Sales and other roles can only see their own requirements or ones assigned to them
-        requirements = requirements.where((r) =>
-          r.createdBy == currentUser.id || r.assignedTo == currentUser.id
-        ).toList();
+        // Sales and other roles can only see their own requirements (if not assigned to others) or ones assigned to them
+        requirements = requirements.where((r) {
+          final isCreator = r.createdBy == currentUser.id;
+          final isAssignee = r.assignedTo == currentUser.id;
+          final isAssignedToOther = r.assignedTo != null && r.assignedTo!.isNotEmpty && r.assignedTo != r.createdBy;
+          
+          if (isCreator) {
+            if (isAssignedToOther) {
+              return false;
+            }
+            return true;
+          }
+          return isAssignee;
+        }).toList();
       }
     }
 

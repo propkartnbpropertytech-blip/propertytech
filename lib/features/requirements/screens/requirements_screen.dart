@@ -949,11 +949,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           final query = _searchController.text.trim().toLowerCase();
           requirements = state.requirements.where((r) {
             if (currentUser != null && currentUser.role == 'Sales') {
-              final isOwnRequirement = r.adminId == currentUser.id ||
-                  r.assignedTo == currentUser.id ||
-                  r.creatorName == currentUser.fullName ||
-                  r.assigneeName == currentUser.fullName;
-              if (!isOwnRequirement) return false;
+              final isCreator = r.createdBy == currentUser.id || r.creatorName == currentUser.fullName;
+              final isAssignee = r.assignedTo == currentUser.id || r.assigneeName == currentUser.fullName;
+              final isAssignedToOther = r.assignedTo != null && r.assignedTo!.isNotEmpty && r.assignedTo != r.createdBy;
+
+              if (isCreator) {
+                if (isAssignedToOther) {
+                  return false;
+                }
+              } else if (!isAssignee) {
+                return false;
+              }
             }
 
             final matchesListingType = getListingTypeLabel(r) == _activeListingTab;
@@ -2394,11 +2400,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         if (state is RequirementsLoaded) {
           requirements = state.requirements.where((r) {
             if (currentUser != null && currentUser.role == 'Sales') {
-              final isOwnRequirement = r.adminId == currentUser.id ||
-                  r.assignedTo == currentUser.id ||
-                  r.creatorName == currentUser.fullName ||
-                  r.assigneeName == currentUser.fullName;
-              if (!isOwnRequirement) return false;
+              final isCreator = r.createdBy == currentUser.id || r.creatorName == currentUser.fullName;
+              final isAssignee = r.assignedTo == currentUser.id || r.assigneeName == currentUser.fullName;
+              final isAssignedToOther = r.assignedTo != null && r.assignedTo!.isNotEmpty && r.assignedTo != r.createdBy;
+
+              if (isCreator) {
+                if (isAssignedToOther) {
+                  return false;
+                }
+              } else if (!isAssignee) {
+                return false;
+              }
             }
 
             final matchesListingType = getListingTypeLabel(r) == _activeListingTab;

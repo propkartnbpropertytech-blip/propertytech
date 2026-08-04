@@ -182,6 +182,10 @@ class RequirementsService {
         cleanRequirement['created_by'] = currentUserId;
         cleanRequirement['organization_id'] = orgId;
         cleanRequirement['admin_id'] = adminId;
+
+        if (cleanRequirement['assigned_to'] == null || cleanRequirement['assigned_to'].toString().isEmpty) {
+          cleanRequirement['assigned_to'] = currentUserId;
+        }
         
         // Multi-select sync helper
         if (furnishingTypeIds.isNotEmpty) {
