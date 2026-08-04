@@ -534,8 +534,17 @@ class PropertiesService {
   Future<Map<String, dynamic>> createCity(String name) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
+        final trimmed = name.trim();
+        final existing = await _supabase.from('cities')
+            .select('id')
+            .ilike('city_name', trimmed)
+            .maybeSingle();
+        if (existing != null) {
+          throw ApiException(message: "City '$trimmed' already exists.");
+        }
+
         final response = await _supabase.from('cities').insert({
-          'city_name': name,
+          'city_name': trimmed,
           'state': 'Gujarat',
           'country': 'India',
         }).select().single();
@@ -568,10 +577,22 @@ class PropertiesService {
   Future<Map<String, dynamic>> createArea(String cityId, String name, String pincode) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
+        final trimmedName = name.trim();
+        final trimmedPin = pincode.trim();
+        final existing = await _supabase.from('areas')
+            .select('id')
+            .eq('city_id', cityId)
+            .ilike('area_name', trimmedName)
+            .eq('pincode', trimmedPin)
+            .maybeSingle();
+        if (existing != null) {
+          throw ApiException(message: "Area '$trimmedName' with pincode '$trimmedPin' already exists in this city.");
+        }
+
         final response = await _supabase.from('areas').insert({
           'city_id': cityId,
-          'area_name': name,
-          'pincode': pincode,
+          'area_name': trimmedName,
+          'pincode': trimmedPin,
         }).select().single();
 
         return {
