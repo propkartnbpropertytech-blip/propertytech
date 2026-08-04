@@ -154,7 +154,14 @@ class UsersService {
         }
         throw ApiException(message: response?['message'] ?? 'Failed to create user via RPC.');
       } catch (e) {
-        throw ApiException(message: e.toString());
+        final errStr = e.toString();
+        if (errStr.contains('users_email_partial_key') || errStr.contains('Key (email)')) {
+          throw ApiException(message: 'A user with this email address already exists. Please use a different email.');
+        }
+        if (errStr.contains('users_mobile_key') || errStr.contains('Key (mobile)')) {
+          throw ApiException(message: 'A sales user with this mobile number already exists.');
+        }
+        throw ApiException(message: errStr);
       }
     } else {
       try {

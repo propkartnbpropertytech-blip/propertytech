@@ -534,6 +534,23 @@ class _UsersScreenState extends State<UsersScreen> {
                                                 );
                                                 return;
                                               }
+
+                                              final emailExists = usersState.users
+                                                  .any((u) => u.email.trim().toLowerCase() == emailController.text.trim().toLowerCase());
+                                              if (emailExists) {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'A sales user with this email address already exists.',
+                                                    ),
+                                                    backgroundColor:
+                                                        CRMColors.danger,
+                                                  ),
+                                                );
+                                                return;
+                                              }
                                             }
                                           }
 
