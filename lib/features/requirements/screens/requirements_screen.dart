@@ -883,6 +883,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               }),
             ],
             onChanged: (String? newSalesmanId) {
+              print("Assigned to status is updated.");
               String? newSalesmanName;
               if (newSalesmanId != null) {
                 final u = salesmen.firstWhere((s) => s.id == newSalesmanId);

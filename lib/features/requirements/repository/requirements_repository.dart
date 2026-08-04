@@ -160,6 +160,7 @@ class RequirementsRepository {
       _coordinator.refreshRequirements();
       return fresh;
     } catch (e) {
+      print("RequirementsRepository.updateRequirement error: $e");
       final json = req.toBackendJson();
       json['id'] = req.id;
       json['updated_at'] = DateTime.now().toIso8601String();
