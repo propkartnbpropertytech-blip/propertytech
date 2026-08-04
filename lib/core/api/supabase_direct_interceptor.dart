@@ -425,7 +425,9 @@ class SupabaseDirectInterceptor extends Interceptor {
           facing_type:facing_types(id, name),
           ownership_type:ownership_types(id, name),
           brokerage_type:brokerage_types(id, name),
-          attachments:property_attachments(id, file_url, file_type),
+          property_images(*),
+          property_videos(*),
+          property_amenities(amenity:amenities(*)),
           creator:users!created_by(id, full_name, mobile, email),
           assignee:users!assigned_to(id, full_name, mobile, email)
         ''').eq('id', id).single();
