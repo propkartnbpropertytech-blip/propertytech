@@ -185,6 +185,7 @@ class RequirementsService {
         final cleanRequirement = Map<String, dynamic>.from(requirementData)
           ..remove('area_ids')
           ..remove('areaIds')
+          ..remove('area_names')
           ..remove('areaNames')
           ..remove('furnishing_type_ids')
           ..remove('facing_type_ids');

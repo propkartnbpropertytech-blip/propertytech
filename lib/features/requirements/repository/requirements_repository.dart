@@ -137,6 +137,7 @@ class RequirementsRepository {
       _coordinator.refreshRequirements();
       return fresh;
     } catch (e) {
+      print("RequirementsRepository.createRequirement error: $e");
       final tempId = 'temp_req_${DateTime.now().millisecondsSinceEpoch}';
       final json = req.toBackendJson();
       json['id'] = tempId;
