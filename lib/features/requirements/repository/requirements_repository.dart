@@ -47,7 +47,7 @@ class RequirementsRepository {
       } else if (role != 'Super Admin') {
         // Sales and other roles can only see their own requirements or ones assigned to them
         requirements = requirements.where((r) =>
-          r.createdBy == currentUser.id || r.adminId == currentUser.id
+          r.createdBy == currentUser.id || r.assignedTo == currentUser.id
         ).toList();
       }
     }
