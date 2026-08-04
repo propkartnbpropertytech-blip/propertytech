@@ -193,11 +193,11 @@ class RequirementsService {
           cleanRequirement['facing_type_id'] = facingTypeIds.first;
         }
 
-        // Insert requirement
-        final response = await _supabase.from('requirements').insert(cleanRequirement).select().single();
-        final String requirementId = response['id'];
+        // 1. Insert requirement (only returning id to begin)
+        final insertRes = await _supabase.from('requirements').insert(cleanRequirement).select('id').single();
+        final String requirementId = insertRes['id'];
 
-        // Insert target areas
+        // 2. Insert target areas
         if (areaIds.isNotEmpty) {
           final areaData = areaIds.map((id) => {
             'requirement_id': requirementId,
@@ -206,10 +206,34 @@ class RequirementsService {
           await _supabase.from('requirement_areas').insert(areaData);
         }
 
+        // 3. Fetch the fully joined requirement to match repository expectations
+        final response = await _supabase.from('requirements')
+            .select('''
+                *,
+                category:property_categories(id, name),
+                property_type:property_types(id, name),
+                configuration:configurations(id, name),
+                listing_type:listing_types(id, name),
+                city:cities(id, city_name),
+                area:areas(id, area_name, pincode),
+                requirement_areas(area:areas(id, area_name, pincode)),
+                creator:users!created_by(id, full_name),
+                assignee:users!assigned_to(id, full_name),
+                followups(followup_date, status),
+                site_visits(id, status, visit_date),
+                share_sessions(id, view_count, status)
+            ''')
+            .eq('id', requirementId)
+            .single();
+
+        final mappedResponse = _mapRequirementTargetAreas(response);
+
         return {
           'success': true,
           'message': 'Requirement created successfully',
-          'data': response,
+          'data': {
+            'requirement': mappedResponse,
+          },
         };
       } catch (e) {
         throw ApiException(message: e.toString());

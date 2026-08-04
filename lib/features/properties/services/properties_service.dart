@@ -472,12 +472,10 @@ class PropertiesService {
   Future<Map<String, dynamic>> softDeleteProperty(String id) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
-        final response = await _supabase
-            .from('properties')
-            .update({'deleted_at': DateTime.now().toIso8601String(), 'updated_at': DateTime.now().toIso8601String()})
-            .eq('id', id)
-            .select()
-            .single();
+        final response = await _supabase.rpc(
+          'move_property_to_bin',
+          params: {'p_property_id': id},
+        );
 
         return {
           'success': true,
@@ -505,12 +503,10 @@ class PropertiesService {
   Future<Map<String, dynamic>> restoreProperty(String id) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
-        final response = await _supabase
-            .from('properties')
-            .update({'deleted_at': null, 'updated_at': DateTime.now().toIso8601String()})
-            .eq('id', id)
-            .select()
-            .single();
+        final response = await _supabase.rpc(
+          'restore_property_from_bin',
+          params: {'p_property_id': id},
+        );
 
         return {
           'success': true,
@@ -826,21 +822,70 @@ class PropertiesService {
   }
 
   Future<Map<String, dynamic>> getBinProperties() async {
-    return getProperties(includeDeleted: true);
+    if (ApiConstants.useSupabaseDirect) {
+      try {
+        final response = await _supabase.from('deleted_properties').select('''
+            *,
+            category:property_categories(id, name),
+            property_type:property_types(id, name),
+            configuration:configurations(id, name),
+            listing_type:listing_types(id, name),
+            property_status:property_status(id, name),
+            city:cities(id, city_name),
+            area:areas(id, area_name, pincode),
+            furnishing_type:furnishing_types(id, name),
+            facing_type:facing_types(id, name),
+            ownership_type:ownership_types(id, name),
+            brokerage_type:brokerage_types(id, name),
+            creator:users!created_by(id, full_name),
+            property_images:deleted_property_images(*),
+            property_videos:deleted_property_videos(*),
+            property_amenities:deleted_property_amenities(amenity:amenities(*))
+        ''').order('created_at', ascending: false);
+
+        final properties = List<Map<String, dynamic>>.from(response);
+
+        return {
+          'success': true,
+          'message': 'Bin properties retrieved successfully',
+          'data': {
+            'properties': properties,
+            'count': properties.length,
+          }
+        };
+      } catch (e) {
+        throw ApiException(message: e.toString());
+      }
+    } else {
+      try {
+        final response = await _apiClient.get(
+          '/properties',
+          queryParameters: {'includeDeleted': 'true'},
+        );
+        if (response.data is Map<String, dynamic>) {
+          return response.data as Map<String, dynamic>;
+        }
+        throw ApiException(message: "Invalid response format from server.");
+      } on DioException catch (e) {
+        throw ApiException.fromDioException(e);
+      } catch (e) {
+        throw ApiException(message: e.toString());
+      }
+    }
   }
 
   Future<void> permanentDeleteProperty(String id) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
-        // Fetch media URLs to delete files from Storage bucket
-        final images = await _supabase.from('property_images').select('image_url').eq('property_id', id);
+        // Fetch media URLs from deleted shadow tables to delete files from Storage bucket
+        final images = await _supabase.from('deleted_property_images').select('image_url').eq('property_id', id);
         final imagePaths = images
             .map((img) => _extractPropertyMediaPath(img['image_url'].toString()))
             .where((path) => path != null)
             .cast<String>()
             .toList();
 
-        final videos = await _supabase.from('property_videos').select('video_url').eq('property_id', id);
+        final videos = await _supabase.from('deleted_property_videos').select('video_url').eq('property_id', id);
         final videoPaths = videos
             .map((vid) => _extractPropertyMediaPath(vid['video_url'].toString()))
             .where((path) => path != null)
@@ -851,8 +896,8 @@ class PropertiesService {
         if (imagePaths.isNotEmpty) await _supabase.storage.from('property-media').remove(imagePaths);
         if (videoPaths.isNotEmpty) await _supabase.storage.from('property-media').remove(videoPaths);
 
-        // Delete from DB (FK Cascades handle property_images, property_videos, property_amenities)
-        await _supabase.from('properties').delete().eq('id', id);
+        // Delete from DB using secure RPC function
+        await _supabase.rpc('permanent_delete_property_from_bin', params: {'p_property_id': id});
       } catch (e) {
         throw ApiException(message: e.toString());
       }
@@ -870,8 +915,8 @@ class PropertiesService {
   Future<void> emptyBin() async {
     if (ApiConstants.useSupabaseDirect) {
       try {
-        // Fetch all deleted properties
-        final deletedProps = await _supabase.from('properties').select('id').not('deleted_at', 'is', null);
+        // Fetch all deleted properties from deleted_properties table
+        final deletedProps = await _supabase.from('deleted_properties').select('id');
         for (var prop in deletedProps) {
           final id = prop['id'].toString();
           await permanentDeleteProperty(id);
