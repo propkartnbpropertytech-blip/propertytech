@@ -133,18 +133,26 @@ class UsersService {
   Future<Map<String, dynamic>> createUser(Map<String, dynamic> userData) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
-        final response = await _supabase.functions.invoke(
-          'manage-users',
-          body: {
-            'action': 'create_user',
-            'payload': userData,
+        final response = await _supabase.rpc(
+          'admin_create_user',
+          params: {
+            'p_email': userData['email'],
+            'p_password': userData['password'],
+            'p_full_name': userData['full_name'] ?? '',
+            'p_role_id': userData['role_id'],
+            'p_organization_id': userData['organization_id'],
+            'p_admin_id': userData['admin_id'],
           },
         );
 
-        if (response.status == 200 && response.data != null && response.data['success'] == true) {
-          return Map<String, dynamic>.from(response.data);
+        if (response != null && response['success'] == true) {
+          return {
+            'success': true,
+            'message': 'User created successfully.',
+            'data': {'user': response['user']}
+          };
         }
-        throw ApiException(message: response.data?['message'] ?? 'Failed to create user via Edge Function.');
+        throw ApiException(message: response?['message'] ?? 'Failed to create user via RPC.');
       } catch (e) {
         throw ApiException(message: e.toString());
       }
@@ -169,12 +177,24 @@ class UsersService {
   ) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
-        // Exclude role_id or organization_id if update is done directly by non-super-admins
         final cleanData = Map<String, dynamic>.from(userData)
           ..remove('id')
           ..remove('email')
           ..remove('role')
           ..remove('roles');
+
+        // If password is provided, update it via RPC in auth.users
+        if (cleanData.containsKey('password') && cleanData['password'] != null && cleanData['password'].toString().isNotEmpty) {
+          final newPassword = cleanData['password'].toString();
+          await _supabase.rpc(
+            'admin_update_password',
+            params: {
+              'p_user_id': id,
+              'p_new_password': newPassword,
+            },
+          );
+        }
+        cleanData.remove('password');
 
         final response = await _supabase
             .from('users')
@@ -214,21 +234,20 @@ class UsersService {
   ) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
-        final response = await _supabase.functions.invoke(
-          'manage-users',
-          body: {
-            'action': 'toggle_status',
-            'payload': {
-              'user_id': id,
-              'is_active': isActive,
-            },
-          },
-        );
+        final response = await _supabase
+            .from('users')
+            .update({'is_active': isActive})
+            .eq('id', id)
+            .select('*, roles(id, name)')
+            .single();
 
-        if (response.status == 200 && response.data != null && response.data['success'] == true) {
-          return Map<String, dynamic>.from(response.data);
-        }
-        throw ApiException(message: response.data?['message'] ?? 'Failed to toggle user status.');
+        return {
+          'success': true,
+          'message': 'User status updated successfully.',
+          'data': {
+            'user': response,
+          }
+        };
       } catch (e) {
         throw ApiException(message: e.toString());
       }

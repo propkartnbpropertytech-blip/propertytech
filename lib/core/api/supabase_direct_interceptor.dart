@@ -795,9 +795,74 @@ class SupabaseDirectInterceptor extends Interceptor {
         ));
       }
 
+      if (path == '/users' && method == 'POST') {
+        final payload = options.data as Map<String, dynamic>;
+        final response = await _supabase.rpc(
+          'admin_create_user',
+          params: {
+            'p_email': payload['email'],
+            'p_password': payload['password'],
+            'p_full_name': payload['full_name'] ?? '',
+            'p_role_id': payload['role_id'],
+            'p_organization_id': payload['organization_id'],
+            'p_admin_id': payload['admin_id'],
+          },
+        );
+
+        if (response != null && response['success'] == true) {
+          return handler.resolve(Response(
+            requestOptions: options,
+            data: {
+              'success': true,
+              'message': 'User created successfully.',
+              'data': {'user': response['user']}
+            },
+            statusCode: 200,
+          ));
+        }
+        throw Exception(response?['message'] ?? 'Failed to create user.');
+      }
+
+      if (path.startsWith('/users/') && path.endsWith('/status') && method == 'PATCH') {
+        final segments = path.split('/');
+        final id = segments[segments.length - 2];
+        final payload = options.data as Map<String, dynamic>;
+        final data = await _supabase.from('users').update({
+          'is_active': payload['isActive'] ?? payload['is_active'],
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', id).select().single();
+
+        return handler.resolve(Response(
+          requestOptions: options,
+          data: {
+            'success': true,
+            'message': 'User status updated successfully.',
+            'data': {'user': data}
+          },
+          statusCode: 200,
+        ));
+      }
+
       if (path.startsWith('/users/') && method == 'PUT') {
         final id = path.split('/').last;
-        final payload = options.data as Map<String, dynamic>;
+        final payload = Map<String, dynamic>.from(options.data as Map<String, dynamic>);
+        
+        if (payload.containsKey('password') && payload['password'] != null && payload['password'].toString().isNotEmpty) {
+          final newPassword = payload['password'].toString();
+          await _supabase.rpc(
+            'admin_update_password',
+            params: {
+              'p_user_id': id,
+              'p_new_password': newPassword,
+            },
+          );
+        }
+        payload.remove('password');
+        payload.remove('id');
+        payload.remove('email');
+        payload.remove('role');
+        payload.remove('roles');
+
         final data = await _supabase.from('users').update({
           ...payload,
           'updated_at': DateTime.now().toIso8601String(),
