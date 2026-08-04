@@ -133,6 +133,25 @@ class UsersService {
   Future<Map<String, dynamic>> createUser(Map<String, dynamic> userData) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
+        final currentUserId = _supabase.auth.currentUser?.id;
+        if (currentUserId == null) throw Exception('Unauthorized user.');
+
+        // Fetch creator's profile to obtain organization_id and role
+        final creatorProfile = await _supabase
+            .from('users')
+            .select('organization_id, roles(name)')
+            .eq('id', currentUserId)
+            .single();
+
+        final creatorOrgId = creatorProfile['organization_id'];
+        final creatorRole = creatorProfile['roles'] != null
+            ? creatorProfile['roles']['name']?.toString()
+            : null;
+
+        // If creator is Admin, they are the parent admin of this user
+        final String? adminId = creatorRole == 'Admin' ? currentUserId : userData['admin_id'];
+        final String? orgId = creatorOrgId ?? userData['organization_id'];
+
         final response = await _supabase.rpc(
           'admin_create_user',
           params: {
@@ -140,16 +159,23 @@ class UsersService {
             'p_password': userData['password'],
             'p_full_name': userData['full_name'] ?? '',
             'p_role_id': userData['role_id'],
-            'p_organization_id': userData['organization_id'],
-            'p_admin_id': userData['admin_id'],
+            'p_organization_id': orgId,
+            'p_admin_id': adminId,
           },
         );
 
         if (response != null && response['success'] == true) {
+          final userId = response['user']['id'];
+          final joinedUser = await _supabase
+              .from('users')
+              .select('*, roles(id, name, description)')
+              .eq('id', userId)
+              .single();
+
           return {
             'success': true,
             'message': 'User created successfully.',
-            'data': {'user': response['user']}
+            'data': {'user': joinedUser}
           };
         }
         throw ApiException(message: response?['message'] ?? 'Failed to create user via RPC.');
