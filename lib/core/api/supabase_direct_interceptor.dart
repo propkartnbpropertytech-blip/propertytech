@@ -639,7 +639,7 @@ class SupabaseDirectInterceptor extends Interceptor {
         final data = await _supabase.from('share_sessions').select('*').eq('requirement_id', reqId).order('created_at', ascending: false);
         return handler.resolve(Response(
           requestOptions: options,
-          data: {'success': true, 'data': data},
+          data: {'success': true, 'data': {'history': data}},
           statusCode: 200,
         ));
       }
@@ -698,7 +698,9 @@ class SupabaseDirectInterceptor extends Interceptor {
             listing_type:listing_types(id, name),
             city:cities(id, city_name),
             area:areas(id, area_name, pincode),
-            attachments:property_attachments(id, file_url, file_type)
+            property_images(*),
+            property_videos(*),
+            property_amenities(amenity:amenities(*))
           ''').or(propertyIds.map((id) => 'id.eq.$id').join(','));
           
           properties = List<Map<String, dynamic>>.from(dynamicList);
