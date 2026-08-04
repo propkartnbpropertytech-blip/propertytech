@@ -100,18 +100,20 @@ class SupabaseDirectInterceptor extends Interceptor {
         const rentalListingId = '1c1ccfc1-d318-4b66-9a43-c551532d1802';
         const resaleListingId = '9050cd9b-0ebf-41f2-a925-2d4f206b64b1';
 
-        final totalProperties =
-            (await safeList(() => _supabase.from('properties').select('id'), label: 'totalProperties')).length;
+        final totalProperties = (await safeList(
+          () => _supabase.from('properties').select('id').eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
+          label: 'totalProperties',
+        )).length;
         final available = (await safeList(
-          () => _supabase.from('properties').select('id').or(availableStatusFilter),
+          () => _supabase.from('properties').select('id').or(availableStatusFilter).eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
           label: 'available',
         )).length;
         final sold = (await safeList(
-          () => _supabase.from('properties').select('id').eq('property_status_id', soldStatusId),
+          () => _supabase.from('properties').select('id').eq('property_status_id', soldStatusId).eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
           label: 'sold',
         )).length;
         final rented = (await safeList(
-          () => _supabase.from('properties').select('id').eq('property_status_id', rentedStatusId),
+          () => _supabase.from('properties').select('id').eq('property_status_id', rentedStatusId).eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
           label: 'rented',
         )).length;
         final requirements =
@@ -119,11 +121,21 @@ class SupabaseDirectInterceptor extends Interceptor {
         final users = (await safeList(() => _supabase.from('users').select('id'), label: 'users')).length;
 
         final rentalAvailable = (await safeList(
-          () => _supabase.from('properties').select('id').or(availableStatusFilter).eq('listing_type_id', rentalListingId),
+          () => _supabase
+              .from('properties')
+              .select('id')
+              .or(availableStatusFilter)
+              .eq('listing_type_id', rentalListingId)
+              .eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
           label: 'rentalAvailable',
         )).length;
         final resaleAvailable = (await safeList(
-          () => _supabase.from('properties').select('id').or(availableStatusFilter).eq('listing_type_id', resaleListingId),
+          () => _supabase
+              .from('properties')
+              .select('id')
+              .or(availableStatusFilter)
+              .eq('listing_type_id', resaleListingId)
+              .eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
           label: 'resaleAvailable',
         )).length;
         final rentalRented = (await safeList(
@@ -131,7 +143,8 @@ class SupabaseDirectInterceptor extends Interceptor {
               .from('properties')
               .select('id')
               .eq('property_status_id', rentedStatusId)
-              .eq('listing_type_id', rentalListingId),
+              .eq('listing_type_id', rentalListingId)
+              .eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
           label: 'rentalRented',
         )).length;
         final resaleSold = (await safeList(
@@ -139,7 +152,8 @@ class SupabaseDirectInterceptor extends Interceptor {
               .from('properties')
               .select('id')
               .eq('property_status_id', soldStatusId)
-              .eq('listing_type_id', resaleListingId),
+              .eq('listing_type_id', resaleListingId)
+              .eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
           label: 'resaleSold',
         )).length;
         final rentalRequirements = (await safeList(
