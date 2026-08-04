@@ -167,7 +167,16 @@ class RequirementsService {
         final userProfile = await _supabase.from('users').select('organization_id, admin_id, roles(name)').eq('id', currentUserId).single();
         final orgId = userProfile['organization_id'];
         final adminId = userProfile['admin_id'];
-        final roleName = (userProfile['roles'] as Map?)?['name']?.toString() ?? '';
+
+        String roleName = '';
+        if (userProfile['roles'] is Map) {
+          roleName = userProfile['roles']['name']?.toString() ?? '';
+        } else if (userProfile['roles'] is List && (userProfile['roles'] as List).isNotEmpty) {
+          final firstRole = (userProfile['roles'] as List).first;
+          if (firstRole is Map) {
+            roleName = firstRole['name']?.toString() ?? '';
+          }
+        }
 
         final List<dynamic> areaIds = List.from(requirementData['area_ids'] ?? requirementData['areaIds'] ?? []);
         final List<dynamic> furnishingTypeIds = List.from(requirementData['furnishing_type_ids'] ?? []);
