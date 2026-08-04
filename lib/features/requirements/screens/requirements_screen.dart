@@ -793,21 +793,26 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       height: isMobile ? 54 : 48,
       child: DropdownButtonFormField<T>(
         value: safeValue,
-        dropdownColor: CRMColors.cardBg,
-        style: CRMTypography.body.copyWith(color: CRMColors.text),
+        isExpanded: true,
+        dropdownColor: CRMColors.cardBgOf(context),
+        style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+          labelStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
           contentPadding: EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: isMobile ? 12 : 8),
           filled: true,
-          fillColor: CRMColors.background,
+          fillColor: CRMColors.backgroundOf(context),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-            borderSide: BorderSide(color: CRMColors.border),
+            borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-            borderSide: BorderSide(color: CRMColors.border),
+            borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+            borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
           ),
         ),
         items: items,

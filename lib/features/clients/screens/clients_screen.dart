@@ -333,6 +333,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
       height: 44,
       child: DropdownButtonFormField<T>(
         value: value,
+        isExpanded: true,
         dropdownColor: CRMColors.cardBgOf(context),
         style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
         decoration: InputDecoration(

@@ -1524,27 +1524,27 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
     final child = DropdownButtonFormField<String>(
       value: currentValue,
       isExpanded: true,
-      dropdownColor: CRMColors.surfaceElevatedOf(context),
+      dropdownColor: CRMColors.cardBgOf(context),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        labelStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
         filled: true,
         fillColor: CRMColors.backgroundOf(context),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: CRMColors.borderOf(context)),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+          borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: CRMColors.borderOf(context)),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+          borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
           borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
         ),
       ),
-      style: TextStyle(fontSize: 13, color: CRMColors.textOf(context)),
+      style: CRMTypography.body.copyWith(color: CRMColors.textOf(context), fontSize: 13),
       items: items
           .map((item) => DropdownMenuItem(
                 value: item,

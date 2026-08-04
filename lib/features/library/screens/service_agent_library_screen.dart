@@ -1211,20 +1211,34 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
       child: DropdownButtonFormField<String>(
         value: currentValue,
         isExpanded: true,
-        dropdownColor: CRMColors.surfaceElevatedOf(context),
+        dropdownColor: CRMColors.cardBgOf(context),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(fontSize: 11),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+          labelStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
+          filled: true,
+          fillColor: CRMColors.backgroundOf(context),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+            borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+            borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+            borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
+          ),
         ),
+        style: CRMTypography.body.copyWith(color: CRMColors.textOf(context), fontSize: 13),
         items: items
             .map((item) => DropdownMenuItem(
                   value: item,
                   child: Text(
                     item,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 13,
                       color: CRMColors.textOf(context),
                     ),
                     overflow: TextOverflow.ellipsis,

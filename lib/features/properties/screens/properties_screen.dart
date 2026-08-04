@@ -2156,15 +2156,24 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       child: DropdownButtonFormField<String>(
         value: safeValue,
         isExpanded: true,
+        dropdownColor: CRMColors.cardBgOf(context),
+        style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
         decoration: InputDecoration(
           labelText: label,
+          labelStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
           filled: true,
           fillColor: CRMColors.backgroundOf(context),
           contentPadding: const EdgeInsets.symmetric(
-              horizontal: CRMSpacing.m, vertical: CRMSpacing.s),
+              horizontal: CRMSpacing.m, vertical: 10),
           border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-              borderSide: BorderSide.none),
+              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6))),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6))),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+              borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5)),
         ),
         items: [
           DropdownMenuItem<String>(
