@@ -48,6 +48,7 @@ class RepositoryCoordinator {
     _propertiesTimer?.cancel();
     _propertiesTimer = Timer(const Duration(milliseconds: 300), () {
       _propertiesController.add(null);
+      refreshDashboard();
     });
   }
 
@@ -55,6 +56,7 @@ class RepositoryCoordinator {
     _requirementsTimer?.cancel();
     _requirementsTimer = Timer(const Duration(milliseconds: 300), () {
       _requirementsController.add(null);
+      refreshDashboard();
     });
   }
 

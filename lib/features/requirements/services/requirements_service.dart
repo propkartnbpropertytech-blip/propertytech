@@ -94,7 +94,7 @@ class RequirementsService {
         }
 
         final response = await query.order('created_at', ascending: false);
-        var requirements = List<Map<String, dynamic>>.from(response);
+        var requirements = (response as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
 
         // Universal client search
         if (search != null && search.isNotEmpty) {
@@ -420,7 +420,7 @@ class RequirementsService {
         ''').not('deleted_at', 'is', null).order('created_at', ascending: false);
 
         final response = await query;
-        final list = List<Map<String, dynamic>>.from(response);
+        final list = (response as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
         final mapped = list.map(_mapRequirementTargetAreas).toList();
 
         return {
