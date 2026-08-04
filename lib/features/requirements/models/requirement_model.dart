@@ -1,3 +1,5 @@
+import '../../../core/storage/local_repositories.dart';
+
 class RequirementModel {
   final String id;
   final String clientName;
@@ -82,12 +84,40 @@ class RequirementModel {
       catName = json['category']['name'] ?? '';
     }
 
+    // Handle multi-select arrays
+    List<String> configIds = [];
+    if (json['configurationIds'] != null) {
+      configIds = List<String>.from(json['configurationIds']);
+    } else if (json['configuration_ids'] != null) {
+      configIds = List<String>.from(json['configuration_ids']);
+    } else if (json['configuration_id'] != null) {
+      configIds = [json['configuration_id'].toString()];
+    }
+
+    List<String> propTypeIds = [];
+    if (json['propertyTypeIds'] != null) {
+      propTypeIds = List<String>.from(json['propertyTypeIds']);
+    } else if (json['property_type_ids'] != null) {
+      propTypeIds = List<String>.from(json['property_type_ids']);
+    } else if (json['property_type_id'] != null) {
+      propTypeIds = [json['property_type_id'].toString()];
+    }
+
     // Handle property type name from joined object
     String typeName = '';
     if (json['propertyTypeName'] != null) {
       typeName = json['propertyTypeName'];
     } else if (json['property_type'] != null && json['property_type'] is Map) {
       typeName = json['property_type']['name'] ?? '';
+    }
+    if (typeName.isEmpty && propTypeIds.isNotEmpty) {
+      final names = propTypeIds
+          .map((id) => LookupLocalRepository.getLookupNameSync(id))
+          .whereType<String>()
+          .toList();
+      if (names.isNotEmpty) {
+        typeName = names.join(', ');
+      }
     }
 
     // Handle configuration name from joined object
@@ -96,6 +126,15 @@ class RequirementModel {
       configName = json['configurationName'];
     } else if (json['configuration'] != null && json['configuration'] is Map) {
       configName = json['configuration']['name'];
+    }
+    if (configName == null && configIds.isNotEmpty) {
+      final names = configIds
+          .map((id) => LookupLocalRepository.getLookupNameSync(id))
+          .whereType<String>()
+          .toList();
+      if (names.isNotEmpty) {
+        configName = names.join(', ');
+      }
     }
 
     // Handle listing type name from joined object
@@ -123,25 +162,6 @@ class RequirementModel {
       aNames = List<String>.from(json['area_names']);
     } else if (json['area'] != null && json['area'] is Map) {
       aNames = [json['area']['area_name']?.toString() ?? ''];
-    }
-
-    // Handle multi-select arrays
-    List<String> configIds = [];
-    if (json['configurationIds'] != null) {
-      configIds = List<String>.from(json['configurationIds']);
-    } else if (json['configuration_ids'] != null) {
-      configIds = List<String>.from(json['configuration_ids']);
-    } else if (json['configuration_id'] != null) {
-      configIds = [json['configuration_id'].toString()];
-    }
-
-    List<String> propTypeIds = [];
-    if (json['propertyTypeIds'] != null) {
-      propTypeIds = List<String>.from(json['propertyTypeIds']);
-    } else if (json['property_type_ids'] != null) {
-      propTypeIds = List<String>.from(json['property_type_ids']);
-    } else if (json['property_type_id'] != null) {
-      propTypeIds = [json['property_type_id'].toString()];
     }
 
     return RequirementModel(

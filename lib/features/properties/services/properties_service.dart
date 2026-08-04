@@ -71,7 +71,7 @@ class PropertiesService {
 
         // Default order
         final response = await query.order('created_at', ascending: false);
-        var properties = List<Map<String, dynamic>>.from(response);
+        var properties = (response as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
 
         // Universal client-side search (simulating universal keyword match)
         if (search != null && search.isNotEmpty) {
@@ -864,7 +864,7 @@ class PropertiesService {
             property_amenities:deleted_property_amenities(amenity:amenities(*))
         ''').order('created_at', ascending: false);
 
-        final properties = List<Map<String, dynamic>>.from(response);
+        final properties = (response as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
 
         return {
           'success': true,

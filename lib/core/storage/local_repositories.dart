@@ -536,6 +536,20 @@ class LookupLocalRepository {
 
   static final Map<String, LookupItemLocal> inMemory = {};
 
+  static String? getLookupNameSync(String id) {
+    if (id.isEmpty) return null;
+    if (kIsWeb) {
+      return inMemory[id]?.name;
+    }
+    try {
+      final isar = IsarService().isar;
+      final item = isar.lookupItemLocals.filter().idEqualTo(id).findFirstSync();
+      return item?.name;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<List<LookupItemLocal>> getLookupsByCategory(String category) async {
     if (kIsWeb) {
       return inMemory.values.where((l) => l.category == category).toList();

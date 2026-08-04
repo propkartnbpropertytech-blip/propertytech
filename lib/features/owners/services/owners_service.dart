@@ -21,7 +21,7 @@ class OwnersService {
         }
 
         final response = await query.order('created_at', ascending: false);
-        final list = List<Map<String, dynamic>>.from(response);
+        final list = (response as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
 
         return {
           'success': true,

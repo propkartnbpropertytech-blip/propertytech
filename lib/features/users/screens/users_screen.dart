@@ -794,9 +794,17 @@ class _UsersScreenState extends State<UsersScreen> {
         int admins = 0;
 
         if (state is UsersLoaded) {
-          total = state.users.length;
-          active = state.users.where((u) => u.isActive).length;
-          admins = state.users
+          final authState = context.read<AuthBloc>().state;
+          String? currentUserId;
+          if (authState is Authenticated) {
+            currentUserId = authState.user.id;
+          }
+
+          final list = state.users.where((u) => u.id != currentUserId).toList();
+
+          total = list.length;
+          active = list.where((u) => u.isActive).length;
+          admins = list
               .where((u) => u.roleName.toLowerCase() == 'admin')
               .length;
         }

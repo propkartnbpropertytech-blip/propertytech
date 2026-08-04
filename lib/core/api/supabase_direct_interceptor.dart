@@ -84,7 +84,7 @@ class SupabaseDirectInterceptor extends Interceptor {
         }) async {
           try {
             final data = await query();
-            return List<Map<String, dynamic>>.from(data as List);
+            return (data as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
           } catch (e) {
             if (kDebugMode) {
               debugPrint('Dashboard $label query failed: $e');
@@ -101,19 +101,19 @@ class SupabaseDirectInterceptor extends Interceptor {
         const resaleListingId = '9050cd9b-0ebf-41f2-a925-2d4f206b64b1';
 
         final totalProperties = (await safeList(
-          () => _supabase.from('properties').select('id').eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
+          () => _supabase.from('properties').select('id'),
           label: 'totalProperties',
         )).length;
         final available = (await safeList(
-          () => _supabase.from('properties').select('id').or(availableStatusFilter).eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
+          () => _supabase.from('properties').select('id').or(availableStatusFilter),
           label: 'available',
         )).length;
         final sold = (await safeList(
-          () => _supabase.from('properties').select('id').eq('property_status_id', soldStatusId).eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
+          () => _supabase.from('properties').select('id').eq('property_status_id', soldStatusId),
           label: 'sold',
         )).length;
         final rented = (await safeList(
-          () => _supabase.from('properties').select('id').eq('property_status_id', rentedStatusId).eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
+          () => _supabase.from('properties').select('id').eq('property_status_id', rentedStatusId),
           label: 'rented',
         )).length;
         final requirements =
@@ -125,8 +125,7 @@ class SupabaseDirectInterceptor extends Interceptor {
               .from('properties')
               .select('id')
               .or(availableStatusFilter)
-              .eq('listing_type_id', rentalListingId)
-              .eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
+              .eq('listing_type_id', rentalListingId),
           label: 'rentalAvailable',
         )).length;
         final resaleAvailable = (await safeList(
@@ -134,8 +133,7 @@ class SupabaseDirectInterceptor extends Interceptor {
               .from('properties')
               .select('id')
               .or(availableStatusFilter)
-              .eq('listing_type_id', resaleListingId)
-              .eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
+              .eq('listing_type_id', resaleListingId),
           label: 'resaleAvailable',
         )).length;
         final rentalRented = (await safeList(
@@ -143,8 +141,7 @@ class SupabaseDirectInterceptor extends Interceptor {
               .from('properties')
               .select('id')
               .eq('property_status_id', rentedStatusId)
-              .eq('listing_type_id', rentalListingId)
-              .eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
+              .eq('listing_type_id', rentalListingId),
           label: 'rentalRented',
         )).length;
         final resaleSold = (await safeList(
@@ -152,8 +149,7 @@ class SupabaseDirectInterceptor extends Interceptor {
               .from('properties')
               .select('id')
               .eq('property_status_id', soldStatusId)
-              .eq('listing_type_id', resaleListingId)
-              .eq('category_id', 'a556de64-d713-4ddf-b375-597d4e829c59'),
+              .eq('listing_type_id', resaleListingId),
           label: 'resaleSold',
         )).length;
         final rentalRequirements = (await safeList(
@@ -705,7 +701,7 @@ class SupabaseDirectInterceptor extends Interceptor {
             property_amenities(amenity:amenities(*))
           ''').or(propertyIds.map((id) => 'id.eq.$id').join(','));
           
-          properties = List<Map<String, dynamic>>.from(dynamicList);
+          properties = (dynamicList as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
         }
 
         return handler.resolve(Response(
