@@ -319,11 +319,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String currentUserName = 'Guest';
     String currentUserEmail = '';
     bool isAdminOrSuperAdmin = false;
+    bool isSuperAdmin = false;
 
     if (authState is Authenticated) {
       currentUserEmail = authState.user.email;
       final roleLower = authState.user.role.toLowerCase();
       isAdminOrSuperAdmin = roleLower.contains('admin');
+      isSuperAdmin = roleLower == 'super admin';
       currentUserName = authState.user.fullName;
     }
 
@@ -350,7 +352,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: CRMSpacing.l),
                     _buildAppearanceCard(isAdminOrSuperAdmin),
                     const SizedBox(height: CRMSpacing.l),
-                    if (isAdminOrSuperAdmin) ...[
+                    if (isSuperAdmin) ...[
                       _buildAuditLogsCard(),
                       const SizedBox(height: CRMSpacing.l),
                     ],
@@ -376,7 +378,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              if (isAdminOrSuperAdmin) ...[
+                              if (isSuperAdmin) ...[
                                 _buildAuditLogsCard(),
                                 const SizedBox(height: CRMSpacing.l),
                               ],

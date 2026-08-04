@@ -13,11 +13,11 @@ class RoleGuard {
 
   static bool canManageEmployees(String? role) => isAdmin(role);
 
-  /// Audit logs — Admin / Super Admin only (defense-in-depth).
-  static bool canViewAuditLogs(String? role) => isAdmin(role);
+  /// Audit logs — Super Admin only (defense-in-depth).
+  static bool canViewAuditLogs(String? role) => isSuperAdmin(role);
 
   /// Settings mutations that affect org lookups (cities/areas).
-  static bool canManageLookups(String? role) => isAdmin(role);
+  static bool canManageLookups(String? role) => isSuperAdmin(role);
 
   /// Only Super Admin may assign/create/update/delete Admin accounts.
   static bool canAssignAdminRole(String? callerRole) => isSuperAdmin(callerRole);

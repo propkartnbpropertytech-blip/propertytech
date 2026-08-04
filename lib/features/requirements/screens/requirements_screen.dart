@@ -851,9 +851,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           final salesmen = state.users
               .where((u) => u.roleName.toLowerCase() == 'sales')
               .toList();
-          final currentAdminId = req.adminId?.isEmpty == true ? null : req.adminId;
-          final bool hasValue = currentAdminId != null && salesmen.any((u) => u.id == currentAdminId);
-          final dropdownValue = hasValue ? currentAdminId : null;
+          final currentAssignedTo = req.assignedTo?.isEmpty == true ? null : req.assignedTo;
+          final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
+          final dropdownValue = hasValue ? currentAssignedTo : null;
           return DropdownButton<String?>(
             value: dropdownValue,
             hint: Text(
@@ -876,7 +876,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     u.fullName,
                     style: CRMTypography.bodyMedium.copyWith(
                       color: CRMColors.textOf(context),
-                      fontWeight: u.id == currentAdminId ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: u.id == currentAssignedTo ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
                 );
@@ -892,7 +892,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               context.read<RequirementsBloc>().add(
                 UpdateRequirementEvent(
                   req.copyWith(
-                    adminId: newSalesmanId ?? '',
+                    assignedTo: newSalesmanId ?? '',
                     assigneeName: newSalesmanName ?? '',
                   ),
                 ),
@@ -949,6 +949,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           requirements = state.requirements.where((r) {
             if (currentUser != null && currentUser.role == 'Sales') {
               final isOwnRequirement = r.adminId == currentUser.id ||
+                  r.assignedTo == currentUser.id ||
                   r.creatorName == currentUser.fullName ||
                   r.assigneeName == currentUser.fullName;
               if (!isOwnRequirement) return false;
@@ -2393,6 +2394,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           requirements = state.requirements.where((r) {
             if (currentUser != null && currentUser.role == 'Sales') {
               final isOwnRequirement = r.adminId == currentUser.id ||
+                  r.assignedTo == currentUser.id ||
                   r.creatorName == currentUser.fullName ||
                   r.assigneeName == currentUser.fullName;
               if (!isOwnRequirement) return false;

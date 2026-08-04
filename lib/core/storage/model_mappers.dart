@@ -223,6 +223,7 @@ extension RequirementLocalExtensions on RequirementLocal {
       creatorName: creatorName,
       assigneeName: assigneeName,
       createdBy: createdBy,
+      assignedTo: assignedTo,
     );
   }
 }
@@ -252,6 +253,7 @@ extension RequirementModelExtensions on RequirementModel {
       ..createdAt = createdAt
       ..budget = (minBudget + maxBudget) / 2
       ..adminId = adminId
+      ..assignedTo = assignedTo
       ..organizationId = organizationId
       ..listingTypeId = listingTypeId
       ..listingTypeName = listingTypeName

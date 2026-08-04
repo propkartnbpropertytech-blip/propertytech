@@ -24,6 +24,7 @@ class RequirementModel {
   final String status; // 'Active', 'Closed', 'Suspended'
   final DateTime createdAt;
   final String? adminId;
+  final String? assignedTo;
   final String? organizationId;
   final String? assigneeName;
   final String? creatorName;
@@ -60,6 +61,7 @@ class RequirementModel {
     required this.status,
     required this.createdAt,
     this.adminId,
+    this.assignedTo,
     this.organizationId,
     this.assigneeName,
     this.creatorName,
@@ -172,6 +174,7 @@ class RequirementModel {
               ? DateTime.parse(json['created_at'])
               : DateTime.now(),
       adminId: (json['admin_id'] ?? json['adminId']) as String?,
+      assignedTo: (json['assigned_to'] ?? json['assignedTo']) as String?,
       organizationId: json['organization_id'] as String?,
       assigneeName: () {
         if (json['assigneeName'] != null) return json['assigneeName'] as String;
@@ -242,6 +245,7 @@ class RequirementModel {
       'status': status,
       'createdAt': createdAt.toIso8601String(),
       'adminId': adminId,
+      'assignedTo': assignedTo,
       'organizationId': organizationId,
       'assigneeName': assigneeName,
       'creatorName': creatorName,
@@ -274,6 +278,7 @@ class RequirementModel {
       'property_type_ids': propertyTypeIds.isNotEmpty ? propertyTypeIds : [propertyTypeId],
       'remarks': remarks,
       'status': status,
+      'assigned_to': (assignedTo == null || assignedTo!.isEmpty) ? null : assignedTo,
       'furnishing_type_ids': furnishingIds,
       'facing_type_ids': facingIds,
       'furnishing_type_id': furnishingIds.isNotEmpty ? furnishingIds.first : null,
@@ -392,6 +397,7 @@ class RequirementModel {
     String? status,
     DateTime? createdAt,
     String? adminId,
+    String? assignedTo,
     String? organizationId,
     String? assigneeName,
     String? creatorName,
@@ -428,6 +434,7 @@ class RequirementModel {
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       adminId: adminId ?? this.adminId,
+      assignedTo: assignedTo ?? this.assignedTo,
       organizationId: organizationId ?? this.organizationId,
       assigneeName: assigneeName ?? this.assigneeName,
       creatorName: creatorName ?? this.creatorName,

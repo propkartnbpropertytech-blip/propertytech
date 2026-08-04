@@ -1047,6 +1047,13 @@ class _UsersScreenState extends State<UsersScreen> {
                   (u) => u.roleName.toLowerCase() == targetRole.toLowerCase(),
                 )
                 .toList();
+          } else if (currentUser != null && currentUser.role == 'Admin') {
+            // Regular Admins can only see and manage Sales users
+            users = users
+                .where(
+                  (u) => u.roleName.toLowerCase() == 'sales',
+                )
+                .toList();
           }
         }
 

@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/api/api_constants.dart';
 import '../../../core/storage/secure_storage.dart';
 import '../../../core/storage/session_cleanup.dart';
 import '../models/user_model.dart';
@@ -8,6 +10,7 @@ import '../services/auth_service.dart';
 class AuthRepository {
   final AuthService _authService = AuthService();
   final SecureStorage _secureStorage = SecureStorage();
+  SupabaseClient get _supabase => Supabase.instance.client;
 
   Future<UserModel> login(String email, String password, bool rememberMe) async {
     await SessionCleanup.clearLocalSession(clearToken: true);
@@ -18,6 +21,11 @@ class AuthRepository {
       rememberMe: rememberMe,
     );
     final user = UserModel.fromJson(responseData);
+
+    if (ApiConstants.useSupabaseDirect) {
+      // Supabase handles session storage automatically. No need to call secure storage.
+      return user.copyWith(token: null);
+    }
 
     if (kIsWeb) {
       // Prefer HttpOnly cookies (same-origin proxy). Keep access token in memory
@@ -53,6 +61,18 @@ class AuthRepository {
   }
 
   Future<bool> refreshSession() async {
+    if (ApiConstants.useSupabaseDirect) {
+      try {
+        final session = _supabase.auth.currentSession;
+        if (session == null) return false;
+        
+        // Supabase Dart SDK manages auto refresh. We check if active.
+        return !session.isExpired;
+      } catch (_) {
+        return false;
+      }
+    }
+
     if (kIsWeb) {
       try {
         final response = await _authService.refresh(null);
@@ -98,7 +118,7 @@ class AuthRepository {
   Future<UserModel> getProfile() async {
     try {
       final responseData = await _authService.getProfile();
-      if (kIsWeb) {
+      if (kIsWeb && !ApiConstants.useSupabaseDirect) {
         await _secureStorage.markWebCookieSession(active: true);
       }
       return UserModel.fromJson(responseData).copyWith(token: null);
@@ -109,6 +129,14 @@ class AuthRepository {
   }
 
   Future<void> logout() async {
+    if (ApiConstants.useSupabaseDirect) {
+      try {
+        await _authService.logout();
+      } catch (_) {}
+      await SessionCleanup.clearLocalSession(clearToken: true);
+      return;
+    }
+
     if (kIsWeb) {
       try {
         await _authService.logout(refreshToken: null);
@@ -125,10 +153,23 @@ class AuthRepository {
   }
 
   Future<String?> getSavedToken() async {
+    if (ApiConstants.useSupabaseDirect) {
+      return _supabase.auth.currentSession?.accessToken;
+    }
     return await _secureStorage.getToken();
   }
 
   Future<bool> isAuthenticated() async {
+    if (ApiConstants.useSupabaseDirect) {
+      final session = _supabase.auth.currentSession;
+      if (session != null && !session.isExpired) {
+        return true;
+      }
+      // Wait for auth to initialize or restore session
+      final restoredSession = _supabase.auth.currentSession;
+      return restoredSession != null;
+    }
+
     if (kIsWeb) {
       final mem = await _secureStorage.getToken();
       if (mem != null && mem.isNotEmpty) return true;

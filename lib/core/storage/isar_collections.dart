@@ -114,6 +114,7 @@ class RequirementLocal {
   late DateTime createdAt;
   double? budget;
   String? adminId;
+  String? assignedTo;
   String? organizationId;
   String? listingTypeId;
   String? listingTypeName;

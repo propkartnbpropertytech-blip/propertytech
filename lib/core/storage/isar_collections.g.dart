@@ -12697,128 +12697,133 @@ const RequirementLocalSchema = CollectionSchema(
       name: r'areaNames',
       type: IsarType.stringList,
     ),
-    r'assigneeName': PropertySchema(
+    r'assignedTo': PropertySchema(
       id: 3,
+      name: r'assignedTo',
+      type: IsarType.string,
+    ),
+    r'assigneeName': PropertySchema(
+      id: 4,
       name: r'assigneeName',
       type: IsarType.string,
     ),
     r'budget': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'budget',
       type: IsarType.double,
     ),
     r'categoryId': PropertySchema(
-      id: 5,
+      id: 6,
       name: r'categoryId',
       type: IsarType.string,
     ),
     r'categoryName': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'categoryName',
       type: IsarType.string,
     ),
     r'clientMobile': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'clientMobile',
       type: IsarType.string,
     ),
     r'clientName': PropertySchema(
-      id: 8,
+      id: 9,
       name: r'clientName',
       type: IsarType.string,
     ),
     r'configurationId': PropertySchema(
-      id: 9,
+      id: 10,
       name: r'configurationId',
       type: IsarType.string,
     ),
     r'configurationIds': PropertySchema(
-      id: 10,
+      id: 11,
       name: r'configurationIds',
       type: IsarType.stringList,
     ),
     r'configurationName': PropertySchema(
-      id: 11,
+      id: 12,
       name: r'configurationName',
       type: IsarType.string,
     ),
     r'createdAt': PropertySchema(
-      id: 12,
+      id: 13,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
     r'createdBy': PropertySchema(
-      id: 13,
+      id: 14,
       name: r'createdBy',
       type: IsarType.string,
     ),
     r'creatorName': PropertySchema(
-      id: 14,
+      id: 15,
       name: r'creatorName',
       type: IsarType.string,
     ),
     r'id': PropertySchema(
-      id: 15,
+      id: 16,
       name: r'id',
       type: IsarType.string,
     ),
     r'listingTypeId': PropertySchema(
-      id: 16,
+      id: 17,
       name: r'listingTypeId',
       type: IsarType.string,
     ),
     r'listingTypeName': PropertySchema(
-      id: 17,
+      id: 18,
       name: r'listingTypeName',
       type: IsarType.string,
     ),
     r'maxArea': PropertySchema(
-      id: 18,
+      id: 19,
       name: r'maxArea',
       type: IsarType.double,
     ),
     r'maxBudget': PropertySchema(
-      id: 19,
+      id: 20,
       name: r'maxBudget',
       type: IsarType.double,
     ),
     r'minArea': PropertySchema(
-      id: 20,
+      id: 21,
       name: r'minArea',
       type: IsarType.double,
     ),
     r'minBudget': PropertySchema(
-      id: 21,
+      id: 22,
       name: r'minBudget',
       type: IsarType.double,
     ),
     r'organizationId': PropertySchema(
-      id: 22,
+      id: 23,
       name: r'organizationId',
       type: IsarType.string,
     ),
     r'propertyTypeId': PropertySchema(
-      id: 23,
+      id: 24,
       name: r'propertyTypeId',
       type: IsarType.string,
     ),
     r'propertyTypeIds': PropertySchema(
-      id: 24,
+      id: 25,
       name: r'propertyTypeIds',
       type: IsarType.stringList,
     ),
     r'propertyTypeName': PropertySchema(
-      id: 25,
+      id: 26,
       name: r'propertyTypeName',
       type: IsarType.string,
     ),
     r'remarks': PropertySchema(
-      id: 26,
+      id: 27,
       name: r'remarks',
       type: IsarType.string,
     ),
     r'status': PropertySchema(
-      id: 27,
+      id: 28,
       name: r'status',
       type: IsarType.string,
     )
@@ -12875,6 +12880,12 @@ int _requirementLocalEstimateSize(
     for (var i = 0; i < object.areaNames.length; i++) {
       final value = object.areaNames[i];
       bytesCount += value.length * 3;
+    }
+  }
+  {
+    final value = object.assignedTo;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
     }
   }
   {
@@ -12985,31 +12996,32 @@ void _requirementLocalSerialize(
   writer.writeString(offsets[0], object.adminId);
   writer.writeStringList(offsets[1], object.areaIds);
   writer.writeStringList(offsets[2], object.areaNames);
-  writer.writeString(offsets[3], object.assigneeName);
-  writer.writeDouble(offsets[4], object.budget);
-  writer.writeString(offsets[5], object.categoryId);
-  writer.writeString(offsets[6], object.categoryName);
-  writer.writeString(offsets[7], object.clientMobile);
-  writer.writeString(offsets[8], object.clientName);
-  writer.writeString(offsets[9], object.configurationId);
-  writer.writeStringList(offsets[10], object.configurationIds);
-  writer.writeString(offsets[11], object.configurationName);
-  writer.writeDateTime(offsets[12], object.createdAt);
-  writer.writeString(offsets[13], object.createdBy);
-  writer.writeString(offsets[14], object.creatorName);
-  writer.writeString(offsets[15], object.id);
-  writer.writeString(offsets[16], object.listingTypeId);
-  writer.writeString(offsets[17], object.listingTypeName);
-  writer.writeDouble(offsets[18], object.maxArea);
-  writer.writeDouble(offsets[19], object.maxBudget);
-  writer.writeDouble(offsets[20], object.minArea);
-  writer.writeDouble(offsets[21], object.minBudget);
-  writer.writeString(offsets[22], object.organizationId);
-  writer.writeString(offsets[23], object.propertyTypeId);
-  writer.writeStringList(offsets[24], object.propertyTypeIds);
-  writer.writeString(offsets[25], object.propertyTypeName);
-  writer.writeString(offsets[26], object.remarks);
-  writer.writeString(offsets[27], object.status);
+  writer.writeString(offsets[3], object.assignedTo);
+  writer.writeString(offsets[4], object.assigneeName);
+  writer.writeDouble(offsets[5], object.budget);
+  writer.writeString(offsets[6], object.categoryId);
+  writer.writeString(offsets[7], object.categoryName);
+  writer.writeString(offsets[8], object.clientMobile);
+  writer.writeString(offsets[9], object.clientName);
+  writer.writeString(offsets[10], object.configurationId);
+  writer.writeStringList(offsets[11], object.configurationIds);
+  writer.writeString(offsets[12], object.configurationName);
+  writer.writeDateTime(offsets[13], object.createdAt);
+  writer.writeString(offsets[14], object.createdBy);
+  writer.writeString(offsets[15], object.creatorName);
+  writer.writeString(offsets[16], object.id);
+  writer.writeString(offsets[17], object.listingTypeId);
+  writer.writeString(offsets[18], object.listingTypeName);
+  writer.writeDouble(offsets[19], object.maxArea);
+  writer.writeDouble(offsets[20], object.maxBudget);
+  writer.writeDouble(offsets[21], object.minArea);
+  writer.writeDouble(offsets[22], object.minBudget);
+  writer.writeString(offsets[23], object.organizationId);
+  writer.writeString(offsets[24], object.propertyTypeId);
+  writer.writeStringList(offsets[25], object.propertyTypeIds);
+  writer.writeString(offsets[26], object.propertyTypeName);
+  writer.writeString(offsets[27], object.remarks);
+  writer.writeString(offsets[28], object.status);
 }
 
 RequirementLocal _requirementLocalDeserialize(
@@ -13022,32 +13034,33 @@ RequirementLocal _requirementLocalDeserialize(
   object.adminId = reader.readStringOrNull(offsets[0]);
   object.areaIds = reader.readStringList(offsets[1]) ?? [];
   object.areaNames = reader.readStringList(offsets[2]) ?? [];
-  object.assigneeName = reader.readStringOrNull(offsets[3]);
-  object.budget = reader.readDoubleOrNull(offsets[4]);
-  object.categoryId = reader.readString(offsets[5]);
-  object.categoryName = reader.readString(offsets[6]);
-  object.clientMobile = reader.readString(offsets[7]);
-  object.clientName = reader.readString(offsets[8]);
-  object.configurationId = reader.readStringOrNull(offsets[9]);
-  object.configurationIds = reader.readStringList(offsets[10]);
-  object.configurationName = reader.readStringOrNull(offsets[11]);
-  object.createdAt = reader.readDateTime(offsets[12]);
-  object.createdBy = reader.readStringOrNull(offsets[13]);
-  object.creatorName = reader.readStringOrNull(offsets[14]);
-  object.id = reader.readString(offsets[15]);
+  object.assignedTo = reader.readStringOrNull(offsets[3]);
+  object.assigneeName = reader.readStringOrNull(offsets[4]);
+  object.budget = reader.readDoubleOrNull(offsets[5]);
+  object.categoryId = reader.readString(offsets[6]);
+  object.categoryName = reader.readString(offsets[7]);
+  object.clientMobile = reader.readString(offsets[8]);
+  object.clientName = reader.readString(offsets[9]);
+  object.configurationId = reader.readStringOrNull(offsets[10]);
+  object.configurationIds = reader.readStringList(offsets[11]);
+  object.configurationName = reader.readStringOrNull(offsets[12]);
+  object.createdAt = reader.readDateTime(offsets[13]);
+  object.createdBy = reader.readStringOrNull(offsets[14]);
+  object.creatorName = reader.readStringOrNull(offsets[15]);
+  object.id = reader.readString(offsets[16]);
   object.isarId = id;
-  object.listingTypeId = reader.readStringOrNull(offsets[16]);
-  object.listingTypeName = reader.readStringOrNull(offsets[17]);
-  object.maxArea = reader.readDoubleOrNull(offsets[18]);
-  object.maxBudget = reader.readDouble(offsets[19]);
-  object.minArea = reader.readDoubleOrNull(offsets[20]);
-  object.minBudget = reader.readDouble(offsets[21]);
-  object.organizationId = reader.readStringOrNull(offsets[22]);
-  object.propertyTypeId = reader.readStringOrNull(offsets[23]);
-  object.propertyTypeIds = reader.readStringList(offsets[24]);
-  object.propertyTypeName = reader.readStringOrNull(offsets[25]);
-  object.remarks = reader.readStringOrNull(offsets[26]);
-  object.status = reader.readString(offsets[27]);
+  object.listingTypeId = reader.readStringOrNull(offsets[17]);
+  object.listingTypeName = reader.readStringOrNull(offsets[18]);
+  object.maxArea = reader.readDoubleOrNull(offsets[19]);
+  object.maxBudget = reader.readDouble(offsets[20]);
+  object.minArea = reader.readDoubleOrNull(offsets[21]);
+  object.minBudget = reader.readDouble(offsets[22]);
+  object.organizationId = reader.readStringOrNull(offsets[23]);
+  object.propertyTypeId = reader.readStringOrNull(offsets[24]);
+  object.propertyTypeIds = reader.readStringList(offsets[25]);
+  object.propertyTypeName = reader.readStringOrNull(offsets[26]);
+  object.remarks = reader.readStringOrNull(offsets[27]);
+  object.status = reader.readString(offsets[28]);
   return object;
 }
 
@@ -13067,9 +13080,9 @@ P _requirementLocalDeserializeProp<P>(
     case 3:
       return (reader.readStringOrNull(offset)) as P;
     case 4:
-      return (reader.readDoubleOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 5:
-      return (reader.readString(offset)) as P;
+      return (reader.readDoubleOrNull(offset)) as P;
     case 6:
       return (reader.readString(offset)) as P;
     case 7:
@@ -13077,42 +13090,44 @@ P _requirementLocalDeserializeProp<P>(
     case 8:
       return (reader.readString(offset)) as P;
     case 9:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 10:
-      return (reader.readStringList(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 11:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readStringList(offset)) as P;
     case 12:
-      return (reader.readDateTime(offset)) as P;
-    case 13:
       return (reader.readStringOrNull(offset)) as P;
+    case 13:
+      return (reader.readDateTime(offset)) as P;
     case 14:
       return (reader.readStringOrNull(offset)) as P;
     case 15:
-      return (reader.readString(offset)) as P;
-    case 16:
       return (reader.readStringOrNull(offset)) as P;
+    case 16:
+      return (reader.readString(offset)) as P;
     case 17:
       return (reader.readStringOrNull(offset)) as P;
     case 18:
-      return (reader.readDoubleOrNull(offset)) as P;
-    case 19:
-      return (reader.readDouble(offset)) as P;
-    case 20:
-      return (reader.readDoubleOrNull(offset)) as P;
-    case 21:
-      return (reader.readDouble(offset)) as P;
-    case 22:
       return (reader.readStringOrNull(offset)) as P;
+    case 19:
+      return (reader.readDoubleOrNull(offset)) as P;
+    case 20:
+      return (reader.readDouble(offset)) as P;
+    case 21:
+      return (reader.readDoubleOrNull(offset)) as P;
+    case 22:
+      return (reader.readDouble(offset)) as P;
     case 23:
       return (reader.readStringOrNull(offset)) as P;
     case 24:
-      return (reader.readStringList(offset)) as P;
-    case 25:
       return (reader.readStringOrNull(offset)) as P;
+    case 25:
+      return (reader.readStringList(offset)) as P;
     case 26:
       return (reader.readStringOrNull(offset)) as P;
     case 27:
+      return (reader.readStringOrNull(offset)) as P;
+    case 28:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -13915,6 +13930,160 @@ extension RequirementLocalQueryFilter
         upper,
         includeUpper,
       );
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'assignedTo',
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'assignedTo',
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'assignedTo',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'assignedTo',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'assignedTo',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'assignedTo',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'assignedTo',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'assignedTo',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'assignedTo',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'assignedTo',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'assignedTo',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      assignedToIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'assignedTo',
+        value: '',
+      ));
     });
   }
 
@@ -17456,6 +17625,20 @@ extension RequirementLocalQuerySortBy
   }
 
   QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy>
+      sortByAssignedTo() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assignedTo', Sort.asc);
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy>
+      sortByAssignedToDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assignedTo', Sort.desc);
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy>
       sortByAssigneeName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'assigneeName', Sort.asc);
@@ -17790,6 +17973,20 @@ extension RequirementLocalQuerySortThenBy
       thenByAdminIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'adminId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy>
+      thenByAssignedTo() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assignedTo', Sort.asc);
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy>
+      thenByAssignedToDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assignedTo', Sort.desc);
     });
   }
 
@@ -18153,6 +18350,13 @@ extension RequirementLocalQueryWhereDistinct
   }
 
   QueryBuilder<RequirementLocal, RequirementLocal, QDistinct>
+      distinctByAssignedTo({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'assignedTo', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QDistinct>
       distinctByAssigneeName({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'assigneeName', caseSensitive: caseSensitive);
@@ -18360,6 +18564,13 @@ extension RequirementLocalQueryProperty
       areaNamesProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'areaNames');
+    });
+  }
+
+  QueryBuilder<RequirementLocal, String?, QQueryOperations>
+      assignedToProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'assignedTo');
     });
   }
 

@@ -651,6 +651,7 @@ class _CRMAppShellState extends State<CRMAppShell> {
   @override
   Widget build(BuildContext context) {
     Theme.of(context); // Register theme dependency to rebuild on toggle
+    final userState = context.watch<AuthBloc>().state;
     final location = GoRouterState.of(context).matchedLocation;
     final size = MediaQuery.of(context).size;
     final isMobile = size.width < 768;
@@ -674,7 +675,7 @@ class _CRMAppShellState extends State<CRMAppShell> {
       children: [
         Scaffold(
           backgroundColor: CRMColors.background,
-          drawer: isMobile ? Drawer(child: _buildSidebarContent(location, isMobile: true)) : null,
+          drawer: isMobile ? Drawer(child: _buildSidebarContent(location, userState, isMobile: true)) : null,
           bottomNavigationBar: isMobile
               ? Style3BottomNavBar(
                   navBarConfig: NavBarConfig(
@@ -735,7 +736,7 @@ class _CRMAppShellState extends State<CRMAppShell> {
                     ),
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        return _buildSidebarContent(location, sidebarWidth: constraints.maxWidth);
+                        return _buildSidebarContent(location, userState, sidebarWidth: constraints.maxWidth);
                       },
                     ),
                   ),
@@ -1102,8 +1103,7 @@ class _CRMAppShellState extends State<CRMAppShell> {
     );
   }
 
-  Widget _buildSidebarContent(String currentPath, {bool isMobile = false, double? sidebarWidth}) {
-    final userState = context.watch<AuthBloc>().state;
+  Widget _buildSidebarContent(String currentPath, AuthState userState, {bool isMobile = false, double? sidebarWidth}) {
     String userEmail = '';
     String userRole = '';
     String userFullName = '';

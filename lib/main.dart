@@ -23,12 +23,24 @@ import 'core/storage/performance_logger.dart';
 import 'core/network/sync_manager.dart';
 import 'core/storage/repository_coordinator.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'core/api/api_constants.dart';
+
 // ignore: depend_on_referenced_packages
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 void main() async {
   usePathUrlStrategy();
   WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await Supabase.initialize(
+      url: ApiConstants.supabaseUrl,
+      anonKey: ApiConstants.supabaseAnonKey,
+    );
+  } catch (e) {
+    debugPrint("Error initializing Supabase: $e");
+  }
   
   try {
     await IsarService().initialize();
