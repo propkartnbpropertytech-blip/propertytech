@@ -164,9 +164,10 @@ class RequirementsService {
         final currentUserId = _supabase.auth.currentUser?.id;
         if (currentUserId == null) throw Exception('Unauthorized user.');
 
-        final userProfile = await _supabase.from('users').select('organization_id, admin_id').eq('id', currentUserId).single();
+        final userProfile = await _supabase.from('users').select('organization_id, admin_id, roles(name)').eq('id', currentUserId).single();
         final orgId = userProfile['organization_id'];
         final adminId = userProfile['admin_id'];
+        final roleName = (userProfile['roles'] as Map?)?['name']?.toString() ?? '';
 
         final List<dynamic> areaIds = List.from(requirementData['area_ids'] ?? requirementData['areaIds'] ?? []);
         final List<dynamic> furnishingTypeIds = List.from(requirementData['furnishing_type_ids'] ?? []);
@@ -183,8 +184,14 @@ class RequirementsService {
         cleanRequirement['organization_id'] = orgId;
         cleanRequirement['admin_id'] = adminId;
 
-        if (cleanRequirement['assigned_to'] == null || cleanRequirement['assigned_to'].toString().isEmpty) {
-          cleanRequirement['assigned_to'] = currentUserId;
+        final isCreatorAdminOrSuperAdmin = roleName.toLowerCase() == 'admin' || roleName.toLowerCase() == 'super admin';
+
+        if (!isCreatorAdminOrSuperAdmin) {
+          if (cleanRequirement['assigned_to'] == null || cleanRequirement['assigned_to'].toString().isEmpty) {
+            cleanRequirement['assigned_to'] = currentUserId;
+          }
+        } else {
+          cleanRequirement['assigned_to'] = null;
         }
         
         // Multi-select sync helper
