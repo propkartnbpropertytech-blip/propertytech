@@ -13,9 +13,9 @@ extension GetLookupItemLocalCollection on Isar {
   IsarCollection<LookupItemLocal> get lookupItemLocals => this.collection();
 }
 
-const LookupItemLocalSchema = CollectionSchema(
+final LookupItemLocalSchema = CollectionSchema(
   name: r'LookupItemLocal',
-  id: 1318305215323522509,
+  id: int.parse('1318305215323522509'),
   properties: {
     r'category': PropertySchema(
       id: 0,
@@ -55,7 +55,7 @@ const LookupItemLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -3268401673993471357,
+      id: int.parse('-3268401673993471357'),
       name: r'id',
       unique: true,
       replace: true,
@@ -1582,9 +1582,9 @@ extension GetPropertyLocalCollection on Isar {
   IsarCollection<PropertyLocal> get propertyLocals => this.collection();
 }
 
-const PropertyLocalSchema = CollectionSchema(
+final PropertyLocalSchema = CollectionSchema(
   name: r'PropertyLocal',
-  id: -8271700807818507403,
+  id: int.parse('-8271700807818507403'),
   properties: {
     r'address': PropertySchema(
       id: 0,
@@ -1899,7 +1899,7 @@ const PropertyLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -3268401673993471357,
+      id: int.parse('-3268401673993471357'),
       name: r'id',
       unique: true,
       replace: true,
@@ -12678,9 +12678,9 @@ extension GetRequirementLocalCollection on Isar {
   IsarCollection<RequirementLocal> get requirementLocals => this.collection();
 }
 
-const RequirementLocalSchema = CollectionSchema(
+final RequirementLocalSchema = CollectionSchema(
   name: r'RequirementLocal',
-  id: -7980756281068083239,
+  id: int.parse('-7980756281068083239'),
   properties: {
     r'adminId': PropertySchema(
       id: 0,
@@ -12835,7 +12835,7 @@ const RequirementLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -3268401673993471357,
+      id: int.parse('-3268401673993471357'),
       name: r'id',
       unique: true,
       replace: true,
@@ -18749,9 +18749,9 @@ extension GetFollowupLocalCollection on Isar {
   IsarCollection<FollowupLocal> get followupLocals => this.collection();
 }
 
-const FollowupLocalSchema = CollectionSchema(
+final FollowupLocalSchema = CollectionSchema(
   name: r'FollowupLocal',
-  id: -4721984852078906678,
+  id: int.parse('-4721984852078906678'),
   properties: {
     r'clientName': PropertySchema(
       id: 0,
@@ -18826,7 +18826,7 @@ const FollowupLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -3268401673993471357,
+      id: int.parse('-3268401673993471357'),
       name: r'id',
       unique: true,
       replace: true,
@@ -21525,9 +21525,9 @@ extension GetBuilderLocalCollection on Isar {
   IsarCollection<BuilderLocal> get builderLocals => this.collection();
 }
 
-const BuilderLocalSchema = CollectionSchema(
+final BuilderLocalSchema = CollectionSchema(
   name: r'BuilderLocal',
-  id: 435823299237027808,
+  id: int.parse('435823299237027808'),
   properties: {
     r'activeProjects': PropertySchema(
       id: 0,
@@ -21582,7 +21582,7 @@ const BuilderLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -3268401673993471357,
+      id: int.parse('-3268401673993471357'),
       name: r'id',
       unique: true,
       replace: true,
@@ -23566,9 +23566,9 @@ extension GetOwnerLocalCollection on Isar {
   IsarCollection<OwnerLocal> get ownerLocals => this.collection();
 }
 
-const OwnerLocalSchema = CollectionSchema(
+final OwnerLocalSchema = CollectionSchema(
   name: r'OwnerLocal',
-  id: 886259216879823833,
+  id: int.parse('886259216879823833'),
   properties: {
     r'address': PropertySchema(
       id: 0,
@@ -23613,7 +23613,7 @@ const OwnerLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -3268401673993471357,
+      id: int.parse('-3268401673993471357'),
       name: r'id',
       unique: true,
       replace: true,
@@ -25178,9 +25178,9 @@ extension GetClientLocalCollection on Isar {
   IsarCollection<ClientLocal> get clientLocals => this.collection();
 }
 
-const ClientLocalSchema = CollectionSchema(
+final ClientLocalSchema = CollectionSchema(
   name: r'ClientLocal',
-  id: 4502856345066684593,
+  id: int.parse('4502856345066684593'),
   properties: {
     r'assignedAgent': PropertySchema(
       id: 0,
@@ -25235,7 +25235,7 @@ const ClientLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -3268401673993471357,
+      id: int.parse('-3268401673993471357'),
       name: r'id',
       unique: true,
       replace: true,
@@ -27150,9 +27150,9 @@ extension GetOutboxLocalCollection on Isar {
   IsarCollection<OutboxLocal> get outboxLocals => this.collection();
 }
 
-const OutboxLocalSchema = CollectionSchema(
+final OutboxLocalSchema = CollectionSchema(
   name: r'OutboxLocal',
-  id: -8922081633273292290,
+  id: int.parse('-8922081633273292290'),
   properties: {
     r'createdAt': PropertySchema(
       id: 0,
@@ -27192,7 +27192,7 @@ const OutboxLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -3268401673993471357,
+      id: int.parse('-3268401673993471357'),
       name: r'id',
       unique: true,
       replace: true,
@@ -28562,9 +28562,9 @@ extension GetDashboardLocalCollection on Isar {
   IsarCollection<DashboardLocal> get dashboardLocals => this.collection();
 }
 
-const DashboardLocalSchema = CollectionSchema(
+final DashboardLocalSchema = CollectionSchema(
   name: r'DashboardLocal',
-  id: 7985840613772203549,
+  id: int.parse('7985840613772203549'),
   properties: {
     r'activityJson': PropertySchema(
       id: 0,
@@ -28615,7 +28615,7 @@ const DashboardLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -3268401673993471357,
+      id: int.parse('-3268401673993471357'),
       name: r'id',
       unique: true,
       replace: true,
@@ -30243,9 +30243,9 @@ extension DashboardLocalQueryProperty
 // coverage:ignore-file
 // ignore_for_file: duplicate_ignore, non_constant_identifier_names, constant_identifier_names, invalid_use_of_protected_member, unnecessary_cast, prefer_const_constructors, lines_longer_than_80_chars, require_trailing_commas, inference_failure_on_function_invocation, unnecessary_parenthesis, unnecessary_raw_strings, unnecessary_null_checks, join_return_with_assignment, prefer_final_locals, avoid_js_rounded_ints, avoid_positional_boolean_parameters, always_specify_types
 
-const DashboardSummaryLocalSchema = Schema(
+final DashboardSummaryLocalSchema = Schema(
   name: r'DashboardSummaryLocal',
-  id: 5416242803166401319,
+  id: int.parse('5416242803166401319'),
   properties: {
     r'available': PropertySchema(
       id: 0,
