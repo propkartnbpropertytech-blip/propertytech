@@ -75,7 +75,15 @@ class AppRouter {
         builder: (context, state) => const TermsAndConditionsPage(),
       ),
       GoRoute(
+        path: '/terms_and_conditions',
+        builder: (context, state) => const TermsAndConditionsPage(),
+      ),
+      GoRoute(
         path: '/privacy-policy',
+        builder: (context, state) => const PrivacyPolicyPage(),
+      ),
+      GoRoute(
+        path: '/privacy_policy',
         builder: (context, state) => const PrivacyPolicyPage(),
       ),
       GoRoute(
@@ -193,7 +201,9 @@ class AppRouter {
       final isPublicShare = state.matchedLocation.startsWith('/share/') || state.uri.path.startsWith('/share/');
       final onUsers = state.matchedLocation.startsWith('/users');
       final onAudit = state.matchedLocation.startsWith('/settings/audit-logs');
-      final isAuthGate = loggingIn || onSplash || onGetStarted || isPublicShare;
+      final onTerms = state.matchedLocation == '/terms-and-conditions' || state.matchedLocation == '/terms_and_conditions' || state.uri.path == '/terms-and-conditions' || state.uri.path == '/terms_and_conditions';
+      final onPrivacy = state.matchedLocation == '/privacy-policy' || state.matchedLocation == '/privacy_policy' || state.uri.path == '/privacy-policy' || state.uri.path == '/privacy_policy';
+      final isAuthGate = loggingIn || onSplash || onGetStarted || isPublicShare || onTerms || onPrivacy;
 
       if (authState is Authenticated) {
         // Check 9-hour inactivity timeout
