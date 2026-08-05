@@ -13,6 +13,8 @@ import '../repository/properties_repository.dart';
 import '../../../core/storage/crm_draft_repository.dart';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/design_system/widgets/form/crm_video_picker.dart';
+import 'package:dio/dio.dart';
+import '../../settings/screens/location_config_screen.dart';
 
 class AddEditPropertyScreen extends StatefulWidget {
   final PropertyMetadataModel metadata;
@@ -443,61 +445,147 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   void _showAddAreaDialog({String? initialName, String? initialPincode}) {
     final nameController = TextEditingController(text: initialName);
     final pincodeController = TextEditingController(text: initialPincode);
+    bool isFetching = false;
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add New Area'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Area Name'),
-            ),
-            TextField(
-              controller: pincodeController,
-              decoration: const InputDecoration(labelText: 'Pincode'),
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            child: const Text('Cancel'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-          TextButton(
-            child: const Text('Add'),
-            onPressed: () async {
-              final name = nameController.text.trim();
-              final pincode = pincodeController.text.trim();
-              if (name.isNotEmpty && pincode.isNotEmpty && _selectedCity != null) {
-                try {
-                  final service = PropertiesService();
-                  final result = await service.createArea(_selectedCity!, name, pincode);
-                  final AreaLookup newArea = AreaLookup(
-                    id: result['data']['area']['id'],
-                    name: result['data']['area']['area_name'],
-                    cityId: result['data']['area']['city_id'],
-                    pincode: result['data']['area']['pincode'],
-                  );
-                  setState(() {
-                    _areas.add(newArea);
-                    _filteredAreas.add(newArea);
-                    _selectedArea = newArea.id;
-                  });
-                  if (mounted) Navigator.pop(ctx);
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to add area: $e')),
-                  );
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          Future<void> lookupPincode(String pincode) async {
+            setState(() => isFetching = true);
+            try {
+              final dio = Dio();
+              final response = await dio.get('https://api.postalpincode.in/pincode/$pincode');
+              if (response.statusCode == 200 && response.data is List && response.data.isNotEmpty) {
+                final data = response.data[0] as Map<String, dynamic>;
+                final status = data['Status']?.toString();
+                final postOffices = data['PostOffice'] as List?;
+                if (status == 'Success' && postOffices != null && postOffices.isNotEmpty) {
+                  final firstOffice = postOffices[0] as Map<String, dynamic>;
+                  final name = firstOffice['Name']?.toString() ?? '';
+                  if (name.isNotEmpty) {
+                    nameController.text = name;
+                  }
                 }
               }
-            },
-          ),
-        ],
+            } catch (_) {
+              // Fail silently
+            } finally {
+              setState(() => isFetching = false);
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Add New Area'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Area Name *'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pincodeController,
+                  decoration: InputDecoration(
+                    labelText: 'Pincode (6 Digits) *',
+                    suffixIcon: isFetching
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: Padding(
+                              padding: EdgeInsets.all(12),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : null,
+                  ),
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (v) {
+                    final pincode = v.trim();
+                    if (pincode.length == 6 && !isFetching) {
+                      lookupPincode(pincode);
+                    }
+                  },
+                  onSubmitted: (v) {
+                    final pincode = v.trim();
+                    if (pincode.length == 6 && !isFetching) {
+                      lookupPincode(pincode);
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                child: const Text('Cancel'),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+              TextButton(
+                child: const Text('Add'),
+                onPressed: () async {
+                  final name = nameController.text.trim();
+                  final pincode = pincodeController.text.trim();
+                  if (name.isNotEmpty && pincode.isNotEmpty && _selectedCity != null) {
+                    try {
+                      final service = PropertiesService();
+                      final result = await service.createArea(_selectedCity!, name, pincode);
+                      final AreaLookup newArea = AreaLookup(
+                        id: result['data']['area']['id'],
+                        name: result['data']['area']['area_name'],
+                        cityId: result['data']['area']['city_id'],
+                        pincode: result['data']['area']['pincode'],
+                      );
+                      this.setState(() {
+                        _areas.add(newArea);
+                        _filteredAreas.add(newArea);
+                        _selectedArea = newArea.id;
+                      });
+                      if (mounted) Navigator.pop(ctx);
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to add area: $e')),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
+  }
+
+  Future<void> _refreshLocationMetadata() async {
+    try {
+      final service = PropertiesService();
+      final response = await service.getPropertyMetadata();
+      final data = response['data'] as Map<String, dynamic>? ?? {};
+      final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
+      
+      final oldAreaIds = _areas.map((a) => a.id).toSet();
+      final newAreas = meta.areas;
+      
+      setState(() {
+        _areas = newAreas;
+        if (_selectedCity != null) {
+          _filteredAreas = _areas.where((a) => a.cityId == _selectedCity).toList();
+          
+          // Auto-select the newly created area if it belongs to the current city
+          final addedArea = newAreas.firstWhere(
+            (a) => !oldAreaIds.contains(a.id) && a.cityId == _selectedCity,
+            orElse: () => AreaLookup(id: '', name: '', cityId: '', pincode: ''),
+          );
+          if (addedArea.id.isNotEmpty) {
+            _selectedArea = addedArea.id;
+          }
+        }
+      });
+    } catch (_) {
+      // Fail silently
+    }
   }
 
   void _showAddBrokerageDialog() {
@@ -1826,8 +1914,15 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         ),
         IconButton(
           icon: Icon(Icons.add_circle_outline_rounded, color: CRMColors.primaryOf(context)),
-          onPressed: _selectedCity == null ? null : _showAddAreaDialog,
-          tooltip: 'Add New Area',
+          onPressed: _selectedCity == null
+              ? null
+              : () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(builder: (context) => const LocationConfigScreen()),
+                  );
+                  _refreshLocationMetadata();
+                },
+          tooltip: 'Add New Area (Config Page)',
         ),
       ],
     );

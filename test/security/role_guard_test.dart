@@ -69,9 +69,10 @@ void main() {
       expect(RoleGuard.canAssignAdminRole('Broker'), isFalse);
     });
 
-    test('Sales cannot view audit logs', () {
+    test('Sales and Admin cannot view audit logs', () {
       expect(RoleGuard.canViewAuditLogs('Sales'), isFalse);
-      expect(RoleGuard.canViewAuditLogs('Admin'), isTrue);
+      expect(RoleGuard.canViewAuditLogs('Admin'), isFalse);
+      expect(RoleGuard.canViewAuditLogs('Super Admin'), isTrue);
     });
 
     test('sanitizeRedirectPath blocks open redirects and privilege jumps', () {

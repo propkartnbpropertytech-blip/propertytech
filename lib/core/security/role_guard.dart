@@ -8,10 +8,13 @@ class RoleGuard {
 
   static bool isAdmin(String? role) {
     final r = (role ?? '').toLowerCase();
-    return r == 'admin' || r == 'super admin';
+    return r == 'admin' || r == 'super admin' || r == 'telecaller';
   }
 
-  static bool canManageEmployees(String? role) => isAdmin(role);
+  static bool canManageEmployees(String? role) {
+    final r = (role ?? '').toLowerCase();
+    return r == 'admin' || r == 'super admin';
+  }
 
   /// Audit logs — Super Admin only (defense-in-depth).
   static bool canViewAuditLogs(String? role) => isSuperAdmin(role);
@@ -80,18 +83,17 @@ class RoleGuard {
       return 'Super Admin accounts cannot be created or modified from the app.';
     }
 
-    if (target == 'admin') {
-      if (!canAssignAdminRole(callerRole)) {
-        return 'Only Super Admin can create, update, or delete Admin users.';
+    final caller = (callerRole ?? '').toLowerCase();
+    if (caller == 'super admin') {
+      if (target != 'admin') {
+        return 'Super Admin can only manage Admin users.';
       }
-    }
-
-    if (isDelete && target == 'admin' && !canAssignAdminRole(callerRole)) {
-      return 'Only Super Admin can delete Admin users.';
-    }
-
-    if (!isSuperAdmin(callerRole) && target == 'admin') {
-      return 'Admins may only manage Sales users.';
+    } else if (caller == 'admin') {
+      if (target != 'sales' && target != 'telecaller') {
+        return 'Admins can only manage Sales and Telecaller users.';
+      }
+    } else {
+      return 'You do not have permission to manage employees.';
     }
 
     return null;

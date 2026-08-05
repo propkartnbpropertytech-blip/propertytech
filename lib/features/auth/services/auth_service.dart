@@ -215,7 +215,7 @@ class AuthService {
 
     if (roleName == "Super Admin") {
       permissions = [...common, ...adminExtra, ...superExtra];
-    } else if (roleName == "Admin") {
+    } else if (roleName == "Admin" || roleName == "Telecaller") {
       permissions = [...common, ...adminExtra];
     } else {
       // Sales

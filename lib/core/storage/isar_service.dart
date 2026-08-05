@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
@@ -33,20 +34,51 @@ class IsarService {
     }
 
     final dir = await getApplicationDocumentsDirectory();
-    _isar = await Isar.open(
-      [
-        LookupItemLocalSchema,
-        PropertyLocalSchema,
-        RequirementLocalSchema,
-        FollowupLocalSchema,
-        BuilderLocalSchema,
-        OwnerLocalSchema,
-        ClientLocalSchema,
-        OutboxLocalSchema,
-        DashboardLocalSchema,
-      ],
-      directory: dir.path,
-    );
+    try {
+      _isar = await Isar.open(
+        [
+          LookupItemLocalSchema,
+          PropertyLocalSchema,
+          RequirementLocalSchema,
+          FollowupLocalSchema,
+          BuilderLocalSchema,
+          OwnerLocalSchema,
+          ClientLocalSchema,
+          OutboxLocalSchema,
+          DashboardLocalSchema,
+        ],
+        directory: dir.path,
+      );
+    } catch (e) {
+      print("⚠️ [ISAR INIT WARNING] Failed to open Isar: $e. Clearing database files and retrying...");
+      try {
+        final isarFile = File('${dir.path}/default.isar');
+        if (await isarFile.exists()) {
+          await isarFile.delete();
+        }
+        final lockFile = File('${dir.path}/default.isar.lock');
+        if (await lockFile.exists()) {
+          await lockFile.delete();
+        }
+        _isar = await Isar.open(
+          [
+            LookupItemLocalSchema,
+            PropertyLocalSchema,
+            RequirementLocalSchema,
+            FollowupLocalSchema,
+            BuilderLocalSchema,
+            OwnerLocalSchema,
+            ClientLocalSchema,
+            OutboxLocalSchema,
+            DashboardLocalSchema,
+          ],
+          directory: dir.path,
+        );
+      } catch (retryError) {
+        print("❌ [ISAR RETRY ERROR] Failed to open Isar after database clear: $retryError");
+        rethrow;
+      }
+    }
     await _migrateRequirements();
   }
 

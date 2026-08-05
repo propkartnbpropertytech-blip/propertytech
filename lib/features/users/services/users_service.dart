@@ -35,8 +35,8 @@ class UsersService {
             .isFilter('deleted_at', null);
 
         // Apply RBAC filters based on role
-        if (requesterRole == 'Admin') {
-          // Admins only see themselves and users they manage (admin_id = current user's ID)
+        if (requesterRole == 'Admin' || requesterRole == 'Telecaller') {
+          // Admins and Telecallers only see themselves and users they manage (admin_id = current user's ID)
           query = query.or('id.eq.${sessionUser.id},admin_id.eq.${sessionUser.id}');
         } else if (requesterRole == 'Sales') {
           // Sales users only see themselves
@@ -148,8 +148,10 @@ class UsersService {
             ? creatorProfile['roles']['name']?.toString()
             : null;
 
-        // If creator is Admin, they are the parent admin of this user
-        final String? adminId = creatorRole == 'Admin' ? currentUserId : userData['admin_id'];
+        // If creator is Admin, Super Admin, or Telecaller, they are the parent admin of this user
+        final String? adminId = (creatorRole == 'Admin' || creatorRole == 'Super Admin' || creatorRole == 'Telecaller')
+            ? (userData['admin_id'] ?? currentUserId)
+            : userData['admin_id'];
         final String? orgId = creatorOrgId ?? userData['organization_id'];
 
         final response = await _supabase.rpc(

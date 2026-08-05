@@ -926,6 +926,86 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  Widget _buildMobileAssignToDropdown(RequirementModel req) {
+    return BlocBuilder<UsersBloc, UsersState>(
+      builder: (context, state) {
+        if (state is UsersLoaded) {
+          final salesmen = state.users
+              .where((u) => u.roleName.toLowerCase() == 'sales')
+              .toList();
+          final currentAssignedTo = req.assignedTo?.isEmpty == true ? null : req.assignedTo;
+          final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
+          final dropdownValue = hasValue ? currentAssignedTo : null;
+          return DropdownButtonHideUnderline(
+            child: DropdownButton<String?>(
+              value: dropdownValue,
+              isDense: true,
+              isExpanded: true,
+              hint: Text(
+                'Assign to',
+                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+              ),
+              items: [
+                DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text(
+                    'Unassigned',
+                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                  ),
+                ),
+                ...salesmen.map((u) {
+                  return DropdownMenuItem<String?>(
+                    value: u.id,
+                    child: Text(
+                      u.fullName,
+                      style: CRMTypography.captionBold.copyWith(
+                        color: CRMColors.textOf(context),
+                        fontWeight: u.id == currentAssignedTo ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 11,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+              onChanged: (String? newSalesmanId) {
+                String? newSalesmanName;
+                if (newSalesmanId != null) {
+                  final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
+                  newSalesmanName = u.fullName;
+                }
+                
+                context.read<RequirementsBloc>().add(
+                  UpdateRequirementEvent(
+                    req.copyWith(
+                      assignedTo: newSalesmanId ?? '',
+                      assigneeName: newSalesmanName ?? '',
+                    ),
+                  ),
+                );
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(newSalesmanName != null 
+                        ? 'Lead assigned to $newSalesmanName successfully.'
+                        : 'Lead unassigned successfully.'),
+                    backgroundColor: CRMColors.success,
+                  ),
+                );
+              },
+              icon: Icon(Icons.arrow_drop_down, color: CRMColors.textSecondaryOf(context), size: 14),
+              dropdownColor: CRMColors.cardBgOf(context),
+            ),
+          );
+        }
+        return const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 1.5),
+        );
+      },
+    );
+  }
+
   bool _hasEditAccess(RequirementModel r, UserModel? currentUser) {
     if (currentUser == null) return false;
     if (currentUser.role == 'Super Admin') return true;
@@ -1508,169 +1588,235 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Client header with status
+                // Client header with status, Added by & Assign to block
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(CRMSpacing.m, CRMSpacing.m, CRMSpacing.m, CRMSpacing.s),
-                  child: Row(
+                  padding: const EdgeInsets.all(CRMSpacing.m),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundColor: CRMColors.primary.withValues(alpha: 0.1),
-                        child: Text(
-                          req.clientName.isNotEmpty ? req.clientName[0].toUpperCase() : '?',
-                          style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      const SizedBox(width: CRMSpacing.s),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            GestureDetector(
-                              onTap: () => _showRequirementDetailDrawer(req),
-                              child: Text(
-                                req.clientName,
-                                style: CRMTypography.bodyMedium.copyWith(
-                                  color: CRMColors.primary,
-                                  fontWeight: FontWeight.w600,
-                                  decoration: TextDecoration.underline,
-                                ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: CRMColors.primary.withValues(alpha: 0.1),
+                            child: Text(
+                              req.clientName.isNotEmpty ? req.clientName[0].toUpperCase() : '?',
+                              style: CRMTypography.bodyMedium.copyWith(
+                                color: CRMColors.primary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              req.clientMobile,
-                              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                            ),
-                            const SizedBox(height: 2),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
+                          ),
+                          const SizedBox(width: CRMSpacing.s),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  req.requirementCode,
-                                  style: CRMTypography.captionBold.copyWith(color: CRMColors.primary, fontSize: 11),
-                                ),
-                                if (req.assigneeName != null || req.creatorName != null) ...[
-                                  const SizedBox(width: 8),
-                                  Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textMuted),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    req.assigneeName ?? req.creatorName ?? '',
-                                    style: CRMTypography.caption.copyWith(color: CRMColors.textMuted, fontSize: 10),
+                                GestureDetector(
+                                  onTap: () => _showRequirementDetailDrawer(req),
+                                  child: Text(
+                                    req.clientName,
+                                    style: CRMTypography.bodyMedium.copyWith(
+                                      color: CRMColors.primary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15,
+                                      decoration: TextDecoration.underline,
+                                    ),
                                   ),
-                                ],
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(Icons.phone_outlined, size: 12, color: CRMColors.textSecondaryOf(context)),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      req.clientMobile,
+                                      style: CRMTypography.caption.copyWith(
+                                        color: CRMColors.textSecondaryOf(context),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      req.requirementCode,
+                                      style: CRMTypography.captionBold.copyWith(
+                                        color: CRMColors.primary,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                    if (req.nextFollowupDate != null) ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: CRMColors.warning.withValues(alpha: 0.1),
+                                          borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.alarm_rounded, size: 10, color: CRMColors.warning),
+                                            const SizedBox(width: 2),
+                                            Text(
+                                              DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!)),
+                                              style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 9),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ],
                             ),
-                            const SizedBox(height: 2),
-                            if (req.nextFollowupDate != null) ...[
-                              Row(
+                          ),
+                          const SizedBox(width: 8),
+                          // Status dropdown back on the top right!
+                          PopupMenuButton<String>(
+                            tooltip: 'Change Status',
+                            onSelected: (String newStatus) => _changeStatus(req, newStatus),
+                            itemBuilder: (BuildContext context) => const [
+                              PopupMenuItem<String>(value: 'Not Started', child: Text('Not Started')),
+                              PopupMenuItem<String>(value: 'Follow-up', child: Text('Follow-up')),
+                              PopupMenuItem<String>(value: 'Interested', child: Text('Interested')),
+                              PopupMenuItem<String>(value: 'Site Visit', child: Text('Site Visit Sche.')),
+                              PopupMenuItem<String>(value: 'Site Visit Done', child: Text('Site Visit Done')),
+                              PopupMenuItem<String>(value: 'Negotiation', child: Text('Negotiation')),
+                              PopupMenuItem<String>(value: 'Won', child: Text('Won')),
+                              PopupMenuItem<String>(value: 'Bin', child: Text('Bin')),
+                              PopupMenuItem<String>(value: 'Not Interested', child: Text('Not Interested')),
+                            ],
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xxs),
+                              decoration: BoxDecoration(
+                                color: CRMColors.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+                                border: Border.all(
+                                  color: CRMColors.primary.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.alarm_rounded, size: 12, color: CRMColors.warning),
-                                  const SizedBox(width: 4),
                                   Text(
-                                    DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!)),
-                                    style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 10),
+                                    displayStatusLabel(req.status),
+                                    style: CRMTypography.captionBold.copyWith(
+                                      color: CRMColors.primary,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    size: 16,
+                                    color: CRMColors.primary,
                                   ),
                                 ],
                               ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      PopupMenuButton<String>(
-                        tooltip: 'Change Status',
-                        onSelected: (String newStatus) => _changeStatus(req, newStatus),
-                        itemBuilder: (BuildContext context) => const [
-                          PopupMenuItem<String>(value: 'Not Started', child: Text('Not Started')),
-                          PopupMenuItem<String>(value: 'Follow-up', child: Text('Follow-up')),
-                          PopupMenuItem<String>(value: 'Interested', child: Text('Interested')),
-                          PopupMenuItem<String>(value: 'Site Visit', child: Text('Site Visit Sche.')),
-                          PopupMenuItem<String>(value: 'Site Visit Done', child: Text('Site Visit Done')),
-                          PopupMenuItem<String>(value: 'Negotiation', child: Text('Negotiation')),
-                          PopupMenuItem<String>(value: 'Won', child: Text('Won')),
-                          PopupMenuItem<String>(value: 'Bin', child: Text('Bin')),
-                          PopupMenuItem<String>(value: 'Not Interested', child: Text('Not Interested')),
-                        ],
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xxs),
-                          decoration: BoxDecoration(
-                            color: CRMColors.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                            border: Border.all(
-                              color: CRMColors.primary.withValues(alpha: 0.3),
                             ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                displayStatusLabel(req.status),
-                                style: CRMTypography.captionBold.copyWith(
-                                  color: CRMColors.primary,
-                                ),
-                              ),
-                              const SizedBox(width: 2),
-                              Icon(
-                                Icons.arrow_drop_down_rounded,
-                                size: 16,
-                                color: CRMColors.primary,
-                              ),
-                            ],
+                        ],
+                      ),
+                      const SizedBox(height: CRMSpacing.m),
+                      
+                      // Added by & Assign to block
+                      Container(
+                        padding: const EdgeInsets.all(CRMSpacing.s),
+                        decoration: BoxDecoration(
+                          color: CRMColors.backgroundOf(context).withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                          border: Border.all(
+                            color: CRMColors.borderOf(context).withValues(alpha: 0.5),
+                            width: 0.5,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(color: CRMColors.borderOf(context), height: 1),
-                
-                // Quality assessment row
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.s),
-                  child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: CRMSpacing.m,
-                    runSpacing: CRMSpacing.s,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(color: readinessColor, shape: BoxShape.circle),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            req.matchingReadiness == 'Ready'
-                                ? 'Ready'
-                                : req.matchingReadiness == 'Needs Information'
-                                    ? 'Needs Info'
-                                    : 'Cannot Match',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: readinessColor),
-                          ),
-                        ],
-                      ),
-                      Wrap(
-                        spacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            'Quality: ',
-                            style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                          ),
-                          Text(
-                            req.requirementQuality,
-                            style: CRMTypography.captionBold.copyWith(color: qualityColor),
-                          ),
-                          Text(
-                            ' | Comp: ${(req.completenessScore * 100).toStringAsFixed(0)}%',
-                            style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                          ),
-                        ],
+                        child: Row(
+                          children: [
+                            // Added By
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Added by',
+                                    style: CRMTypography.caption.copyWith(
+                                      color: CRMColors.textSecondaryOf(context),
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.person_add_alt_1_outlined, size: 12, color: CRMColors.textMuted),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          req.creatorName ?? 'System',
+                                          style: CRMTypography.captionBold.copyWith(
+                                            color: CRMColors.textOf(context),
+                                            fontSize: 11,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              width: 1,
+                              height: 24,
+                              color: CRMColors.borderOf(context).withValues(alpha: 0.5),
+                            ),
+                            const SizedBox(width: CRMSpacing.s),
+                            // Assign To
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Assign to',
+                                    style: CRMTypography.caption.copyWith(
+                                      color: CRMColors.textSecondaryOf(context),
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin'))
+                                    _buildMobileAssignToDropdown(req)
+                                  else
+                                    Row(
+                                      children: [
+                                        Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textMuted),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            req.assigneeName?.isNotEmpty == true ? req.assigneeName! : 'Unassigned',
+                                            style: CRMTypography.captionBold.copyWith(
+                                              color: CRMColors.textOf(context),
+                                              fontSize: 11,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -1680,14 +1826,26 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 // Details grid
                 Padding(
                   padding: const EdgeInsets.all(CRMSpacing.m),
-                  child: Wrap(
-                    spacing: CRMSpacing.m,
-                    runSpacing: CRMSpacing.s,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildDetailChip(Icons.sell_outlined, 'Listing Type', getListingTypeLabel(req), isMobile: isMobile),
-                      _buildDetailChip(Icons.apartment_rounded, 'Type', '${req.propertyTypeName} (${req.configurationName ?? "-"})', isMobile: isMobile),
-                      _buildDetailChip(Icons.currency_rupee_rounded, 'Budget', budget, isMobile: isMobile),
-                      _buildDetailChip(Icons.location_on_rounded, 'Area', req.areaNames.join(', '), isMobile: isMobile),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _buildDetailChip(Icons.sell_outlined, 'Listing Type', getListingTypeLabel(req), isMobile: isMobile)),
+                          const SizedBox(width: CRMSpacing.m),
+                          Expanded(child: _buildDetailChip(Icons.apartment_rounded, 'Type', '${req.propertyTypeName} (${req.configurationName ?? "-"})', isMobile: isMobile)),
+                        ],
+                      ),
+                      const SizedBox(height: CRMSpacing.s),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _buildDetailChip(Icons.currency_rupee_rounded, 'Budget', budget, isMobile: isMobile)),
+                          const SizedBox(width: CRMSpacing.m),
+                          Expanded(child: _buildDetailChip(Icons.location_on_rounded, 'Area', req.areaNames.join(', '), isMobile: isMobile)),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -1697,7 +1855,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xs),
                   child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
+                    alignment: WrapAlignment.start,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     spacing: CRMSpacing.s,
                     runSpacing: CRMSpacing.xs,
@@ -1735,14 +1893,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                           ),
-                        ],
-                      ),
-                      if (_hasEditAccess(req, currentUser))
-                        Wrap(
-                          spacing: isMobile ? 8.0 : 12.0,
-                          runSpacing: 4.0,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
+                          if (_hasEditAccess(req, currentUser)) ...[
                             IconButton(
                               icon: Icon(Icons.edit_outlined, color: CRMColors.primary, size: 18),
                               onPressed: () => _showAddEditDialog(req),
@@ -1758,7 +1909,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               constraints: const BoxConstraints(),
                             ),
                           ],
-                        ),
+                        ],
+                      ),
                     ],
                   ),
                 ),

@@ -77,6 +77,26 @@ class UserModel extends Equatable {
       adminRole = userMap['admin_role']?.toString() ?? userMap['adminRole']?.toString();
     }
 
+    // If they have Admin role, but are managed by an Admin, they are a Telecaller
+    if (role == 'Admin' && adminId != null) {
+      role = 'Telecaller';
+    }
+
+    // Hierarchy guard: ensure we don't display invalid hierarchy relationships (e.g. Sales as Admin's creator)
+    if (role == 'Admin' && (adminRole == 'Sales' || adminRole == 'Telecaller')) {
+      adminName = null;
+      adminEmail = null;
+      adminRole = null;
+    } else {
+      final isEmployee = role == 'Sales' || role == 'Telecaller';
+      final hasSalesOrTelecallerCreator = adminRole == 'Sales' || adminRole == 'Telecaller';
+      if (isEmployee && hasSalesOrTelecallerCreator) {
+        adminName = null;
+        adminEmail = null;
+        adminRole = null;
+      }
+    }
+
     return UserModel(
       id: userMap['id']?.toString() ?? userMap['uid']?.toString() ?? '',
       email: userMap['email']?.toString() ?? '',

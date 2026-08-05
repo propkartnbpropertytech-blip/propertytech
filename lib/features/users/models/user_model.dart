@@ -60,6 +60,11 @@ class UserModel {
       cName = json['creator']['full_name'] ?? json['creator']['fullName'];
     }
 
+    final adminId = json['admin_id'] as String?;
+    if (rName == 'Admin' && adminId != null) {
+      rName = 'Telecaller';
+    }
+
     return UserModel(
       id: json['id'] ?? '',
       roleId: json['role_id'] ?? '',

@@ -773,8 +773,8 @@ class SupabaseDirectInterceptor extends Interceptor {
         var query = _supabase.from('users').select('*, roles(id, name, description)').isFilter('deleted_at', null);
 
         // Apply RBAC filters based on role
-        if (requesterRole == 'Admin') {
-          // Admins only see themselves and users they manage (admin_id = current user's ID)
+        if (requesterRole == 'Admin' || requesterRole == 'Telecaller') {
+          // Admins and Telecallers only see themselves and users they manage (admin_id = current user's ID)
           query = query.or('id.eq.${sessionUser.id},admin_id.eq.${sessionUser.id}');
         } else if (requesterRole == 'Sales') {
           // Sales users only see themselves
@@ -811,6 +811,24 @@ class SupabaseDirectInterceptor extends Interceptor {
 
       if (path == '/users' && method == 'POST') {
         final payload = options.data as Map<String, dynamic>;
+        
+        final sessionUser = _supabase.auth.currentUser;
+        if (sessionUser == null) throw Exception("Unauthenticated");
+
+        final requesterProfile = await _supabase
+            .from('users')
+            .select('*, roles(name)')
+            .eq('id', sessionUser.id)
+            .maybeSingle();
+
+        final requesterRole = requesterProfile != null && requesterProfile['roles'] != null
+            ? requesterProfile['roles']['name']?.toString()
+            : null;
+
+        final String? adminId = (requesterRole == 'Admin' || requesterRole == 'Super Admin' || requesterRole == 'Telecaller')
+            ? (payload['admin_id'] ?? sessionUser.id)
+            : payload['admin_id'];
+
         final response = await _supabase.rpc(
           'admin_create_user',
           params: {
@@ -819,7 +837,7 @@ class SupabaseDirectInterceptor extends Interceptor {
             'p_full_name': payload['full_name'] ?? '',
             'p_role_id': payload['role_id'],
             'p_organization_id': payload['organization_id'],
-            'p_admin_id': payload['admin_id'],
+            'p_admin_id': adminId,
           },
         );
 

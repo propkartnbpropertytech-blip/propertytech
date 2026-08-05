@@ -115,13 +115,26 @@ class _UsersScreenState extends State<UsersScreen> {
         final usersState = context.read<UsersBloc>().state;
         List<RoleModel> roles = [];
         if (usersState is UsersLoaded) {
-          roles = usersState.roles;
-          if (callerRole == 'Admin') {
-            roles = roles
-                .where((r) => r.name.toLowerCase() == 'sales')
-                .toList();
+          if (callerRole == 'Admin' || callerRole == 'Telecaller') {
+            final salesRole = usersState.roles.firstWhere(
+              (r) => r.name.toLowerCase() == 'sales',
+              orElse: () => const RoleModel(id: '', name: 'Sales', description: ''),
+            );
+            final adminRole = usersState.roles.firstWhere(
+              (r) => r.name.toLowerCase() == 'admin',
+              orElse: () => const RoleModel(id: '', name: 'Admin', description: ''),
+            );
+            roles = [
+              if (salesRole.id.isNotEmpty) salesRole,
+              if (adminRole.id.isNotEmpty)
+                RoleModel(
+                  id: adminRole.id,
+                  name: 'Telecaller',
+                  description: 'Telecaller with Admin privileges',
+                ),
+            ];
           } else if (callerRole == 'Super Admin') {
-            roles = roles
+            roles = usersState.roles
                 .where((r) => r.name.toLowerCase() != 'super admin')
                 .toList();
           }
@@ -1067,17 +1080,20 @@ class _UsersScreenState extends State<UsersScreen> {
           final isSuperAdmin =
               currentUser != null && currentUser.role == 'Super Admin';
           if (isSuperAdmin) {
-            final targetRole = _activeTabIndex == 0 ? 'Admin' : 'Sales';
+            if (_activeTabIndex == 0) {
+              users = users
+                  .where((u) => u.roleName.toLowerCase() == 'admin')
+                  .toList();
+            } else {
+              users = users
+                  .where((u) => u.roleName.toLowerCase() == 'sales' || u.roleName.toLowerCase() == 'telecaller')
+                  .toList();
+            }
+          } else if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Telecaller')) {
+            // Admins and Telecallers can see and manage Sales and Telecaller users
             users = users
                 .where(
-                  (u) => u.roleName.toLowerCase() == targetRole.toLowerCase(),
-                )
-                .toList();
-          } else if (currentUser != null && currentUser.role == 'Admin') {
-            // Regular Admins can only see and manage Sales users
-            users = users
-                .where(
-                  (u) => u.roleName.toLowerCase() == 'sales',
+                  (u) => u.roleName.toLowerCase() == 'sales' || u.roleName.toLowerCase() == 'telecaller',
                 )
                 .toList();
           }
@@ -1153,11 +1169,11 @@ class _UsersScreenState extends State<UsersScreen> {
             DataColumn(label: Text('Actions')),
           ],
           rows: users.map((user) {
-            final isAdmin = user.roleName.toLowerCase() == 'admin';
+            final isAdmin = user.roleName.toLowerCase() == 'admin' || user.roleName.toLowerCase() == 'telecaller';
 
-            return DataRow(
+             return DataRow(
               onSelectChanged:
-                  (isCurrentUserAdmin && user.roleName.toLowerCase() == 'sales')
+                  (isCurrentUserAdmin && (user.roleName.toLowerCase() == 'sales' || user.roleName.toLowerCase() == 'telecaller'))
                   ? (selected) {
                       _showSalesmanDetails(user);
                     }
@@ -1292,7 +1308,7 @@ class _UsersScreenState extends State<UsersScreen> {
             currentUser.role == 'Super Admin' ||
             RoleGuard.isAdmin(currentUser.role));
     final bool isClickable =
-        isCurrentUserAdmin && user.roleName.toLowerCase() == 'sales';
+        isCurrentUserAdmin && (user.roleName.toLowerCase() == 'sales' || user.roleName.toLowerCase() == 'telecaller');
 
     final cardContent = Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.s),
@@ -1786,7 +1802,7 @@ class _UsersScreenState extends State<UsersScreen> {
               Icons.admin_panel_settings_rounded,
             ),
             const SizedBox(width: 4),
-            _buildTabItem(1, "Sales Representatives", Icons.person_rounded),
+            _buildTabItem(1, "Employees (Sales/Telecaller)", Icons.people_rounded),
           ],
         ),
       ),

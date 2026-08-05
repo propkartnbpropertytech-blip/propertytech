@@ -13,6 +13,8 @@ import '../../../core/storage/repository_coordinator.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
+import '../../settings/screens/location_config_screen.dart';
+import '../../properties/services/properties_service.dart';
 
 class AddEditRequirementScreen extends StatefulWidget {
   final RequirementModel? requirement;
@@ -92,6 +94,32 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       _saveCurrentDraft();
     }
     super.dispose();
+  }
+
+  Future<void> _refreshLocationMetadata() async {
+    try {
+      final service = PropertiesService();
+      final response = await service.getPropertyMetadata();
+      final data = response['data'] as Map<String, dynamic>? ?? {};
+      final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
+      
+      final oldAreaIds = _areas.map((a) => a.id).toSet();
+      final newAreas = meta.areas;
+      
+      setState(() {
+        _areas = newAreas;
+        
+        // Auto-select the newly created area(s)
+        final addedAreas = newAreas.where((a) => !oldAreaIds.contains(a.id)).toList();
+        for (final area in addedAreas) {
+          if (!_selectedAreaIds.contains(area.id)) {
+            _selectedAreaIds.add(area.id);
+          }
+        }
+      });
+    } catch (_) {
+      // Fail silently
+    }
   }
 
   Future<void> _loadMetadata() async {
@@ -950,21 +978,39 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     final bool isMobile = screenWidth < 500;
 
     final titleWidget = Text("Step 4: Target Area(s) *", style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold));
-    final filterWidget = SizedBox(
-      width: isMobile ? double.infinity : 160,
-      height: 32,
-      child: TextField(
-        style: const TextStyle(fontSize: 12),
-        decoration: InputDecoration(
-          hintText: 'Filter areas...',
-          prefixIcon: const Icon(Icons.search_rounded, size: 14),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          filled: true,
-          fillColor: CRMColors.backgroundOf(context),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+    final filterWidget = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: isMobile ? screenWidth - 72 : 160,
+          height: 32,
+          child: TextField(
+            style: const TextStyle(fontSize: 12),
+            decoration: InputDecoration(
+              hintText: 'Filter areas...',
+              prefixIcon: const Icon(Icons.search_rounded, size: 14),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              filled: true,
+              fillColor: CRMColors.backgroundOf(context),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+            ),
+            onChanged: (val) => setState(() => _areaSearchQuery = val.trim()),
+          ),
         ),
-        onChanged: (val) => setState(() => _areaSearchQuery = val.trim()),
-      ),
+        const SizedBox(width: 8),
+        IconButton(
+          icon: Icon(Icons.add_circle_outline_rounded, color: CRMColors.primaryOf(context), size: 20),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          onPressed: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => const LocationConfigScreen()),
+            );
+            _refreshLocationMetadata();
+          },
+          tooltip: 'Add New Area',
+        ),
+      ],
     );
 
     return Column(
@@ -992,7 +1038,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
             builder: (context) {
               final filtered = _areas.where((a) {
                 if (_areaSearchQuery.isEmpty) return true;
-                return a.name.toLowerCase().contains(_areaSearchQuery.toLowerCase());
+                final query = _areaSearchQuery.toLowerCase();
+                return a.name.toLowerCase().contains(query) || a.pincode.contains(query);
               }).toList();
 
               if (filtered.isEmpty) {

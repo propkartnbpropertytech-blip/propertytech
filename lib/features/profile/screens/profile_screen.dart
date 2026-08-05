@@ -6,7 +6,9 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http_parser/http_parser.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide MultipartFile;
 
+import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
@@ -38,6 +40,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _loadedAdminRole;
   String? _loadedCreatedAt;
   String? _lastUserId;
+  bool _isHealing = false;
 
   @override
   void dispose() {
@@ -94,6 +97,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _loadedCreatedAt = user.createdAt;
       }
     }
+
+    final isEmployee = user.role == 'Sales' || user.role == 'Telecaller';
+    final hasSalesOrTelecallerCreator = _loadedAdminRole == 'Sales' || _loadedAdminRole == 'Telecaller';
+    if (((user.role == 'Admin' && _loadedAdminRole == 'Sales') ||
+        (isEmployee && hasSalesOrTelecallerCreator)) && !_isHealing) {
+      _isHealing = true;
+      _healDatabaseHierarchy(user);
+    }
+  }
+
+  Future<void> _healDatabaseHierarchy(UserModel user) async {
+    try {
+      if (ApiConstants.useSupabaseDirect) {
+        await Supabase.instance.client
+            .from('users')
+            .update({'admin_id': null})
+            .eq('id', user.id);
+      } else {
+        await DioClient.dio.put('/users/${user.id}', data: {'admin_id': null});
+      }
+      if (mounted) {
+        context.read<AuthBloc>().add(AuthCheckStatus());
+      }
+    } catch (_) {
+      // Fail silently
+    }
   }
 
   Future<void> _fetchUserExtraDetails(UserModel user) async {
@@ -115,27 +144,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         if (selfMatch != null && selfMatch['created_at'] != null) {
           _loadedCreatedAt = selfMatch['created_at']?.toString();
-        }
-
-        // Look up admin / creator details if adminId present
-        if (user.adminId != null && user.adminId!.isNotEmpty) {
-          final adminMatch = usersList.firstWhere(
-            (u) => u['id']?.toString() == user.adminId,
-            orElse: () => null,
-          );
-
-          if (adminMatch != null) {
-            String rName = 'Admin';
-            if (adminMatch['roles'] is Map) {
-              rName = adminMatch['roles']['name'] ?? 'Admin';
-            } else if (adminMatch['roleName'] != null) {
-              rName = adminMatch['roleName'];
-            }
-
-            _loadedAdminName = adminMatch['full_name'] ?? adminMatch['fullName'] ?? 'Administrator';
-            _loadedAdminEmail = adminMatch['email'] ?? '';
-            _loadedAdminRole = rName;
-          }
         }
       }
     } catch (_) {

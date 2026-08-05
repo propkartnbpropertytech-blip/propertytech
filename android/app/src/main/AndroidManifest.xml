@@ -2,9 +2,10 @@
     <application
         android:label="propkart"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:extractNativeLibs="true">
         <activity
-            android:name=".MainActivity"
+            android:name="com.nbpropertytech.propkart.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""

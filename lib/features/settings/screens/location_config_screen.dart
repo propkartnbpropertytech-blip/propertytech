@@ -761,6 +761,13 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                           : null,
                     ),
                     keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (v) {
+                      final pincode = v.trim();
+                      if (pincode.length == 6 && !_isFetchingPincode) {
+                        _lookupPincode(pincode);
+                      }
+                    },
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return 'Required';
                       if (v.trim().length != 6 || int.tryParse(v) == null) {
@@ -864,7 +871,13 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
         elevation: 0.5,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_rounded, color: CRMColors.textOf(context)),
-          onPressed: () => context.go('/settings'),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              context.go('/settings');
+            }
+          },
         ),
         bottom: TabBar(
           controller: _tabController,

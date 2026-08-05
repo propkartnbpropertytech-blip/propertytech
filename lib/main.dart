@@ -26,11 +26,14 @@ import 'core/storage/repository_coordinator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/api/api_constants.dart';
 
+import 'package:flutter/foundation.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 void main() async {
-  usePathUrlStrategy();
+  if (kIsWeb) {
+    usePathUrlStrategy();
+  }
   WidgetsFlutterBinding.ensureInitialized();
 
   try {

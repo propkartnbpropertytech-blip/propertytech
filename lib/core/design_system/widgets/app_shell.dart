@@ -35,6 +35,8 @@ class _CRMAppShellState extends State<CRMAppShell> {
   final TextEditingController _searchController = TextEditingController();
   late PersistentTabController _tabController;
   int _previousIndex = 0;
+  final FocusNode _searchFocusNode = FocusNode();
+  bool _isMobileSearchActive = false;
 
   @override
   void initState() {
@@ -62,6 +64,7 @@ class _CRMAppShellState extends State<CRMAppShell> {
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _searchDebounce?.cancel();
     _notificationsTimer?.cancel();
     super.dispose();
@@ -489,119 +492,129 @@ class _CRMAppShellState extends State<CRMAppShell> {
       builder: (context) {
         final double screenWidth = MediaQuery.of(context).size.width;
         final bool isMobile = screenWidth < 600;
-        final double overlayWidth = isMobile ? (screenWidth - 32) : 400;
+
+        final Widget cardContent = Material(
+          elevation: 8,
+          shadowColor: CRMColors.shadow,
+          borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+          color: CRMColors.cardBgOf(context),
+          child: Container(
+            constraints: const BoxConstraints(maxHeight: 400),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+              border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 0.5),
+            ),
+            child: _isSearching
+                ? const Padding(
+                    padding: EdgeInsets.all(CRMSpacing.m),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                : (_propertySuggestions.isEmpty &&
+                        _requirementSuggestions.isEmpty &&
+                        _ownerSuggestions.isEmpty &&
+                        _builderSuggestions.isEmpty &&
+                        _clientSuggestions.isEmpty)
+                    ? Padding(
+                        padding: const EdgeInsets.all(CRMSpacing.m),
+                        child: Text(
+                          'No suggestions found.',
+                          style: TextStyle(color: CRMColors.textSecondary),
+                          textAlign: TextAlign.center,
+                        ),
+                      )
+                    : ListView(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
+                        children: [
+                          if (_propertySuggestions.isNotEmpty) ...[
+                            _buildSuggestionSectionHeader('Properties'),
+                            ..._propertySuggestions.map((p) => _buildSuggestionTile(
+                                  icon: Icons.business_rounded,
+                                  title: p['title'] ?? '',
+                                  subtitle: p['is_recycle_bin'] == true
+                                      ? 'Code: ${p['property_code']} • ₹${BudgetFormatter.format((p['price'] as num?)?.toDouble() ?? 0.0)} • [In Recycle Bin]'
+                                      : 'Code: ${p['property_code']} • ₹${BudgetFormatter.format((p['price'] as num?)?.toDouble() ?? 0.0)}',
+                                  onTap: () {
+                                    _hideSearchOverlay();
+                                    if (p['is_recycle_bin'] == true) {
+                                      context.go('/bin');
+                                    } else {
+                                      context.go('/properties?openId=${p['id']}');
+                                    }
+                                  },
+                                )),
+                          ],
+                          if (_requirementSuggestions.isNotEmpty) ...[
+                            _buildSuggestionSectionHeader('Requirements'),
+                            ..._requirementSuggestions.map((r) => _buildSuggestionTile(
+                                  icon: Icons.person_search_rounded,
+                                  title: r['customer_name'] ?? '',
+                                  subtitle: 'Mobile: ${r['mobile']}',
+                                  onTap: () {
+                                    _hideSearchOverlay();
+                                    context.go('/requirements');
+                                  },
+                                )),
+                          ],
+                          if (_ownerSuggestions.isNotEmpty) ...[
+                            _buildSuggestionSectionHeader('Owners'),
+                            ..._ownerSuggestions.map((o) => _buildSuggestionTile(
+                                  icon: Icons.person_rounded,
+                                  title: o['name'] ?? '',
+                                  subtitle: 'Mobile: ${o['mobile']}',
+                                  onTap: () {
+                                    _hideSearchOverlay();
+                                    context.go('/owners');
+                                  },
+                                )),
+                          ],
+                          if (_builderSuggestions.isNotEmpty) ...[
+                            _buildSuggestionSectionHeader('Builders'),
+                            ..._builderSuggestions.map((b) => _buildSuggestionTile(
+                                  icon: Icons.construction_rounded,
+                                  title: b['company_name'] ?? '',
+                                  subtitle: 'Contact: ${b['contact_person']} • Mobile: ${b['mobile']}',
+                                  onTap: () {
+                                    _hideSearchOverlay();
+                                    context.go('/builders');
+                                  },
+                                )),
+                          ],
+                          if (_clientSuggestions.isNotEmpty) ...[
+                            _buildSuggestionSectionHeader('Clients'),
+                            ..._clientSuggestions.map((c) => _buildSuggestionTile(
+                                  icon: Icons.people_alt_rounded,
+                                  title: c['name'] ?? '',
+                                  subtitle: 'Mobile: ${c['mobile']}',
+                                  onTap: () {
+                                    _hideSearchOverlay();
+                                    context.go('/clients');
+                                  },
+                                )),
+                          ],
+                        ],
+                      ),
+          ),
+        );
+
+        if (isMobile) {
+          return Positioned(
+            left: 16,
+            right: 16,
+            top: 78,
+            child: cardContent,
+          );
+        }
 
         return Positioned(
-          width: overlayWidth,
+          width: 400,
           child: CompositedTransformFollower(
             link: _searchLayerLink,
             showWhenUnlinked: false,
-            targetAnchor: isMobile ? Alignment.bottomCenter : Alignment.bottomLeft,
-            followerAnchor: isMobile ? Alignment.topCenter : Alignment.topLeft,
+            targetAnchor: Alignment.bottomLeft,
+            followerAnchor: Alignment.topLeft,
             offset: const Offset(0, 8),
-            child: Material(
-              elevation: 8,
-              shadowColor: CRMColors.shadow,
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              color: CRMColors.cardBgOf(context),
-              child: Container(
-                constraints: const BoxConstraints(maxHeight: 400),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                  border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 0.5),
-                ),
-                child: _isSearching
-                    ? const Padding(
-                        padding: EdgeInsets.all(CRMSpacing.m),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : (_propertySuggestions.isEmpty &&
-                            _requirementSuggestions.isEmpty &&
-                            _ownerSuggestions.isEmpty &&
-                            _builderSuggestions.isEmpty &&
-                            _clientSuggestions.isEmpty)
-                        ? Padding(
-                            padding: const EdgeInsets.all(CRMSpacing.m),
-                            child: Text(
-                              'No suggestions found.',
-                              style: TextStyle(color: CRMColors.textSecondary),
-                              textAlign: TextAlign.center,
-                            ),
-                          )
-                        : ListView(
-                            shrinkWrap: true,
-                            padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
-                            children: [
-                              if (_propertySuggestions.isNotEmpty) ...[
-                                _buildSuggestionSectionHeader('Properties'),
-                                ..._propertySuggestions.map((p) => _buildSuggestionTile(
-                                      icon: Icons.business_rounded,
-                                      title: p['title'] ?? '',
-                                      subtitle: p['is_recycle_bin'] == true
-                                          ? 'Code: ${p['property_code']} • ₹${BudgetFormatter.format((p['price'] as num?)?.toDouble() ?? 0.0)} • [In Recycle Bin]'
-                                          : 'Code: ${p['property_code']} • ₹${BudgetFormatter.format((p['price'] as num?)?.toDouble() ?? 0.0)}',
-                                      onTap: () {
-                                        _hideSearchOverlay();
-                                        if (p['is_recycle_bin'] == true) {
-                                          context.go('/bin');
-                                        } else {
-                                          context.go('/properties?openId=${p['id']}');
-                                        }
-                                      },
-                                    )),
-                              ],
-                              if (_requirementSuggestions.isNotEmpty) ...[
-                                _buildSuggestionSectionHeader('Requirements'),
-                                ..._requirementSuggestions.map((r) => _buildSuggestionTile(
-                                      icon: Icons.person_search_rounded,
-                                      title: r['customer_name'] ?? '',
-                                      subtitle: 'Mobile: ${r['mobile']}',
-                                      onTap: () {
-                                        _hideSearchOverlay();
-                                        context.go('/requirements');
-                                      },
-                                    )),
-                              ],
-                              if (_ownerSuggestions.isNotEmpty) ...[
-                                _buildSuggestionSectionHeader('Owners'),
-                                ..._ownerSuggestions.map((o) => _buildSuggestionTile(
-                                      icon: Icons.person_rounded,
-                                      title: o['name'] ?? '',
-                                      subtitle: 'Mobile: ${o['mobile']}',
-                                      onTap: () {
-                                        _hideSearchOverlay();
-                                        context.go('/owners');
-                                      },
-                                    )),
-                              ],
-                              if (_builderSuggestions.isNotEmpty) ...[
-                                _buildSuggestionSectionHeader('Builders'),
-                                ..._builderSuggestions.map((b) => _buildSuggestionTile(
-                                      icon: Icons.construction_rounded,
-                                      title: b['company_name'] ?? '',
-                                      subtitle: 'Contact: ${b['contact_person']} • Mobile: ${b['mobile']}',
-                                      onTap: () {
-                                        _hideSearchOverlay();
-                                        context.go('/builders');
-                                      },
-                                    )),
-                              ],
-                              if (_clientSuggestions.isNotEmpty) ...[
-                                _buildSuggestionSectionHeader('Clients'),
-                                ..._clientSuggestions.map((c) => _buildSuggestionTile(
-                                      icon: Icons.people_alt_rounded,
-                                      title: c['name'] ?? '',
-                                      subtitle: 'Mobile: ${c['mobile']}',
-                                      onTap: () {
-                                        _hideSearchOverlay();
-                                        context.go('/clients');
-                                      },
-                                    )),
-                              ],
-                            ],
-                          ),
-              ),
-            ),
+            child: cardContent,
           ),
         );
       },
@@ -821,71 +834,116 @@ class _CRMAppShellState extends State<CRMAppShell> {
             padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.l),
             child: Row(
               children: [
-                if (isMobile)
-                  Builder(
-                    builder: (context) => IconButton(
-                      icon: Icon(Icons.menu_rounded, color: CRMColors.textSecondary),
-                      onPressed: () => Scaffold.of(context).openDrawer(),
-                    ),
-                  )
-                else
-                  IconButton(
-                    icon: Icon(
-                      _isSidebarExpanded ? Icons.menu_open_rounded : Icons.menu_rounded,
-                      color: CRMColors.textSecondary,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _isSidebarExpanded = !_isSidebarExpanded;
-                      });
-                    },
-                  ),
-                const SizedBox(width: CRMSpacing.m),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  width: isMobile && _isMobileSearchActive ? 0 : 48,
+                  child: isMobile && _isMobileSearchActive
+                      ? const SizedBox.shrink()
+                      : (isMobile
+                          ? Builder(
+                              builder: (context) => IconButton(
+                                icon: Icon(Icons.menu_rounded, color: CRMColors.textSecondary),
+                                onPressed: () => Scaffold.of(context).openDrawer(),
+                              ),
+                            )
+                          : IconButton(
+                              icon: Icon(
+                                _isSidebarExpanded ? Icons.menu_open_rounded : Icons.menu_rounded,
+                                color: CRMColors.textSecondary,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _isSidebarExpanded = !_isSidebarExpanded;
+                                });
+                              },
+                            )),
+                ),
+                if (!isMobile) const SizedBox(width: CRMSpacing.m),
                 Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 400),
-                      child: CompositedTransformTarget(
-                        link: _searchLayerLink,
-                        child: Focus(
-                          onFocusChange: (hasFocus) {
-                            if (!hasFocus) {
-                              Future.delayed(const Duration(milliseconds: 200), () {
-                                _hideSearchOverlay();
-                              });
-                            }
-                          },
-                          child: TextField(
-                            controller: _searchController,
-                            style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-                            onChanged: _onSearchChanged,
-                            decoration: InputDecoration(
-                              hintText: 'Search in PropKart (Properties, Clients, Code)...',
-                              hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMutedOf(context)),
-                              prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context), size: 20),
-                              filled: true,
-                              fillColor: CRMColors.groupedBackground,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4), width: 0.5),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeInOut,
+                      width: !isMobile
+                          ? 400
+                          : (_isMobileSearchActive
+                              ? MediaQuery.of(context).size.width - 120
+                              : 0),
+                      child: (!isMobile || _isMobileSearchActive)
+                          ? CompositedTransformTarget(
+                              link: _searchLayerLink,
+                              child: Focus(
+                                onFocusChange: (hasFocus) {
+                                  if (!hasFocus) {
+                                    Future.delayed(const Duration(milliseconds: 200), () {
+                                      _hideSearchOverlay();
+                                      if (isMobile && mounted) {
+                                        setState(() {
+                                          _isMobileSearchActive = false;
+                                        });
+                                      }
+                                    });
+                                  }
+                                },
+                                child: TextField(
+                                  controller: _searchController,
+                                  focusNode: _searchFocusNode,
+                                  style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+                                  onChanged: _onSearchChanged,
+                                  autofocus: isMobile,
+                                  decoration: InputDecoration(
+                                    hintText: isMobile ? 'Search...' : 'Search in PropKart (Properties, Clients, Code)...',
+                                    hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMutedOf(context)),
+                                    prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context), size: 20),
+                                    suffixIcon: isMobile
+                                        ? IconButton(
+                                            icon: const Icon(Icons.close_rounded, size: 18),
+                                            onPressed: () {
+                                              _searchController.clear();
+                                              _hideSearchOverlay();
+                                              setState(() {
+                                                _isMobileSearchActive = false;
+                                              });
+                                            },
+                                          )
+                                        : null,
+                                    filled: true,
+                                    fillColor: CRMColors.groupedBackground,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                                      borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4), width: 0.5),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                                      borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4), width: 0.5),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                                      borderSide: BorderSide(color: CRMColors.primaryOf(context).withOpacity(0.5), width: 0.5),
+                                    ),
+                                  ),
+                                ),
                               ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4), width: 0.5),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                                borderSide: BorderSide(color: CRMColors.primaryOf(context).withOpacity(0.5), width: 0.5),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
                   ),
                 ),
+                if (isMobile && !_isMobileSearchActive)
+                  IconButton(
+                    icon: Icon(Icons.search_rounded, color: CRMColors.textSecondary),
+                    onPressed: () {
+                      setState(() {
+                        _isMobileSearchActive = true;
+                      });
+                      Future.delayed(const Duration(milliseconds: 50), () {
+                        _searchFocusNode.requestFocus();
+                      });
+                    },
+                  ),
                 if (!isMobile) ...[
                   const SizedBox(width: CRMSpacing.m),
                   const LiveClockWidget(),
