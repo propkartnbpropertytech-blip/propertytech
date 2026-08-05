@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'api_constants.dart';
+import 'cloudinary_uploader.dart';
 
 class SupabaseDirectInterceptor extends Interceptor {
   SupabaseClient get _supabase => Supabase.instance.client;
@@ -838,6 +839,7 @@ class SupabaseDirectInterceptor extends Interceptor {
             'p_role_id': payload['role_id'],
             'p_organization_id': payload['organization_id'],
             'p_admin_id': adminId,
+            'p_mobile': payload['mobile'],
           },
         );
 
@@ -910,19 +912,30 @@ class SupabaseDirectInterceptor extends Interceptor {
       if (path == '/users/upload-profile' && method == 'POST') {
         if (options.data is FormData) {
           final formData = options.data as FormData;
-          final fileField = formData.files.firstWhere((element) => element.key == 'profile_photo');
+          final fileField = formData.files.firstWhere(
+            (element) => element.key == 'profile_photo' || element.key == 'file',
+          );
           final file = fileField.value;
           final bytes = await file.finalize().first;
-          final path = 'profiles/${DateTime.now().millisecondsSinceEpoch}_${file.filename ?? 'photo.jpg'}';
+          final sessionUser = _supabase.auth.currentUser;
+          if (sessionUser == null) throw Exception("Unauthenticated");
           
-          await _supabase.storage.from('property-media').uploadBinary(path, Uint8List.fromList(bytes));
-          final publicUrl = _supabase.storage.from('property-media').getPublicUrl(path);
+          final String publicUrl = await CloudinaryUploader.upload(
+            bytes: bytes,
+            filename: file.filename ?? 'photo.jpg',
+            mimeType: file.contentType?.toString() ?? 'image/jpeg',
+            resourceType: 'image',
+            folder: 'profiles',
+          );
 
           return handler.resolve(Response(
             requestOptions: options,
             data: {
               'success': true,
-              'data': {'profile_photo': publicUrl}
+              'data': {
+                'profile_photo': publicUrl,
+                'publicUrl': publicUrl,
+              }
             },
             statusCode: 200,
           ));

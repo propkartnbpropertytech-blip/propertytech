@@ -181,6 +181,7 @@ class RequirementsService {
         final List<dynamic> areaIds = List.from(requirementData['area_ids'] ?? requirementData['areaIds'] ?? []);
         final List<dynamic> furnishingTypeIds = List.from(requirementData['furnishing_type_ids'] ?? []);
         final List<dynamic> facingTypeIds = List.from(requirementData['facing_type_ids'] ?? []);
+        final List<dynamic> propertyTypeIds = List.from(requirementData['property_type_ids'] ?? requirementData['propertyTypeIds'] ?? []);
 
         final cleanRequirement = Map<String, dynamic>.from(requirementData)
           ..remove('area_ids')
@@ -188,7 +189,8 @@ class RequirementsService {
           ..remove('area_names')
           ..remove('areaNames')
           ..remove('furnishing_type_ids')
-          ..remove('facing_type_ids');
+          ..remove('facing_type_ids')
+          ..remove('propertyTypeIds');
 
         cleanRequirement['created_by'] = currentUserId;
         cleanRequirement['organization_id'] = orgId;
@@ -212,6 +214,10 @@ class RequirementsService {
         if (facingTypeIds.isNotEmpty) {
           cleanRequirement['facing_type_ids'] = facingTypeIds;
           cleanRequirement['facing_type_id'] = facingTypeIds.first;
+        }
+        if (propertyTypeIds.isNotEmpty) {
+          cleanRequirement['property_type_ids'] = propertyTypeIds;
+          cleanRequirement['property_type_id'] = propertyTypeIds.first;
         }
 
         // 1. Insert requirement (only returning id to begin)
@@ -280,6 +286,7 @@ class RequirementsService {
         final List<dynamic> areaIds = List.from(requirementData['area_ids'] ?? requirementData['areaIds'] ?? []);
         final List<dynamic> furnishingTypeIds = List.from(requirementData['furnishing_type_ids'] ?? []);
         final List<dynamic> facingTypeIds = List.from(requirementData['facing_type_ids'] ?? []);
+        final List<dynamic> propertyTypeIds = List.from(requirementData['property_type_ids'] ?? requirementData['propertyTypeIds'] ?? []);
 
         final cleanRequirement = Map<String, dynamic>.from(requirementData)
           ..remove('area_ids')
@@ -288,6 +295,7 @@ class RequirementsService {
           ..remove('areaNames')
           ..remove('furnishing_type_ids')
           ..remove('facing_type_ids')
+          ..remove('propertyTypeIds')
           ..remove('id')
           ..remove('created_by')
           ..remove('organization_id')
@@ -307,6 +315,10 @@ class RequirementsService {
         if (facingTypeIds.isNotEmpty) {
           cleanRequirement['facing_type_ids'] = facingTypeIds;
           cleanRequirement['facing_type_id'] = facingTypeIds.first;
+        }
+        if (propertyTypeIds.isNotEmpty) {
+          cleanRequirement['property_type_ids'] = propertyTypeIds;
+          cleanRequirement['property_type_id'] = propertyTypeIds.first;
         }
 
         // Update Areas mapping

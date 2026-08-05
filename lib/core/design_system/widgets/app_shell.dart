@@ -491,7 +491,16 @@ class _CRMAppShellState extends State<CRMAppShell> {
     _searchOverlayEntry = OverlayEntry(
       builder: (context) {
         final double screenWidth = MediaQuery.of(context).size.width;
+        final double screenHeight = MediaQuery.of(context).size.height;
+        final double topPadding = MediaQuery.of(context).padding.top;
+        final double keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+        
         final bool isMobile = screenWidth < 600;
+
+        final double availableHeight = screenHeight - (70 + topPadding + 16) - keyboardHeight;
+        final double calculatedMaxHeight = availableHeight > 100 
+            ? (availableHeight < 400 ? availableHeight : 400) 
+            : 100;
 
         final Widget cardContent = Material(
           elevation: 8,
@@ -499,7 +508,7 @@ class _CRMAppShellState extends State<CRMAppShell> {
           borderRadius: BorderRadius.circular(CRMBorderRadius.input),
           color: CRMColors.cardBgOf(context),
           child: Container(
-            constraints: const BoxConstraints(maxHeight: 400),
+            constraints: BoxConstraints(maxHeight: calculatedMaxHeight),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(CRMBorderRadius.input),
               border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 0.5),
@@ -601,7 +610,7 @@ class _CRMAppShellState extends State<CRMAppShell> {
           return Positioned(
             left: 16,
             right: 16,
-            top: 78,
+            top: 70 + topPadding + 8,
             child: cardContent,
           );
         }
@@ -757,7 +766,9 @@ class _CRMAppShellState extends State<CRMAppShell> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildTopBar(context, isMobile),
+                    isMobile
+                        ? SafeArea(bottom: false, child: _buildTopBar(context, isMobile))
+                        : _buildTopBar(context, isMobile),
                     Expanded(
                       child: widget.child,
                 ),

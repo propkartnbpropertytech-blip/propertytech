@@ -1916,13 +1916,8 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           icon: Icon(Icons.add_circle_outline_rounded, color: CRMColors.primaryOf(context)),
           onPressed: _selectedCity == null
               ? null
-              : () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(builder: (context) => const LocationConfigScreen()),
-                  );
-                  _refreshLocationMetadata();
-                },
-          tooltip: 'Add New Area (Config Page)',
+              : () => _showAddAreaDialog(),
+          tooltip: 'Add New Area',
         ),
       ],
     );

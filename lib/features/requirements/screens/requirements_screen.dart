@@ -1012,6 +1012,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (currentUser.role == 'Admin') {
       return r.createdBy == currentUser.id || r.adminId == currentUser.id;
     }
+    if (currentUser.role == 'Telecaller') {
+      return r.createdBy == currentUser.id || r.adminId == currentUser.adminId;
+    }
     if (currentUser.role == 'Sales') {
       return r.createdBy == currentUser.id;
     }
@@ -1075,7 +1078,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final areas = r.areaNames.join(' ').toLowerCase();
               
               bool matchesSalesman = false;
-              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')) {
+              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
                 final creator = (r.creatorName ?? '').toLowerCase();
                 final assignee = (r.assigneeName ?? '').toLowerCase();
                 matchesSalesman = creator.contains(query) || assignee.contains(query);
@@ -1126,7 +1129,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   dataRowMaxHeight: 64.0,
                   columns: [
                     const DataColumn(label: Text('Client')),
-                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin')) ...[
+                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')) ...[
                       const DataColumn(label: Text('Added By')),
                       const DataColumn(label: Text('Assign to')),
                     ],
@@ -1181,7 +1184,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             ],
                           ),
                         ),
-                        if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin')) ...[
+                        if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')) ...[
                           DataCell(
                             Text(
                               _getSalesmanName(req, currentUser),
@@ -1792,7 +1795,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin'))
+                                  if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                                     _buildMobileAssignToDropdown(req)
                                   else
                                     Row(
@@ -2592,7 +2595,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final areas = r.areaNames.join(' ').toLowerCase();
               
               bool matchesSalesman = false;
-              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')) {
+              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
                 final creator = (r.creatorName ?? '').toLowerCase();
                 final assignee = (r.assigneeName ?? '').toLowerCase();
                 matchesSalesman = creator.contains(query) || assignee.contains(query);
@@ -2644,7 +2647,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   dataRowMaxHeight: 64.0,
                   columns: [
                     const DataColumn(label: Text('Client')),
-                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin'))
+                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                       const DataColumn(label: Text('Added By')),
                     const DataColumn(label: Text('Specs / Config')),
                     const DataColumn(label: Text('Budget Range')),
@@ -2677,7 +2680,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             ],
                           ),
                         ),
-                        if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin'))
+                        if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                           DataCell(
                             Text(
                               _getSalesmanName(req, currentUser),

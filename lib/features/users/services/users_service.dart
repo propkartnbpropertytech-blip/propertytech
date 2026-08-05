@@ -163,6 +163,7 @@ class UsersService {
             'p_role_id': userData['role_id'],
             'p_organization_id': orgId,
             'p_admin_id': adminId,
+            'p_mobile': userData['mobile'],
           },
         );
 

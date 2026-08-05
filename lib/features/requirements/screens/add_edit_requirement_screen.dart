@@ -15,6 +15,7 @@ import '../../auth/models/user_model.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
 import '../../settings/screens/location_config_screen.dart';
 import '../../properties/services/properties_service.dart';
+import 'package:dio/dio.dart';
 
 class AddEditRequirementScreen extends StatefulWidget {
   final RequirementModel? requirement;
@@ -47,6 +48,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
 
   String? _selectedCategoryId;
   String? _selectedTypeId;
+  final List<String> _selectedTypeIds = [];
+  List<LookupItem> _cities = [];
   String? _selectedConfigId;
   final List<String> _selectedConfigIds = [];
   String? _selectedListingTypeId;
@@ -133,10 +136,14 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
         _listingTypes = metadata.listingTypes;
         _furnishings = metadata.furnishings;
         _facings = metadata.facings;
+        _cities = metadata.cities;
         
         if (widget.requirement == null) {
           if (_categories.isNotEmpty) _selectedCategoryId = _categories.first.id;
-          if (_types.isNotEmpty) _selectedTypeId = _types.first.id;
+          if (_types.isNotEmpty) {
+            _selectedTypeId = _types.first.id;
+            _selectedTypeIds.add(_types.first.id);
+          }
           if (_listingTypes.isNotEmpty) _selectedListingTypeId = _listingTypes.first.id;
         } else {
           final req = widget.requirement!;
@@ -149,6 +156,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           _remarksController.text = req.remarks ?? '';
           _selectedCategoryId = req.categoryId;
           _selectedTypeId = req.propertyTypeId;
+          _selectedTypeIds.addAll(req.propertyTypeIds);
+          if (_selectedTypeIds.isEmpty && req.propertyTypeId != null && req.propertyTypeId!.isNotEmpty) {
+            _selectedTypeIds.add(req.propertyTypeId!);
+          }
           _selectedConfigId = req.configurationId;
           _selectedConfigIds.addAll(req.configurationIds);
           if (_selectedConfigIds.isEmpty && req.configurationId != null) {
@@ -176,6 +187,138 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     }
   }
 
+  void _showAddAreaDialog() {
+    if (_cities.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No cities available. Please add a city first.')),
+      );
+      return;
+    }
+
+    String? dialogSelectedCityId = _cities.first.id;
+    final nameController = TextEditingController();
+    final pincodeController = TextEditingController();
+    bool isFetching = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          Future<void> lookupPincode(String pincode) async {
+            setState(() => isFetching = true);
+            try {
+              final dio = Dio();
+              final response = await dio.get('https://api.postalpincode.in/pincode/$pincode');
+              if (response.statusCode == 200 && response.data is List && response.data.isNotEmpty) {
+                final data = response.data[0] as Map<String, dynamic>;
+                final status = data['Status']?.toString();
+                final postOffices = data['PostOffice'] as List?;
+                if (status == 'Success' && postOffices != null && postOffices.isNotEmpty) {
+                  final firstOffice = postOffices[0] as Map<String, dynamic>;
+                  final name = firstOffice['Name']?.toString() ?? '';
+                  if (name.isNotEmpty) {
+                    nameController.text = name;
+                  }
+                }
+              }
+            } catch (_) {
+              // Fail silently
+            } finally {
+              setState(() => isFetching = false);
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: CRMColors.cardBgOf(context),
+            title: const Text('Add New Area'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  value: dialogSelectedCityId,
+                  decoration: const InputDecoration(labelText: 'City *'),
+                  items: _cities.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                  onChanged: (v) => setState(() => dialogSelectedCityId = v),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Area Name *'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pincodeController,
+                  decoration: InputDecoration(
+                    labelText: 'Pincode (6 Digits) *',
+                    suffixIcon: isFetching
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: Padding(
+                              padding: EdgeInsets.all(12),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : null,
+                  ),
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (v) {
+                    final pincode = v.trim();
+                    if (pincode.length == 6 && !isFetching) {
+                      lookupPincode(pincode);
+                    }
+                  },
+                  onSubmitted: (v) {
+                    final pincode = v.trim();
+                    if (pincode.length == 6 && !isFetching) {
+                      lookupPincode(pincode);
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                child: const Text('Cancel'),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+              TextButton(
+                child: const Text('Add'),
+                onPressed: () async {
+                  final name = nameController.text.trim();
+                  final pincode = pincodeController.text.trim();
+                  if (name.isNotEmpty && pincode.isNotEmpty && dialogSelectedCityId != null) {
+                    try {
+                      final service = PropertiesService();
+                      final result = await service.createArea(dialogSelectedCityId!, name, pincode);
+                      final AreaLookup newArea = AreaLookup(
+                        id: result['data']['area']['id'],
+                        name: result['data']['area']['area_name'],
+                        cityId: result['data']['area']['city_id'],
+                        pincode: result['data']['area']['pincode'],
+                      );
+                      this.setState(() {
+                        _areas.add(newArea);
+                        _selectedAreaIds.add(newArea.id);
+                      });
+                      if (mounted) Navigator.pop(ctx);
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to add area: $e')),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _saveCurrentDraft() {
     if (widget.requirement != null) return;
     final draftData = {
@@ -184,6 +327,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       'clientMobile': _mobileController.text,
       'category_id': _selectedCategoryId,
       'property_type_id': _selectedTypeId,
+      'property_type_ids': _selectedTypeIds,
       'configuration_id': _selectedConfigId,
       'configuration_ids': _selectedConfigIds,
       'listing_type_id': _selectedListingTypeId,
@@ -225,6 +369,9 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                   _mobileController.text = draft['clientMobile'] ?? '';
                   _selectedCategoryId = draft['category_id'];
                   _selectedTypeId = draft['property_type_id'];
+                  final List<String> types = List<String>.from(draft['property_type_ids'] ?? []);
+                  _selectedTypeIds.clear();
+                  _selectedTypeIds.addAll(types);
                   _selectedConfigId = draft['configuration_id'];
                   final List<String> configs = List<String>.from(draft['configuration_ids'] ?? []);
                   _selectedConfigIds.clear();
@@ -453,6 +600,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       categoryName: cat.name,
       propertyTypeId: _selectedTypeId ?? '',
       propertyTypeName: type.name,
+      propertyTypeIds: _selectedTypeIds,
       configurationId: _selectedConfigId,
       configurationIds: _selectedConfigIds,
       configurationName: configNames.isNotEmpty ? configNames.join(', ') : null,
@@ -910,16 +1058,23 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
             onChanged: (val) => setState(() {
                _selectedCategoryId = val;
               _selectedTypeId = null;
+              _selectedTypeIds.clear();
               _selectedConfigId = null;
               _selectedConfigIds.clear();
             }),
           ),
           const SizedBox(height: CRMSpacing.m),
-          _buildDropdown(
+          CRMMultiSelectDropdown(
             label: 'Property Type *',
-            value: _selectedTypeId,
-            items: filteredTypes.map((t) => DropdownMenuItem(value: t.id, child: Text(t.name))).toList(),
-            onChanged: (val) => setState(() => _selectedTypeId = val),
+            selectedIds: _selectedTypeIds,
+            items: filteredTypes,
+            onChanged: (vals) => setState(() {
+              if (vals.isNotEmpty) {
+                _selectedTypeId = vals.first;
+              } else {
+                _selectedTypeId = null;
+              }
+            }),
           ),
           const SizedBox(height: CRMSpacing.m),
           CRMMultiSelectDropdown(
@@ -1002,12 +1157,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           icon: Icon(Icons.add_circle_outline_rounded, color: CRMColors.primaryOf(context), size: 20),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
-          onPressed: () async {
-            await Navigator.of(context).push(
-              MaterialPageRoute(builder: (context) => const LocationConfigScreen()),
-            );
-            _refreshLocationMetadata();
-          },
+          onPressed: () => _showAddAreaDialog(),
           tooltip: 'Add New Area',
         ),
       ],

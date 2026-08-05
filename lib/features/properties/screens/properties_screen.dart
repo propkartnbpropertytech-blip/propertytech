@@ -112,7 +112,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     if (currentUser == null) return false;
     if (currentUser.role == 'Super Admin') return true;
     if (p.createdBy == currentUser.id) return true;
-    if (p.adminId != null && p.adminId == currentUser.adminId) return true;
+    if (currentUser.role == 'Telecaller' && p.adminId != null && p.adminId == currentUser.adminId) return true;
     if (currentUser.role == 'Admin' && p.adminId == currentUser.id) return true;
     return false;
   }
@@ -451,7 +451,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       currentUser = authState.user;
     }
     final bool isUserAdminOrSuperAdmin = currentUser != null &&
-        (currentUser.role?.toLowerCase() == 'admin' || currentUser.role?.toLowerCase() == 'super admin');
+        (currentUser.role?.toLowerCase() == 'admin' || currentUser.role?.toLowerCase() == 'super admin' || currentUser.role?.toLowerCase() == 'telecaller');
     final double screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
@@ -537,7 +537,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     p.propertyTypeName.toLowerCase().contains(query) ||
                     (isUserAdminOrSuperAdmin &&
                      (currentUser?.role == 'Super Admin' ||
-                      (currentUser?.role == 'Admin' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.id))) &&
+                      (currentUser?.role == 'Admin' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.id)) ||
+                      (currentUser?.role == 'Telecaller' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.adminId))) &&
                      p.createdByName.toLowerCase().contains(query));
               }
 
@@ -777,7 +778,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           if (isUserAdminOrSuperAdmin)
                             DataCell(Text(
                               (currentUser?.role == 'Super Admin' ||
-                                      (currentUser?.role == 'Admin' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.id)))
+                                      (currentUser?.role == 'Admin' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.id)) ||
+                                      (currentUser?.role == 'Telecaller' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.adminId)))
                                   ? p.createdByName
                                   : '-',
                             )),
