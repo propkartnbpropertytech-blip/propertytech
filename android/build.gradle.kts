@@ -68,4 +68,13 @@ subprojects {
         }
     }
 }
-
+subprojects {
+    if (name == "isar_flutter_libs") {
+        configurations.all {
+            resolutionStrategy {
+                force("androidx.core:core:1.6.0")
+                force("androidx.core:core-ktx:1.6.0")
+            }
+        }
+    }
+}
