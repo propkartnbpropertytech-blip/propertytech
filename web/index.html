@@ -31,8 +31,79 @@
 
   <title>propkart</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-T7VTBN65');</script>
+  <!-- End Google Tag Manager -->
+
+  <!-- Microsoft Clarity Tracking Code -->
+  <script type="text/javascript">
+      (function(c,l,a,r,i,t,y){
+          c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+          t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+          y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+      })(window, document, "clarity", "script", "xxjzhszh2b");
+  </script>
+
+  <!-- Accessibility & Lighthouse Viewport Fix -->
+  <script type="text/javascript">
+    const observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+        mutation.addedNodes.forEach(function(node) {
+          if (node.nodeName === 'META' && node.getAttribute('name') === 'viewport') {
+            const content = node.getAttribute('content');
+            if (content && (content.includes('user-scalable=no') || content.includes('maximum-scale=1.0'))) {
+              node.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes');
+            }
+          }
+        });
+      });
+    });
+    observer.observe(document.head, { childList: true });
+
+    window.addEventListener('load', function() {
+      const viewports = document.querySelectorAll('meta[name="viewport"]');
+      viewports.forEach(function(node) {
+        const content = node.getAttribute('content');
+        if (content && (content.includes('user-scalable=no') || content.includes('maximum-scale=1.0'))) {
+          node.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes');
+        }
+      });
+    });
+  </script>
 </head>
 <body>
+  <!-- Google Tag Manager (noscript) -->
+  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T7VTBN65"
+  height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+  <!-- End Google Tag Manager (noscript) -->
+
+  <!-- Web Vitals -> GA4 (via dataLayer) -->
+  <script type="module">
+    import {onCLS, onINP, onLCP, onFCP, onTTFB} from 'https://unpkg.com/web-vitals@4?module';
+
+    function sendToDataLayer(metric) {
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({
+        event: 'web_vitals',
+        metric_name: metric.name,
+        metric_value: Math.round(metric.name === 'CLS' ? metric.value * 1000 : metric.value),
+        metric_id: metric.id,
+        metric_rating: metric.rating
+      });
+    }
+
+    onCLS(sendToDataLayer);
+    onINP(sendToDataLayer);
+    onLCP(sendToDataLayer);
+    onFCP(sendToDataLayer);
+    onTTFB(sendToDataLayer);
+  </script>
+
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

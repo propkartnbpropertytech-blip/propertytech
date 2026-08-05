@@ -25,6 +25,7 @@ import 'core/storage/repository_coordinator.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/api/api_constants.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'package:flutter/foundation.dart';
 // ignore: depend_on_referenced_packages
@@ -55,13 +56,27 @@ void main() async {
     if (lookupCount > 0) {
       SyncManager().isSyncCompleted = true;
     }
-  } catch (e) {
-    debugPrint("Error during startup initialization: $e");
+  } catch (e, stackTrace) {
+    debugPrint("🚨 Error during startup initialization: $e");
+    debugPrint("🚨 Startup initialization stack trace:\n$stackTrace");
   }
 
   final authRepository = AuthRepository();
 
-  runApp(MyApp(authRepository: authRepository));
+  if (ApiConstants.sentryDsn != 'YOUR_SENTRY_DSN') {
+    await SentryFlutter.init(
+      (options) {
+        options.dsn = ApiConstants.sentryDsn;
+        options.tracesSampleRate = 1.0;
+        // ignore: experimental_member_use
+        options.profilesSampleRate = 1.0;
+        options.environment = kReleaseMode ? 'production' : 'development';
+      },
+      appRunner: () => runApp(MyApp(authRepository: authRepository)),
+    );
+  } else {
+    runApp(MyApp(authRepository: authRepository));
+  }
 }
 
 class MyApp extends StatefulWidget {

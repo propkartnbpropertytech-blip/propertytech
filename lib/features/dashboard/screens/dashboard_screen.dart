@@ -1650,9 +1650,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       children: [
                         Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textSecondaryOf(context)),
                         const SizedBox(width: 4),
-                        Text(
-                          'Assigned to: ${f.creatorName}',
-                          style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
+                        Expanded(
+                          child: Text(
+                            'Assigned to: ${f.creatorName}',
+                            style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                     ),

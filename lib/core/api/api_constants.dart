@@ -28,6 +28,11 @@ class ApiConstants {
   static const String cloudinaryApiKey = "495168782694392";
   static const String cloudinaryApiSecret = "Mle5fuL-8IOhq_L0R0HIusM_jDE";
 
+  static const sentryDsn = String.fromEnvironment(
+    'SENTRY_DSN',
+    defaultValue: 'https://60d7ddcd27827fcd0b9ebe472ce8cd39@o4511857602658304.ingest.us.sentry.io/4511857636999168',
+  );
+
   static bool get hasSupabaseConfig =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 

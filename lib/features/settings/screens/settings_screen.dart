@@ -16,6 +16,7 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../properties/models/property_model.dart';
 import '../../properties/services/properties_service.dart';
 import 'sync_debug_screen.dart';
+import '../../../core/storage/isar_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -359,6 +360,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _buildLocationConfigCard(),
                     const SizedBox(height: CRMSpacing.l),
                     _buildAboutCard(),
+                    const SizedBox(height: CRMSpacing.l),
+                    _buildDiagnosticsCard(),
                   ] else ...[
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -385,6 +388,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               _buildLocationConfigCard(),
                               const SizedBox(height: CRMSpacing.l),
                               _buildAboutCard(),
+                              const SizedBox(height: CRMSpacing.l),
+                              _buildDiagnosticsCard(),
                             ],
                           ),
                         ),
@@ -425,6 +430,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onTap: () {
             context.go('/settings/location-config');
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiagnosticsCard() {
+    return CRMCard(
+      title: 'Diagnostics',
+      subtitle: 'Perform system diagnostics and test integrations',
+      child: Padding(
+        padding: const EdgeInsets.only(top: CRMSpacing.m),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            CRMButton(
+              label: 'Verify Sentry Setup',
+              onPressed: () {
+                throw StateError('This is test exception to verify Sentry Setup');
+              },
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            CRMButton(
+              label: 'Test Isar Database',
+              onPressed: () async {
+                try {
+                  await IsarService().initialize();
+                  final isarInstance = IsarService().isar;
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Isar DB initialized successfully! Path: ${isarInstance.path}'),
+                        backgroundColor: CRMColors.success,
+                      ),
+                    );
+                  }
+                } catch (e, stack) {
+                  debugPrint('🚨 Isar initialization diagnostics failed: $e');
+                  debugPrint(stack.toString());
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Isar DB initialization failed: $e'),
+                        backgroundColor: CRMColors.danger,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+          ],
         ),
       ),
     );

@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "568507233535",
+    "firebase_url": "https://propkart-c2bb5-default-rtdb.firebaseio.com",
+    "project_id": "propkart-c2bb5",
+    "storage_bucket": "propkart-c2bb5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:568507233535:android:35d456dfe26a7d94bc88ca",
+        "android_client_info": {
+          "package_name": "com.nbpropertytech.propkart.propkart"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCVT8aj2vBW9aQnAzVW0FWe_sHRgKZmu9Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

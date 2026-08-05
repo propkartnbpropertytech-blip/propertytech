@@ -33,25 +33,49 @@ class IsarService {
       return;
     }
 
-    final dir = await getApplicationDocumentsDirectory();
+    Directory dir;
     try {
+      dir = await getApplicationSupportDirectory();
+    } catch (e) {
+      print("⚠️ [ISAR INIT] getApplicationSupportDirectory failed: $e. Falling back to getApplicationDocumentsDirectory...");
+      dir = await getApplicationDocumentsDirectory();
+    }
+
+    final schemas = [
+      LookupItemLocalSchema,
+      PropertyLocalSchema,
+      RequirementLocalSchema,
+      FollowupLocalSchema,
+      BuilderLocalSchema,
+      OwnerLocalSchema,
+      ClientLocalSchema,
+      OutboxLocalSchema,
+      DashboardLocalSchema,
+    ];
+
+    try {
+      print("📁 [ISAR INIT] Opening Isar in directory: ${dir.path}");
+      
+      // Ensure any stale instance from a failed run or previous crash is closed
+      final existing = Isar.getInstance();
+      if (existing != null) {
+        await existing.close();
+      }
+
       _isar = await Isar.open(
-        [
-          LookupItemLocalSchema,
-          PropertyLocalSchema,
-          RequirementLocalSchema,
-          FollowupLocalSchema,
-          BuilderLocalSchema,
-          OwnerLocalSchema,
-          ClientLocalSchema,
-          OutboxLocalSchema,
-          DashboardLocalSchema,
-        ],
+        schemas,
         directory: dir.path,
       );
     } catch (e) {
-      print("⚠️ [ISAR INIT WARNING] Failed to open Isar: $e. Clearing database files and retrying...");
+      print("⚠️ [ISAR INIT WARNING] Failed to open Isar in support dir: $e. Attempting to close instance, clear database files, and retry...");
       try {
+        // Cleanly close the instance so the name is released
+        final existing = Isar.getInstance();
+        if (existing != null) {
+          await existing.close();
+        }
+
+        // Delete support directory database files
         final isarFile = File('${dir.path}/default.isar');
         if (await isarFile.exists()) {
           await isarFile.delete();
@@ -60,23 +84,44 @@ class IsarService {
         if (await lockFile.exists()) {
           await lockFile.delete();
         }
+
+        // Delete documents directory database files in case they exist
+        try {
+          final docDir = await getApplicationDocumentsDirectory();
+          final docIsarFile = File('${docDir.path}/default.isar');
+          if (await docIsarFile.exists()) {
+            await docIsarFile.delete();
+          }
+          final docLockFile = File('${docDir.path}/default.isar.lock');
+          if (await docLockFile.exists()) {
+            await docLockFile.delete();
+          }
+        } catch (_) {}
+
+        print("📁 [ISAR INIT] Retrying open after database files clear...");
         _isar = await Isar.open(
-          [
-            LookupItemLocalSchema,
-            PropertyLocalSchema,
-            RequirementLocalSchema,
-            FollowupLocalSchema,
-            BuilderLocalSchema,
-            OwnerLocalSchema,
-            ClientLocalSchema,
-            OutboxLocalSchema,
-            DashboardLocalSchema,
-          ],
+          schemas,
           directory: dir.path,
         );
       } catch (retryError) {
-        print("❌ [ISAR RETRY ERROR] Failed to open Isar after database clear: $retryError");
-        rethrow;
+        print("❌ [ISAR FATAL ERROR] Failed to open Isar after clear/retry: $retryError");
+        
+        // Final fallback: If both fail, try a custom instance name so the app runs successfully
+        try {
+          print("📁 [ISAR INIT] Fallback: Opening Isar with custom instance name 'propkart_db'...");
+          final existing = Isar.getInstance('propkart_db');
+          if (existing != null) {
+            await existing.close();
+          }
+          _isar = await Isar.open(
+            schemas,
+            directory: dir.path,
+            name: 'propkart_db',
+          );
+        } catch (fallbackError) {
+          print("❌ [ISAR ABSOLUTE FATAL] Fallback open failed: $fallbackError");
+          rethrow;
+        }
       }
     }
     await _migrateRequirements();

@@ -37,6 +37,8 @@ dependencies:
   flutter_riverpod: ^2.6.1
   country_picker: ^2.0.28
   intl_phone_field: 3.2.0
+  sentry_flutter: ^8.9.0
+
 
 dev_dependencies:
   flutter_test:
