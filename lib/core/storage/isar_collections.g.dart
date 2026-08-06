@@ -15,7 +15,7 @@ extension GetLookupItemLocalCollection on Isar {
 
 const LookupItemLocalSchema = CollectionSchema(
   name: r'LookupItemLocal',
-  id: hash_1318305215323522509,
+  id: hash_hash_1318305215323522509,
   properties: {
     r'category': PropertySchema(
       id: 0,
@@ -55,7 +55,7 @@ const LookupItemLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -hash_3268401673993471357,
+      id: -hash_hash_3268401673993471357,
       name: r'id',
       unique: true,
       replace: true,
@@ -1584,7 +1584,7 @@ extension GetPropertyLocalCollection on Isar {
 
 const PropertyLocalSchema = CollectionSchema(
   name: r'PropertyLocal',
-  id: -hash_8271700807818507403,
+  id: -hash_hash_8271700807818507403,
   properties: {
     r'address': PropertySchema(
       id: 0,
@@ -1899,7 +1899,7 @@ const PropertyLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -hash_3268401673993471357,
+      id: -hash_hash_3268401673993471357,
       name: r'id',
       unique: true,
       replace: true,
@@ -12680,7 +12680,7 @@ extension GetRequirementLocalCollection on Isar {
 
 const RequirementLocalSchema = CollectionSchema(
   name: r'RequirementLocal',
-  id: -hash_7980756281068083239,
+  id: -hash_hash_7980756281068083239,
   properties: {
     r'adminId': PropertySchema(
       id: 0,
@@ -12845,7 +12845,7 @@ const RequirementLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -hash_3268401673993471357,
+      id: -hash_hash_3268401673993471357,
       name: r'id',
       unique: true,
       replace: true,
@@ -19307,7 +19307,7 @@ extension GetFollowupLocalCollection on Isar {
 
 const FollowupLocalSchema = CollectionSchema(
   name: r'FollowupLocal',
-  id: -hash_4721984852078906678,
+  id: -hash_hash_4721984852078906678,
   properties: {
     r'clientName': PropertySchema(
       id: 0,
@@ -19382,7 +19382,7 @@ const FollowupLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -hash_3268401673993471357,
+      id: -hash_hash_3268401673993471357,
       name: r'id',
       unique: true,
       replace: true,
@@ -22083,7 +22083,7 @@ extension GetBuilderLocalCollection on Isar {
 
 const BuilderLocalSchema = CollectionSchema(
   name: r'BuilderLocal',
-  id: hash_435823299237027808,
+  id: hash_hash_435823299237027808,
   properties: {
     r'activeProjects': PropertySchema(
       id: 0,
@@ -22138,7 +22138,7 @@ const BuilderLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -hash_3268401673993471357,
+      id: -hash_hash_3268401673993471357,
       name: r'id',
       unique: true,
       replace: true,
@@ -24124,7 +24124,7 @@ extension GetOwnerLocalCollection on Isar {
 
 const OwnerLocalSchema = CollectionSchema(
   name: r'OwnerLocal',
-  id: hash_886259216879823833,
+  id: hash_hash_886259216879823833,
   properties: {
     r'address': PropertySchema(
       id: 0,
@@ -24169,7 +24169,7 @@ const OwnerLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -hash_3268401673993471357,
+      id: -hash_hash_3268401673993471357,
       name: r'id',
       unique: true,
       replace: true,
@@ -25736,7 +25736,7 @@ extension GetClientLocalCollection on Isar {
 
 const ClientLocalSchema = CollectionSchema(
   name: r'ClientLocal',
-  id: hash_4502856345066684593,
+  id: hash_hash_4502856345066684593,
   properties: {
     r'assignedAgent': PropertySchema(
       id: 0,
@@ -25791,7 +25791,7 @@ const ClientLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -hash_3268401673993471357,
+      id: -hash_hash_3268401673993471357,
       name: r'id',
       unique: true,
       replace: true,
@@ -27708,7 +27708,7 @@ extension GetOutboxLocalCollection on Isar {
 
 const OutboxLocalSchema = CollectionSchema(
   name: r'OutboxLocal',
-  id: -hash_8922081633273292290,
+  id: -hash_hash_8922081633273292290,
   properties: {
     r'createdAt': PropertySchema(
       id: 0,
@@ -27748,7 +27748,7 @@ const OutboxLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -hash_3268401673993471357,
+      id: -hash_hash_3268401673993471357,
       name: r'id',
       unique: true,
       replace: true,
@@ -29120,7 +29120,7 @@ extension GetDashboardLocalCollection on Isar {
 
 const DashboardLocalSchema = CollectionSchema(
   name: r'DashboardLocal',
-  id: hash_7985840613772203549,
+  id: hash_hash_7985840613772203549,
   properties: {
     r'activityJson': PropertySchema(
       id: 0,
@@ -29171,7 +29171,7 @@ const DashboardLocalSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'id': IndexSchema(
-      id: -hash_3268401673993471357,
+      id: -hash_hash_3268401673993471357,
       name: r'id',
       unique: true,
       replace: true,
@@ -30801,7 +30801,7 @@ extension DashboardLocalQueryProperty
 
 const DashboardSummaryLocalSchema = Schema(
   name: r'DashboardSummaryLocal',
-  id: hash_5416242803166401319,
+  id: hash_hash_5416242803166401319,
   properties: {
     r'available': PropertySchema(
       id: 0,
