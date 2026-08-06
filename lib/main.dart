@@ -59,6 +59,8 @@ void main() async {
   } catch (e, stackTrace) {
     debugPrint("🚨 Error during startup initialization: $e");
     debugPrint("🚨 Startup initialization stack trace:\n$stackTrace");
+    MyApp.startupError = e.toString();
+    MyApp.startupStackTrace = stackTrace.toString();
   }
 
   final authRepository = AuthRepository();
@@ -81,6 +83,8 @@ void main() async {
 
 class MyApp extends StatefulWidget {
   final AuthRepository authRepository;
+  static String? startupError;
+  static String? startupStackTrace;
 
   const MyApp({super.key, required this.authRepository});
 
@@ -101,6 +105,63 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    if (MyApp.startupError != null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: const Color(0xFF1E1E1E),
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+                  const SizedBox(height: 16),
+                  const Text(
+                    "PropKart Startup Error",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "Please capture/copy this message to help diagnose the issue.",
+                    style: TextStyle(color: Colors.grey, fontSize: 14),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SingleChildScrollView(
+                        child: SelectionArea(
+                          child: Text(
+                            "ERROR:\n${MyApp.startupError}\n\nSTACK TRACE:\n${MyApp.startupStackTrace}",
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider.value(value: widget.authRepository),

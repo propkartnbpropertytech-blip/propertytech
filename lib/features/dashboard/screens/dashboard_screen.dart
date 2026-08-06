@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/design_system/widgets/drawers.dart';
 import '../../properties/repository/properties_repository.dart';
 import '../../properties/models/property_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
@@ -1931,8 +1933,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _openPropertyDetails(String propertyId) {
-    final String url = '${Uri.base.origin}/properties/$propertyId';
-    launchUrl(Uri.parse(url), webOnlyWindowName: '_blank');
+    if (kIsWeb) {
+      final String url = '${Uri.base.origin}/properties/$propertyId';
+      launchUrl(Uri.parse(url), webOnlyWindowName: '_blank');
+    } else {
+      // Show loading indicator in case of delay
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+      PropertiesRepository().getPropertyById(propertyId).then((p) {
+        // Pop loading indicator
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+        if (p != null && mounted) {
+          showCRMPropertyDrawer(context, p);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to load property details.')),
+          );
+        }
+      }).catchError((e) {
+        // Pop loading indicator
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error loading property: $e')),
+          );
+        }
+      });
+    }
   }
 
   Widget _buildErrorState(String message) {

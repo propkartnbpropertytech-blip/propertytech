@@ -2393,8 +2393,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
 
   void _openPropertyDetails(BuildContext context, PropertyModel p) {
-    final String url = '${Uri.base.origin}/properties/${p.id}';
-    launchUrl(Uri.parse(url), webOnlyWindowName: '_blank');
+    if (kIsWeb) {
+      final String url = '${Uri.base.origin}/properties/${p.id}';
+      launchUrl(Uri.parse(url), webOnlyWindowName: '_blank');
+    } else {
+      showCRMPropertyDrawer(context, p);
+    }
   }
 
   String _getBhkColumnHeader(PropertyMetadataModel? metadata) {

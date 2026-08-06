@@ -75,17 +75,26 @@ class IsarService {
           await existing.close();
         }
 
-        // Delete support directory database files
-        final isarFile = File('${dir.path}/default.isar');
-        if (await isarFile.exists()) {
-          await isarFile.delete();
-        }
-        final lockFile = File('${dir.path}/default.isar.lock');
-        if (await lockFile.exists()) {
-          await lockFile.delete();
+        // Delete support directory database files safely
+        try {
+          final isarFile = File('${dir.path}/default.isar');
+          if (await isarFile.exists()) {
+            await isarFile.delete();
+          }
+        } catch (delError) {
+          print("⚠️ [ISAR INIT] Failed to delete default.isar: $delError");
         }
 
-        // Delete documents directory database files in case they exist
+        try {
+          final lockFile = File('${dir.path}/default.isar.lock');
+          if (await lockFile.exists()) {
+            await lockFile.delete();
+          }
+        } catch (delError) {
+          print("⚠️ [ISAR INIT] Failed to delete default.isar.lock: $delError");
+        }
+
+        // Delete documents directory database files safely in case they exist
         try {
           final docDir = await getApplicationDocumentsDirectory();
           final docIsarFile = File('${docDir.path}/default.isar');
@@ -124,7 +133,12 @@ class IsarService {
         }
       }
     }
-    await _migrateRequirements();
+    
+    try {
+      await _migrateRequirements();
+    } catch (migError) {
+      print("⚠️ [ISAR INIT WARNING] Requirements migration failed: $migError. Database is initialized, continuing...");
+    }
   }
 
   Future<void> _migrateRequirements() async {

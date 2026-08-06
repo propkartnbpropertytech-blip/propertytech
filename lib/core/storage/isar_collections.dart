@@ -1,4 +1,5 @@
 import 'package:isar/isar.dart';
+import 'isar_hash.dart';
 
 part 'isar_collections.g.dart';
 
