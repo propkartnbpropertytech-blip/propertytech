@@ -1,3 +1,18 @@
+<IfModule mod_headers.c>
+  # Block clickjacking / framing
+  Header set X-Frame-Options "DENY"
+  Header set Content-Security-Policy "frame-ancestors 'none';"
+  
+  # Prevent MIME type sniffing
+  Header set X-Content-Type-Options "nosniff"
+  
+  # Protect against XSS
+  Header set X-XSS-Protection "1; mode=block"
+  
+  # Secure referrers
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
@@ -6,3 +21,4 @@
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule . /index.html [L]
 </IfModule>
+

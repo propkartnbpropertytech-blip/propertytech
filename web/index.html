@@ -1,6 +1,21 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <!-- Anti-Clickjacking Frame Buster -->
+  <style id="anti-clickjack-style">
+    html { display: none !important; }
+  </style>
+  <script type="text/javascript">
+    if (self === top) {
+      var style = document.getElementById('anti-clickjack-style');
+      if (style && style.parentNode) {
+        style.parentNode.removeChild(style);
+      }
+    } else {
+      top.location = self.location;
+    }
+  </script>
+
   <!--
     If you are serving your web app in a path other than the root, change the
     href value below to reflect the base path you are serving from.
