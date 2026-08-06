@@ -37,13 +37,13 @@ function run() {
     ];
 
     for (const [target, replacement] of replacements) {
-        // Use global regex replacement to catch all occurrences
-        const regex = new RegExp(target, "g");
+        // Use negative lookbehind to ensure we don't match if already prefixed with 'hash_'
+        const regex = new RegExp(`(?<!hash_)${target}`, "g");
         content = content.replace(regex, replacement);
     }
 
     fs.writeFileSync(filePath, content, "utf8");
-    console.log("✅ Successfully mapped JS/Mobile platform constant hashes!");
+    console.log("✅ Successfully mapped JS/Mobile platform constant hashes (idempotent)!");
 }
 
 run();
