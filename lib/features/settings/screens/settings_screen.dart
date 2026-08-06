@@ -360,8 +360,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _buildLocationConfigCard(),
                     const SizedBox(height: CRMSpacing.l),
                     _buildAboutCard(),
-                    const SizedBox(height: CRMSpacing.l),
-                    _buildDiagnosticsCard(),
+                    if (isSuperAdmin) ...[
+                      const SizedBox(height: CRMSpacing.l),
+                      _buildDiagnosticsCard(),
+                    ],
                   ] else ...[
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -388,8 +390,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               _buildLocationConfigCard(),
                               const SizedBox(height: CRMSpacing.l),
                               _buildAboutCard(),
-                              const SizedBox(height: CRMSpacing.l),
-                              _buildDiagnosticsCard(),
+                              if (isSuperAdmin) ...[
+                                const SizedBox(height: CRMSpacing.l),
+                                _buildDiagnosticsCard(),
+                              ],
                             ],
                           ),
                         ),

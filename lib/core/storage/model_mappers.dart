@@ -213,6 +213,8 @@ extension RequirementLocalExtensions on RequirementLocal {
       areaNames: safeAreaNames,
       configurationIds: configurationIds ?? [],
       propertyTypeIds: propertyTypeIds ?? [],
+      furnishingIds: furnishingIds ?? [],
+      facingIds: facingIds ?? [],
       remarks: decodedRemarks,
       status: status,
       createdAt: createdAt,
@@ -242,6 +244,8 @@ extension RequirementModelExtensions on RequirementModel {
       ..configurationName = configurationName
       ..configurationIds = configurationIds
       ..propertyTypeIds = propertyTypeIds
+      ..furnishingIds = furnishingIds
+      ..facingIds = facingIds
       ..minBudget = minBudget
       ..maxBudget = maxBudget
       ..minArea = minArea ?? 0.0

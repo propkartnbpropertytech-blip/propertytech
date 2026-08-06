@@ -11,6 +11,12 @@
   
   # Secure referrers
   Header set Referrer-Policy "strict-origin-when-cross-origin"
+
+  # Force HTTPS (HSTS) - Only active if HTTPS is enabled
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+  # Restrict browser APIs/features (Permissions Policy)
+  Header set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
 </IfModule>
 
 <IfModule mod_rewrite.c>

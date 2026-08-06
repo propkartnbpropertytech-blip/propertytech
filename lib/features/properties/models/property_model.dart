@@ -144,9 +144,10 @@ class PropertyModel {
     final creator = json['creator'] as Map<String, dynamic>?;
 
     final List<String> imageList = [];
-    final rawImages = json['property_images'] as List<dynamic>? ?? 
-                      json['images'] as List<dynamic>? ?? 
-                      [];
+    final jsonPropertyImages = json['property_images'];
+    final rawImages = (jsonPropertyImages is List && jsonPropertyImages.isNotEmpty)
+        ? jsonPropertyImages
+        : (json['images'] as List<dynamic>? ?? []);
     for (final img in rawImages) {
       if (img == null) continue;
       if (img is String) {
@@ -170,9 +171,10 @@ class PropertyModel {
         .toList();
 
     final List<String> videoList = [];
-    final rawVideos = json['property_videos'] as List<dynamic>? ?? 
-                      json['videos'] as List<dynamic>? ?? 
-                      [];
+    final jsonPropertyVideos = json['property_videos'];
+    final rawVideos = (jsonPropertyVideos is List && jsonPropertyVideos.isNotEmpty)
+        ? jsonPropertyVideos
+        : (json['videos'] as List<dynamic>? ?? []);
     for (final vid in rawVideos) {
       if (vid == null) continue;
       if (vid is String) {

@@ -139,10 +139,13 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
         _cities = metadata.cities;
         
         if (widget.requirement == null) {
-          if (_categories.isNotEmpty) _selectedCategoryId = _categories.first.id;
-          if (_types.isNotEmpty) {
-            _selectedTypeId = _types.first.id;
-            _selectedTypeIds.add(_types.first.id);
+          if (_categories.isNotEmpty) {
+            _selectedCategoryId = _categories.first.id;
+            final firstCatTypes = _types.where((t) => t.categoryId == _selectedCategoryId && t.name.toLowerCase() != 'apartment').toList();
+            if (firstCatTypes.isNotEmpty) {
+              _selectedTypeId = firstCatTypes.first.id;
+              _selectedTypeIds.add(firstCatTypes.first.id);
+            }
           }
           if (_listingTypes.isNotEmpty) _selectedListingTypeId = _listingTypes.first.id;
         } else {
@@ -1069,6 +1072,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
             selectedIds: _selectedTypeIds,
             items: filteredTypes,
             onChanged: (vals) => setState(() {
+              _selectedTypeIds.clear();
+              _selectedTypeIds.addAll(vals);
               if (vals.isNotEmpty) {
                 _selectedTypeId = vals.first;
               } else {
@@ -1081,14 +1086,20 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
             label: 'Furnishing',
             selectedIds: _selectedFurnishingIds,
             items: _furnishings,
-            onChanged: (vals) => setState(() {}),
+            onChanged: (vals) => setState(() {
+              _selectedFurnishingIds.clear();
+              _selectedFurnishingIds.addAll(vals);
+            }),
           ),
           const SizedBox(height: CRMSpacing.m),
           CRMMultiSelectDropdown(
             label: 'Facing',
             selectedIds: _selectedFacingIds,
             items: _facings,
-            onChanged: (vals) => setState(() {}),
+            onChanged: (vals) => setState(() {
+              _selectedFacingIds.clear();
+              _selectedFacingIds.addAll(vals);
+            }),
           ),
           const SizedBox(height: CRMSpacing.m),
           if (filteredConfigs.isNotEmpty) ...[

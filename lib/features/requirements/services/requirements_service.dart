@@ -207,18 +207,12 @@ class RequirementsService {
         }
         
         // Multi-select sync helper
-        if (furnishingTypeIds.isNotEmpty) {
-          cleanRequirement['furnishing_type_ids'] = furnishingTypeIds;
-          cleanRequirement['furnishing_type_id'] = furnishingTypeIds.first;
-        }
-        if (facingTypeIds.isNotEmpty) {
-          cleanRequirement['facing_type_ids'] = facingTypeIds;
-          cleanRequirement['facing_type_id'] = facingTypeIds.first;
-        }
-        if (propertyTypeIds.isNotEmpty) {
-          cleanRequirement['property_type_ids'] = propertyTypeIds;
-          cleanRequirement['property_type_id'] = propertyTypeIds.first;
-        }
+        cleanRequirement['furnishing_type_ids'] = furnishingTypeIds;
+        cleanRequirement['furnishing_type_id'] = furnishingTypeIds.isNotEmpty ? furnishingTypeIds.first : null;
+        cleanRequirement['facing_type_ids'] = facingTypeIds;
+        cleanRequirement['facing_type_id'] = facingTypeIds.isNotEmpty ? facingTypeIds.first : null;
+        cleanRequirement['property_type_ids'] = propertyTypeIds;
+        cleanRequirement['property_type_id'] = propertyTypeIds.isNotEmpty ? propertyTypeIds.first : null;
 
         // 1. Insert requirement (only returning id to begin)
         final insertRes = await _supabase.from('requirements').insert(cleanRequirement).select('id').single();
@@ -308,18 +302,13 @@ class RequirementsService {
           cleanRequirement['assigned_to'] = null;
         }
 
-        if (furnishingTypeIds.isNotEmpty) {
-          cleanRequirement['furnishing_type_ids'] = furnishingTypeIds;
-          cleanRequirement['furnishing_type_id'] = furnishingTypeIds.first;
-        }
-        if (facingTypeIds.isNotEmpty) {
-          cleanRequirement['facing_type_ids'] = facingTypeIds;
-          cleanRequirement['facing_type_id'] = facingTypeIds.first;
-        }
-        if (propertyTypeIds.isNotEmpty) {
-          cleanRequirement['property_type_ids'] = propertyTypeIds;
-          cleanRequirement['property_type_id'] = propertyTypeIds.first;
-        }
+        // Multi-select sync helper
+        cleanRequirement['furnishing_type_ids'] = furnishingTypeIds;
+        cleanRequirement['furnishing_type_id'] = furnishingTypeIds.isNotEmpty ? furnishingTypeIds.first : null;
+        cleanRequirement['facing_type_ids'] = facingTypeIds;
+        cleanRequirement['facing_type_id'] = facingTypeIds.isNotEmpty ? facingTypeIds.first : null;
+        cleanRequirement['property_type_ids'] = propertyTypeIds;
+        cleanRequirement['property_type_id'] = propertyTypeIds.isNotEmpty ? propertyTypeIds.first : null;
 
         // Update Areas mapping
         await _supabase.from('requirement_areas').delete().eq('requirement_id', id);

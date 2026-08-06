@@ -234,11 +234,58 @@ class PropertiesService {
         final List<dynamic> images = List.from(propertyData['images'] ?? []);
         final List<dynamic> videos = List.from(propertyData['videos'] ?? []);
 
-        // Prepare property row
-        final cleanProperty = Map<String, dynamic>.from(propertyData)
-          ..remove('amenities')
-          ..remove('images')
-          ..remove('videos');
+        // Prepare property row - keep only valid database columns
+        final List<String> validColumns = [
+          'title',
+          'description',
+          'category_id',
+          'property_type_id',
+          'configuration_id',
+          'listing_type_id',
+          'property_status_id',
+          'city_id',
+          'area_id',
+          'address',
+          'landmark',
+          'latitude',
+          'longitude',
+          'super_builtup_area',
+          'carpet_area',
+          'plot_area',
+          'price',
+          'deposit',
+          'maintenance',
+          'furnishing_type_id',
+          'facing_type_id',
+          'ownership_type_id',
+          'bedrooms',
+          'bathrooms',
+          'balconies',
+          'parking',
+          'floor_no',
+          'total_floor',
+          'age_of_property',
+          'possession_date',
+          'owner_name',
+          'owner_mobile',
+          'broker_name',
+          'remarks',
+          'block_wing',
+          'flat_no',
+          'google_place_id',
+          'brokerage_type_id',
+          'admin_id',
+          'organization_id',
+          'additional_details',
+          'is_verified',
+        ];
+
+        final cleanProperty = <String, dynamic>{};
+        propertyData.forEach((key, value) {
+          if (validColumns.contains(key)) {
+            cleanProperty[key] = value;
+          }
+        });
 
         cleanProperty['property_code'] = propertyCode;
         cleanProperty['created_by'] = currentUserId;
@@ -322,17 +369,57 @@ class PropertiesService {
         final List<dynamic> images = List.from(propertyData['images'] ?? []);
         final List<dynamic> videos = List.from(propertyData['videos'] ?? []);
 
-        // Prepare property row updates
-        final cleanProperty = Map<String, dynamic>.from(propertyData)
-          ..remove('amenities')
-          ..remove('images')
-          ..remove('videos')
-          ..remove('id')
-          ..remove('property_code')
-          ..remove('created_by')
-          ..remove('organization_id')
-          ..remove('admin_id');
+        // Prepare property row updates - keep only valid database columns
+        final List<String> validColumns = [
+          'title',
+          'description',
+          'category_id',
+          'property_type_id',
+          'configuration_id',
+          'listing_type_id',
+          'property_status_id',
+          'city_id',
+          'area_id',
+          'address',
+          'landmark',
+          'latitude',
+          'longitude',
+          'super_builtup_area',
+          'carpet_area',
+          'plot_area',
+          'price',
+          'deposit',
+          'maintenance',
+          'furnishing_type_id',
+          'facing_type_id',
+          'ownership_type_id',
+          'bedrooms',
+          'bathrooms',
+          'balconies',
+          'parking',
+          'floor_no',
+          'total_floor',
+          'age_of_property',
+          'possession_date',
+          'owner_name',
+          'owner_mobile',
+          'broker_name',
+          'remarks',
+          'block_wing',
+          'flat_no',
+          'google_place_id',
+          'brokerage_type_id',
+          'additional_details',
+          'is_verified',
+        ];
 
+        final cleanProperty = <String, dynamic>{};
+        propertyData.forEach((key, value) {
+          if (validColumns.contains(key)) {
+            cleanProperty[key] = value;
+          }
+        });
+        
         cleanProperty['updated_at'] = DateTime.now().toIso8601String();
 
         // 1. Update Property details
@@ -341,9 +428,9 @@ class PropertiesService {
         // 2. Update Amenities
         await _supabase.from('property_amenities').delete().eq('property_id', id);
         if (amenities.isNotEmpty) {
-          final amData = amenities.map((id) => {
+          final amData = amenities.map((amenityId) => {
             'property_id': id,
-            'amenity_id': id,
+            'amenity_id': amenityId,
           }).toList();
           await _supabase.from('property_amenities').insert(amData);
         }

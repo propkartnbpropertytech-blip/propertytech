@@ -103,6 +103,8 @@ class RequirementLocal {
   String? configurationName;
   List<String>? configurationIds;
   List<String>? propertyTypeIds;
+  List<String>? furnishingIds;
+  List<String>? facingIds;
   late double minBudget;
   late double maxBudget;
   double? minArea;
