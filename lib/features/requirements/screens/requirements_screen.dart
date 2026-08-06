@@ -68,6 +68,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   PropertyMetadataModel? _metadata;
   bool _isLoadingMetadata = true;
   bool _hasAutoOpenedAdd = false;
+  bool _isMobileFiltersExpanded = false;
 
   @override
   void initState() {
@@ -405,7 +406,31 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
               if (_activeMainTab == 'Requirements') ...[
                 // Filters & Search Card
-                _buildSearchAndFiltersCard(),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final bool isMobile = constraints.maxWidth < 600;
+                    if (isMobile) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildMobileFilterButton(),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                            child: _isMobileFiltersExpanded
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: CRMSpacing.m),
+                                    child: _buildSearchAndFiltersCard(),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      );
+                    } else {
+                      return _buildSearchAndFiltersCard();
+                    }
+                  },
+                ),
                 const SizedBox(height: CRMSpacing.l),
 
                 // Data Table
@@ -522,6 +547,54 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildMobileFilterButton() {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _isMobileFiltersExpanded = !_isMobileFiltersExpanded;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 12),
+        decoration: BoxDecoration(
+          color: _isMobileFiltersExpanded ? CRMColors.primary : CRMColors.cardBgOf(context),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(
+            color: _isMobileFiltersExpanded ? CRMColors.primary : CRMColors.borderOf(context).withOpacity(0.6),
+            width: 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.black.withOpacity(0.3)
+                  : const Color(0xFF64748B).withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.filter_list_rounded,
+              size: 18,
+              color: _isMobileFiltersExpanded ? Colors.white : CRMColors.primaryOf(context),
+            ),
+            const SizedBox(width: CRMSpacing.s),
+            Text(
+              _isMobileFiltersExpanded ? "Hide Filters" : "Show Search Filters",
+              style: CRMTypography.bodyMedium.copyWith(
+                color: _isMobileFiltersExpanded ? Colors.white : CRMColors.textOf(context),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1700,10 +1773,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xxs),
                               decoration: BoxDecoration(
-                                color: CRMColors.primary.withValues(alpha: 0.12),
+                                color: _getStatusColor(req.status).withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(CRMBorderRadius.round),
                                 border: Border.all(
-                                  color: CRMColors.primary.withValues(alpha: 0.3),
+                                  color: _getStatusColor(req.status).withValues(alpha: 0.3),
                                 ),
                               ),
                               child: Row(
@@ -1712,7 +1785,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   Text(
                                     displayStatusLabel(req.status),
                                     style: CRMTypography.captionBold.copyWith(
-                                      color: CRMColors.primary,
+                                      color: _getStatusColor(req.status),
                                       fontSize: 11,
                                     ),
                                   ),
@@ -1720,7 +1793,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   Icon(
                                     Icons.arrow_drop_down_rounded,
                                     size: 16,
-                                    color: CRMColors.primary,
+                                    color: _getStatusColor(req.status),
                                   ),
                                 ],
                               ),
@@ -1856,64 +1929,45 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 // Action buttons
                 Divider(color: CRMColors.borderOf(context), height: 1),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xs),
-                  child: Wrap(
-                    alignment: WrapAlignment.start,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: CRMSpacing.s,
-                    runSpacing: CRMSpacing.xs,
+                  padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.s),
+                  child: Row(
                     children: [
-                      Wrap(
-                        spacing: isMobile ? 8.0 : 12.0,
-                        runSpacing: 4.0,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          IconButton(
-                            icon: Icon(Icons.bolt_rounded, color: CRMColors.warning, size: 20),
-                            onPressed: () => _showMatchesDrawer(req),
-                            tooltip: 'Matches',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.add_circle_outline_rounded, color: CRMColors.primary, size: 20),
-                            onPressed: () => _showAddAnotherRequirementDialog(req),
-                            tooltip: 'Add Another Requirement',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.share_rounded, color: CRMColors.info, size: 18),
-                            onPressed: () => _showSharePropertiesDialog(req),
-                            tooltip: 'Share Properties',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.info_outline_rounded, color: CRMColors.primary, size: 18),
-                            onPressed: () => _showRequirementDetailDrawer(req),
-                            tooltip: 'View Details',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                          if (_hasEditAccess(req, currentUser)) ...[
-                            IconButton(
-                              icon: Icon(Icons.edit_outlined, color: CRMColors.primary, size: 18),
-                              onPressed: () => _showAddEditDialog(req),
-                              tooltip: 'Edit',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18),
-                              onPressed: () => _showDeleteConfirmDialog(req),
-                              tooltip: 'Delete',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
-                          ],
-                        ],
+                      _buildActionButton(
+                        icon: Icons.bolt_rounded,
+                        color: CRMColors.warning,
+                        onPressed: () => _showMatchesDrawer(req),
+                        tooltip: 'Matches',
                       ),
+                      const SizedBox(width: 8),
+                      _buildActionButton(
+                        icon: Icons.add_circle_outline_rounded,
+                        color: CRMColors.primary,
+                        onPressed: () => _showAddAnotherRequirementDialog(req),
+                        tooltip: 'Add Another Requirement',
+                      ),
+                      const SizedBox(width: 8),
+                      _buildActionButton(
+                        icon: Icons.share_rounded,
+                        color: CRMColors.info,
+                        onPressed: () => _showSharePropertiesDialog(req),
+                        tooltip: 'Share Properties',
+                      ),
+                      if (_hasEditAccess(req, currentUser)) ...[
+                        const SizedBox(width: 8),
+                        _buildActionButton(
+                          icon: Icons.edit_outlined,
+                          color: const Color(0xFF6B8B7B),
+                          onPressed: () => _showAddEditDialog(req),
+                          tooltip: 'Edit',
+                        ),
+                        const SizedBox(width: 8),
+                        _buildActionButton(
+                          icon: Icons.delete_outline_rounded,
+                          color: CRMColors.danger,
+                          onPressed: () => _showDeleteConfirmDialog(req),
+                          tooltip: 'Delete',
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1951,6 +2005,55 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'Won':
+        return CRMColors.success;
+      case 'Follow-up':
+        return CRMColors.warning;
+      case 'Interested':
+      case 'Active':
+      case 'Live':
+        return CRMColors.info;
+      case 'Site Visit':
+      case 'Site Visit Done':
+        return Colors.purple;
+      case 'Negotiation':
+        return Colors.orange;
+      case 'Bin':
+      case 'Not Interested':
+      case 'Dead':
+      case 'Suspended':
+        return CRMColors.danger;
+      case 'Not Started':
+      default:
+        return CRMColors.primary;
+    }
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+    required String tooltip,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        icon: Icon(icon, color: color, size: 16),
+        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+        style: IconButton.styleFrom(
+          backgroundColor: color.withValues(alpha: 0.1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          padding: EdgeInsets.zero,
+        ),
+        onPressed: onPressed,
       ),
     );
   }
@@ -3418,12 +3521,21 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                               const SizedBox(width: CRMSpacing.m),
                               Icon(Icons.phone_iphone_rounded, size: 14, color: CRMColors.textSecondary),
                               const SizedBox(width: 4),
-                              Text('${p.ownerName} (${p.ownerMobile})', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary)),
+                              Expanded(
+                                child: Text(
+                                  '${p.ownerName} (${p.ownerMobile})',
+                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
+                          Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            alignment: WrapAlignment.end,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               TextButton.icon(
                                 style: TextButton.styleFrom(
@@ -3436,7 +3548,6 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                                 label: const Text('Share', style: TextStyle(fontSize: 11)),
                                 onPressed: () => _shareProperty(p),
                               ),
-                              const SizedBox(width: 4),
                               TextButton.icon(
                                 style: TextButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -3453,7 +3564,6 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                                   }
                                 },
                               ),
-                              const SizedBox(width: 4),
                               TextButton.icon(
                                 style: TextButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -3481,7 +3591,6 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                                   );
                                 },
                               ),
-                              const SizedBox(width: 4),
                               TextButton.icon(
                                 style: TextButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.xs),

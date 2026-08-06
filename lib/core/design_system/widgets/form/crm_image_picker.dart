@@ -393,20 +393,33 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                CachedNetworkImage(
-                                  imageUrl: imageUrl,
-                                  fit: BoxFit.cover,
-                                  placeholder: (context, url) => const Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                  errorWidget: (context, url, error) => Container(
-                                    color: CRMColors.backgroundOf(context),
-                                    child: Icon(
-                                      Icons.broken_image_outlined,
-                                      color: CRMColors.textSecondaryOf(context),
+                                if (kIsWeb)
+                                  Image.network(
+                                    imageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => Container(
+                                      color: CRMColors.backgroundOf(context),
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: CRMColors.textSecondaryOf(context),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  CachedNetworkImage(
+                                    imageUrl: imageUrl,
+                                    fit: BoxFit.cover,
+                                    placeholder: (context, url) => const Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                    errorWidget: (context, url, error) => Container(
+                                      color: CRMColors.backgroundOf(context),
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: CRMColors.textSecondaryOf(context),
+                                      ),
                                     ),
                                   ),
-                                ),
                                 // Reorder Arrows stacked on top of the image preview
                                 if (index > 0)
                                   Positioned(

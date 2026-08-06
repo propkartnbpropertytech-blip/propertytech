@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import '../tokens/app_colors.dart';
 import '../tokens/app_spacing.dart';
@@ -520,6 +521,15 @@ class _CRMImageSliderState extends State<CRMImageSlider> {
         return Image.memory(base64Decode(base64Str), fit: BoxFit.cover);
       } catch (_) {}
     }
+    if (kIsWeb) {
+      return Image.network(
+        url,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Center(
+          child: Icon(Icons.broken_image_outlined, color: CRMColors.textMutedOf(context), size: 48),
+        ),
+      );
+    }
     return CachedNetworkImage(
       imageUrl: url,
       fit: BoxFit.cover,
@@ -669,6 +679,16 @@ class _CRMImageZoomViewerState extends State<CRMImageZoomViewer> {
         final base64Str = url.split(',').last;
         return Image.memory(base64Decode(base64Str));
       } catch (_) {}
+    }
+    if (kIsWeb) {
+      return Image.network(
+        url,
+        errorBuilder: (context, error, stackTrace) => const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white60,
+          size: 64,
+        ),
+      );
     }
     return CachedNetworkImage(
       imageUrl: url,

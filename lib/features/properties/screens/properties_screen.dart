@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
@@ -120,325 +121,326 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   Widget _buildMobilePropertyCard(PropertyModel p, UserModel? currentUser,
       Set<String> bookmarkedIds, PropertyMetadataModel? metadata) {
     final isMine = _hasEditAccess(p, currentUser);
-    final isBookmarked = bookmarkedIds.contains(p.id);
     final isHighlighted = p.id == _highlightedPropertyId;
 
     return AnimatedContainer(
-        duration: CRMMotion.medium,
-        curve: CRMMotion.easeOut,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(CRMBorderRadius.card + 2),
-          border: Border.all(
-            color: isHighlighted ? CRMColors.primaryOf(context) : Colors.transparent,
-            width: 1.5,
-          ),
-          boxShadow: isHighlighted ? CRMShadows.primaryGlow : null,
+      duration: CRMMotion.medium,
+      curve: CRMMotion.easeOut,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card + 2),
+        border: Border.all(
+          color: isHighlighted ? CRMColors.primaryOf(context) : Colors.transparent,
+          width: 1.5,
         ),
-        padding: const EdgeInsets.all(2),
-        child: CRMCard(
-          padding: const EdgeInsets.all(CRMSpacing.m),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-            onTap: () => _openPropertyDetails(context, p),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Stack(
-                  children: [
-                    if (p.images.isNotEmpty)
-                      _MobilePropertyImageCarousel(
-                        images: p.images,
-                        onTap: () => _openPropertyDetails(context, p),
-                      )
-                    else
-                      GestureDetector(
-                        onTap: () => _openPropertyDetails(context, p),
-                        child: Container(
-                          height: 160,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: CRMColors.skeletonBase,
-                            borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                            border: Border.all(
-                              color: CRMColors.borderOf(context).withOpacity(0.5),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.image_not_supported_outlined,
-                                  size: 40,
-                                  color: CRMColors.textMutedOf(context),
-                                ),
-                                const SizedBox(height: CRMSpacing.xs),
-                                Text(
-                                  'No Image Available',
-                                  style: CRMTypography.caption.copyWith(
-                                    color: CRMColors.textMutedOf(context),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
-                          borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
-                        ),
-                        child: Text(
-                          p.propertyCode,
-                          style: CRMTypography.captionBold.copyWith(
-                            color: Colors.white,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
+        boxShadow: isHighlighted ? CRMShadows.primaryGlow : null,
+      ),
+      padding: const EdgeInsets.all(2),
+      child: CRMCard(
+        padding: EdgeInsets.zero,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+          onTap: () => _openPropertyDetails(context, p),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(CRMBorderRadius.card),
                     ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: CRMColors.primaryOf(context),
-                              borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
-                            ),
-                            child: Text(
-                              p.listingTypeName,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                    child: p.images.isNotEmpty
+                        ? _MobilePropertyImageCarousel(
+                            images: p.images,
+                            onTap: () => _openPropertyDetails(context, p),
+                          )
+                        : GestureDetector(
+                            onTap: () => _openPropertyDetails(context, p),
+                            child: Container(
+                              height: 160,
+                              width: double.infinity,
+                              color: CRMColors.skeletonBase,
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.image_not_supported_outlined,
+                                      size: 40,
+                                      color: CRMColors.textMutedOf(context),
+                                    ),
+                                    const SizedBox(height: CRMSpacing.xs),
+                                    Text(
+                                      'No Image Available',
+                                      style: CRMTypography.caption.copyWith(
+                                        color: CRMColors.textMutedOf(context),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: p.isStatusAvailable ? CRMColors.success : CRMColors.warning,
-                              borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
-                            ),
-                            child: Text(
-                              p.statusDisplayName,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: CRMSpacing.s),
-                Text(
-                  p.title,
-                  style: CRMTypography.cardTitle.copyWith(
-                    color: CRMColors.textOf(context),
-                    fontWeight: FontWeight.bold,
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: CRMSpacing.xs),
-                Row(
-                  children: [
-                    Icon(Icons.person_outline_rounded,
-                        size: 14, color: CRMColors.textSecondaryOf(context)),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Owner: ',
-                      style: CRMTypography.caption
-                          .copyWith(color: CRMColors.textSecondaryOf(context)),
-                    ),
-                    Expanded(
-                      child: Text(
-                        '${p.ownerName} (${p.ownerMobile})',
-                        style: CRMTypography.captionBold.copyWith(
-                          color: CRMColors.textOf(context),
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: CRMSpacing.xs),
-                Row(
-                  children: [
-                    Icon(Icons.location_on_outlined,
-                        size: 14, color: CRMColors.textSecondaryOf(context)),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${p.areaName}, ${p.cityName}',
-                      style: CRMTypography.caption
-                          .copyWith(color: CRMColors.textSecondaryOf(context)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: CRMSpacing.xs),
-                Row(
-                  children: [
-                    Row(
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(_getPropertyBhkOrAreaIcon(p),
-                            size: 14,
-                            color: CRMColors.textSecondaryOf(context)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
+                          ),
+                          child: Text(
+                            p.propertyCode,
+                            style: CRMTypography.captionBold.copyWith(
+                              color: Colors.white,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
                         const SizedBox(width: 4),
-                        Text(
-                          _getPropertyBhkOrAreaValue(p),
-                          style: CRMTypography.captionBold.copyWith(
-                            color: CRMColors.textOf(context),
-                            fontWeight: FontWeight.w600,
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6B8B7B),
+                            borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
+                          ),
+                          child: Text(
+                            p.listingTypeName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(width: CRMSpacing.m),
+                  ),
+                  if (p.statusDisplayName.isNotEmpty)
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: p.isStatusAvailable ? CRMColors.success : CRMColors.warning,
+                          borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
+                        ),
+                        child: Text(
+                          p.statusDisplayName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.all(CRMSpacing.m),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Row(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Icon(Icons.sell_outlined,
-                            size: 14,
-                            color: CRMColors.textSecondaryOf(context)),
-                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            p.title,
+                            style: CRMTypography.cardTitle.copyWith(
+                              color: CRMColors.textOf(context),
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Text(
                           CRMCurrencyFormatter.formatShort(p.price),
-                          style: CRMTypography.captionBold.copyWith(
-                            color: CRMColors.textOf(context),
+                          style: CRMTypography.cardTitle.copyWith(
+                            color: CRMColors.primaryOf(context),
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
-                const SizedBox(height: CRMSpacing.xs),
-                Row(
-                  children: [
-                    Icon(Icons.calendar_today_outlined,
-                        size: 14, color: CRMColors.textSecondaryOf(context)),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Created: ${DateFormat('dd-MM-yyyy').format(p.createdAt)}',
-                      style: CRMTypography.caption
-                          .copyWith(color: CRMColors.textSecondaryOf(context)),
+                    const SizedBox(height: CRMSpacing.xs),
+                    Row(
+                      children: [
+                        Icon(_getPropertyBhkOrAreaIcon(p),
+                            size: 14, color: CRMColors.textSecondaryOf(context)),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            '${_getPropertyBhkOrAreaValue(p)} in ${p.areaName}, ${p.cityName}',
+                            style: CRMTypography.caption.copyWith(
+                              color: CRMColors.textSecondaryOf(context),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                const SizedBox(height: CRMSpacing.xs),
-                Row(
-                  children: [
-                    Icon(
-                      p.availableFromFormatted != null 
-                          ? Icons.event_available_rounded 
-                          : Icons.event_busy_rounded,
-                      size: 14,
-                      color: p.availableFromFormatted != null 
-                          ? CRMColors.success 
-                          : CRMColors.textSecondaryOf(context),
+                    const SizedBox(height: CRMSpacing.s),
+                    const Divider(height: 1, color: Color(0xFFEEEEEE)),
+                    const SizedBox(height: CRMSpacing.s),
+                    Row(
+                      children: [
+                        Icon(Icons.person_outline_rounded,
+                            size: 14, color: CRMColors.textSecondaryOf(context)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Owner: ',
+                          style: CRMTypography.caption
+                              .copyWith(color: CRMColors.textSecondaryOf(context)),
+                        ),
+                        Expanded(
+                          child: Text(
+                            '${p.ownerName} (${p.ownerMobile})',
+                            style: CRMTypography.captionBold.copyWith(
+                              color: CRMColors.textOf(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      p.availableFromFormatted != null 
-                          ? 'Available: ${p.availableFromFormatted}' 
-                          : 'Not Available',
-                      style: CRMTypography.caption.copyWith(
-                        color: p.availableFromFormatted != null 
-                            ? CRMColors.success 
-                            : CRMColors.textSecondaryOf(context),
-                        fontWeight: p.availableFromFormatted != null 
-                            ? FontWeight.bold 
-                            : FontWeight.normal,
-                      ),
+                    const SizedBox(height: CRMSpacing.xs),
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_today_outlined,
+                            size: 14, color: CRMColors.textSecondaryOf(context)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Created: ${DateFormat('dd-MM-yyyy').format(p.createdAt)}',
+                          style: CRMTypography.caption
+                              .copyWith(color: CRMColors.textSecondaryOf(context)),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                const Divider(height: CRMSpacing.l),
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: CRMSpacing.m,
-                  runSpacing: CRMSpacing.s,
-                  children: [
-                    const SizedBox.shrink(),
-                    Wrap(
-                      spacing: CRMSpacing.s,
-                      runSpacing: CRMSpacing.xs,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                    const SizedBox(height: CRMSpacing.xs),
+                    Row(
+                      children: [
+                        Icon(
+                          p.availableFromFormatted != null 
+                              ? Icons.check_box_outlined 
+                              : Icons.event_busy_rounded,
+                          size: 14,
+                          color: p.availableFromFormatted != null 
+                              ? CRMColors.success 
+                              : CRMColors.textSecondaryOf(context),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          p.availableFromFormatted != null 
+                              ? 'Available: ${p.availableFromFormatted}' 
+                              : 'Not Available',
+                          style: CRMTypography.caption.copyWith(
+                            color: p.availableFromFormatted != null 
+                                ? CRMColors.success 
+                                : CRMColors.textSecondaryOf(context),
+                            fontWeight: p.availableFromFormatted != null 
+                                ? FontWeight.bold 
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: CRMSpacing.s),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         if (isMine && _activeTab != 'My Deleted') ...[
                           IconButton(
                             icon: Icon(Icons.edit_outlined,
-                                color: CRMColors.primaryOf(context), size: 20),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
+                                color: const Color(0xFF6B8B7B), size: 18),
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFF6B8B7B).withOpacity(0.1),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: EdgeInsets.zero,
+                            ),
                             onPressed: () {
                               if (metadata != null) {
-                                _showAddEditPropertyDialog(
-                                    context, metadata, p);
+                                _showAddEditPropertyDialog(context, metadata, p);
                               }
                             },
                           ),
+                          const SizedBox(width: 8),
                           IconButton(
                             icon: Icon(Icons.delete_outline_rounded,
-                                color: CRMColors.danger, size: 20),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
+                                color: CRMColors.danger, size: 18),
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            style: IconButton.styleFrom(
+                              backgroundColor: CRMColors.danger.withOpacity(0.08),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: EdgeInsets.zero,
+                            ),
                             onPressed: () {
                               context.read<PropertiesBloc>().add(
-                                    DeletePropertyEvent(p.id,
-                                        activeTab: _activeTab),
+                                    DeletePropertyEvent(p.id, activeTab: _activeTab),
                                   );
                             },
                           ),
+                          const SizedBox(width: 8),
                         ] else if (isMine && _activeTab == 'My Deleted') ...[
                           IconButton(
                             icon: Icon(Icons.restore_rounded,
-                                color: CRMColors.success, size: 20),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
+                                color: CRMColors.success, size: 18),
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            style: IconButton.styleFrom(
+                              backgroundColor: CRMColors.success.withOpacity(0.08),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: EdgeInsets.zero,
+                            ),
                             onPressed: () {
                               context.read<PropertiesBloc>().add(
-                                    RestorePropertyEvent(p.id,
-                                        activeTab: _activeTab),
+                                    RestorePropertyEvent(p.id, activeTab: _activeTab),
                                   );
                             },
                           ),
+                          const SizedBox(width: 8),
                         ],
-                        IconButton(
-                          icon: Icon(Icons.chat_bubble_outline_rounded,
-                              color: CRMColors.success, size: 20),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () => _launchWhatsApp(p),
-                          tooltip: 'Contact on WhatsApp',
-                        ),
+                        if (p.ownerMobile.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.chat_bubble_outline_rounded,
+                                color: Colors.green, size: 18),
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.green.withOpacity(0.08),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: EdgeInsets.zero,
+                            ),
+                            onPressed: () => _launchWhatsApp(p),
+                          ),
                       ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ));
+        ),
+      ),
+    );
   }
 
   @override
@@ -2393,7 +2395,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
 
   void _openPropertyDetails(BuildContext context, PropertyModel p) {
-    if (kIsWeb) {
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+    if (kIsWeb && !isMobile) {
       final String url = '${Uri.base.origin}/properties/${p.id}';
       launchUrl(Uri.parse(url), webOnlyWindowName: '_blank');
     } else {
@@ -2481,6 +2484,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         final base64Str = url.split(',').last;
         return Image.memory(base64Decode(base64Str), fit: BoxFit.cover);
       } catch (_) {}
+    }
+    if (kIsWeb) {
+      return Image.network(
+        url,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) =>
+            const Icon(Icons.broken_image_outlined, size: 16),
+      );
     }
     return CachedNetworkImage(
       imageUrl: url,
@@ -3195,6 +3206,16 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
         return Image.memory(base64Decode(base64Str), fit: BoxFit.cover);
       } catch (_) {}
     }
+    if (kIsWeb) {
+      return Image.network(
+        url,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Container(
+          color: CRMColors.backgroundOf(context),
+          child: const Icon(Icons.broken_image_outlined, size: 24, color: Colors.grey),
+        ),
+      );
+    }
     return CachedNetworkImage(
       imageUrl: url,
       fit: BoxFit.cover,
@@ -3295,27 +3316,27 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
               ),
             ),
           ),
-          // Indicator dots / index text
-          Positioned(
-            bottom: 8,
-            right: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.6),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${_currentPage + 1}/${widget.images.length}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
+        ],
+        // Indicator text (always shown)
+        Positioned(
+          bottom: 8,
+          right: 12,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.6),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${_currentPage + 1}/${widget.images.length}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
-        ],
+        ),
       ],
     );
   }

@@ -54,6 +54,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final List<ChecklistItem> _optimisticAddedChecklistItems = [];
   final Set<String> _optimisticDeletedChecklistIds = {};
   bool _isChecklistLoading = false;
+  bool _isLoadingProperty = false;
 
   @override
   void initState() {
@@ -89,92 +90,105 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final dateString = _getFormattedDate();
     final greeting = _getGreeting();
 
-    return BlocConsumer<DashboardBloc, DashboardState>(
-      listener: (context, state) {},
-      builder: (context, state) {
-        if (state is DashboardLoading || state is DashboardInitial) {
-          return const Padding(
-            padding: EdgeInsets.all(CRMSpacing.l),
-            child: CRMListSkeleton(count: 4),
-          );
-        } else if (state is DashboardError) {
-          return _buildErrorState(state.message);
-        } else if (state is DashboardLoadedState || state is DashboardRefreshing) {
-          final data = (state is DashboardLoadedState)
-              ? state.data
-              : (state as DashboardRefreshing).data;
+    return Stack(
+      children: [
+        BlocConsumer<DashboardBloc, DashboardState>(
+          listener: (context, state) {},
+          builder: (context, state) {
+            if (state is DashboardLoading || state is DashboardInitial) {
+              return const Padding(
+                padding: EdgeInsets.all(CRMSpacing.l),
+                child: CRMListSkeleton(count: 4),
+              );
+            } else if (state is DashboardError) {
+              return _buildErrorState(state.message);
+            } else if (state is DashboardLoadedState || state is DashboardRefreshing) {
+              final data = (state is DashboardLoadedState)
+                  ? state.data
+                  : (state as DashboardRefreshing).data;
 
-          return RefreshIndicator(
-            onRefresh: () async {
-              context.read<DashboardBloc>().add(RefreshDashboard());
-            },
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(
-                horizontal: CRMSpacing.m,
-                vertical: CRMSpacing.l,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // 1. Welcome Header
-                  _buildWelcomeHeader(userName, dateString, greeting),
-                  const SizedBox(height: CRMSpacing.l),
-
-                  // 2. Responsive Main Content Area
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isDesktop = constraints.maxWidth >= 900;
-                      if (isDesktop) {
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: Column(
-                                children: [
-                                  _buildKPIGrids(data.summary, isDesktop: true),
-                                  const SizedBox(height: CRMSpacing.l),
-                                  _buildRecentProperties(data.recentProperties),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: CRMSpacing.l),
-                            Expanded(
-                              flex: 2,
-                              child: Column(
-                                children: [
-                                  const SizedBox(height: 54),
-                                  _buildTodayWork(data.checklist),
-                                  const SizedBox(height: CRMSpacing.l),
-                                  _buildFollowups(data.followups, data.siteVisits),
-                                ],
-                              ),
-                            ),
-                          ],
-                        );
-                      } else {
-                        return Column(
-                          children: [
-                            _buildKPIGrids(data.summary, isDesktop: false),
-                            const SizedBox(height: CRMSpacing.l),
-                            _buildRecentProperties(data.recentProperties),
-                            const SizedBox(height: CRMSpacing.l),
-                            _buildTodayWork(data.checklist),
-                            const SizedBox(height: CRMSpacing.l),
-                            _buildFollowups(data.followups, data.siteVisits),
-                          ],
-                        );
-                      }
-                    },
+              return RefreshIndicator(
+                onRefresh: () async {
+                  context.read<DashboardBloc>().add(RefreshDashboard());
+                },
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: CRMSpacing.m,
+                    vertical: CRMSpacing.l,
                   ),
-                ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 1. Welcome Header
+                      _buildWelcomeHeader(userName, dateString, greeting),
+                      const SizedBox(height: CRMSpacing.l),
+
+                      // 2. Responsive Main Content Area
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isDesktop = constraints.maxWidth >= 900;
+                          if (isDesktop) {
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    children: [
+                                      _buildKPIGrids(data.summary, isDesktop: true),
+                                      const SizedBox(height: CRMSpacing.l),
+                                      _buildRecentProperties(data.recentProperties),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: CRMSpacing.l),
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    children: [
+                                      const SizedBox(height: 54),
+                                      _buildTodayWork(data.checklist),
+                                      const SizedBox(height: CRMSpacing.l),
+                                      _buildFollowups(data.followups, data.siteVisits),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            );
+                          } else {
+                            return Column(
+                              children: [
+                                _buildKPIGrids(data.summary, isDesktop: false),
+                                const SizedBox(height: CRMSpacing.l),
+                                _buildRecentProperties(data.recentProperties),
+                                const SizedBox(height: CRMSpacing.l),
+                                _buildTodayWork(data.checklist),
+                                const SizedBox(height: CRMSpacing.l),
+                                _buildFollowups(data.followups, data.siteVisits),
+                              ],
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return const SizedBox.shrink();
+          },
+        ),
+        if (_isLoadingProperty)
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withOpacity(0.35),
+              child: const Center(
+                child: CircularProgressIndicator(),
               ),
             ),
-          );
-        }
-        return const SizedBox.shrink();
-      },
+          ),
+      ],
     );
   }
 
@@ -673,155 +687,366 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String tempPriceSort = _priceSortOrder;
     String locationSearchQuery = '';
 
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final filteredAreas = distinctAreas.where((area) {
-              if (locationSearchQuery.isEmpty) return true;
-              return area.toLowerCase().contains(locationSearchQuery.toLowerCase());
-            }).toList();
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
 
-            return AlertDialog(
-              backgroundColor: CRMColors.cardBgOf(context),
-              title: Text(
-                'Filter Recent Properties',
-                style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
-              ),
-              content: SizedBox(
-                width: 400,
-                child: SingleChildScrollView(
+    if (isMobile) {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (context, setModalState) {
+              final filteredAreas = distinctAreas.where((area) {
+                if (locationSearchQuery.isEmpty) return true;
+                return area.toLowerCase().contains(locationSearchQuery.toLowerCase());
+              }).toList();
+
+              return SafeArea(
+                top: false,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: CRMColors.cardBgOf(context),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(CRMBorderRadius.l)),
+                  ),
+                  padding: EdgeInsets.only(
+                    left: CRMSpacing.m,
+                    right: CRMSpacing.m,
+                    top: CRMSpacing.m,
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 8,
+                  ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        'Price Sorting',
-                        style: CRMTypography.bodyMedium.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: CRMColors.textOf(context),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      RadioListTile<String>(
-                        title: const Text('Default Order (Newest First)'),
-                        value: 'none',
-                        groupValue: tempPriceSort,
-                        dense: true,
-                        activeColor: CRMColors.primary,
-                        onChanged: (val) => setModalState(() => tempPriceSort = val!),
-                      ),
-                      RadioListTile<String>(
-                        title: const Text('Price: High to Low'),
-                        value: 'high_to_low',
-                        groupValue: tempPriceSort,
-                        dense: true,
-                        activeColor: CRMColors.primary,
-                        onChanged: (val) => setModalState(() => tempPriceSort = val!),
-                      ),
-                      RadioListTile<String>(
-                        title: const Text('Price: Low to High'),
-                        value: 'low_to_high',
-                        groupValue: tempPriceSort,
-                        dense: true,
-                        activeColor: CRMColors.primary,
-                        onChanged: (val) => setModalState(() => tempPriceSort = val!),
-                      ),
-                      const Divider(height: 24),
-                      Text(
-                        'Area Filter (Multi-select)',
-                        style: CRMTypography.bodyMedium.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: CRMColors.textOf(context),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Search locations / areas...',
-                          prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                          filled: true,
-                          fillColor: CRMColors.backgroundOf(context),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                            borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: CRMColors.borderOf(context),
+                            borderRadius: BorderRadius.circular(2),
                           ),
                         ),
-                        onChanged: (val) {
-                          setModalState(() {
-                            locationSearchQuery = val.trim();
-                          });
-                        },
                       ),
-                      const SizedBox(height: 8),
-                      if (filteredAreas.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Text(
-                            distinctAreas.isEmpty ? 'No area options available.' : 'No matching locations found.',
-                            style: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                      const SizedBox(height: CRMSpacing.m),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Filter Recent Properties',
+                            style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
                           ),
-                        )
-                      else
-                        ...filteredAreas.map((area) {
-                          final isChecked = tempAreas.contains(area);
-                          return CheckboxListTile(
-                            title: Text(area, style: const TextStyle(fontSize: 14)),
-                            value: isChecked,
-                            dense: true,
-                            activeColor: CRMColors.primary,
-                            onChanged: (val) {
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: CRMSpacing.s),
+                      Flexible(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: MediaQuery.of(context).size.height * 0.45,
+                          ),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Price Sorting',
+                                  style: CRMTypography.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: CRMColors.textOf(context),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                RadioListTile<String>(
+                                  title: const Text('Default Order (Newest First)'),
+                                  value: 'none',
+                                  groupValue: tempPriceSort,
+                                  dense: true,
+                                  activeColor: CRMColors.primary,
+                                  onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                                ),
+                                RadioListTile<String>(
+                                  title: const Text('Price: High to Low'),
+                                  value: 'high_to_low',
+                                  groupValue: tempPriceSort,
+                                  dense: true,
+                                  activeColor: CRMColors.primary,
+                                  onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                                ),
+                                RadioListTile<String>(
+                                  title: const Text('Price: Low to High'),
+                                  value: 'low_to_high',
+                                  groupValue: tempPriceSort,
+                                  dense: true,
+                                  activeColor: CRMColors.primary,
+                                  onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                                ),
+                                const Divider(height: 24),
+                                Text(
+                                  'Area Filter (Multi-select)',
+                                  style: CRMTypography.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: CRMColors.textOf(context),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  style: TextStyle(color: CRMColors.textOf(context)),
+                                  decoration: InputDecoration(
+                                    hintText: 'Search locations / areas...',
+                                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                                    filled: true,
+                                    fillColor: CRMColors.backgroundOf(context),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                                      borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                                      borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                                    ),
+                                  ),
+                                  onChanged: (val) {
+                                    setModalState(() {
+                                      locationSearchQuery = val.trim();
+                                    });
+                                  },
+                                ),
+                                const SizedBox(height: 8),
+                                if (filteredAreas.isEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: Text(
+                                      distinctAreas.isEmpty ? 'No area options available.' : 'No matching locations found.',
+                                      style: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                                    ),
+                                  )
+                                else
+                                  ...filteredAreas.map((area) {
+                                    final isChecked = tempAreas.contains(area);
+                                    return CheckboxListTile(
+                                      title: Text(area, style: const TextStyle(fontSize: 14)),
+                                      value: isChecked,
+                                      dense: true,
+                                      activeColor: CRMColors.primary,
+                                      onChanged: (val) {
+                                        setModalState(() {
+                                          if (val == true) {
+                                            tempAreas.add(area);
+                                          } else {
+                                            tempAreas.remove(area);
+                                          }
+                                        });
+                                      },
+                                    );
+                                  }),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: CRMSpacing.m),
+                      Row(
+                        children: [
+                          TextButton(
+                            onPressed: () {
                               setModalState(() {
-                                if (val == true) {
-                                  tempAreas.add(area);
-                                } else {
-                                  tempAreas.remove(area);
-                                }
+                                tempAreas.clear();
+                                tempPriceSort = 'none';
+                                locationSearchQuery = '';
                               });
                             },
-                          );
-                        }),
+                            child: const Text('Reset All'),
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Cancel'),
+                          ),
+                          const SizedBox(width: 8),
+                          CRMButton(
+                            label: 'Apply Filters',
+                            onPressed: () {
+                              setState(() {
+                                _selectedAreaFilters = tempAreas;
+                                _priceSortOrder = tempPriceSort;
+                              });
+                              Navigator.pop(ctx);
+                            },
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    setModalState(() {
-                      tempAreas.clear();
-                      tempPriceSort = 'none';
-                      locationSearchQuery = '';
-                    });
-                  },
-                  child: const Text('Reset All'),
+              );
+            },
+          );
+        },
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (context, setModalState) {
+              final filteredAreas = distinctAreas.where((area) {
+                if (locationSearchQuery.isEmpty) return true;
+                return area.toLowerCase().contains(locationSearchQuery.toLowerCase());
+              }).toList();
+
+              return AlertDialog(
+                backgroundColor: CRMColors.cardBgOf(context),
+                title: Text(
+                  'Filter Recent Properties',
+                  style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
                 ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
+                content: SizedBox(
+                  width: 400,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Price Sorting',
+                          style: CRMTypography.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: CRMColors.textOf(context),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        RadioListTile<String>(
+                          title: const Text('Default Order (Newest First)'),
+                          value: 'none',
+                          groupValue: tempPriceSort,
+                          dense: true,
+                          activeColor: CRMColors.primary,
+                          onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                        ),
+                        RadioListTile<String>(
+                          title: const Text('Price: High to Low'),
+                          value: 'high_to_low',
+                          groupValue: tempPriceSort,
+                          dense: true,
+                          activeColor: CRMColors.primary,
+                          onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                        ),
+                        RadioListTile<String>(
+                          title: const Text('Price: Low to High'),
+                          value: 'low_to_high',
+                          groupValue: tempPriceSort,
+                          dense: true,
+                          activeColor: CRMColors.primary,
+                          onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                        ),
+                        const Divider(height: 24),
+                        Text(
+                          'Area Filter (Multi-select)',
+                          style: CRMTypography.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: CRMColors.textOf(context),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          style: TextStyle(color: CRMColors.textOf(context)),
+                          decoration: InputDecoration(
+                            hintText: 'Search locations / areas...',
+                            prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                            filled: true,
+                            fillColor: CRMColors.backgroundOf(context),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                              borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                            ),
+                          ),
+                          onChanged: (val) {
+                            setModalState(() {
+                              locationSearchQuery = val.trim();
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        if (filteredAreas.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              distinctAreas.isEmpty ? 'No area options available.' : 'No matching locations found.',
+                              style: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                            ),
+                          )
+                        else
+                          ...filteredAreas.map((area) {
+                            final isChecked = tempAreas.contains(area);
+                            return CheckboxListTile(
+                              title: Text(area, style: const TextStyle(fontSize: 14)),
+                              value: isChecked,
+                              dense: true,
+                              activeColor: CRMColors.primary,
+                              onChanged: (val) {
+                                setModalState(() {
+                                  if (val == true) {
+                                    tempAreas.add(area);
+                                  } else {
+                                    tempAreas.remove(area);
+                                  }
+                                });
+                              },
+                            );
+                          }),
+                      ],
+                    ),
+                  ),
                 ),
-                CRMButton(
-                  label: 'Apply Filters',
-                  onPressed: () {
-                    setState(() {
-                      _selectedAreaFilters = tempAreas;
-                      _priceSortOrder = tempPriceSort;
-                    });
-                    Navigator.pop(ctx);
-                  },
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+                actions: [
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          setModalState(() {
+                            tempAreas.clear();
+                            tempPriceSort = 'none';
+                            locationSearchQuery = '';
+                          });
+                        },
+                        child: const Text('Reset All'),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      CRMButton(
+                        label: 'Apply Filters',
+                        onPressed: () {
+                          setState(() {
+                            _selectedAreaFilters = tempAreas;
+                            _priceSortOrder = tempPriceSort;
+                          });
+                          Navigator.pop(ctx);
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    }
   }
 
   Widget _buildTableHeaderCell(String label) {
@@ -1933,36 +2158,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _openPropertyDetails(String propertyId) {
-    if (kIsWeb) {
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+    if (kIsWeb && !isMobile) {
       final String url = '${Uri.base.origin}/properties/$propertyId';
       launchUrl(Uri.parse(url), webOnlyWindowName: '_blank');
     } else {
-      // Show loading indicator in case of delay
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      setState(() {
+        _isLoadingProperty = true;
+      });
       PropertiesRepository().getPropertyById(propertyId).then((p) {
-        // Pop loading indicator
-        if (Navigator.canPop(context)) {
-          Navigator.pop(context);
-        }
-        if (p != null && mounted) {
-          showCRMPropertyDrawer(context, p);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to load property details.')),
-          );
+        if (mounted) {
+          setState(() {
+            _isLoadingProperty = false;
+          });
+          if (p != null) {
+            showCRMPropertyDrawer(context, p);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Failed to load property details.')),
+            );
+          }
         }
       }).catchError((e) {
-        // Pop loading indicator
-        if (Navigator.canPop(context)) {
-          Navigator.pop(context);
-        }
         if (mounted) {
+          setState(() {
+            _isLoadingProperty = false;
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Error loading property: $e')),
           );
