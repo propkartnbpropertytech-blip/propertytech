@@ -8,6 +8,7 @@ import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_motion.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/data_table.dart';
@@ -139,7 +140,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
             const SizedBox(height: 4.0),
             Text(
               "Track pipeline stages, target source channels, and conversions",
-              style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
+              style: CRMTypography.benefit.copyWith(color: CRMColors.textSecondary),
             ),
           ],
         ),
@@ -174,25 +175,28 @@ class _ClientsScreenState extends State<ClientsScreen> {
               mainAxisSpacing: CRMSpacing.m,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: isWide ? 2.5 : 1.5,
+              childAspectRatio: CRMBreakpoints.kpiAspectRatio(context),
               children: [
                 CRMKPICard(
                   title: "TOTAL CUSTOMERS",
                   value: total.toString(),
                   icon: Icons.people_rounded,
                   iconColor: CRMColors.primary,
+                  benefit: 'Your full lead book at a glance',
                 ),
                 CRMKPICard(
                   title: "ACTIVE PIPELINE DEALS",
                   value: pipeline.toString(),
                   icon: Icons.bubble_chart_rounded,
                   iconColor: CRMColors.info,
+                  benefit: 'Deals still moving toward close',
                 ),
                 CRMKPICard(
                   title: "DEALS CONVERTED (WON)",
                   value: won.toString(),
                   icon: Icons.check_circle_outline_rounded,
                   iconColor: CRMColors.success,
+                  benefit: 'Wins that prove conversion strength',
                 ),
               ],
             );

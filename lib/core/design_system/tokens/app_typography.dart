@@ -2,8 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Apple-inspired typography scale.
-/// SF Pro on Apple platforms (system default); Inter elsewhere via google_fonts.
+/// PropKart typography — DM Sans for UI chrome, Playfair Display for brand moments.
 class CRMTypography {
   static bool get _useSystemSf {
     if (kIsWeb) return false;
@@ -11,7 +10,7 @@ class CRMTypography {
         defaultTargetPlatform == TargetPlatform.macOS;
   }
 
-  static String? get fontFamily => _useSystemSf ? null : 'Inter';
+  static String? get fontFamily => _useSystemSf ? null : 'DM Sans';
 
   static TextStyle _base({
     required double fontSize,
@@ -29,7 +28,7 @@ class CRMTypography {
         color: color,
       );
     }
-    return GoogleFonts.inter(
+    return GoogleFonts.dmSans(
       fontSize: fontSize,
       fontWeight: fontWeight,
       height: height,
@@ -37,6 +36,41 @@ class CRMTypography {
       color: color,
     );
   }
+
+  static TextStyle _display({
+    required double fontSize,
+    FontWeight fontWeight = FontWeight.w700,
+    double height = 1.15,
+    double letterSpacing = -0.4,
+    Color? color,
+  }) {
+    return GoogleFonts.playfairDisplay(
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      height: height,
+      letterSpacing: letterSpacing,
+      color: color,
+    );
+  }
+
+  /// Brand wordmark / greeting name / clock display.
+  static TextStyle get brandMark => _display(
+        fontSize: 22,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.2,
+      );
+
+  static TextStyle get greetingName => _display(
+        fontSize: 30,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.5,
+      );
+
+  static TextStyle get clockDisplay => _display(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.4,
+      );
 
   static TextStyle get largeDisplay => _base(
         fontSize: 40,
@@ -160,6 +194,13 @@ class CRMTypography {
         fontWeight: FontWeight.bold,
         height: 1.15,
         letterSpacing: -0.6,
+      );
+
+  static TextStyle get benefit => _base(
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        height: 1.35,
+        letterSpacing: 0.1,
       );
 
   static TextStyle get chartLabel => _base(

@@ -33,16 +33,23 @@ class CRMEmptyState extends StatelessWidget {
               height: 88,
               width: 88,
               decoration: BoxDecoration(
-                color: CRMColors.groupedBackground,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    CRMColors.primaryOf(context).withValues(alpha: 0.16),
+                    CRMColors.primaryOf(context).withValues(alpha: 0.04),
+                  ],
+                ),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: CRMColors.borderOf(context).withOpacity(0.6),
-                  width: 0.5,
+                  color: CRMColors.primaryOf(context).withValues(alpha: 0.28),
+                  width: 0.8,
                 ),
               ),
               child: Icon(
                 icon,
-                color: CRMColors.textMutedOf(context),
+                color: CRMColors.primaryOf(context),
                 size: 36,
               ),
             ),
@@ -59,8 +66,9 @@ class CRMEmptyState extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 360),
               child: Text(
                 description,
-                style: CRMTypography.body.copyWith(
+                style: CRMTypography.benefit.copyWith(
                   color: CRMColors.textSecondaryOf(context),
+                  fontSize: 14,
                 ),
                 textAlign: TextAlign.center,
               ),

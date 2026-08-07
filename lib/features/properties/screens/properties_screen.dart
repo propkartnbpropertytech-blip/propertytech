@@ -17,6 +17,7 @@ import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
+import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/data_table.dart';
 import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
@@ -207,7 +208,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF6B8B7B),
+                            color: CRMColors.primary,
                             borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
                           ),
                           child: Text(
@@ -363,10 +364,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         if (isMine && _activeTab != 'My Deleted') ...[
                           IconButton(
                             icon: Icon(Icons.edit_outlined,
-                                color: const Color(0xFF6B8B7B), size: 18),
+                                color: CRMColors.primary, size: 18),
                             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                             style: IconButton.styleFrom(
-                              backgroundColor: const Color(0xFF6B8B7B).withOpacity(0.1),
+                              backgroundColor: CRMColors.primary.withOpacity(0.1),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
@@ -1129,58 +1130,26 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
 
   Widget _buildPageHeader(PropertyMetadataModel? metadata) {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 600;
-
-    Widget leftColumn = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Workspace',
-            style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context))),
-        Text(
-          'Available Inventory',
-          style: CRMTypography.pageTitle.copyWith(
-            color: CRMColors.textOf(context),
-            fontSize: isMobile ? 20 : 26,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-
-    Widget rightColumn = CRMButton(
-      label: 'Add Property',
-      prefixIcon: Icons.add_circle_outline_rounded,
-      onPressed: () {
-        if (metadata == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Metadata lookups loading, please try again.')),
-          );
-          return;
-        }
-        _showAddEditPropertyDialog(context, metadata!);
-      },
-    );
-
-    if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          leftColumn,
-          const SizedBox(height: CRMSpacing.m),
-          rightColumn,
-        ],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(child: leftColumn),
-        const SizedBox(width: CRMSpacing.m),
-        rightColumn,
-      ],
+    return CRMPageHeader(
+      eyebrow: 'Workspace',
+      title: 'Available Inventory',
+      benefit:
+          'Browse, filter, and pitch live stock matched to your active deals',
+      trailing: CRMButton(
+        label: 'Add Property',
+        prefixIcon: Icons.add_circle_outline_rounded,
+        onPressed: () {
+          if (metadata == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content:
+                      Text('Metadata lookups loading, please try again.')),
+            );
+            return;
+          }
+          _showAddEditPropertyDialog(context, metadata!);
+        },
+      ),
     );
   }
 
@@ -1220,7 +1189,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final double chartCardWidth = isMobile
         ? (screenWidth - (CRMSpacing.m * 2))
         : 260.0;
-    final double cardHeight = isMobile ? 105.0 : 120.0;
+    final double cardHeight = isMobile ? 132.0 : 148.0;
 
     final List<Widget> widgets = [];
     Widget? mobileKpiCard;
@@ -1234,6 +1203,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         value: '$statusCount',
         icon: Icons.bolt_rounded,
         iconColor: CRMColors.primaryOf(context),
+        benefit: 'Homes ready to share with matching clients',
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1282,6 +1252,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         value: '$statusCount',
         icon: Icons.business_center_outlined,
         iconColor: CRMColors.primaryOf(context),
+        benefit: 'Office and retail stock you can match today',
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1333,6 +1304,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         value: '$statusCount',
         icon: Icons.factory_outlined,
         iconColor: CRMColors.primaryOf(context),
+        benefit: 'Warehouse and factory options for B2B demand',
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1373,6 +1345,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         value: '$statusCount',
         icon: Icons.landscape_outlined,
         iconColor: CRMColors.primaryOf(context),
+        benefit: 'Plot inventory ready for buyer shortlists',
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1429,7 +1402,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   ),
                 ),
                 selected: isSelected,
-                selectedColor: const Color(0xFF64826F),
+                selectedColor: CRMColors.primary,
                 backgroundColor: CRMColors.backgroundOf(context).withOpacity(0.5),
                 onSelected: (selected) {
                   if (selected) {
@@ -1880,10 +1853,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 12),
         decoration: BoxDecoration(
-          color: _isMobileFiltersExpanded ? const Color(0xFF64826F) : CRMColors.cardBgOf(context),
+          color: _isMobileFiltersExpanded ? CRMColors.primary : CRMColors.cardBgOf(context),
           borderRadius: BorderRadius.circular(CRMBorderRadius.card),
           border: Border.all(
-            color: _isMobileFiltersExpanded ? const Color(0xFF64826F) : CRMColors.borderOf(context).withOpacity(0.6),
+            color: _isMobileFiltersExpanded ? CRMColors.primary : CRMColors.borderOf(context).withOpacity(0.6),
             width: 1.0,
           ),
           boxShadow: [
@@ -1946,6 +1919,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   Widget _buildPropertyListingTabButton(String label) {
     final isSelected = _activeListingTab == label;
+    final accent =
+        label == 'Rent' ? CRMColors.rentAccent : CRMColors.resaleAccent;
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -1959,14 +1934,16 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         curve: CRMMotion.easeOut,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF64826F) : Colors.transparent,
+          color: isSelected ? accent : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 14,
-            color: isSelected ? Colors.white : const Color(0xFF6B7280),
+            color: isSelected
+                ? Colors.white
+                : CRMColors.textSecondaryOf(context),
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
           ),
         ),
@@ -1986,10 +1963,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         curve: CRMMotion.easeOut,
         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
         decoration: BoxDecoration(
-          color: _myAddedOnly ? const Color(0xFF64826F) : Colors.transparent,
+          color: _myAddedOnly ? CRMColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: _myAddedOnly ? const Color(0xFF64826F) : CRMColors.borderOf(context).withOpacity(0.6),
+            color: _myAddedOnly ? CRMColors.primary : CRMColors.borderOf(context).withOpacity(0.6),
             width: 1.0,
           ),
         ),

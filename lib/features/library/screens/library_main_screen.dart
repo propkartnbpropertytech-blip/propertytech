@@ -4,6 +4,7 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/cards.dart';
+import '../../../core/design_system/widgets/crm_page_header.dart';
 
 class LibraryMainScreen extends StatelessWidget {
   const LibraryMainScreen({super.key});
@@ -22,9 +23,11 @@ class LibraryMainScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Breadcrumbs
-              Row(
-                children: [
+              CRMPageHeader(
+                title: 'Document Library',
+                benefit:
+                    'Select a document vault to upload, filter, view, and manage your property records.',
+                breadcrumbs: [
                   MouseRegion(
                     cursor: SystemMouseCursors.click,
                     child: GestureDetector(
@@ -50,23 +53,6 @@ class LibraryMainScreen extends StatelessWidget {
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: CRMSpacing.m),
-              
-              // Page Title & Subtitle
-              Text(
-                'Document Library',
-                style: CRMTypography.pageTitle.copyWith(
-                  color: CRMColors.textOf(context),
-                  fontSize: 28,
-                ),
-              ),
-              const SizedBox(height: CRMSpacing.xxs),
-              Text(
-                'Select a document vault to upload, filter, view, and manage your property records.',
-                style: CRMTypography.body.copyWith(
-                  color: CRMColors.textSecondaryOf(context),
-                ),
               ),
               const SizedBox(height: CRMSpacing.xl),
 
@@ -103,7 +89,7 @@ class LibraryMainScreen extends StatelessWidget {
                         subtitle: 'Property Purchases & Sales',
                         description: 'Organize transaction deeds and sales checklists, legal society NOCs, building blueprints, tax records, registration agreements, and bank loan approvals.',
                         icon: Icons.handshake_rounded,
-                        color: Colors.teal,
+                        color: CRMColors.resaleAccent,
                         bulletPoints: const [
                           'Sale Deeds & Agreements',
                           'Property Legal Documents',
@@ -119,7 +105,7 @@ class LibraryMainScreen extends StatelessWidget {
                         subtitle: 'Vendor Agreements & Invoices',
                         description: 'Manage active contracts, GST registrations, price catalogs, and project work proofs for builders, plumbers, AC technicians, cleaning agencies, and electricians.',
                         icon: Icons.badge_rounded,
-                        color: Colors.blueAccent,
+                        color: CRMColors.info,
                         bulletPoints: const [
                           'Aadhaar / ID Verification Proofs',
                           'GST Registration Certificates',
@@ -222,7 +208,7 @@ class _LibraryCategoryCardState extends State<_LibraryCategoryCard> {
                           ),
                           Text(
                             widget.subtitle,
-                            style: CRMTypography.caption.copyWith(
+                            style: CRMTypography.benefit.copyWith(
                               color: CRMColors.textSecondaryOf(context),
                               fontWeight: FontWeight.w500,
                             ),

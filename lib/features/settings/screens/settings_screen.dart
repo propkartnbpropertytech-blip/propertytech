@@ -10,6 +10,7 @@ import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
+import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../auth/bloc/auth_bloc.dart';
@@ -43,7 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return CRMCard(
       elevated: true,
       title: 'User Profile',
-      subtitle: 'Manage your personal account details',
+      subtitle: 'Keep your identity and access details current',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.m),
         child: Column(
@@ -120,8 +121,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return CRMCard(
       title: 'System & Appearance',
       subtitle: isAdminOrSuperAdmin
-          ? 'Customize visual themes and view diagnostic logs'
-          : 'Customize visual themes',
+          ? 'Tune the look of your workspace and open sync diagnostics'
+          : 'Tune the look of your workspace for day-long comfort',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.xs),
         child: Column(
@@ -183,7 +184,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildAboutCard() {
     return CRMCard(
       title: 'About PropKart',
-      subtitle: 'View software version details and check for updates',
+      subtitle: 'Stay on the latest build with version checks and updates',
       child: FutureBuilder<PackageInfo>(
         future: PackageInfo.fromPlatform(),
         builder: (context, snapshot) {
@@ -281,7 +282,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildAuditLogsCard() {
     return CRMCard(
       title: 'Audit Logs',
-      subtitle: 'View system audit activity logs and database change records',
+      subtitle: 'Trace who changed what — accountability across the CRM',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.xs),
         child: ListTile(
@@ -339,13 +340,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('System Configuration', style: CRMTypography.body.copyWith(color: CRMColors.textSecondary)),
-                  Text(
-                    'Settings & Profile',
-                    style: CRMTypography.pageTitle.copyWith(
-                      color: CRMColors.text,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  const CRMPageHeader(
+                    eyebrow: 'System configuration',
+                    title: 'Settings & Profile',
+                    benefit:
+                        'Control appearance, access, and system tools that keep PropKart running smoothly',
                   ),
                   const SizedBox(height: CRMSpacing.l),
                   if (isMobile) ...[
@@ -409,7 +408,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildLocationConfigCard() {
     return CRMCard(
       title: 'Location Configurations',
-      subtitle: 'Manage active cities and area mapping configurations',
+      subtitle: 'Keep city and area maps accurate for inventory and demand',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.xs),
         child: ListTile(
@@ -442,7 +441,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildDiagnosticsCard() {
     return CRMCard(
       title: 'Diagnostics',
-      subtitle: 'Perform system diagnostics and test integrations',
+      subtitle: 'Verify integrations before issues hit your team',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.m),
         child: Column(

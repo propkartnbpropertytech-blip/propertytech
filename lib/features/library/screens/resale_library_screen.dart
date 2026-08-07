@@ -444,7 +444,7 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                   const SizedBox(height: CRMSpacing.m),
                   ListTile(
                     leading: const CircleAvatar(
-                      backgroundColor: Colors.blueAccent,
+                      backgroundColor: CRMColors.info,
                       child: Icon(Icons.link_rounded, color: Colors.white),
                     ),
                     title: const Text('Copy Access Link'),
@@ -1085,6 +1085,7 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                         value: '$_totalCount',
                         icon: Icons.folder_rounded,
                         iconColor: CRMColors.primaryOf(context),
+                        benefit: 'All sale paperwork in one searchable vault',
                       ),
                     ),
                     SizedBox(
@@ -1094,6 +1095,7 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                         value: '$_activeCount',
                         icon: Icons.check_circle_rounded,
                         iconColor: CRMColors.success,
+                        benefit: 'Live deal files ready for closing',
                       ),
                     ),
                     SizedBox(
@@ -1102,7 +1104,8 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                         title: 'Sold Properties Docs',
                         value: '$_soldCount',
                         icon: Icons.home_filled,
-                        iconColor: Colors.teal,
+                        iconColor: CRMColors.secondaryOf(context),
+                        benefit: 'Closed deals retained for compliance',
                       ),
                     ),
                     SizedBox(
@@ -1111,7 +1114,8 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                         title: 'Recent Uploads (7d)',
                         value: '$_recentCount',
                         icon: Icons.cloud_done_rounded,
-                        iconColor: Colors.blue,
+                        iconColor: CRMColors.info,
+                        benefit: 'New files keep transactions moving',
                       ),
                     ),
                   ],

@@ -15,9 +15,12 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
+import '../../../core/design_system/tokens/app_shadows.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/skeletons.dart';
+import '../../../core/design_system/widgets/crm_donut_chart.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../bloc/dashboard_bloc.dart';
 import '../models/dashboard_summary.dart';
@@ -33,11 +36,14 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with SingleTickerProviderStateMixin {
   // Table filter and tab states
   String _activeTab = 'Rental'; // 'Rental' or 'Only Re-Sale'
   Set<String> _selectedAreaFilters = {};
   String _priceSortOrder = 'none'; // 'none', 'high_to_low', 'low_to_high'
+  String? _chartFilterLabel;
+  bool _showPortfolioChart = false;
 
   // Pagination states
   int _propertyPage = 1;
@@ -55,11 +61,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final Set<String> _optimisticDeletedChecklistIds = {};
   bool _isChecklistLoading = false;
   bool _isLoadingProperty = false;
+  late AnimationController _nameShimmerController;
+  static bool _greetingPlayedThisSession = false;
+
+  bool get _isRent => _activeTab == 'Rental';
+  Color get _atmosphere => CRMColors.atmosphereAccent(_isRent);
 
   @override
   void initState() {
     super.initState();
+    _nameShimmerController = AnimationController(
+      vsync: this,
+      duration: CRMMotion.nameShimmer,
+    );
+    if (!_greetingPlayedThisSession) {
+      _nameShimmerController.forward().whenComplete(() {
+        _greetingPlayedThisSession = true;
+      });
+    } else {
+      _nameShimmerController.value = 1.0;
+    }
     context.read<DashboardBloc>().add(LoadDashboard());
+  }
+
+  @override
+  void dispose() {
+    _nameShimmerController.dispose();
+    super.dispose();
   }
 
   String _getGreeting() {
@@ -113,11 +141,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: CRMSpacing.m,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: CRMBreakpoints.pagePadding(context),
                     vertical: CRMSpacing.l,
                   ),
-                  child: Column(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: CRMBreakpoints.maxContentWidth,
+                      ),
+                      child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // 1. Welcome Header
@@ -147,7 +180,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   flex: 2,
                                   child: Column(
                                     children: [
-                                      const SizedBox(height: 54),
                                       _buildTodayWork(data.checklist),
                                       const SizedBox(height: CRMSpacing.l),
                                       _buildFollowups(data.followups, data.siteVisits),
@@ -173,6 +205,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ],
                   ),
+                    ),
+                  ),
                 ),
               );
             }
@@ -195,6 +229,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildWelcomeHeader(String name, String dateString, String greeting) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    Widget nameWidget = AnimatedBuilder(
+      animation: _nameShimmerController,
+      builder: (context, _) {
+        final t = _nameShimmerController.value;
+        final shimmer = (t < 1.0)
+            ? LinearGradient(
+                begin: Alignment(-1.5 + 3 * t, 0),
+                end: Alignment(-0.5 + 3 * t, 0),
+                colors: [
+                  CRMColors.textOf(context),
+                  CRMColors.primaryOf(context),
+                  CRMColors.accentOf(context),
+                  CRMColors.textOf(context),
+                ],
+                stops: const [0.0, 0.35, 0.55, 1.0],
+              )
+            : null;
+
+        final style = CRMTypography.greetingName.copyWith(
+          fontSize: isMobile ? 24 : 32,
+          color: CRMColors.textOf(context),
+        );
+
+        if (shimmer == null) {
+          return Text(name, style: style);
+        }
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) => shimmer.createShader(bounds),
+          child: Text(name, style: style.copyWith(color: Colors.white)),
+        );
+      },
+    );
 
     Widget leftColumn = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,28 +275,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
             fontSize: isMobile ? 14 : 16,
           ),
         ),
+        nameWidget,
+        const SizedBox(height: 4),
         Text(
-          name,
-          style: CRMTypography.pageTitle.copyWith(
-            color: CRMColors.textOf(context),
-            fontWeight: FontWeight.bold,
-            fontSize: isMobile ? 22 : 28,
+          'Your property desk — priorities, inventory, and next moves',
+          style: CRMTypography.benefit.copyWith(
+            color: CRMColors.textMutedOf(context),
           ),
         ),
       ],
     );
 
-    Widget rightColumn = Column(
-      crossAxisAlignment: isMobile ? CrossAxisAlignment.start : CrossAxisAlignment.end,
-      children: [
-        Text(
-          dateString,
-          style: CRMTypography.bodyMedium.copyWith(
-            color: CRMColors.primary,
-            fontWeight: FontWeight.w600,
-          ),
+    Widget rightColumn = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            CRMColors.primaryOf(context).withValues(alpha: isDark ? 0.18 : 0.1),
+            CRMColors.cardBgOf(context),
+          ],
         ),
-      ],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: CRMColors.primaryOf(context).withValues(alpha: 0.28),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment:
+            isMobile ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+        children: [
+          Text(
+            dateString,
+            style: CRMTypography.bodyMedium.copyWith(
+              color: CRMColors.primaryOf(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            'Today\'s market pulse',
+            style: CRMTypography.benefit.copyWith(
+              color: CRMColors.textSecondaryOf(context),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
     );
 
     if (isMobile) {
@@ -243,8 +335,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        leftColumn,
+        Expanded(child: leftColumn),
         rightColumn,
       ],
     );
@@ -263,12 +356,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildKPIGrids(DashboardSummary summary, {required bool isDesktop}) {
-    final double screenWidth = MediaQuery.of(context).size.width;
+    final atmosphere = _atmosphere;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final int availableVal = _activeTab == 'Rental' ? summary.rentalAvailable : summary.resaleAvailable;
-    final int soldVal = summary.resaleSold;
-    final int rentedVal = summary.rentalRented;
-    final int requirementsVal = _activeTab == 'Rental' ? summary.rentalRequirements : summary.resaleRequirements;
+    final int availableVal =
+        _isRent ? summary.rentalAvailable : summary.resaleAvailable;
+    final int closedVal = _isRent ? summary.rentalRented : summary.resaleSold;
+    final int requirementsVal =
+        _isRent ? summary.rentalRequirements : summary.resaleRequirements;
+    final int wonVal =
+        _isRent ? summary.rentalWonRequirements : summary.resaleWonRequirements;
 
     final authState = context.read<AuthBloc>().state;
     String role = 'Sales';
@@ -299,109 +396,302 @@ class _DashboardScreenState extends State<DashboardScreen> {
         value: '$availableVal',
         icon: Icons.check_circle_outline_rounded,
         iconColor: CRMColors.success,
+        benefit: _isRent
+            ? 'Live rental stock you can pitch today'
+            : 'Live re-sale stock ready for buyer matching',
+        onTap: () => context.go('/properties'),
       ),
-      if (_activeTab == 'Re-Sale')
-        CRMKPICard(
-          title: siteVisitTitle,
-          value: '$soldVal',
-          icon: Icons.directions_walk_rounded,
-          iconColor: CRMColors.warning,
-        ),
-      if (_activeTab == 'Rental')
-        CRMKPICard(
-          title: siteVisitTitle,
-          value: '$rentedVal',
-          icon: Icons.directions_walk_rounded,
-          iconColor: CRMColors.info,
-        ),
+      CRMKPICard(
+        title: siteVisitTitle,
+        value: '$closedVal',
+        icon: Icons.directions_walk_rounded,
+        iconColor: _isRent ? CRMColors.info : CRMColors.warning,
+        benefit: _isRent
+            ? 'Site visits that move rental deals forward'
+            : 'Site visits that move re-sale deals forward',
+      ),
       CRMKPICard(
         title: requirementsTitle,
         value: '$requirementsVal',
         icon: Icons.assignment_turned_in_outlined,
+        iconColor: CRMColors.secondaryOf(context),
+        benefit: 'Active buyer/tenant demand waiting on matches',
+        onTap: () => context.go('/requirements'),
       ),
       CRMKPICard(
         title: wonTitle,
-        value: '${_activeTab == 'Rental' ? summary.rentalWonRequirements : summary.resaleWonRequirements}',
+        value: '$wonVal',
         icon: Icons.emoji_events_outlined,
         iconColor: CRMColors.success,
+        benefit: 'Wins that show your conversion edge',
       ),
     ];
 
-    final int crossAxisCount = isDesktop ? 2 : (screenWidth >= 600 ? cards.length : 2);
-    final double childAspectRatio = isDesktop ? 2.4 : (screenWidth >= 600 ? 2.5 : 1.5);
+    final sectors = [
+      ChartSector(
+        label: 'Available',
+        value: availableVal.toDouble().clamp(0.01, double.infinity),
+        color: atmosphere,
+      ),
+      ChartSector(
+        label: siteVisitTitle,
+        value: closedVal.toDouble().clamp(0.01, double.infinity),
+        color: _isRent ? CRMColors.info : CRMColors.warning,
+      ),
+      ChartSector(
+        label: 'Requirements',
+        value: requirementsVal.toDouble().clamp(0.01, double.infinity),
+        color: CRMColors.secondaryOf(context),
+      ),
+      ChartSector(
+        label: 'Won',
+        value: wonVal.toDouble().clamp(0.01, double.infinity),
+        color: CRMColors.success,
+      ),
+    ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: CRMSpacing.xs, bottom: CRMSpacing.m),
-          child: Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: CRMSpacing.s,
-            runSpacing: CRMSpacing.xs,
-            children: [
-              Container(
-                height: 44,
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: CRMColors.cardBgOf(context),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 1.0),
+    final int crossAxisCount = isDesktop
+        ? 2
+        : CRMBreakpoints.kpiColumns(context, desktop: 4);
+    final double childAspectRatio = isDesktop
+        ? 2.4
+        : CRMBreakpoints.kpiAspectRatio(context);
+
+    return AnimatedContainer(
+      duration: CRMMotion.atmosphere,
+      curve: CRMMotion.emphasized,
+      padding: const EdgeInsets.all(CRMSpacing.s),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            atmosphere.withValues(alpha: isDark ? 0.12 : 0.07),
+            Colors.transparent,
+          ],
+        ),
+        border: Border.all(color: atmosphere.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(
+              left: CRMSpacing.xs,
+              bottom: CRMSpacing.m,
+              right: CRMSpacing.xs,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _isRent ? 'Rental desk' : 'Re-Sale desk',
+                        style: CRMTypography.sectionTitle.copyWith(
+                          color: CRMColors.textOf(context),
+                        ),
+                      ),
+                      Text(
+                        _isRent
+                            ? 'Sage mode — leasing velocity and tenant demand'
+                            : 'Plum mode — buyer demand and sale velocity',
+                        style: CRMTypography.benefit.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildMetricsTabButton('Rental'),
-                    const SizedBox(width: 4),
-                    _buildMetricsTabButton('Re-Sale'),
-                  ],
+                _buildAtmosphereToggle(),
+              ],
+            ),
+          ),
+          AnimatedSwitcher(
+            duration: CRMMotion.atmosphere,
+            switchInCurve: CRMMotion.emphasized,
+            child: KeyedSubtree(
+              key: ValueKey(_activeTab),
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: CRMSpacing.m,
+                  mainAxisSpacing: CRMSpacing.m,
+                  childAspectRatio: childAspectRatio,
                 ),
+                itemCount: cards.length,
+                itemBuilder: (context, index) => cards[index],
               ),
-            ],
+            ),
           ),
-        ),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            crossAxisSpacing: CRMSpacing.m,
-            mainAxisSpacing: CRMSpacing.m,
-            childAspectRatio: childAspectRatio,
+          const SizedBox(height: CRMSpacing.m),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _showPortfolioChart = !_showPortfolioChart;
+                  if (!_showPortfolioChart) {
+                    _chartFilterLabel = null;
+                  }
+                });
+              },
+              icon: Icon(
+                _showPortfolioChart
+                    ? Icons.expand_less_rounded
+                    : Icons.pie_chart_outline_rounded,
+                size: 18,
+                color: atmosphere,
+              ),
+              label: Text(
+                _showPortfolioChart ? 'Hide chart' : 'View chart',
+                style: CRMTypography.captionBold.copyWith(color: atmosphere),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: atmosphere,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ),
           ),
-          itemCount: cards.length,
-          itemBuilder: (context, index) {
-            return cards[index];
-          },
-        ),
-      ],
+          AnimatedSize(
+            duration: CRMMotion.sheet,
+            curve: CRMMotion.emphasized,
+            alignment: Alignment.topCenter,
+            child: _showPortfolioChart
+                ? Padding(
+                    padding: const EdgeInsets.only(top: CRMSpacing.s),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TweenAnimationBuilder<double>(
+                          key: const ValueKey('portfolio-chart-enter'),
+                          tween: Tween(begin: 0, end: 1),
+                          duration: CRMMotion.entrySettle,
+                          curve: CRMMotion.emphasized,
+                          builder: (context, value, child) {
+                            return Opacity(
+                              opacity: value,
+                              child: Transform.translate(
+                                offset: Offset(0, 12 * (1 - value)),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: CRMDonutChartCard(
+                            title: 'Portfolio mix',
+                            subtitle:
+                                'See where inventory, demand, and wins sit — tap a slice to focus',
+                            sectors: sectors,
+                            accent: atmosphere,
+                            replayOnUpdate: false,
+                            onSectorTap: (sector) {
+                              setState(() {
+                                _chartFilterLabel = sector.label;
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Focusing ${_isRent ? 'Rent' : 'Re-Sale'} · ${sector.label}',
+                                  ),
+                                  behavior: SnackBarBehavior.floating,
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        if (_chartFilterLabel != null) ...[
+                          const SizedBox(height: CRMSpacing.s),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: ActionChip(
+                              label: Text('Filter: $_chartFilterLabel'),
+                              avatar: const Icon(
+                                Icons.filter_alt_rounded,
+                                size: 16,
+                              ),
+                              onPressed: () =>
+                                  setState(() => _chartFilterLabel = null),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAtmosphereToggle() {
+    return AnimatedContainer(
+      duration: CRMMotion.tabSwitch,
+      height: 44,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _atmosphere.withValues(alpha: 0.45)),
+        boxShadow: CRMShadows.atmosphereGlow(_atmosphere),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildMetricsTabButton('Rental'),
+          const SizedBox(width: 4),
+          _buildMetricsTabButton('Re-Sale'),
+        ],
+      ),
     );
   }
 
   Widget _buildMetricsTabButton(String label) {
     final isSelected = _activeTab == label;
+    final accent = label == 'Rental' ? CRMColors.rentAccent : CRMColors.resaleAccent;
     return GestureDetector(
       onTap: () {
         setState(() {
           _activeTab = label;
           _propertyPage = 1;
+          _chartFilterLabel = null;
         });
       },
       child: AnimatedContainer(
         duration: CRMMotion.tabSwitch,
-        curve: CRMMotion.easeOut,
+        curve: CRMMotion.emphasized,
         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.l),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF64826F) : Colors.transparent,
+          gradient: isSelected
+              ? LinearGradient(
+                  colors: CRMColors.atmosphereGradient(label == 'Rental'),
+                )
+              : null,
+          color: isSelected ? null : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
         ),
         child: Text(
           label == 'Rental' ? 'Rent' : label,
           style: TextStyle(
             fontSize: 14,
-            color: isSelected ? Colors.white : const Color(0xFF6B7280),
+            color: isSelected
+                ? Colors.white
+                : CRMColors.textSecondaryOf(context),
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
           ),
         ),
@@ -471,15 +761,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ? tabFiltered.sublist(startIndex, endIndex)
         : <_DisplayProperty>[];
 
-    return CRMCard(
+    return AnimatedContainer(
+      duration: CRMMotion.atmosphere,
+      child: CRMCard(
       elevated: true,
+      accentBorder: _atmosphere.withValues(alpha: 0.28),
       title: 'Recent Properties',
-      subtitle: 'Latest registered listings in CRM platform',
+      subtitle: _isRent
+          ? 'Latest rental inventory matching your desk — act without leaving the dashboard'
+          : 'Latest re-sale inventory matching your desk — act without leaving the dashboard',
       headerAction: OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
-          foregroundColor: hasActiveFilter ? CRMColors.primary : CRMColors.textSecondaryOf(context),
+          foregroundColor: hasActiveFilter ? _atmosphere : CRMColors.textSecondaryOf(context),
           side: BorderSide(
-            color: hasActiveFilter ? CRMColors.primary : CRMColors.borderOf(context),
+            color: hasActiveFilter ? _atmosphere : CRMColors.borderOf(context),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         ),
@@ -487,7 +782,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         icon: Icon(
           Icons.tune_rounded,
           size: 16,
-          color: hasActiveFilter ? CRMColors.primary : CRMColors.textSecondaryOf(context),
+          color: hasActiveFilter ? _atmosphere : CRMColors.textSecondaryOf(context),
         ),
         label: Text(
           hasActiveFilter ? 'Filter (${_selectedAreaFilters.length + (_priceSortOrder != 'none' ? 1 : 0)})' : 'Filter',
@@ -618,7 +913,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       child: Text(
                                         CRMCurrencyFormatter.formatShort(p.price),
                                         style: TextStyle(
-                                          color: CRMColors.primary,
+                                          color: _atmosphere,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
@@ -669,6 +964,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -1072,48 +1368,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildMobilePropertyCard(_DisplayProperty p) {
     return InkWell(
       onTap: () => _openPropertyDetails(p.id),
-      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         margin: const EdgeInsets.only(bottom: CRMSpacing.s),
         padding: const EdgeInsets.all(CRMSpacing.m),
         decoration: BoxDecoration(
-          color: CRMColors.backgroundOf(context).withOpacity(0.4),
-          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-          border: Border.all(color: CRMColors.backgroundOf(context)),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              _atmosphere.withValues(alpha: 0.08),
+              CRMColors.cardBgOf(context),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _atmosphere.withValues(alpha: 0.22)),
+          boxShadow: CRMShadows.soft,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              p.title,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: CRMColors.textOf(context),
-                fontSize: 15,
-              ),
-            ),
-            const SizedBox(height: CRMSpacing.xs),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(Icons.location_on_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
-                    const SizedBox(width: 4),
-                    Text(
-                      p.areaName,
-                      style: TextStyle(
-                        color: CRMColors.textSecondaryOf(context),
-                        fontSize: 13,
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: _atmosphere.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.apartment_rounded,
+                    color: _atmosphere,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p.title,
+                        style: CRMTypography.cardTitle.copyWith(
+                          color: CRMColors.textOf(context),
+                          fontSize: 15,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.location_on_outlined,
+                            size: 13,
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: Text(
+                              p.areaName,
+                              style: CRMTypography.caption.copyWith(
+                                color: CRMColors.textSecondaryOf(context),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
                 Text(
                   CRMCurrencyFormatter.formatShort(p.price),
-                  style: TextStyle(
-                    color: CRMColors.primary,
-                    fontWeight: FontWeight.bold,
+                  style: CRMTypography.captionBold.copyWith(
+                    color: _atmosphere,
                     fontSize: 14,
                   ),
                 ),
@@ -1161,8 +1489,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return CRMCard(
       elevated: true,
-      title: "Note's",
-      subtitle: 'Operations and tasks assigned for today',
+      accentBorder: CRMColors.primaryOf(context).withValues(alpha: 0.22),
+      title: "Today's Focus",
+      subtitle: 'Notes that need attention before you leave the desk',
       headerAction: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1572,7 +1901,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return CRMCard(
       elevated: true,
-      title: "Scheduled",
+      accentBorder: CRMColors.secondaryOf(context).withValues(alpha: 0.28),
+      title: 'Scheduled',
+      subtitle: 'What\'s on the calendar that moves deals today',
       headerAction: isMobile ? null : dateSelection,
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.m),

@@ -6,6 +6,7 @@ import '../models/user_model.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart' as auth_model;
 import '../../../core/design_system/tokens/app_colors.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/tokens/app_shadows.dart';
@@ -759,9 +760,9 @@ class _UsersScreenState extends State<UsersScreen> {
         const SizedBox(height: 4.0),
         Text(
           "Configure workspace permissions, logins, and enterprise roles",
-          style: CRMTypography.body.copyWith(
+          style: CRMTypography.benefit.copyWith(
             color: CRMColors.textSecondary,
-            fontSize: isMobile ? 13 : 14,
+            fontSize: isMobile ? 12 : 13,
           ),
         ),
       ],
@@ -822,9 +823,8 @@ class _UsersScreenState extends State<UsersScreen> {
               .length;
         }
 
-        final double screenWidth = MediaQuery.of(context).size.width;
-        final int crossAxisCount = screenWidth >= 1000 ? 3 : 2;
-        final double childAspectRatio = screenWidth >= 1000 ? 2.5 : 1.5;
+        final int crossAxisCount = CRMBreakpoints.kpiColumns(context, desktop: 3);
+        final double childAspectRatio = CRMBreakpoints.kpiAspectRatio(context);
 
         return GridView.count(
           crossAxisCount: crossAxisCount,
@@ -839,18 +839,21 @@ class _UsersScreenState extends State<UsersScreen> {
               value: total.toString(),
               icon: Icons.people_rounded,
               iconColor: CRMColors.primary,
+              benefit: 'Everyone with CRM access in one place',
             ),
             CRMKPICard(
               title: "ACTIVE SYSTEM USERS",
               value: active.toString(),
               icon: Icons.check_circle_outline_rounded,
               iconColor: CRMColors.success,
+              benefit: 'Logins that can work the pipeline today',
             ),
             CRMKPICard(
               title: "ADMINISTRATORS",
               value: admins.toString(),
               icon: Icons.admin_panel_settings_rounded,
               iconColor: CRMColors.info,
+              benefit: 'Roles that control workspace security',
             ),
           ],
         );
@@ -2009,13 +2012,12 @@ class _UsersScreenState extends State<UsersScreen> {
                             Row(
                               children: [
                                 CircleAvatar(
-                                  backgroundColor: const Color(
-                                    0xFF64826F,
-                                  ).withOpacity(0.1),
+                                  backgroundColor:
+                                      CRMColors.primary.withOpacity(0.1),
                                   radius: 20,
-                                  child: const Icon(
+                                  child: Icon(
                                     Icons.person_rounded,
-                                    color: Color(0xFF64826F),
+                                    color: CRMColors.primary,
                                     size: 20,
                                   ),
                                 ),
@@ -2124,7 +2126,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
                                         color: activeTab == 'Rent'
-                                            ? const Color(0xFF64826F)
+                                            ? CRMColors.primary
                                             : Colors.transparent,
                                         borderRadius: BorderRadius.circular(20),
                                       ),
@@ -2151,7 +2153,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
                                         color: activeTab == 'Re-Sale'
-                                            ? const Color(0xFF64826F)
+                                            ? CRMColors.primary
                                             : Colors.transparent,
                                         borderRadius: BorderRadius.circular(20),
                                       ),
@@ -2183,7 +2185,7 @@ class _UsersScreenState extends State<UsersScreen> {
                               "Properties Added",
                               filteredProps.length.toString(),
                               Icons.home_work_outlined,
-                              const Color(0xFF64826F),
+                              CRMColors.primary,
                               isMobile,
                             ),
                             _buildDialogStatCard(
@@ -2222,10 +2224,10 @@ class _UsersScreenState extends State<UsersScreen> {
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
                                   ),
-                                  side: const BorderSide(
-                                    color: Color(0xFF64826F),
+                                  side: BorderSide(
+                                    color: CRMColors.primary,
                                   ),
-                                  foregroundColor: const Color(0xFF64826F),
+                                  foregroundColor: CRMColors.primary,
                                 ),
                                 onPressed: () => setDialogState(
                                   () => currentView = 'properties',
@@ -2248,7 +2250,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
                                   ),
-                                  backgroundColor: const Color(0xFF64826F),
+                                  backgroundColor: CRMColors.primary,
                                   foregroundColor: Colors.white,
                                 ),
                                 onPressed: () => setDialogState(
@@ -2384,7 +2386,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       trailing: Text(
                         BudgetFormatter.format(p.price),
                         style: CRMTypography.bodyMedium.copyWith(
-                          color: const Color(0xFF64826F),
+                          color: CRMColors.primary,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -2458,7 +2460,7 @@ class _UsersScreenState extends State<UsersScreen> {
                           Text(
                             "₹${BudgetFormatter.format(r.minBudget)} - ₹${BudgetFormatter.format(r.maxBudget)}",
                             style: CRMTypography.bodyMedium.copyWith(
-                              color: const Color(0xFF64826F),
+                              color: CRMColors.primary,
                               fontWeight: FontWeight.bold,
                             ),
                           ),

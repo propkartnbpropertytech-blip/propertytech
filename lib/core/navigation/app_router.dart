@@ -19,6 +19,7 @@ import '../../get_started_screen.dart';
 import '../../modules/legal/presentation/terms_and_conditions_page.dart';
 import '../../modules/legal/presentation/privacy_policy_page.dart';
 import '../design_system/widgets/app_shell.dart';
+import '../design_system/widgets/crm_page_transition.dart';
 import '../../features/settings/screens/settings_screen.dart';
 import '../../features/settings/screens/audit_logs_screen.dart';
 import '../../features/settings/screens/location_config_screen.dart';
@@ -96,78 +97,128 @@ class AppRouter {
         routes: [
           GoRoute(
             path: '/dashboard',
-            builder: (context, state) => const DashboardScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              name: state.name,
+              child: const DashboardScreen(),
+            ),
           ),
           GoRoute(
             path: '/properties',
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final openId = state.uri.queryParameters['openId'] ?? (state.extra as String?);
-              return BlocProvider(
-                create: (context) => PropertiesBloc(),
-                child: PropertiesScreen(openPropertyId: openId),
+              return crmFadeSlidePage(
+                key: state.pageKey,
+                name: state.name,
+                child: BlocProvider(
+                  create: (context) => PropertiesBloc(),
+                  child: PropertiesScreen(openPropertyId: openId),
+                ),
               );
             },
           ),
           GoRoute(
             path: '/users',
-            builder: (context, state) => const UsersScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const UsersScreen(),
+            ),
           ),
           GoRoute(
             path: '/requirements',
-            builder: (context, state) => const RequirementsScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const RequirementsScreen(),
+            ),
           ),
           GoRoute(
             path: '/clients',
-            builder: (context, state) => const ClientsScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const ClientsScreen(),
+            ),
           ),
 
           GoRoute(
             path: '/owners',
-            builder: (context, state) => const OwnersScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const OwnersScreen(),
+            ),
           ),
           GoRoute(
             path: '/builders',
-            builder: (context, state) => const BuildersScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const BuildersScreen(),
+            ),
           ),
           GoRoute(
             path: '/settings',
-            builder: (context, state) => const SettingsScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const SettingsScreen(),
+            ),
           ),
           GoRoute(
             path: '/settings/audit-logs',
-            builder: (context, state) => const AuditLogsScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const AuditLogsScreen(),
+            ),
           ),
           GoRoute(
             path: '/settings/location-config',
-            builder: (context, state) => const LocationConfigScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const LocationConfigScreen(),
+            ),
           ),
           GoRoute(
             path: '/profile',
-            builder: (context, state) => const ProfileScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const ProfileScreen(),
+            ),
           ),
           GoRoute(
             path: '/bin',
-            builder: (context, state) => const RecycleBinScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const RecycleBinScreen(),
+            ),
           ),
           GoRoute(
             path: '/library',
-            builder: (context, state) => const LibraryMainScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const LibraryMainScreen(),
+            ),
           ),
           GoRoute(
             path: '/rental-library',
-            builder: (context, state) => RentalLibraryScreen(
-              initialArgs: state.extra as Map<String, dynamic>?,
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: RentalLibraryScreen(
+                initialArgs: state.extra as Map<String, dynamic>?,
+              ),
             ),
           ),
           GoRoute(
             path: '/resale-library',
-            builder: (context, state) => ResaleLibraryScreen(
-              initialArgs: state.extra as Map<String, dynamic>?,
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: ResaleLibraryScreen(
+                initialArgs: state.extra as Map<String, dynamic>?,
+              ),
             ),
           ),
           GoRoute(
             path: '/service-agent-library',
-            builder: (context, state) => const ServiceAgentLibraryScreen(),
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const ServiceAgentLibraryScreen(),
+            ),
           ),
         ],
       ),

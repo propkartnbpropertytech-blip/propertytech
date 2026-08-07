@@ -22,10 +22,15 @@ class AppSpacing {
 
 /// @Deprecated — facade over CRMColors. Prefer CRMColors / PropKartColors.
 class AppColors {
-  static const Color brandGreen = Color(0xFF688A75);
-  static const Color brandGreenHighlight = Color(0xFF7A9C87);
-  static const Color darkBg = Color(0xFF090D16);
-  static const Color darkSlate = Color(0xFF0F172A);
+  /// Legacy name — now maps to champagne gold brand primary.
+  static Color get brandGreen => CRMColors.primary;
+  static Color get brandGreenHighlight => CRMColors.accent;
+  static Color get darkBg => CRMColors.isDark
+      ? const Color(0xFF070B14)
+      : const Color(0xFF0B1220);
+  static Color get darkSlate => CRMColors.isDark
+      ? const Color(0xFF121A2A)
+      : const Color(0xFF141B2D);
   static const Color textLight = Colors.white;
   static Color get textMuted => CRMColors.textMuted;
   static Color get textDark => CRMColors.text;

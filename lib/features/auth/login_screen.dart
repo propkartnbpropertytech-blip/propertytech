@@ -655,7 +655,7 @@ class _WavePainter extends CustomPainter {
     // Gradient Background (Brand colors)
     final bgPaint = Paint()
       ..shader = LinearGradient(
-        colors: [const Color(0xFF0F1A16), CRMColors.accent],
+        colors: [const Color(0xFF0B1220), CRMColors.accent],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ).createShader(rect);
