@@ -19,12 +19,12 @@ class VideoPlayerPlatformImpl extends StatelessWidget {
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.border = 'none'
-        ..style.borderRadius = '8px',
+        ..style.borderRadius = '8px'
+        ..style.objectFit = 'cover',
     );
 
-    return SizedBox(
-      width: double.infinity,
-      height: 220,
+    return AspectRatio(
+      aspectRatio: 16 / 9,
       child: HtmlElementView(viewType: viewId),
     );
   }

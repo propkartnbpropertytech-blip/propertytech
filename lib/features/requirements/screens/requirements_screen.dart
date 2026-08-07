@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import '../../../core/theme/theme_manager.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/design_system/widgets/drawers.dart';
@@ -58,7 +59,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String? _selectedCategoryId;
   String _selectedStatus = "All";
   String _selectedReadiness = "All";
-  String _activeListingTab = "Rent"; // "Rent" or "Re-Sale"
+  String get _activeListingTab => ThemeManager().isRentMode ? 'Rent' : 'Re-Sale';
+  set _activeListingTab(String value) {
+    ThemeManager().setRentMode(value == 'Rent');
+  }
   String _activeMainTab = "Requirements"; // "Requirements" or "Follow-ups"
   DateTime? _reqFollowupDateFilter = DateTime.now();
   int _currentPage = 1;
@@ -453,13 +457,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final listingToggle = Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        height: 48,
+        height: 44,
         width: 240,
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: CRMColors.background,
-          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-          border: Border.all(color: CRMColors.border),
+          color: CRMColors.backgroundOf(context),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6), width: 1.0),
         ),
         child: Row(
           children: [
@@ -781,7 +785,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
         decoration: BoxDecoration(
           color: isSelected ? accent : Colors.transparent,
-          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+          borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
           label,

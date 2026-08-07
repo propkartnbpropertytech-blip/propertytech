@@ -15,8 +15,16 @@ class ThemeManager extends ChangeNotifier {
 
   bool _isDarkMode = false;
   bool _loaded = false;
+  bool _isRentMode = true;
   bool get isDarkMode => _isDarkMode;
   bool get isLoaded => _loaded;
+  bool get isRentMode => _isRentMode;
+
+  void setRentMode(bool value) {
+    if (_isRentMode == value) return;
+    _isRentMode = value;
+    notifyListeners();
+  }
 
   Future<void> _loadPersisted() async {
     try {

@@ -1232,9 +1232,11 @@ class _CRMAppShellState extends State<CRMAppShell>
                         ),
                         const SizedBox(width: 8),
                         const LiveClockWidget(),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 8),
                         _buildNotificationButton(context),
+                        const SizedBox(width: 8),
                         _buildQuickActionsButton(context),
+                        const SizedBox(width: 8),
                         _buildThemeToggleButton(context),
                       ],
                     ),
@@ -1957,55 +1959,50 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pulse = (_currentTime.second % 2 == 0);
 
-    return AnimatedContainer(
-      duration: CRMMotion.fast,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            CRMColors.primaryOf(context).withValues(alpha: isDark ? 0.16 : 0.1),
-            CRMColors.cardBgOf(context),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-        border: Border.all(
-          color: CRMColors.primaryOf(context).withValues(alpha: 0.28),
-          width: 0.8,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedOpacity(
-            opacity: pulse ? 1 : 0.45,
-            duration: const Duration(milliseconds: 400),
-            child: Container(
-              width: 7,
-              height: 7,
-              decoration: BoxDecoration(
-                color: CRMColors.primaryOf(context),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: CRMColors.primaryOf(context).withValues(alpha: 0.55),
-                    blurRadius: 6,
-                  ),
-                ],
-              ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: AnimatedContainer(
+          duration: CRMMotion.fast,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: CRMColors.primaryOf(context).withValues(alpha: isDark ? 0.15 : 0.08),
+            borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+            border: Border.all(
+              color: CRMColors.primaryOf(context).withValues(alpha: 0.28),
+              width: 0.8,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Column(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              AnimatedOpacity(
+                opacity: pulse ? 1 : 0.45,
+                duration: const Duration(milliseconds: 400),
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: CRMColors.primaryOf(context),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: CRMColors.primaryOf(context).withValues(alpha: 0.55),
+                        blurRadius: 6,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               Text(
                 formattedTime,
                 style: CRMTypography.clockDisplay.copyWith(
@@ -2013,16 +2010,9 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
                   fontSize: 14,
                 ),
               ),
-              Text(
-                _formatDate(_currentTime),
-                style: CRMTypography.footnote.copyWith(
-                  color: CRMColors.textSecondaryOf(context),
-                  fontSize: 10,
-                ),
-              ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }

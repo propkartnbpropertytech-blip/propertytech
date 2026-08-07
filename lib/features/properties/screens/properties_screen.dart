@@ -30,6 +30,8 @@ import 'add_edit_property_screen.dart';
 import '../../../core/utils/currency.dart';
 import '../../../core/utils/budget_formatter.dart';
 
+import '../../../core/theme/theme_manager.dart';
+
 class PropertiesScreen extends StatefulWidget {
   final String? openPropertyId;
   const PropertiesScreen({super.key, this.openPropertyId});
@@ -43,7 +45,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   final ScrollController _scrollController = ScrollController();
   String? _highlightedPropertyId;
   String _activeTab = 'All';
-  String _activeListingTab = 'Rent'; // 'Rent' or 'Only Re-Sale'
+  String get _activeListingTab => ThemeManager().isRentMode ? 'Rent' : 'Re-Sale';
+  set _activeListingTab(String value) {
+    ThemeManager().setRentMode(value == 'Rent');
+  }
   String _activeCategoryTab = 'Residential';
   bool _hasAutoOpenedAdd = false;
   bool _hasAutoOpenedProp = false;
@@ -117,6 +122,39 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     if (currentUser.role == 'Telecaller' && p.adminId != null && p.adminId == currentUser.adminId) return true;
     if (currentUser.role == 'Admin' && p.adminId == currentUser.id) return true;
     return false;
+  }
+
+  void _showDeleteConfirmDialog(BuildContext context, PropertyModel p) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: CRMColors.cardBgOf(context),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+          title: Text("Delete Property", style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+          content: Text(
+            "Are you sure you want to delete the property ${p.title}?",
+            style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+          ),
+          actions: [
+            CRMButton(
+              label: "Cancel",
+              variant: CRMButtonVariant.outline,
+              onPressed: () => Navigator.pop(dialogContext),
+            ),
+            const SizedBox(width: CRMSpacing.xs),
+            CRMButton(
+              label: "Delete",
+              variant: CRMButtonVariant.danger,
+              onPressed: () {
+                context.read<PropertiesBloc>().add(DeletePropertyEvent(p.id, activeTab: _activeTab));
+                Navigator.pop(dialogContext);
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildMobilePropertyCard(PropertyModel p, UserModel? currentUser,
@@ -392,9 +430,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                               padding: EdgeInsets.zero,
                             ),
                             onPressed: () {
-                              context.read<PropertiesBloc>().add(
-                                    DeletePropertyEvent(p.id, activeTab: _activeTab),
-                                  );
+                              _showDeleteConfirmDialog(context, p);
                             },
                           ),
                           const SizedBox(width: 8),
@@ -1096,10 +1132,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                     icon: Icon(Icons.delete_outline_rounded,
                                         color: CRMColors.danger, size: 18),
                                     onPressed: () {
-                                      context.read<PropertiesBloc>().add(
-                                            DeletePropertyEvent(p.id,
-                                                activeTab: _activeTab),
-                                          );
+                                      _showDeleteConfirmDialog(context, p);
                                     },
                                   ),
                                 ],
@@ -1133,8 +1166,6 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     return CRMPageHeader(
       eyebrow: 'Workspace',
       title: 'Available Inventory',
-      benefit:
-          'Browse, filter, and pitch live stock matched to your active deals',
       trailing: CRMButton(
         label: 'Add Property',
         prefixIcon: Icons.add_circle_outline_rounded,
@@ -1203,7 +1234,6 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         value: '$statusCount',
         icon: Icons.bolt_rounded,
         iconColor: CRMColors.primaryOf(context),
-        benefit: 'Homes ready to share with matching clients',
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1252,7 +1282,6 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         value: '$statusCount',
         icon: Icons.business_center_outlined,
         iconColor: CRMColors.primaryOf(context),
-        benefit: 'Office and retail stock you can match today',
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1304,7 +1333,6 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         value: '$statusCount',
         icon: Icons.factory_outlined,
         iconColor: CRMColors.primaryOf(context),
-        benefit: 'Warehouse and factory options for B2B demand',
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1345,7 +1373,6 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         value: '$statusCount',
         icon: Icons.landscape_outlined,
         iconColor: CRMColors.primaryOf(context),
-        benefit: 'Plot inventory ready for buyer shortlists',
       );
       widgets.add(SizedBox(
         width: cardWidth,
