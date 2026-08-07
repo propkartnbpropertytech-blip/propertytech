@@ -526,7 +526,13 @@ class SupabaseDirectInterceptor extends Interceptor {
       // 7. Site Visits CRUD
       if (path.startsWith('/site-visits')) {
         if (method == 'POST') {
-          final payload = options.data as Map<String, dynamic>;
+          final payload = Map<String, dynamic>.from(options.data as Map);
+          if (!payload.containsKey('scheduled_by')) {
+            final userId = _supabase.auth.currentUser?.id;
+            if (userId != null) {
+              payload['scheduled_by'] = userId;
+            }
+          }
           final data = await _supabase.from('site_visits').insert(payload).select().single();
           return handler.resolve(Response(
             requestOptions: options,
@@ -553,7 +559,13 @@ class SupabaseDirectInterceptor extends Interceptor {
       // 8. Followups CRUD
       if (path.startsWith('/followups')) {
         if (method == 'POST') {
-          final payload = options.data as Map<String, dynamic>;
+          final payload = Map<String, dynamic>.from(options.data as Map);
+          if (!payload.containsKey('created_by')) {
+            final userId = _supabase.auth.currentUser?.id;
+            if (userId != null) {
+              payload['created_by'] = userId;
+            }
+          }
           final data = await _supabase.from('followups').insert(payload).select().single();
           return handler.resolve(Response(
             requestOptions: options,
