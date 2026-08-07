@@ -13,12 +13,12 @@ import '../tokens/app_typography.dart';
 /// Builds full light/dark [ThemeData] with PropKart tokens.
 class PropKartTheme {
   static String? get _fontFamily {
-    if (kIsWeb) return 'Inter';
+    if (kIsWeb) return 'DM Sans';
     if (defaultTargetPlatform == TargetPlatform.iOS ||
         defaultTargetPlatform == TargetPlatform.macOS) {
       return null;
     }
-    return 'Inter';
+    return 'DM Sans';
   }
 
   static TextTheme _textTheme(PropKartColors c) {
@@ -40,8 +40,8 @@ class PropKartTheme {
       labelMedium: style(CRMTypography.label),
       labelSmall: style(CRMTypography.footnote),
     );
-    if (_fontFamily == 'Inter') {
-      return GoogleFonts.interTextTheme(base);
+    if (_fontFamily == 'DM Sans') {
+      return GoogleFonts.dmSansTextTheme(base);
     }
     return base;
   }

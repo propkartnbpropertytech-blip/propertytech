@@ -445,7 +445,7 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                   const SizedBox(height: CRMSpacing.m),
                   ListTile(
                     leading: const CircleAvatar(
-                      backgroundColor: Colors.blueAccent,
+                      backgroundColor: CRMColors.info,
                       child: Icon(Icons.link_rounded, color: Colors.white),
                     ),
                     title: const Text('Copy Access Link'),
@@ -1086,6 +1086,7 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                         value: '$_totalCount',
                         icon: Icons.folder_rounded,
                         iconColor: CRMColors.primaryOf(context),
+                        benefit: 'Complete lease paper trail in one vault',
                       ),
                     ),
                     SizedBox(
@@ -1095,6 +1096,7 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                         value: '$_activeCount',
                         icon: Icons.check_circle_rounded,
                         iconColor: CRMColors.success,
+                        benefit: 'Current agreements ready for renewals',
                       ),
                     ),
                     SizedBox(
@@ -1104,6 +1106,7 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                         value: '$_expiredCount',
                         icon: Icons.history_rounded,
                         iconColor: CRMColors.danger,
+                        benefit: 'Flag outdated files before disputes',
                       ),
                     ),
                     SizedBox(
@@ -1112,7 +1115,8 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                         title: 'Recent Uploads (7d)',
                         value: '$_recentCount',
                         icon: Icons.cloud_done_rounded,
-                        iconColor: Colors.blue,
+                        iconColor: CRMColors.info,
+                        benefit: 'Fresh uploads keep records audit-ready',
                       ),
                     ),
                   ],

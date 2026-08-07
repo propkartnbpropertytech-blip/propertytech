@@ -37,7 +37,6 @@ class UpdateDialog extends StatelessWidget {
               const SizedBox(width: AppSpacing.s),
               const Text(
                 'Coming Soon on App Store / Play Store!',
-                style: TextStyle(fontFamily: 'Inter'),
               ),
             ],
           ),

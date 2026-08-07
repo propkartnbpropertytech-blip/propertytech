@@ -15,6 +15,7 @@ import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/cards.dart';
+import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../auth/bloc/auth_bloc.dart';
@@ -405,7 +406,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Page Header Title
-            _buildPageHeader(isMobile),
+            const CRMPageHeader(
+              eyebrow: 'Account',
+              title: 'My Profile',
+              benefit:
+                  'Keep your credentials, role, and photo current so teammates always reach the right you',
+            ),
             const SizedBox(height: CRMSpacing.l),
 
             // Profile Card Header with Avatar, Pencil Edit, Trash Delete & Badges
@@ -436,29 +442,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildPageHeader(bool isMobile) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "My Profile",
-          style: CRMTypography.pageTitle.copyWith(
-            color: CRMColors.textOf(context),
-            fontSize: isMobile ? 22 : 28,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          "Manage your personal account credentials, role permissions, and profile photo.",
-          style: CRMTypography.body.copyWith(
-            color: CRMColors.textSecondaryOf(context),
-            fontSize: isMobile ? 13 : 14,
-          ),
-        ),
-      ],
     );
   }
 

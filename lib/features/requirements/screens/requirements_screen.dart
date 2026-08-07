@@ -17,6 +17,7 @@ import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
+import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/data_table.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -449,104 +450,44 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildPageHeader() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < 600;
-        if (isMobile) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Requirements Tracker",
-                style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
-              ),
-              const SizedBox(height: 4.0),
-              Text(
-                "Manage buyer requirements and run listing match iterations",
-                style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
-              ),
-              const SizedBox(height: CRMSpacing.s),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  height: 48,
-                  width: 240,
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: CRMColors.background,
-                    borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                    border: Border.all(color: CRMColors.border),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(child: _buildListingTabButton('Rent')),
-                      const SizedBox(width: 4),
-                      Expanded(child: _buildListingTabButton('Re-Sale')),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: CRMSpacing.m),
-              SizedBox(
-                width: double.infinity,
-                child: CRMButton(
-                  label: "Add Requirement",
-                  prefixIcon: Icons.add_rounded,
-                  onPressed: () => _showAddEditDialog(),
-                ),
-              ),
-            ],
-          );
-        }
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final listingToggle = Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 48,
+        width: 240,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: CRMColors.background,
+          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+          border: Border.all(color: CRMColors.border),
+        ),
+        child: Row(
           children: [
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Requirements Tracker",
-                    style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
-                  ),
-                  const SizedBox(height: 4.0),
-                  Text(
-                    "Manage buyer requirements and run listing match iterations",
-                    style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
-                  ),
-                  const SizedBox(height: CRMSpacing.s),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      height: 48,
-                      width: 240,
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: CRMColors.background,
-                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                        border: Border.all(color: CRMColors.border),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(child: _buildListingTabButton('Rent')),
-                          const SizedBox(width: 4),
-                          Expanded(child: _buildListingTabButton('Re-Sale')),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: CRMSpacing.m),
-            CRMButton(
-              label: "Add Requirement",
-              prefixIcon: Icons.add_rounded,
-              onPressed: () => _showAddEditDialog(),
-            ),
+            Expanded(child: _buildListingTabButton('Rent')),
+            const SizedBox(width: 4),
+            Expanded(child: _buildListingTabButton('Re-Sale')),
           ],
-        );
-      },
+        ),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CRMPageHeader(
+          eyebrow: 'Demand desk',
+          title: 'Requirements Tracker',
+          benefit:
+              'Capture buyer demand and run listing matches that convert faster',
+          trailing: CRMButton(
+            label: 'Add Requirement',
+            prefixIcon: Icons.add_rounded,
+            onPressed: () => _showAddEditDialog(),
+          ),
+        ),
+        const SizedBox(height: CRMSpacing.s),
+        listingToggle,
+      ],
     );
   }
 
@@ -823,6 +764,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   Widget _buildListingTabButton(String label) {
     final isSelected = _activeListingTab == label;
+    final accent =
+        label == 'Rent' ? CRMColors.rentAccent : CRMColors.resaleAccent;
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -837,7 +780,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
         decoration: BoxDecoration(
-          color: isSelected ? CRMColors.primary : Colors.transparent,
+          color: isSelected ? accent : Colors.transparent,
           borderRadius: BorderRadius.circular(CRMBorderRadius.s),
         ),
         child: Text(
@@ -1956,7 +1899,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         const SizedBox(width: 8),
                         _buildActionButton(
                           icon: Icons.edit_outlined,
-                          color: const Color(0xFF6B8B7B),
+                          color: CRMColors.primary,
                           onPressed: () => _showAddEditDialog(req),
                           tooltip: 'Edit',
                         ),

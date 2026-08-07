@@ -396,7 +396,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                   const SizedBox(height: CRMSpacing.m),
                   ListTile(
                     leading: const CircleAvatar(
-                      backgroundColor: Colors.blueAccent,
+                      backgroundColor: CRMColors.info,
                       child: Icon(Icons.link_rounded, color: Colors.white),
                     ),
                     title: const Text('Copy Access Link'),
@@ -896,6 +896,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                         value: '$_totalCount',
                         icon: Icons.badge_rounded,
                         iconColor: CRMColors.primaryOf(context),
+                        benefit: 'Vendor credentials ready when you need them',
                       ),
                     ),
                     SizedBox(
@@ -905,6 +906,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                         value: '$_activeCount',
                         icon: Icons.check_circle_rounded,
                         iconColor: CRMColors.success,
+                        benefit: 'Valid contracts keep service work moving',
                       ),
                     ),
                     SizedBox(
@@ -914,6 +916,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                         value: '$_expiredCount',
                         icon: Icons.history_rounded,
                         iconColor: CRMColors.danger,
+                        benefit: 'Renew SLAs before coverage gaps',
                       ),
                     ),
                     SizedBox(
@@ -922,7 +925,8 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                         title: 'Recent Uploads (7d)',
                         value: '$_recentCount',
                         icon: Icons.cloud_done_rounded,
-                        iconColor: Colors.blue,
+                        iconColor: CRMColors.info,
+                        benefit: 'Latest proofs keep vendors accountable',
                       ),
                     ),
                   ],

@@ -5,6 +5,7 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/cards.dart';
+import '../../../core/design_system/widgets/crm_page_header.dart';
 
 class PipelineScreen extends StatefulWidget {
   const PipelineScreen({super.key});
@@ -130,40 +131,55 @@ class _PipelineScreenState extends State<PipelineScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Client Pipeline",
-                        style: CRMTypography.pageTitle.copyWith(color: CRMColors.textOf(context)),
-                      ),
-                      Text(
-                        "Track client deal stages and engagement metrics",
-                        style: CRMTypography.caption.copyWith(color: CRMColors.textMuted),
-                      ),
-                    ],
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.refresh_rounded),
-                    onPressed: _loadPipelineData,
-                    tooltip: "Refresh Data",
-                  ),
-                ],
+              CRMPageHeader(
+                eyebrow: 'Deals',
+                title: 'Client Pipeline',
+                benefit:
+                    'See every deal stage at a glance and push stalled leads forward',
+                trailing: IconButton(
+                  icon: const Icon(Icons.refresh_rounded),
+                  onPressed: _loadPipelineData,
+                  tooltip: 'Refresh Data',
+                ),
               ),
               const SizedBox(height: CRMSpacing.l),
 
               // KPI Metric Cards Row
-              Row(
-                children: [
-                  _buildKpiCard("Total Active Deals", "$totalActive", Icons.handshake_rounded, Colors.blue),
-                  const SizedBox(width: CRMSpacing.m),
-                  _buildKpiCard("Site Visit Ratio", "${conversionRate.toStringAsFixed(1)}%", Icons.directions_walk_rounded, Colors.green),
-                  const SizedBox(width: CRMSpacing.m),
-                  _buildKpiCard("Pipeline Volume", "${_requirements.length} Leads", Icons.analytics_rounded, Colors.orange),
-                ],
+              SizedBox(
+                height: 130,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: CRMKPICard(
+                        title: 'Total Active Deals',
+                        value: '$totalActive',
+                        icon: Icons.handshake_rounded,
+                        iconColor: CRMColors.info,
+                        benefit: 'Live deals still moving through your funnel',
+                      ),
+                    ),
+                    const SizedBox(width: CRMSpacing.m),
+                    Expanded(
+                      child: CRMKPICard(
+                        title: 'Site Visit Ratio',
+                        value: '${conversionRate.toStringAsFixed(1)}%',
+                        icon: Icons.directions_walk_rounded,
+                        iconColor: CRMColors.success,
+                        benefit: 'How often leads turn into real site visits',
+                      ),
+                    ),
+                    const SizedBox(width: CRMSpacing.m),
+                    Expanded(
+                      child: CRMKPICard(
+                        title: 'Pipeline Volume',
+                        value: '${_requirements.length} Leads',
+                        icon: Icons.analytics_rounded,
+                        iconColor: CRMColors.warning,
+                        benefit: 'Total demand load across every stage',
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: CRMSpacing.l),
 
@@ -178,32 +194,6 @@ class _PipelineScreenState extends State<PipelineScreen> {
                     return _buildKanbanColumn(stageName, stageRequirements);
                   },
                 ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildKpiCard(String label, String value, IconData icon, Color color) {
-    return Expanded(
-      child: CRMCard(
-        child: Padding(
-          padding: const EdgeInsets.all(CRMSpacing.m),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: color.withValues(alpha: 0.1),
-                child: Icon(icon, color: color),
-              ),
-              const SizedBox(width: CRMSpacing.m),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: CRMTypography.caption.copyWith(color: CRMColors.textMuted)),
-                  Text(value, style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-                ],
               ),
             ],
           ),

@@ -6,6 +6,7 @@ import 'add_edit_builder_screen.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/data_table.dart';
@@ -133,7 +134,7 @@ class _BuildersScreenState extends State<BuildersScreen> {
             const SizedBox(height: 4.0),
             Text(
               "Central registry of construction firms, developer representatives, and projects",
-              style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
+              style: CRMTypography.benefit.copyWith(color: CRMColors.textSecondary),
             ),
           ],
         ),
@@ -165,25 +166,28 @@ class _BuildersScreenState extends State<BuildersScreen> {
               mainAxisSpacing: CRMSpacing.m,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: isWide ? 2.5 : 1.5,
+              childAspectRatio: CRMBreakpoints.kpiAspectRatio(context),
               children: [
                 CRMKPICard(
                   title: "DEVELOPER PARTNERS",
                   value: total.toString(),
                   icon: Icons.business_rounded,
                   iconColor: CRMColors.primary,
+                  benefit: 'Builders you sell projects with',
                 ),
                 CRMKPICard(
                   title: "TIER 1 ORGANIZATIONS",
                   value: tier1.toString(),
                   icon: Icons.verified_user_rounded,
                   iconColor: CRMColors.success,
+                  benefit: 'Top-tier partners with stronger trust',
                 ),
                 CRMKPICard(
                   title: "ACTIVE SITES",
                   value: (total * 2).toString(), // Mock project scale
                   icon: Icons.foundation_rounded,
                   iconColor: CRMColors.info,
+                  benefit: 'Live projects ready for buyer matches',
                 ),
               ],
             );

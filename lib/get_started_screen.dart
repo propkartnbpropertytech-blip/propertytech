@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'core/theme/app_theme.dart';
 import 'core/design_system/tokens/app_colors.dart';
 import 'core/design_system/tokens/app_spacing.dart';
@@ -49,21 +50,20 @@ class _GetStartedScreenState extends State<GetStartedScreen> {
                   'assets/logo.png',
                   width: 32,
                   height: 32,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
+                  errorBuilder: (context, error, stackTrace) => Icon(
                     Icons.apartment_rounded,
-                    color: AppColors.brandGreen,
+                    color: CRMColors.primary,
                     size: 32,
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'PropKart',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     color: Colors.white,
                     fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'Inter',
-                    letterSpacing: 0.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
                   ),
                 ),
               ],
@@ -131,17 +131,17 @@ class _GetStartedScreenState extends State<GetStartedScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                       decoration: BoxDecoration(
-                        color: AppColors.brandGreen.withOpacity(0.2),
+                        color: CRMColors.primary.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(AppBorderRadius.tag),
                         border: Border.all(
-                          color: AppColors.brandGreen.withOpacity(0.5),
+                          color: CRMColors.primary.withOpacity(0.5),
                           width: 1,
                         ),
                       ),
                       child: Text(
                         'PREMIUM REAL ESTATE',
                         style: CRMTypography.captionBold.copyWith(
-                          color: AppColors.brandGreenHighlight,
+                          color: CRMColors.accent,
                           fontSize: 12,
                           letterSpacing: 1.5,
                         ),
@@ -236,17 +236,17 @@ class _GetStartedScreenState extends State<GetStartedScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       decoration: BoxDecoration(
-                        color: AppColors.brandGreen.withOpacity(0.2),
+                        color: CRMColors.primary.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(AppBorderRadius.tag),
                         border: Border.all(
-                          color: AppColors.brandGreen.withOpacity(0.5),
+                          color: CRMColors.primary.withOpacity(0.5),
                           width: 1,
                         ),
                       ),
                       child: Text(
                         'PREMIUM REAL ESTATE',
                         style: CRMTypography.captionBold.copyWith(
-                          color: AppColors.brandGreenHighlight,
+                          color: CRMColors.accent,
                           fontSize: 10,
                           letterSpacing: 1.2,
                         ),

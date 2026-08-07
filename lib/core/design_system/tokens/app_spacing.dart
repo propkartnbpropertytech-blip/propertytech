@@ -27,9 +27,12 @@ class CRMBorderRadius {
   static const double mega = 40.0;
   static const double round = 999.0;
 
-  static const double card = xl;
-  static const double button = s;
-  static const double input = m;
-  static const double dialog = xl;
-  static const double sheet = xxl;
+  /// Standard card radius.
+  static const double card = xl; // 24
+  static const double kpi = xxl; // 28
+  static const double liquidBar = 28.0;
+  static const double button = ml; // 20
+  static const double input = l; // 16
+  static const double dialog = xxl;
+  static const double sheet = mega;
 }

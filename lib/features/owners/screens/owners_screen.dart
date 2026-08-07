@@ -9,6 +9,7 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/tokens/app_shadows.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/data_table.dart';
@@ -141,7 +142,7 @@ class _OwnersScreenState extends State<OwnersScreen> {
             const SizedBox(height: 4.0),
             Text(
               "Central registry of property owners, lease managers, and sellers",
-              style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
+              style: CRMTypography.benefit.copyWith(color: CRMColors.textSecondary),
             ),
           ],
         ),
@@ -171,25 +172,28 @@ class _OwnersScreenState extends State<OwnersScreen> {
               mainAxisSpacing: CRMSpacing.m,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: isWide ? 2.5 : 1.5,
+              childAspectRatio: CRMBreakpoints.kpiAspectRatio(context),
               children: [
                 CRMKPICard(
                   title: "TOTAL OWNERS",
                   value: total.toString(),
                   icon: Icons.contact_phone_rounded,
                   iconColor: CRMColors.primary,
+                  benefit: 'Landlords and sellers you can reach fast',
                 ),
                 CRMKPICard(
                   title: "CONNECTED LISTINGS",
                   value: (total * 1.5).toStringAsFixed(0), // Mock listing scale
                   icon: Icons.home_work_rounded,
                   iconColor: CRMColors.info,
+                  benefit: 'Inventory linked to owner contacts',
                 ),
                 CRMKPICard(
                   title: "VIP PARTNERS",
                   value: (total > 0) ? "2" : "0",
                   icon: Icons.star_border_purple500_rounded,
                   iconColor: CRMColors.warning,
+                  benefit: 'Priority partners who bring repeat stock',
                 ),
               ],
             );
