@@ -44,6 +44,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   bool _isMobileSearchActive = false;
   late AnimationController _entryController;
   bool _notificationsPanelOpen = false;
+  bool _isBottomBarVisible = true;
 
   @override
   void initState() {
@@ -755,19 +756,27 @@ class _CRMAppShellState extends State<CRMAppShell>
                         )
                       : null,
                   bottomNavigationBar: isMobile
-                      ? CustomBottomNavBar(
-                          selectedIndex: targetIndex,
-                          onItemSelected: (index) {
-                            if (index == 2) {
-                              _showQuickActionsBottomSheet();
-                              return;
-                            }
-                            final path = _getTabRoutePath(index);
-                            if (GoRouterState.of(context).matchedLocation !=
-                                path) {
-                              context.go(path);
-                            }
-                          },
+                      ? AnimatedSlide(
+                          offset: _isBottomBarVisible ? Offset.zero : const Offset(0, 1.5),
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                          child: IgnorePointer(
+                            ignoring: !_isBottomBarVisible,
+                            child: CustomBottomNavBar(
+                              selectedIndex: targetIndex,
+                              onItemSelected: (index) {
+                                if (index == 2) {
+                                  _showQuickActionsBottomSheet();
+                                  return;
+                                }
+                                final path = _getTabRoutePath(index);
+                                if (GoRouterState.of(context).matchedLocation !=
+                                    path) {
+                                  context.go(path);
+                                }
+                              },
+                            ),
+                          ),
                         )
                       : null,
               body: Row(
@@ -821,16 +830,48 @@ class _CRMAppShellState extends State<CRMAppShell>
                             : _buildTopBar(context, isMobile),
                         Expanded(
                           child: isMobile
-                              ? MediaQuery(
-                                  data: MediaQuery.of(context).copyWith(
-                                    padding: MediaQuery.of(context).padding.copyWith(
-                                      bottom: MediaQuery.of(context)
-                                              .padding
-                                              .bottom +
-                                          76,
+                              ? NotificationListener<ScrollNotification>(
+                                  onNotification: (scrollNotification) {
+                                    if (scrollNotification is ScrollUpdateNotification) {
+                                      if (scrollNotification.metrics.axis == Axis.vertical) {
+                                        final pixels = scrollNotification.metrics.pixels;
+                                        final scrollDelta = scrollNotification.scrollDelta;
+                                        if (pixels <= 10) {
+                                          if (!_isBottomBarVisible) {
+                                            setState(() {
+                                              _isBottomBarVisible = true;
+                                            });
+                                          }
+                                        } else if (scrollDelta != null && scrollDelta.abs() > 4) {
+                                          if (scrollDelta > 0) {
+                                            if (_isBottomBarVisible) {
+                                              setState(() {
+                                                _isBottomBarVisible = false;
+                                              });
+                                            }
+                                          } else if (scrollDelta < 0) {
+                                            if (!_isBottomBarVisible) {
+                                              setState(() {
+                                                _isBottomBarVisible = true;
+                                              });
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                    return false;
+                                  },
+                                  child: MediaQuery(
+                                    data: MediaQuery.of(context).copyWith(
+                                      padding: MediaQuery.of(context).padding.copyWith(
+                                        bottom: MediaQuery.of(context)
+                                                .padding
+                                                .bottom +
+                                            76,
+                                      ),
                                     ),
+                                    child: widget.child,
                                   ),
-                                  child: widget.child,
                                 )
                               : widget.child,
                         ),
@@ -945,202 +986,259 @@ class _CRMAppShellState extends State<CRMAppShell>
               padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 14),
               child: Stack(
                 children: [
-                  if (isMobile)
-                    IgnorePointer(
+                  if (isMobile) ...[
+                    // Layer 1: Normal Top Bar Content
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                      top: _isMobileSearchActive ? -58.0 : 0.0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
                       child: AnimatedOpacity(
-                        opacity: _isMobileSearchActive ? 0.0 : 1.0,
                         duration: const Duration(milliseconds: 200),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 44),
-                            child: CRMBrandLockup(
-                              expanded: true,
-                              compact: true,
-                              wordmarkColor: CRMColors.textOf(context),
-                              markSize: 24,
+                        opacity: _isMobileSearchActive ? 0.0 : 1.0,
+                        child: Row(
+                          children: [
+                            Builder(
+                              builder: (context) => IconButton(
+                                icon: Icon(
+                                  Icons.menu_rounded,
+                                  color: CRMColors.textSecondaryOf(context),
+                                ),
+                                onPressed: () => Scaffold.of(context).openDrawer(),
+                              ),
                             ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: CRMBrandLockup(
+                                  expanded: true,
+                                  compact: true,
+                                  wordmarkColor: CRMColors.textOf(context),
+                                  markSize: 24,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.search_rounded,
+                                color: CRMColors.textSecondaryOf(context),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _isMobileSearchActive = true;
+                                });
+                                Future.delayed(
+                                  const Duration(milliseconds: 50),
+                                  () {
+                                    _searchFocusNode.requestFocus();
+                                  },
+                                );
+                              },
+                            ),
+                            _buildNotificationButton(context),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Layer 2: Search Bar Content
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                      top: _isMobileSearchActive ? 0.0 : -58.0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 200),
+                        opacity: _isMobileSearchActive ? 1.0 : 0.0,
+                        child: Center(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: CompositedTransformTarget(
+                                  link: _searchLayerLink,
+                                  child: Focus(
+                                    onFocusChange: (hasFocus) {
+                                      if (!hasFocus) {
+                                        Future.delayed(
+                                          const Duration(milliseconds: 200),
+                                          () {
+                                            _hideSearchOverlay();
+                                            if (mounted) {
+                                              setState(() {
+                                                _isMobileSearchActive = false;
+                                              });
+                                            }
+                                          },
+                                        );
+                                      }
+                                    },
+                                    child: TextField(
+                                      controller: _searchController,
+                                      focusNode: _searchFocusNode,
+                                      style: CRMTypography.body.copyWith(
+                                        color: CRMColors.textOf(context),
+                                        fontSize: 14,
+                                      ),
+                                      onChanged: _onSearchChanged,
+                                      autofocus: false,
+                                      decoration: InputDecoration(
+                                        hintText: 'Search...',
+                                        hintStyle: CRMTypography.body.copyWith(
+                                          color: CRMColors.textMutedOf(context),
+                                          fontSize: 14,
+                                        ),
+                                        prefixIcon: Icon(
+                                          Icons.search_rounded,
+                                          color: CRMColors.textMutedOf(context),
+                                          size: 18,
+                                        ),
+                                        suffixIcon: IconButton(
+                                          icon: const Icon(
+                                            Icons.close_rounded,
+                                            size: 18,
+                                          ),
+                                          onPressed: () {
+                                            _searchController.clear();
+                                            _hideSearchOverlay();
+                                            _searchFocusNode.unfocus();
+                                            setState(() {
+                                              _isMobileSearchActive = false;
+                                            });
+                                          },
+                                        ),
+                                        filled: true,
+                                        fillColor: CRMColors.groupedBackground.withValues(alpha: 0.55),
+                                        isDense: true,
+                                        contentPadding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 10,
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+                                          borderSide: BorderSide(
+                                            color: CRMColors.primaryOf(context).withValues(alpha: 0.35),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
-                  Row(
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeInOut,
-                        width: isMobile && _isMobileSearchActive ? 0 : 44,
-                        child: isMobile && _isMobileSearchActive
-                            ? const SizedBox.shrink()
-                            : (isMobile
-                                ? Builder(
-                                    builder: (context) => IconButton(
-                                      icon: Icon(
-                                        Icons.menu_rounded,
-                                        color: CRMColors.textSecondaryOf(context),
+                  ] else ...[
+                    Row(
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeInOut,
+                          width: 44,
+                          child: IconButton(
+                            icon: Icon(
+                              _isSidebarExpanded
+                                  ? Icons.menu_open_rounded
+                                  : Icons.menu_rounded,
+                              color: CRMColors.textSecondaryOf(context),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _isSidebarExpanded = !_isSidebarExpanded;
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              curve: Curves.easeInOut,
+                              width: 380,
+                              child: CompositedTransformTarget(
+                                link: _searchLayerLink,
+                                child: Focus(
+                                  onFocusChange: (hasFocus) {
+                                    if (!hasFocus) {
+                                      Future.delayed(
+                                        const Duration(milliseconds: 200),
+                                        () {
+                                          _hideSearchOverlay();
+                                        },
+                                      );
+                                    }
+                                  },
+                                  child: TextField(
+                                    controller: _searchController,
+                                    focusNode: _searchFocusNode,
+                                    style: CRMTypography.body.copyWith(
+                                      color: CRMColors.textOf(context),
+                                      fontSize: 14,
+                                    ),
+                                    onChanged: _onSearchChanged,
+                                    decoration: InputDecoration(
+                                      hintText: 'Search PropKart...',
+                                      hintStyle: CRMTypography.body.copyWith(
+                                        color: CRMColors.textMutedOf(context),
+                                        fontSize: 14,
                                       ),
-                                      onPressed: () =>
-                                          Scaffold.of(context).openDrawer(),
-                                    ),
-                                  )
-                                : IconButton(
-                                    icon: Icon(
-                                      _isSidebarExpanded
-                                          ? Icons.menu_open_rounded
-                                          : Icons.menu_rounded,
-                                      color: CRMColors.textSecondaryOf(context),
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _isSidebarExpanded = !_isSidebarExpanded;
-                                      });
-                                    },
-                                  )),
-                      ),
-                      if (!isMobile) const SizedBox(width: 8),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            curve: Curves.easeInOut,
-                            width: !isMobile
-                                ? 380
-                                : (_isMobileSearchActive
-                                    ? MediaQuery.of(context).size.width - 140
-                                    : 0),
-                            child: (!isMobile || _isMobileSearchActive)
-                                ? CompositedTransformTarget(
-                                    link: _searchLayerLink,
-                                    child: Focus(
-                                      onFocusChange: (hasFocus) {
-                                        if (!hasFocus) {
-                                          Future.delayed(
-                                            const Duration(milliseconds: 200),
-                                            () {
-                                              _hideSearchOverlay();
-                                              if (isMobile && mounted) {
-                                                setState(() {
-                                                  _isMobileSearchActive = false;
-                                                });
-                                              }
-                                            },
-                                          );
-                                        }
-                                      },
-                                      child: TextField(
-                                        controller: _searchController,
-                                        focusNode: _searchFocusNode,
-                                        style: CRMTypography.body.copyWith(
-                                          color: CRMColors.textOf(context),
-                                          fontSize: 14,
-                                        ),
-                                        onChanged: _onSearchChanged,
-                                        autofocus: isMobile,
-                                        decoration: InputDecoration(
-                                          hintText: isMobile
-                                              ? 'Search...'
-                                              : 'Search PropKart...',
-                                          hintStyle:
-                                              CRMTypography.body.copyWith(
-                                            color: CRMColors.textMutedOf(
-                                              context,
-                                            ),
-                                            fontSize: 14,
-                                          ),
-                                          prefixIcon: Icon(
-                                            Icons.search_rounded,
-                                            color: CRMColors.textMutedOf(
-                                              context,
-                                            ),
-                                            size: 18,
-                                          ),
-                                          suffixIcon: isMobile
-                                              ? IconButton(
-                                                  icon: const Icon(
-                                                    Icons.close_rounded,
-                                                    size: 18,
-                                                  ),
-                                                  onPressed: () {
-                                                    _searchController.clear();
-                                                    _hideSearchOverlay();
-                                                    setState(() {
-                                                      _isMobileSearchActive =
-                                                          false;
-                                                    });
-                                                  },
-                                                )
-                                              : null,
-                                          filled: true,
-                                          fillColor: CRMColors
-                                              .groupedBackground
-                                              .withValues(alpha: 0.55),
-                                          isDense: true,
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 10,
-                                          ),
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              CRMBorderRadius.round,
-                                            ),
-                                            borderSide: BorderSide.none,
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              CRMBorderRadius.round,
-                                            ),
-                                            borderSide: BorderSide.none,
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              CRMBorderRadius.round,
-                                            ),
-                                            borderSide: BorderSide(
-                                              color: CRMColors.primaryOf(
-                                                context,
-                                              ).withValues(alpha: 0.35),
-                                            ),
-                                          ),
+                                      prefixIcon: Icon(
+                                        Icons.search_rounded,
+                                        color: CRMColors.textMutedOf(context),
+                                        size: 18,
+                                      ),
+                                      filled: true,
+                                      fillColor: CRMColors.groupedBackground.withValues(alpha: 0.55),
+                                      isDense: true,
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+                                        borderSide: BorderSide(
+                                          color: CRMColors.primaryOf(context).withValues(alpha: 0.35),
                                         ),
                                       ),
                                     ),
-                                  )
-                                : const SizedBox.shrink(),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                      if (isMobile && !_isMobileSearchActive)
-                        IconButton(
-                          icon: Icon(
-                            Icons.search_rounded,
-                            color: CRMColors.textSecondaryOf(context),
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _isMobileSearchActive = true;
-                            });
-                            Future.delayed(
-                              const Duration(milliseconds: 50),
-                              () {
-                                _searchFocusNode.requestFocus();
-                              },
-                            );
-                          },
-                        ),
-                      if (!isMobile) ...[
                         const SizedBox(width: 8),
                         const LiveClockWidget(),
                         const SizedBox(width: 4),
                         _buildNotificationButton(context),
                         _buildQuickActionsButton(context),
                         _buildThemeToggleButton(context),
-                      ] else ...[
-                        _buildNotificationButton(context),
                       ],
-                    ],
-                  ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1943,7 +2041,6 @@ class CustomBottomNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = CRMColors.primaryOf(context);
 
     return SafeArea(
       top: false,
@@ -2025,13 +2122,6 @@ class CustomBottomNavBar extends StatelessWidget {
                       end: Alignment.bottomRight,
                       colors: CRMColors.gradientPrimary,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: primary.withValues(alpha: 0.4),
-                        blurRadius: 14,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
                   ),
                   child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
                 ),
