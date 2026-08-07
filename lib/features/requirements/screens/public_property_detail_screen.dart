@@ -8,6 +8,7 @@ import '../../../../core/design_system/tokens/app_typography.dart';
 import '../../../../core/design_system/tokens/app_shadows.dart';
 import '../../../../core/design_system/widgets/cards.dart';
 import '../../../../core/utils/currency.dart';
+import '../../../../core/utils/seo_helper.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color _kWhatsAppGreen = Color(0xFF25D366);
@@ -65,6 +66,25 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
             _property = prop;
             _isLoading = false;
           });
+
+          // Dynamic SEO Update
+          final config = prop['configuration_name'] ?? '${prop['bedrooms'] ?? "-"} BHK';
+          final area = prop['area_name'] ?? '';
+          final double? priceVal = prop['price'] != null ? double.tryParse(prop['price'].toString()) : null;
+          final priceStr = priceVal != null
+              ? CRMCurrencyFormatter.formatWords(priceVal).replaceAll('₹', '')
+              : 'Price on Request';
+          final title = '$config in $area | $priceStr - PropKart';
+          final description = prop['description'] ?? 'Check out this property shortlist shared on PropKart.';
+          final imageUrls = prop['images'] as List<dynamic>? ?? [];
+          final firstImage = imageUrls.isNotEmpty ? imageUrls.first.toString() : null;
+
+          SeoHelper.updateTags(
+            title: title,
+            description: description,
+            canonicalUrl: 'https://propkart.nbpropertytech.com/share/${widget.sessionId}/property/${widget.propertyId}',
+            imageUrl: firstImage ?? 'https://propkart.nbpropertytech.com/assets/logo.png',
+          );
         } else {
           setState(() {
             _errorMessage = "Property not found in this shortlist.";

@@ -4,6 +4,7 @@ import 'core/theme/app_theme.dart';
 import 'core/design_system/tokens/app_colors.dart';
 import 'core/design_system/tokens/app_spacing.dart';
 import 'core/design_system/tokens/app_typography.dart';
+import 'core/utils/seo_helper.dart';
 
 class GetStartedScreen extends StatefulWidget {
   const GetStartedScreen({super.key});
@@ -13,6 +14,17 @@ class GetStartedScreen extends StatefulWidget {
 }
 
 class _GetStartedScreenState extends State<GetStartedScreen> {
+  @override
+  void initState() {
+    super.initState();
+    SeoHelper.updateTags(
+      title: 'PropKart - Premium Property Management Software & CRM',
+      description: 'PropKart is the future of property management. Find your dream home, manage property listings, and connect with top agents and builders effortlessly.',
+      canonicalUrl: 'https://propkart.nbpropertytech.com/get-started',
+      imageUrl: 'https://propkart.nbpropertytech.com/assets/logo.png',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

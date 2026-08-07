@@ -34,6 +34,7 @@ import '../../features/library/screens/library_main_screen.dart';
 import '../../features/library/screens/rental_library_screen.dart';
 import '../../features/library/screens/resale_library_screen.dart';
 import '../../features/library/screens/service_agent_library_screen.dart';
+import '../utils/seo_helper.dart';
 
 
 class GoRouterRefreshStream extends ChangeNotifier {
@@ -194,6 +195,7 @@ class AppRouter {
       ),
     ],
     redirect: (context, state) async {
+      _applySecureRouteSeo(state.matchedLocation);
       final authState = authBloc.state;
       final loggingIn = state.matchedLocation == '/login';
       final onSplash = state.matchedLocation == '/splash';
@@ -263,4 +265,83 @@ class AppRouter {
       return null;
     },
   );
+
+  void _applySecureRouteSeo(String location) {
+    if (location.startsWith('/dashboard')) {
+      SeoHelper.updateTags(
+        title: 'Dashboard | PropKart CRM',
+        description: 'PropKart business dashboard and real-time performance indicators.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/properties')) {
+      SeoHelper.updateTags(
+        title: 'Manage Properties | PropKart CRM',
+        description: 'Browse, edit, and configure property listings in inventory.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/users')) {
+      SeoHelper.updateTags(
+        title: 'User Management | PropKart CRM',
+        description: 'Manage staff, agents, roles and administrative access.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/requirements')) {
+      SeoHelper.updateTags(
+        title: 'Client Requirements | PropKart CRM',
+        description: 'Review client listing requests and buy/rent matchmaking preferences.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/clients')) {
+      SeoHelper.updateTags(
+        title: 'Client Index | PropKart CRM',
+        description: 'Manage client contacts, historical activities, and lead funnels.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/owners')) {
+      SeoHelper.updateTags(
+        title: 'Property Owners | PropKart CRM',
+        description: 'Manage land owners, builders, and lessor details.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/builders')) {
+      SeoHelper.updateTags(
+        title: 'Builders Directory | PropKart CRM',
+        description: 'Access developers and construction company listings.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/settings')) {
+      SeoHelper.updateTags(
+        title: 'System Settings | PropKart CRM',
+        description: 'Configure audit logs, location parameters, and security policies.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/profile')) {
+      SeoHelper.updateTags(
+        title: 'My Profile | PropKart CRM',
+        description: 'Update agent personal information and security credentials.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/bin')) {
+      SeoHelper.updateTags(
+        title: 'Recycle Bin | PropKart CRM',
+        description: 'Review and restore archived or deleted property listings.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/library') ||
+               location.startsWith('/rental-library') ||
+               location.startsWith('/resale-library') ||
+               location.startsWith('/service-agent-library')) {
+      SeoHelper.updateTags(
+        title: 'Shared Libraries | PropKart CRM',
+        description: 'View rental and resale property library databases.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/splash')) {
+      SeoHelper.updateTags(
+        title: 'PropKart CRM',
+        description: 'The Future of Property Management.',
+        noIndex: true,
+      );
+    }
+  }
 }

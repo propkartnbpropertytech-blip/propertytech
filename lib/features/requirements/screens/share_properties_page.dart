@@ -10,6 +10,7 @@ import '../../../../core/design_system/widgets/cards.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/utils/currency.dart';
+import '../../../../core/utils/seo_helper.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color _kWhatsAppGreen = Color(0xFF25D366);
@@ -47,6 +48,18 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
           _properties = data['properties'] ?? [];
           _isLoading = false;
         });
+
+        // Dynamic SEO Update
+        final agentName = _agent?['full_name'] ?? 'Agent';
+        final firstImage = (_properties.isNotEmpty && _properties.first['images'] != null && (_properties.first['images'] as List).isNotEmpty)
+            ? _properties.first['images'].first.toString()
+            : null;
+        SeoHelper.updateTags(
+          title: 'Shortlisted Properties for You | Shared by $agentName - PropKart',
+          description: 'Explore this curated list of shortlisted properties handpicked for your requirements by agent $agentName on PropKart.',
+          canonicalUrl: 'https://propkart.nbpropertytech.com/share/${widget.sessionId}',
+          imageUrl: firstImage ?? 'https://propkart.nbpropertytech.com/assets/logo.png',
+        );
       } else {
         setState(() {
           _errorMessage = response.data['message'] ?? "Failed to load collection details.";

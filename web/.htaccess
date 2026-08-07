@@ -22,6 +22,15 @@
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
+
+  # Share details pre-rendering rewrite rules for crawlers / search engines
+  RewriteCond %{REQUEST_URI} ^/share/([^/]+)/property/([^/]+)$
+  RewriteRule ^share/([^/]+)/property/([^/]+)$ /share-preview.php?sessionId=%1&propertyId=%2 [L,QSA]
+
+  RewriteCond %{REQUEST_URI} ^/share/([^/]+)$
+  RewriteRule ^share/([^/]+)$ /share-preview.php?sessionId=%1 [L,QSA]
+
+  # Fallback for standard Single Page Application routing
   RewriteRule ^index\.html$ - [L]
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d

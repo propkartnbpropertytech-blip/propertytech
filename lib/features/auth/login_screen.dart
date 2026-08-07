@@ -10,6 +10,7 @@ import '../../core/design_system/tokens/app_spacing.dart';
 import '../../core/design_system/tokens/app_typography.dart';
 import '../../core/api/dio_client.dart';
 import 'package:dio/dio.dart';
+import '../../core/utils/seo_helper.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,6 +23,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    SeoHelper.updateTags(
+      title: 'Login | PropKart CRM',
+      description: 'Log in to your PropKart account to access the property management dashboard, update listings, coordinate with clients, and review lead analytics.',
+      canonicalUrl: 'https://propkart.nbpropertytech.com/login',
+      imageUrl: 'https://propkart.nbpropertytech.com/assets/logo.png',
+    );
+  }
 
   bool _obscurePassword = true;
   bool _rememberMe = true;
