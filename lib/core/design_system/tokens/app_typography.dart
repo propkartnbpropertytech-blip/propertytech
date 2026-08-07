@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'dart:ui' as ui;
+
 /// PropKart typography — DM Sans for UI chrome, Playfair Display for brand moments.
 class CRMTypography {
   static bool get _useSystemSf {
@@ -66,10 +68,12 @@ class CRMTypography {
         letterSpacing: -0.5,
       );
 
-  static TextStyle get clockDisplay => _display(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.4,
+  static TextStyle get clockDisplay => _base(
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.2,
+      ).copyWith(
+        fontFeatures: const [ui.FontFeature.tabularFigures()],
       );
 
   static TextStyle get largeDisplay => _base(

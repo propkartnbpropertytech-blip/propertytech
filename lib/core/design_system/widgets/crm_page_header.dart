@@ -6,7 +6,7 @@ import '../tokens/app_typography.dart';
 /// Shared page header matching the shell/dashboard brand language.
 class CRMPageHeader extends StatelessWidget {
   final String title;
-  final String benefit;
+  final String? benefit;
   final String? eyebrow;
   final Widget? trailing;
   final List<Widget>? breadcrumbs;
@@ -14,7 +14,7 @@ class CRMPageHeader extends StatelessWidget {
   const CRMPageHeader({
     super.key,
     required this.title,
-    required this.benefit,
+    this.benefit,
     this.eyebrow,
     this.trailing,
     this.breadcrumbs,
@@ -52,14 +52,16 @@ class CRMPageHeader extends StatelessWidget {
             fontSize: isMobile ? 22 : 28,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          benefit,
-          style: CRMTypography.benefit.copyWith(
-            color: CRMColors.textSecondaryOf(context),
-            fontSize: isMobile ? 12 : 13,
+        if (benefit != null && benefit!.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            benefit!,
+            style: CRMTypography.benefit.copyWith(
+              color: CRMColors.textSecondaryOf(context),
+              fontSize: isMobile ? 12 : 13,
+            ),
           ),
-        ),
+        ],
       ],
     );
 

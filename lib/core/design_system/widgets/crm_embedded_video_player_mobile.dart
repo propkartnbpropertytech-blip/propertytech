@@ -42,53 +42,53 @@ class _VideoPlayerPlatformImplState extends State<VideoPlayerPlatformImpl> {
   @override
   Widget build(BuildContext context) {
     if (_errorMessage != null) {
-      return Container(
-        width: double.infinity,
-        height: 220,
-        decoration: BoxDecoration(
-          color: Colors.black87,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 36),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'Error playing video: $_errorMessage',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+      return AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 36),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Error playing video: $_errorMessage',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
     }
 
     if (!_isInitialized) {
-      return Container(
-        width: double.infinity,
-        height: 220,
-        decoration: BoxDecoration(
-          color: Colors.black87,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.white),
+      return AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
         ),
       );
     }
 
-    return Container(
-      width: double.infinity,
-      height: 220,
-      color: Colors.black,
-      child: AspectRatio(
-        aspectRatio: _controller.value.aspectRatio,
+    return AspectRatio(
+      aspectRatio: _controller.value.aspectRatio,
+      child: Container(
+        color: Colors.black,
         child: Stack(
           alignment: Alignment.bottomCenter,
           children: <Widget>[
