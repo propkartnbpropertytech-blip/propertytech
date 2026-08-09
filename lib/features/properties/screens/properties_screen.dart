@@ -50,7 +50,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
   String _activeCategoryTab = 'Residential';
   bool _hasAutoOpenedAdd = false;
-  bool _hasAutoOpenedProp = false;
+  String? _lastOpenedKey;
   String? _selectedCategory;
   final List<String> _selectedConfigurations = [];
   final List<String> _selectedAreas = [];
@@ -657,8 +657,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
             final openId = widget.openPropertyId ??
                 GoRouterState.of(context).uri.queryParameters['openId'];
-            if (openId != null && !_hasAutoOpenedProp) {
-              _hasAutoOpenedProp = true;
+            final t = GoRouterState.of(context).uri.queryParameters['t'];
+            final uniqueKey = openId != null ? '${openId}_$t' : null;
+            if (openId != null && _lastOpenedKey != uniqueKey) {
+              _lastOpenedKey = uniqueKey;
               PropertyModel? matched;
               for (final item in properties) {
                 if (item.id == openId) {

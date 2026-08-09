@@ -3474,18 +3474,22 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                cancelButton,
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (backButton != null) ...[
-                      backButton,
-                      const SizedBox(width: CRMSpacing.s),
-                    ],
-                    nextButton,
-                  ],
+                Expanded(
+                  flex: 3,
+                  child: cancelButton,
+                ),
+                const SizedBox(width: CRMSpacing.s),
+                if (backButton != null) ...[
+                  Expanded(
+                    flex: 2,
+                    child: backButton,
+                  ),
+                  const SizedBox(width: CRMSpacing.s),
+                ],
+                Expanded(
+                  flex: 4,
+                  child: nextButton,
                 ),
               ],
             ),

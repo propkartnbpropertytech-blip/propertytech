@@ -578,7 +578,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                                     if (p['is_recycle_bin'] == true) {
                                       context.go('/bin');
                                     } else {
-                                      context.go('/properties?openId=${p['id']}');
+                                      context.go('/properties?openId=${p['id']}&t=${DateTime.now().millisecondsSinceEpoch}');
                                     }
                                   },
                                 )),

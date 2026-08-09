@@ -1145,24 +1145,42 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
 
     final titleWidget = Text("Step 4: Target Area(s) *", style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold));
     final filterWidget = Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          width: isMobile ? screenWidth - 72 : 160,
-          height: 32,
-          child: TextField(
-            style: const TextStyle(fontSize: 12),
-            decoration: InputDecoration(
-              hintText: 'Filter areas...',
-              prefixIcon: const Icon(Icons.search_rounded, size: 14),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              filled: true,
-              fillColor: CRMColors.backgroundOf(context),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+        if (isMobile)
+          Expanded(
+            child: SizedBox(
+              height: 32,
+              child: TextField(
+                style: const TextStyle(fontSize: 12),
+                decoration: InputDecoration(
+                  hintText: 'Filter areas...',
+                  prefixIcon: const Icon(Icons.search_rounded, size: 14),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  filled: true,
+                  fillColor: CRMColors.backgroundOf(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                ),
+                onChanged: (val) => setState(() => _areaSearchQuery = val.trim()),
+              ),
             ),
-            onChanged: (val) => setState(() => _areaSearchQuery = val.trim()),
+          )
+        else
+          SizedBox(
+            width: 160,
+            height: 32,
+            child: TextField(
+              style: const TextStyle(fontSize: 12),
+              decoration: InputDecoration(
+                hintText: 'Filter areas...',
+                prefixIcon: const Icon(Icons.search_rounded, size: 14),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                filled: true,
+                fillColor: CRMColors.backgroundOf(context),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+              ),
+              onChanged: (val) => setState(() => _areaSearchQuery = val.trim()),
+            ),
           ),
-        ),
         const SizedBox(width: 8),
         IconButton(
           icon: Icon(Icons.add_circle_outline_rounded, color: CRMColors.primaryOf(context), size: 20),
