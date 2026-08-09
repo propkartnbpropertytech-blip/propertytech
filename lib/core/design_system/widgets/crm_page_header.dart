@@ -65,24 +65,15 @@ class CRMPageHeader extends StatelessWidget {
       ],
     );
 
-    if (trailing == null || isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          titleBlock,
-          if (trailing != null) ...[
-            const SizedBox(height: CRMSpacing.m),
-            trailing!,
-          ],
-        ],
-      );
+    if (trailing == null) {
+      return titleBlock;
     }
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(child: titleBlock),
-        const SizedBox(width: CRMSpacing.m),
+        const SizedBox(width: CRMSpacing.s),
         trailing!,
       ],
     );

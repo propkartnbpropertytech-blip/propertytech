@@ -64,6 +64,12 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
   ];
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _allDocuments = ResaleDocument.getMockData();

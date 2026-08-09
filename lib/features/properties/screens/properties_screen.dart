@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -9,7 +8,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
@@ -18,6 +16,7 @@ import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
+import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../../core/design_system/widgets/data_table.dart';
 import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
@@ -196,7 +195,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         : GestureDetector(
                             onTap: () => _openPropertyDetails(context, p),
                             child: Container(
-                              height: 160,
+                              height: 210,
                               width: double.infinity,
                               color: CRMColors.skeletonBase,
                               child: Center(
@@ -482,13 +481,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authState = context.watch<AuthBloc>().state;
-    String? currentUserId;
-    UserModel? currentUser;
-    if (authState is Authenticated) {
-      currentUserId = authState.user.id;
-      currentUser = authState.user;
-    }
+    final currentUser = context.select<AuthBloc, UserModel?>((bloc) {
+      final state = bloc.state;
+      return state is Authenticated ? state.user : null;
+    });
+    final currentUserId = currentUser?.id;
     final bool isUserAdminOrSuperAdmin = currentUser != null &&
         (currentUser.role?.toLowerCase() == 'admin' || currentUser.role?.toLowerCase() == 'super admin' || currentUser.role?.toLowerCase() == 'telecaller');
     final double screenWidth = MediaQuery.of(context).size.width;
@@ -496,6 +493,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: BlocConsumer<PropertiesBloc, PropertiesState>(
+        buildWhen: (previous, current) =>
+            current is PropertiesLoaded ||
+            current is PropertiesLoading ||
+            current is PropertiesInitial ||
+            current is PropertiesError ||
+            current is PropertyCreatedState,
+        listenWhen: (previous, current) =>
+            current is PropertiesError || current is PropertyCreatedState,
         listener: (context, state) {
           if (state is PropertiesError) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -705,9 +710,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Container(
-                      height: 44,
-                      width: screenWidth < 600 ? 200 : 240,
-                      padding: const EdgeInsets.all(4),
+                      height: 36,
+                      width: screenWidth < 600 ? 170 : 210,
+                      padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
                         color: CRMColors.backgroundOf(context),
                         borderRadius: BorderRadius.circular(24),
@@ -1169,6 +1174,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       trailing: CRMButton(
         label: 'Add Property',
         prefixIcon: Icons.add_circle_outline_rounded,
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         onPressed: () {
           if (metadata == null) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1962,12 +1969,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: isSelected ? accent : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 14,
+            fontSize: 12,
             color: isSelected
                 ? Colors.white
                 : CRMColors.textSecondaryOf(context),
@@ -1988,7 +1995,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       child: AnimatedContainer(
         duration: CRMMotion.fast,
         curve: CRMMotion.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: _myAddedOnly ? CRMColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(24),
@@ -2002,13 +2009,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           children: [
             Icon(
               _myAddedOnly ? Icons.check_circle_rounded : Icons.person_outline_rounded,
-              size: 16,
+              size: 14,
               color: _myAddedOnly ? Colors.white : CRMColors.textSecondaryOf(context),
             ),
             const SizedBox(width: CRMSpacing.xs),
             Text(
               "My Added",
-              style: CRMTypography.bodyMedium.copyWith(
+              style: TextStyle(
+                fontSize: 12,
                 color: _myAddedOnly ? Colors.white : CRMColors.textSecondaryOf(context),
                 fontWeight: _myAddedOnly ? FontWeight.bold : FontWeight.normal,
               ),
@@ -2483,32 +2491,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
 
   Widget _buildPropertyThumbnail(String url) {
-    if (url.startsWith('data:image') || url.contains('base64')) {
-      try {
-        final base64Str = url.split(',').last;
-        return Image.memory(base64Decode(base64Str), fit: BoxFit.cover);
-      } catch (_) {}
-    }
-    if (kIsWeb) {
-      return Image.network(
-        url,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) =>
-            const Icon(Icons.broken_image_outlined, size: 16),
-      );
-    }
-    return CachedNetworkImage(
-      imageUrl: url,
+    return CrmNetworkImage(
+      url: url,
       fit: BoxFit.cover,
-      placeholder: (context, url) => const Center(
-        child: SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(strokeWidth: 1.5),
-        ),
-      ),
-      errorWidget: (context, url, error) =>
-          const Icon(Icons.broken_image_outlined, size: 16),
+      cacheLogicalWidth: 72,
+      cacheLogicalHeight: 72,
     );
   }
 }
@@ -3204,33 +3191,12 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
   }
 
   Widget _buildPropertyThumbnail(String url) {
-    if (url.startsWith('data:image') || url.contains('base64')) {
-      try {
-        final base64Str = url.split(',').last;
-        return Image.memory(base64Decode(base64Str), fit: BoxFit.cover);
-      } catch (_) {}
-    }
-    if (kIsWeb) {
-      return Image.network(
-        url,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => Container(
-          color: CRMColors.backgroundOf(context),
-          child: const Icon(Icons.broken_image_outlined, size: 24, color: Colors.grey),
-        ),
-      );
-    }
-    return CachedNetworkImage(
-      imageUrl: url,
+    return CrmNetworkImage(
+      url: url,
       fit: BoxFit.cover,
-      placeholder: (context, url) => const Center(
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-      errorWidget: (context, url, error) => Container(
+      cacheLogicalWidth: 400,
+      cacheLogicalHeight: 210,
+      error: (context) => Container(
         color: CRMColors.backgroundOf(context),
         child: const Icon(Icons.broken_image_outlined, size: 24, color: Colors.grey),
       ),
@@ -3248,7 +3214,7 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
         GestureDetector(
           onTap: widget.onTap,
           child: Container(
-            height: 160,
+            height: 210,
             width: double.infinity,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(

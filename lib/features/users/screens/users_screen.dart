@@ -53,6 +53,12 @@ class _UsersScreenState extends State<UsersScreen> {
     _fetchPasswordResets();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _fetchPasswordResets() async {
     final authState = context.read<AuthBloc>().state;
     // Only fetch if authenticated and caller is Admin or Super Admin
@@ -2499,6 +2505,8 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   void _showAdminStatsDialog(UserModel user) {
+    // Capture once so dialog rebuilds do not re-fire the network call.
+    final statsFuture = DioClient.dio.get('/users/admins/${user.id}/stats');
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -2516,7 +2524,7 @@ class _UsersScreenState extends State<UsersScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 550),
             child: FutureBuilder<Response>(
-              future: DioClient.dio.get('/users/admins/${user.id}/stats'),
+              future: statsFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return SizedBox(

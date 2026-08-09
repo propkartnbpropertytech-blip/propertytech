@@ -15,18 +15,7 @@ class PropertiesService {
     return null;
   }
 
-  Future<Map<String, dynamic>> getProperties({
-    String? search,
-    String? categoryId,
-    String? areaId,
-    String? listingTypeId,
-    String? createdBy,
-    bool? isVerified,
-    bool? includeDeleted,
-  }) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        var query = _supabase.from('properties').select('''
+  static const String _propertySelect = '''
             *,
             category:property_categories(id, name),
             property_type:property_types(id, name),
@@ -43,7 +32,57 @@ class PropertiesService {
             property_images(*),
             property_videos(*),
             property_amenities(amenity:amenities(*))
-        ''');
+        ''';
+
+  /// Fetches a single property by id (avoids downloading the full inventory).
+  Future<Map<String, dynamic>?> getPropertyById(String id) async {
+    if (ApiConstants.useSupabaseDirect) {
+      try {
+        final response = await _supabase
+            .from('properties')
+            .select(_propertySelect)
+            .eq('id', id)
+            .maybeSingle();
+        if (response == null) return null;
+        return Map<String, dynamic>.from(response as Map);
+      } catch (e) {
+        throw ApiException(message: e.toString());
+      }
+    } else {
+      try {
+        final response = await _apiClient.get('/properties/$id');
+        if (response.data is Map<String, dynamic>) {
+          final body = response.data as Map<String, dynamic>;
+          final data = body['data'];
+          if (data is Map<String, dynamic>) {
+            if (data['property'] is Map<String, dynamic>) {
+              return data['property'] as Map<String, dynamic>;
+            }
+            return data;
+          }
+          return body;
+        }
+        return null;
+      } on DioException catch (e) {
+        throw ApiException.fromDioException(e);
+      } catch (e) {
+        throw ApiException(message: e.toString());
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> getProperties({
+    String? search,
+    String? categoryId,
+    String? areaId,
+    String? listingTypeId,
+    String? createdBy,
+    bool? isVerified,
+    bool? includeDeleted,
+  }) async {
+    if (ApiConstants.useSupabaseDirect) {
+      try {
+        var query = _supabase.from('properties').select(_propertySelect);
 
         // Include deleted or active filter
         if (includeDeleted == true) {

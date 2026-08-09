@@ -45,19 +45,13 @@ void main() async {
   } catch (e) {
     debugPrint("Error initializing Supabase: $e");
   }
-  
+
+  // Keep Isar on the critical path (offline reads). Defer logging/sync
+  // until after the first frame so Android cold start stays responsive.
   try {
     await IsarService().initialize();
-    await PerformanceLogger().initialize();
-    // Do NOT connect Supabase Realtime before login — auth gates sync.
-    await SyncManager().initialize();
-
-    final lookupCount = await RepositoryCoordinator().lookupLocal.getLookupsCount();
-    if (lookupCount > 0) {
-      SyncManager().isSyncCompleted = true;
-    }
   } catch (e, stackTrace) {
-    debugPrint("🚨 Error during startup initialization: $e");
+    debugPrint("🚨 Error during Isar initialization: $e");
     debugPrint("🚨 Startup initialization stack trace:\n$stackTrace");
     MyApp.startupError = e.toString();
     MyApp.startupStackTrace = stackTrace.toString();
@@ -65,18 +59,42 @@ void main() async {
 
   final authRepository = AuthRepository();
 
+  void scheduleDeferredStartup() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await PerformanceLogger().initialize();
+        // Do NOT connect Supabase Realtime before login — auth gates sync.
+        await SyncManager().initialize();
+
+        final lookupCount =
+            await RepositoryCoordinator().lookupLocal.getLookupsCount();
+        if (lookupCount > 0) {
+          SyncManager().isSyncCompleted = true;
+        }
+      } catch (e, stackTrace) {
+        debugPrint("🚨 Error during deferred startup initialization: $e");
+        debugPrint("🚨 Deferred startup stack trace:\n$stackTrace");
+      }
+    });
+  }
+
   if (ApiConstants.sentryDsn != 'YOUR_SENTRY_DSN') {
     await SentryFlutter.init(
       (options) {
         options.dsn = ApiConstants.sentryDsn;
-        options.tracesSampleRate = 1.0;
+        // Full 1.0 sampling adds measurable overhead on real devices.
+        options.tracesSampleRate = kReleaseMode ? 0.15 : 0.4;
         // ignore: experimental_member_use
-        options.profilesSampleRate = 1.0;
+        options.profilesSampleRate = kReleaseMode ? 0.05 : 0.2;
         options.environment = kReleaseMode ? 'production' : 'development';
       },
-      appRunner: () => runApp(MyApp(authRepository: authRepository)),
+      appRunner: () {
+        scheduleDeferredStartup();
+        runApp(MyApp(authRepository: authRepository));
+      },
     );
   } else {
+    scheduleDeferredStartup();
     runApp(MyApp(authRepository: authRepository));
   }
 }

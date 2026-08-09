@@ -9,6 +9,7 @@ import '../../../../core/design_system/tokens/app_shadows.dart';
 import '../../../../core/design_system/widgets/cards.dart';
 import '../../../../core/utils/currency.dart';
 import '../../../../core/utils/seo_helper.dart';
+import '../../properties/models/property_model.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color _kWhatsAppGreen = Color(0xFF25D366);
@@ -68,16 +69,15 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
           });
 
           // Dynamic SEO Update
-          final config = prop['configuration_name'] ?? '${prop['bedrooms'] ?? "-"} BHK';
-          final area = prop['area_name'] ?? '';
-          final double? priceVal = prop['price'] != null ? double.tryParse(prop['price'].toString()) : null;
-          final priceStr = priceVal != null
-              ? CRMCurrencyFormatter.formatWords(priceVal).replaceAll('₹', '')
+          final propModel = PropertyModel.fromJson(prop);
+          final config = propModel.configurationName ?? '${propModel.bedrooms > 0 ? propModel.bedrooms : "-"} BHK';
+          final area = propModel.areaName;
+          final priceStr = propModel.price > 0
+              ? CRMCurrencyFormatter.formatWords(propModel.price).replaceAll('₹', '')
               : 'Price on Request';
           final title = '$config in $area | $priceStr - PropKart';
-          final description = prop['description'] ?? 'Check out this property shortlist shared on PropKart.';
-          final imageUrls = prop['images'] as List<dynamic>? ?? [];
-          final firstImage = imageUrls.isNotEmpty ? imageUrls.first.toString() : null;
+          final description = propModel.description ?? 'Check out this property shortlist shared on PropKart.';
+          final firstImage = propModel.images.isNotEmpty ? propModel.images.first : null;
 
           SeoHelper.updateTags(
             title: title,
@@ -170,17 +170,18 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
     }
 
     final p = _property!;
+    final propModel = PropertyModel.fromJson(p);
     final agentName = _agent?['full_name'] ?? 'Agent';
     final agentMobile = _agent?['mobile'] ?? '';
-    final code = p['property_code'] ?? '';
-    final double? priceVal = p['price'] != null ? double.tryParse(p['price'].toString()) : null;
-    final price = priceVal != null
+    final code = propModel.propertyCode;
+    final double priceVal = propModel.price;
+    final price = priceVal > 0
         ? '${CRMCurrencyFormatter.format(priceVal)} (${CRMCurrencyFormatter.formatWords(priceVal).replaceAll('₹', '')})'
         : 'Price N/A';
-    final config = p['configuration_name'] ?? '${p['bedrooms'] ?? "-"} BHK';
-    final areaName = p['area_name'] ?? '';
-    final images = p['images'] as List<dynamic>? ?? [];
-    final amenities = p['amenities'] as List<dynamic>? ?? [];
+    final config = propModel.configurationName ?? '${propModel.bedrooms > 0 ? propModel.bedrooms : "-"} BHK';
+    final areaName = propModel.areaName;
+    final List<String> images = propModel.images;
+    final amenities = propModel.amenities;
     final society = p['society'] ?? '';
 
     Widget buildImageSection({required double height}) {
@@ -204,6 +205,8 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
                       Image.network(
                         imageUrl,
                         fit: BoxFit.cover,
+                        cacheWidth: 900,
+                        gaplessPlayback: true,
                         errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
                       ),
                       // Overlay
@@ -214,6 +217,8 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
                       Image.network(
                         imageUrl,
                         fit: BoxFit.contain,
+                        cacheWidth: 900,
+                        gaplessPlayback: true,
                         errorBuilder: (context, error, stackTrace) => Container(
                           color: CRMColors.skeletonBase,
                           child: Icon(Icons.image_not_supported_rounded, size: 64, color: CRMColors.textMuted),
@@ -303,87 +308,74 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
     }
 
     Widget buildDetailsSection() {
-      String getValue(dynamic json, String key) {
-        if (json == null) return '';
-        if (json[key] != null && json[key].toString().isNotEmpty) {
-          return json[key].toString();
-        }
-        return '';
-      }
-
       // 1. Basic Details Items
       final List<_DetailItem> basicItems = [];
       
-      final listingType = getValue(p, 'listing_type_name');
+      final listingType = propModel.listingTypeName;
       final isRent = listingType.toLowerCase() == 'rent';
       if (listingType.isNotEmpty && listingType != 'N/A') {
         basicItems.add(_DetailItem('Listing Type', listingType, Icons.sell_outlined));
       }
       
-      final category = getValue(p, 'category_name');
+      final category = propModel.categoryName;
       if (category.isNotEmpty && category != 'N/A') {
         basicItems.add(_DetailItem('Category', category, Icons.category_outlined));
       }
       
-      final propType = getValue(p, 'property_type_name');
+      final propType = propModel.propertyTypeName;
       if (propType.isNotEmpty && propType != 'N/A') {
         basicItems.add(_DetailItem('Property Type', propType, Icons.home_work_outlined));
       }
       
-      final configName = getValue(p, 'configuration_name');
+      final configName = propModel.configurationName ?? '';
       if (configName.isNotEmpty && configName != 'N/A') {
         basicItems.add(_DetailItem('Configuration', configName, Icons.dashboard_outlined));
       }
       
-      final status = getValue(p, 'property_status_name');
+      final status = propModel.propertyStatusName;
       if (status.isNotEmpty && status != 'N/A') {
         basicItems.add(_DetailItem('Status', status, Icons.info_outline));
       }
       
       basicItems.add(_DetailItem('Price', price, Icons.monetization_on_outlined));
       
-      final maintenanceVal = p['maintenance'] != null ? double.tryParse(p['maintenance'].toString()) : null;
-      final maintenanceStr = (maintenanceVal != null && maintenanceVal > 0) ? CRMCurrencyFormatter.format(maintenanceVal) : "₹0";
+      final maintenanceVal = propModel.maintenance;
+      final maintenanceStr = maintenanceVal > 0 ? CRMCurrencyFormatter.format(maintenanceVal) : "₹0";
       if (isRent) {
         basicItems.add(_DetailItem('Maintenance', '$maintenanceStr/mo', Icons.build_circle_outlined));
       }
-      
-
 
       // 2. Specifications & Floor Details Items
       final List<_DetailItem> specsItems = [];
       
-      final bedroomsVal = p['bedrooms'] != null ? int.tryParse(p['bedrooms'].toString()) : 0;
-      if (bedroomsVal != null && bedroomsVal > 0) {
-        specsItems.add(_DetailItem('Bedrooms', '$bedroomsVal', Icons.king_bed_outlined));
+      if (propModel.bedrooms > 0) {
+        specsItems.add(_DetailItem('Bedrooms', '${propModel.bedrooms}', Icons.king_bed_outlined));
       }
       
-      final bathroomsVal = p['bathrooms'] != null ? int.tryParse(p['bathrooms'].toString()) : 0;
-      if (bathroomsVal != null && bathroomsVal > 0) {
-        specsItems.add(_DetailItem('Bathrooms', '$bathroomsVal', Icons.bathtub_outlined));
+      if (propModel.bathrooms > 0) {
+        specsItems.add(_DetailItem('Bathrooms', '${propModel.bathrooms}', Icons.bathtub_outlined));
       }
       
-      final balconiesVal = p['balconies'] != null ? int.tryParse(p['balconies'].toString()) : 0;
-      if (balconiesVal != null && balconiesVal > 0) {
-        specsItems.add(_DetailItem('Balconies', '$balconiesVal', Icons.balcony_outlined));
+      if (propModel.balconies > 0) {
+        specsItems.add(_DetailItem('Balconies', '${propModel.balconies}', Icons.balcony_outlined));
       }
       
-      final floorNo = p['floor_no'] != null ? p['floor_no'].toString() : '';
-      final totalFloor = p['total_floor'] != null ? p['total_floor'].toString() : '';
-      if (floorNo.isNotEmpty || totalFloor.isNotEmpty) {
+      final floorNoStr = propModel.floorNo != null ? '${propModel.floorNo}' : '';
+      final totalFloorStr = propModel.totalFloor != null ? '${propModel.totalFloor}' : '';
+      if (floorNoStr.isNotEmpty || totalFloorStr.isNotEmpty) {
         String floorStr = '';
-        if (floorNo.isNotEmpty && totalFloor.isNotEmpty) {
-          floorStr = '$floorNo / $totalFloor';
-        } else if (floorNo.isNotEmpty) {
-          floorStr = floorNo;
+        if (floorNoStr.isNotEmpty && totalFloorStr.isNotEmpty) {
+          floorStr = '$floorNoStr / $totalFloorStr';
+        } else if (floorNoStr.isNotEmpty) {
+          floorStr = floorNoStr;
         } else {
-          floorStr = 'Total: $totalFloor';
+          floorStr = 'Total: $totalFloorStr';
         }
         specsItems.add(_DetailItem('Floor', floorStr, Icons.layers_outlined));
       }
       
-      final ageVal = p['age_of_property'] != null ? int.tryParse(p['age_of_property'].toString()) : 0;
-      if (ageVal != null && ageVal > 0) {
+      if (propModel.ageOfProperty != null && propModel.ageOfProperty! > 0) {
+        final ageVal = propModel.ageOfProperty!;
         String ageDisplay = '';
         if (ageVal <= 1) {
           ageDisplay = '0 to 1 years';
@@ -401,27 +393,24 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
         specsItems.add(_DetailItem('Age (Years)', ageDisplay, Icons.hourglass_empty_rounded));
       }
       
-      final superAreaVal = p['super_builtup_area'] != null ? double.tryParse(p['super_builtup_area'].toString()) : 0;
-      if (superAreaVal != null && superAreaVal > 0) {
-        specsItems.add(_DetailItem('Super Built-up Area', '${superAreaVal.toStringAsFixed(0)} Sq. Ft.', Icons.square_foot_outlined));
+      if (propModel.superBuiltupArea != null && propModel.superBuiltupArea! > 0) {
+        specsItems.add(_DetailItem('Super Built-up Area', '${propModel.superBuiltupArea!.toStringAsFixed(0)} Sq. Ft.', Icons.square_foot_outlined));
       }
       
-      final carpetAreaVal = p['carpet_area'] != null ? double.tryParse(p['carpet_area'].toString()) : 0;
-      if (carpetAreaVal != null && carpetAreaVal > 0) {
-        specsItems.add(_DetailItem('Carpet Area', '${carpetAreaVal.toStringAsFixed(0)} Sq. Ft.', Icons.aspect_ratio_rounded));
+      if (propModel.carpetArea != null && propModel.carpetArea! > 0) {
+        specsItems.add(_DetailItem('Carpet Area', '${propModel.carpetArea!.toStringAsFixed(0)} Sq. Ft.', Icons.aspect_ratio_rounded));
       }
       
-      final plotAreaVal = p['plot_area'] != null ? double.tryParse(p['plot_area'].toString()) : 0;
-      if (plotAreaVal != null && plotAreaVal > 0) {
-        specsItems.add(_DetailItem('Plot Area', '${plotAreaVal.toStringAsFixed(0)} Sq. Yds.', Icons.terrain_outlined));
+      if (propModel.plotArea != null && propModel.plotArea! > 0) {
+        specsItems.add(_DetailItem('Plot Area', '${propModel.plotArea!.toStringAsFixed(0)} Sq. Yds.', Icons.terrain_outlined));
       }
       
-      final furnishing = getValue(p, 'furnishing_type_name');
+      final furnishing = propModel.furnishingTypeName ?? '';
       if (furnishing.isNotEmpty && furnishing != 'N/A') {
         specsItems.add(_DetailItem('Furnishing', furnishing, Icons.chair_outlined));
       }
       
-      final facing = getValue(p, 'facing_type_name');
+      final facing = propModel.facingTypeName ?? '';
       if (facing.isNotEmpty && facing != 'N/A') {
         specsItems.add(_DetailItem('Facing', facing, Icons.compass_calibration_outlined));
       }
@@ -433,16 +422,15 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
         specsItems.add(_DetailItem('Available From', 'Not Available', Icons.event_busy_rounded));
       }
       
-      final parkingVal = p['parking'] != null ? int.tryParse(p['parking'].toString()) : 0;
-      if (parkingVal != null && parkingVal > 0) {
-        specsItems.add(_DetailItem('Parking', _getParkingDisplay(parkingVal), Icons.local_parking_rounded));
+      if (propModel.parking > 0) {
+        specsItems.add(_DetailItem('Parking', _getParkingDisplay(propModel.parking), Icons.local_parking_rounded));
       }
 
       // 3. Location & Address Items
       final List<_DetailItem> locationItems = [];
       
-      final city = getValue(p, 'city_name');
-      if (city.isNotEmpty) {
+      final city = propModel.cityName;
+      if (city.isNotEmpty && city != 'N/A') {
         locationItems.add(_DetailItem('City', city, Icons.location_city_outlined));
       }
       
@@ -450,27 +438,27 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
         locationItems.add(_DetailItem('Area', areaName, Icons.map_outlined));
       }
       
-      final pincode = getValue(p, 'pincode');
-      if (pincode.isNotEmpty) {
+      final pincode = propModel.pincode;
+      if (pincode.isNotEmpty && pincode != 'N/A') {
         locationItems.add(_DetailItem('Pincode', pincode, Icons.pin_drop_outlined));
       }
       
-      final landmark = getValue(p, 'landmark');
+      final landmark = propModel.landmark ?? '';
       if (landmark.isNotEmpty) {
         locationItems.add(_DetailItem('Landmark', landmark, Icons.landscape_outlined));
       }
       
-      final blockWing = p['block_wing'] != null ? p['block_wing'].toString() : '';
+      final blockWing = propModel.blockWing ?? '';
       if (blockWing.isNotEmpty) {
         locationItems.add(_DetailItem('Block/Wing', blockWing, Icons.domain_outlined));
       }
       
-      final flatNo = p['flat_no'] != null ? p['flat_no'].toString() : '';
+      final flatNo = propModel.flatNo ?? '';
       if (flatNo.isNotEmpty) {
         locationItems.add(_DetailItem('Flat/Plot No.', flatNo, Icons.tag_rounded));
       }
       
-      final address = getValue(p, 'address');
+      final address = propModel.address;
       if (address.isNotEmpty) {
         locationItems.add(_DetailItem('Address', address, Icons.home_outlined));
       }
@@ -478,39 +466,30 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
       // 4. Key Details Items
       final List<_DetailItem> contactsItems = [];
       
-      final contactName = getValue(p, 'owner_name');
+      final contactName = propModel.ownerName;
       if (contactName.isNotEmpty) {
         contactsItems.add(_DetailItem('Contact Name', contactName, Icons.person_outline));
       }
       
-      final ownership = getValue(p, 'ownership_type_name');
-      if (ownership.isNotEmpty) {
+      final ownership = propModel.ownershipTypeName ?? '';
+      if (ownership.isNotEmpty && ownership != 'N/A') {
         contactsItems.add(_DetailItem('Ownership', ownership, Icons.badge_outlined));
       }
       
-      final brokerageType = getValue(p, 'brokerage_type_name');
-      if (brokerageType.isNotEmpty) {
+      final brokerageType = propModel.brokerageTypeName ?? '';
+      if (brokerageType.isNotEmpty && brokerageType != 'N/A') {
         contactsItems.add(_DetailItem('Brokerage Type', brokerageType, Icons.percent_rounded));
       }
 
-      final depositVal = p['deposit'] != null ? double.tryParse(p['deposit'].toString()) : null;
-      final depositStr = (depositVal != null && depositVal > 0) ? CRMCurrencyFormatter.format(depositVal) : "₹0";
+      final depositVal = propModel.deposit;
+      final depositStr = depositVal > 0 ? CRMCurrencyFormatter.format(depositVal) : "₹0";
 
       // Calculate Available From display fallback
-      final availableFrom = getValue(p, 'available_from');
       String availableDisplay = 'Immediate';
-      if (availableFrom.isNotEmpty) {
-        availableDisplay = availableFrom;
+      if (propModel.possessionDate != null) {
+        availableDisplay = DateFormat('dd-MM-yyyy').format(propModel.possessionDate!);
       } else {
-        final createdAtStr = getValue(p, 'created_at');
-        if (createdAtStr.isNotEmpty) {
-          try {
-            final parsedDate = DateTime.tryParse(createdAtStr);
-            if (parsedDate != null) {
-              availableDisplay = DateFormat('dd-MM-yyyy').format(parsedDate);
-            }
-          } catch (_) {}
-        }
+        availableDisplay = DateFormat('dd-MM-yyyy').format(propModel.createdAt);
       }
 
       return Column(
@@ -610,11 +589,11 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
             const SizedBox(height: CRMSpacing.l),
           ],
 
-          if (p['description'] != null && p['description'].toString().isNotEmpty) ...[
+          if (propModel.description != null && propModel.description!.isNotEmpty) ...[
             Text("Description", style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context))),
             const SizedBox(height: CRMSpacing.s),
             Text(
-              p['description'],
+              propModel.description!,
               style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
             ),
             const SizedBox(height: CRMSpacing.l),

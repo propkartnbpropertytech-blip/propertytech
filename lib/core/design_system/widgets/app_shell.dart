@@ -16,9 +16,7 @@ import '../../api/dio_client.dart';
 import '../../utils/budget_formatter.dart';
 import '../../network/sync_manager.dart';
 import 'dart:async';
-import 'package:collection/collection.dart';
 import '../../../core/storage/repository_coordinator.dart';
-import '../../../core/storage/isar_collections.dart';
 import '../../../features/properties/services/properties_service.dart';
 import '../../../features/properties/models/property_model.dart';
 
@@ -704,36 +702,36 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: ThemeManager(),
-      builder: (context, _) {
-        Theme.of(context);
-        final userState = context.watch<AuthBloc>().state;
-        final location = GoRouterState.of(context).matchedLocation;
-        final size = MediaQuery.of(context).size;
-        final isMobile = size.width < 768;
-        final isTablet = size.width >= 768 && size.width < 1024;
-        final isDesktop = size.width >= 1024;
+    // Depend on InheritedTheme from MaterialApp (updated via ThemeManager in main.dart).
+    // Avoid a second ListenableBuilder here — it was double-rebuilding the whole shell
+    // on every Rent/Re-Sale toggle.
+    Theme.of(context);
+    final userState = context.select<AuthBloc, AuthState>((bloc) => bloc.state);
+    final location = GoRouterState.of(context).matchedLocation;
+    final size = MediaQuery.of(context).size;
+    final isMobile = size.width < 768;
+    final isTablet = size.width >= 768 && size.width < 1024;
+    final isDesktop = size.width >= 1024;
 
-        final targetIndex = _getTabRouteIndex(location);
+    final targetIndex = _getTabRouteIndex(location);
+    if (_tabController.index != targetIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_tabController.index != targetIndex) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_tabController.index != targetIndex) {
-              _tabController.jumpToTab(targetIndex);
-              _previousIndex = targetIndex;
-            }
-          });
+          _tabController.jumpToTab(targetIndex);
+          _previousIndex = targetIndex;
         }
+      });
+    }
 
-        final showSidebar = isDesktop || isTablet;
-        final sidebarWidth = _isSidebarExpanded ? 260.0 : 78.0;
+    final showSidebar = isDesktop || isTablet;
+    final sidebarWidth = _isSidebarExpanded ? 260.0 : 78.0;
 
-        final entryCurved = CurvedAnimation(
-          parent: _entryController,
-          curve: CRMMotion.emphasized,
-        );
+    final entryCurved = CurvedAnimation(
+      parent: _entryController,
+      curve: CRMMotion.emphasized,
+    );
 
-        return Stack(
+    return Stack(
           children: [
             FadeTransition(
               opacity: entryCurved,
@@ -938,31 +936,28 @@ class _CRMAppShellState extends State<CRMAppShell>
         ),
       ],
     );
-      },
-    );
   }
 
   Widget _buildTopBar(BuildContext context, bool isMobile) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final sigma = reduceMotion
-        ? CRMBlur.reduced
-        : (isMobile ? 10.0 : CRMBlur.navigationFor(isDark));
+    // Mobile: skip BackdropFilter (expensive continuous GPU blur on every frame).
+    // Desktop: keep a lighter blur for the glass bar look.
+    final useBlur = !isMobile && !reduceMotion;
+    final sigma = useBlur ? CRMBlur.navigationFor(isDark).clamp(0.0, 8.0) : 0.0;
     final barRadius = BorderRadius.circular(CRMBorderRadius.liquidBar);
     final horizontalPad = isMobile ? 10.0 : 14.0;
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(horizontalPad, 8, horizontalPad, 6),
-      child: RepaintBoundary(
-        child: ClipRRect(
-          borderRadius: barRadius,
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-            child: Container(
+    Widget bar = Container(
               height: isMobile ? 58 : 62,
               decoration: BoxDecoration(
                 borderRadius: barRadius,
-                gradient: LinearGradient(
+                color: isMobile
+                    ? CRMColors.surfaceElevatedOf(context).withValues(alpha: isDark ? 0.96 : 0.97)
+                    : null,
+                gradient: isMobile
+                    ? null
+                    : LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
@@ -1243,10 +1238,26 @@ class _CRMAppShellState extends State<CRMAppShell>
                   ],
                 ],
               ),
-            ),
-          ),
+    );
+
+    if (useBlur) {
+      bar = ClipRRect(
+        borderRadius: barRadius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          child: bar,
         ),
-      ),
+      );
+    } else {
+      bar = ClipRRect(
+        borderRadius: barRadius,
+        child: bar,
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(horizontalPad, 8, horizontalPad, 6),
+      child: RepaintBoundary(child: bar),
     );
   }
 
@@ -1681,7 +1692,11 @@ class _CRMAppShellState extends State<CRMAppShell>
                   child: CircleAvatar(
                     backgroundColor: CRMColors.primary.withValues(alpha: 0.18),
                     backgroundImage: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
-                        ? NetworkImage(userProfilePhoto!)
+                        ? ResizeImage(
+                            NetworkImage(userProfilePhoto!),
+                            width: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                            height: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                          )
                         : null,
                     child: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
                         ? null
@@ -1825,7 +1840,7 @@ class _SidebarItemState extends State<_SidebarItem> {
                   : (_isHovered
                       ? CRMColors.primary.withValues(alpha: 0.06)
                       : Colors.transparent),
-              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isSelected
                     ? CRMColors.primary.withValues(alpha: 0.32)
@@ -1921,7 +1936,8 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
   void initState() {
     super.initState();
     _currentTime = DateTime.now();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    // Minute-level updates are enough for HH:MM display and avoid 1Hz shell churn.
+    _timer = Timer.periodic(const Duration(minutes: 1), (timer) {
       if (mounted) {
         setState(() {
           _currentTime = DateTime.now();
@@ -1944,74 +1960,42 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
     return '$hour:$minStr $ampm';
   }
 
-  String _formatDate(DateTime dt) {
-    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${weekdays[dt.weekday - 1]}, ${dt.day} ${months[dt.month - 1]}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final formattedTime = _formatTime(_currentTime);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final pulse = (_currentTime.second % 2 == 0);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: AnimatedContainer(
-          duration: CRMMotion.fast,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: CRMColors.primaryOf(context).withValues(alpha: isDark ? 0.15 : 0.08),
-            borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-            border: Border.all(
-              color: CRMColors.primaryOf(context).withValues(alpha: 0.28),
-              width: 0.8,
+    return RepaintBoundary(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: CRMColors.primaryOf(context).withValues(alpha: isDark ? 0.15 : 0.08),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+          border: Border.all(
+            color: CRMColors.primaryOf(context).withValues(alpha: 0.28),
+            width: 0.8,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: CRMColors.primaryOf(context),
+                shape: BoxShape.circle,
+              ),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+            const SizedBox(width: 8),
+            Text(
+              formattedTime,
+              style: CRMTypography.clockDisplay.copyWith(
+                color: CRMColors.textOf(context),
+                fontSize: 14,
               ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedOpacity(
-                opacity: pulse ? 1 : 0.45,
-                duration: const Duration(milliseconds: 400),
-                child: Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: CRMColors.primaryOf(context),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: CRMColors.primaryOf(context).withValues(alpha: 0.55),
-                        blurRadius: 6,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                formattedTime,
-                style: CRMTypography.clockDisplay.copyWith(
-                  color: CRMColors.textOf(context),
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

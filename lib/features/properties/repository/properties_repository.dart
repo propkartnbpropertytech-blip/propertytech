@@ -16,12 +16,31 @@ class PropertiesRepository {
     _coordinator.refreshProperties();
   }
 
-  Future<PropertyModel?> getPropertyById(String id) async {
+  Future<PropertyModel?> getPropertyById(
+    String id, {
+    bool refreshFromServer = false,
+  }) async {
     final local = await _coordinator.propertyLocal.getPropertyById(id);
-    if (local != null) {
-      return local.toModel();
+
+    if (!refreshFromServer) {
+      return local?.toModel();
     }
-    return null;
+
+    final fresh = await _fetchAndCachePropertyById(id);
+    if (fresh != null) return fresh;
+    return local?.toModel();
+  }
+
+  Future<PropertyModel?> _fetchAndCachePropertyById(String id) async {
+    try {
+      final json = await _propertiesService.getPropertyById(id);
+      if (json == null) return null;
+      final model = PropertyModel.fromJson(json);
+      await _coordinator.propertyLocal.saveProperties([model.toLocal()]);
+      return model;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<PropertyModel>> getProperties({

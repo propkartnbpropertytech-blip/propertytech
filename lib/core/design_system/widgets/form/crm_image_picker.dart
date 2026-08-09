@@ -397,6 +397,9 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
                                   Image.network(
                                     imageUrl,
                                     fit: BoxFit.cover,
+                                    cacheWidth: 240,
+                                    cacheHeight: 240,
+                                    gaplessPlayback: true,
                                     errorBuilder: (context, error, stackTrace) => Container(
                                       color: CRMColors.backgroundOf(context),
                                       child: Icon(
@@ -409,6 +412,9 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
                                   CachedNetworkImage(
                                     imageUrl: imageUrl,
                                     fit: BoxFit.cover,
+                                    memCacheWidth: 240,
+                                    memCacheHeight: 240,
+                                    fadeInDuration: Duration.zero,
                                     placeholder: (context, url) => const Center(
                                       child: CircularProgressIndicator(),
                                     ),

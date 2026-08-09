@@ -78,8 +78,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   @override
   void initState() {
     super.initState();
+    // Metadata load triggers the first fetch once listing types are available.
+    // Avoid a duplicate empty fetch before metadata arrives.
     _loadMetadata();
-    _triggerFetch();
     context.read<UsersBloc>().add(const FetchUsers());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -93,18 +94,28 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _wonSearchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadMetadata() async {
     try {
       final meta = await _propertiesRepository.getPropertyMetadata();
+      if (!mounted) return;
       setState(() {
         _metadata = meta;
         _isLoadingMetadata = false;
       });
       _triggerFetch();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoadingMetadata = false;
       });
+      _triggerFetch();
     }
   }
 
@@ -1049,6 +1060,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
 
     return BlocBuilder<RequirementsBloc, RequirementsState>(
+      buildWhen: (previous, current) =>
+          current is RequirementsLoaded ||
+          current is RequirementsLoading ||
+          current is RequirementsInitial ||
+          current is RequirementsError,
       builder: (context, state) {
         final isLoading = state is RequirementsLoading || state is RequirementsInitial;
         List<RequirementModel> requirements = [];

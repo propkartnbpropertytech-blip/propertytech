@@ -27,6 +27,12 @@ class _OwnersScreenState extends State<OwnersScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _triggerFetch();

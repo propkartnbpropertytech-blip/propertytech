@@ -8,6 +8,7 @@ import '../../../../core/design_system/tokens/app_shadows.dart';
 import '../../../../core/design_system/widgets/buttons.dart';
 import '../../../../core/design_system/widgets/cards.dart';
 import 'package:go_router/go_router.dart';
+import '../../properties/models/property_model.dart';
 
 import '../../../../core/utils/currency.dart';
 import '../../../../core/utils/seo_helper.dart';
@@ -51,9 +52,17 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
 
         // Dynamic SEO Update
         final agentName = _agent?['full_name'] ?? 'Agent';
-        final firstImage = (_properties.isNotEmpty && _properties.first['images'] != null && (_properties.first['images'] as List).isNotEmpty)
-            ? _properties.first['images'].first.toString()
-            : null;
+        String? firstImage;
+        if (_properties.isNotEmpty) {
+          try {
+            final prop = PropertyModel.fromJson(Map<String, dynamic>.from(_properties.first as Map));
+            if (prop.images.isNotEmpty) {
+              firstImage = prop.images.first;
+            }
+          } catch (e) {
+            debugPrint("Error parsing first property for SEO: $e");
+          }
+        }
         SeoHelper.updateTags(
           title: 'Shortlisted Properties for You | Shared by $agentName - PropKart',
           description: 'Explore this curated list of shortlisted properties handpicked for your requirements by agent $agentName on PropKart.',
@@ -294,17 +303,18 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
   }
 
   Widget _buildPropertyItem(BuildContext context, Map<String, dynamic> p, String agentMobile) {
-    final double? priceVal = p['price'] != null ? double.tryParse(p['price'].toString()) : null;
-    final price = priceVal != null
+    final prop = PropertyModel.fromJson(p);
+    final double priceVal = prop.price;
+    final price = priceVal > 0
         ? '${CRMCurrencyFormatter.format(priceVal)} (${CRMCurrencyFormatter.formatWords(priceVal).replaceAll('₹', '')})'
         : 'Price N/A';
-    final config = p['configuration_name'] ?? '${p['bedrooms'] ?? "-"} BHK';
-    final area = p['area_name'] ?? '';
+    final config = prop.configurationName ?? '${prop.bedrooms > 0 ? prop.bedrooms : "-"} BHK';
+    final area = prop.areaName;
     final title = '$config in $area';
-    final imageUrls = p['images'] as List<dynamic>? ?? [];
+    final imageUrls = prop.images;
     final hasImage = imageUrls.isNotEmpty;
-    final areaSqft = p['super_builtup_area'] != null ? '${p['super_builtup_area']} sqft' : '';
-    final bedrooms = p['bedrooms'] != null ? '${p['bedrooms']}' : '';
+    final areaSqft = prop.superBuiltupArea != null ? '${prop.superBuiltupArea!.toStringAsFixed(0)} sqft' : '';
+    final bedrooms = prop.bedrooms > 0 ? '${prop.bedrooms}' : '';
 
     return Container(
       decoration: BoxDecoration(
@@ -329,6 +339,8 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                         Image.network(
                           imageUrls.first.toString(),
                           fit: BoxFit.cover,
+                          cacheWidth: 800,
+                          gaplessPlayback: true,
                           errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
                         ),
                         Container(
@@ -337,6 +349,8 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                         Image.network(
                           imageUrls.first.toString(),
                           fit: BoxFit.contain,
+                          cacheWidth: 800,
+                          gaplessPlayback: true,
                           errorBuilder: (context, error, stackTrace) => Container(
                             color: CRMColors.skeletonBase,
                             child: Icon(Icons.image_not_supported_rounded, size: 48, color: CRMColors.textMuted),
@@ -427,7 +441,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                 const SizedBox(height: CRMSpacing.m),
                 
                 Text(
-                  p['description'] ?? '',
+                  prop.description ?? '',
                   style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -443,7 +457,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                   children: [
                     CRMButton(
                       label: "View Details",
-                      onPressed: () => context.push('/share/${widget.sessionId}/property/${p['id']}'),
+                      onPressed: () => context.push('/share/${widget.sessionId}/property/${prop.id}'),
                       height: 36,
                       padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
                     ),
@@ -451,7 +465,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                       CRMButton(
                         label: "Call Agent",
                         prefixIcon: Icons.phone_rounded,
-                        onPressed: () => _launchUrlHelper("tel:$agentMobile", p['id'], "Call"),
+                        onPressed: () => _launchUrlHelper("tel:$agentMobile", prop.id, "Call"),
                         height: 36,
                         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
                       ),
@@ -459,8 +473,8 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                         label: "Interested",
                         prefixIcon: Icons.star_rounded,
                         onPressed: () {
-                          final text = Uri.encodeComponent("Hi, I am interested in property ${p['property_code']} from your shortlisted share.");
-                          _launchUrlHelper("https://wa.me/$agentMobile?text=$text", p['id'], "Interested");
+                          final text = Uri.encodeComponent("Hi, I am interested in property ${prop.propertyCode} from your shortlisted share.");
+                          _launchUrlHelper("https://wa.me/$agentMobile?text=$text", prop.id, "Interested");
                         },
                         height: 36,
                         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
@@ -469,8 +483,8 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                         label: "Schedule Visit",
                         prefixIcon: Icons.calendar_today_rounded,
                         onPressed: () {
-                          final text = Uri.encodeComponent("Hi, I would like to schedule a visit for property ${p['property_code']} from your shortlisted share.");
-                          _launchUrlHelper("https://wa.me/$agentMobile?text=$text", p['id'], "Schedule");
+                          final text = Uri.encodeComponent("Hi, I would like to schedule a visit for property ${prop.propertyCode} from your shortlisted share.");
+                          _launchUrlHelper("https://wa.me/$agentMobile?text=$text", prop.id, "Schedule");
                         },
                         height: 36,
                         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),

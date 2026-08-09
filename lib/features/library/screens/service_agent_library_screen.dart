@@ -67,6 +67,12 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
   ];
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _allDocuments = ServiceAgentDocument.getMockData();

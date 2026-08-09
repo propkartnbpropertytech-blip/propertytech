@@ -65,6 +65,12 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
   ];
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _allDocuments = RentalDocument.getMockData();

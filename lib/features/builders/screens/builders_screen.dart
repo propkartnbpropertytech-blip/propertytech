@@ -29,6 +29,12 @@ class _BuildersScreenState extends State<BuildersScreen> {
     _triggerFetch();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   void _triggerFetch() {
     context.read<BuildersBloc>().add(
           FetchBuildersEvent(

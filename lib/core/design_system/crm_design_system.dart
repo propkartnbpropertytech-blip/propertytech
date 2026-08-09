@@ -22,6 +22,7 @@ export 'widgets/crm_brand_lockup.dart';
 export 'widgets/crm_page_transition.dart';
 export 'widgets/crm_donut_chart.dart';
 export 'widgets/crm_page_header.dart';
+export 'widgets/crm_network_image.dart';
 export 'widgets/empty_state.dart';
 export 'widgets/skeletons.dart';
 export 'widgets/form/crm_form.dart';

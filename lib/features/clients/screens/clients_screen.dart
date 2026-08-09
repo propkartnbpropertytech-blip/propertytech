@@ -33,6 +33,12 @@ class _ClientsScreenState extends State<ClientsScreen> {
     _triggerFetch();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   void _triggerFetch() {
     context.read<ClientsBloc>().add(
           FetchClientsEvent(

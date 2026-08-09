@@ -1,9 +1,6 @@
 import 'dart:math' as math;
-import 'dart:convert';
-import 'dart:ui' as ui;
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -23,6 +20,7 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/skeletons.dart';
 import '../../../core/design_system/widgets/crm_donut_chart.dart';
+import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../bloc/dashboard_bloc.dart';
 import '../models/dashboard_summary.dart';
@@ -70,9 +68,17 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _isLoadingProperty = false;
   late AnimationController _nameShimmerController;
   static bool _greetingPlayedThisSession = false;
+  final Map<String, Future<PropertyModel?>> _propertyDetailFutures = {};
 
   bool get _isRent => _activeTab == 'Rental';
   Color get _atmosphere => CRMColors.atmosphereAccent(_isRent);
+
+  Future<PropertyModel?> _propertyDetailFuture(String id) {
+    return _propertyDetailFutures.putIfAbsent(
+      id,
+      () => PropertiesRepository().getPropertyById(id),
+    );
+  }
 
   @override
   void initState() {
@@ -94,6 +100,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void dispose() {
     _nameShimmerController.dispose();
+    _propertyDetailFutures.clear();
     super.dispose();
   }
 
@@ -116,11 +123,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
-    final authState = context.watch<AuthBloc>().state;
-    String userName = '';
-    if (authState is Authenticated) {
-      userName = authState.user.fullName;
-    }
+    final userName = context.select<AuthBloc, String>((bloc) {
+      final state = bloc.state;
+      return state is Authenticated ? state.user.fullName : '';
+    });
 
     final dateString = _getFormattedDate();
     final greeting = _getGreeting();
@@ -128,7 +134,19 @@ class _DashboardScreenState extends State<DashboardScreen>
     return Stack(
       children: [
         BlocConsumer<DashboardBloc, DashboardState>(
-          listener: (context, state) {},
+          listenWhen: (previous, current) =>
+              current is DashboardError || current is DashboardLoadedState,
+          buildWhen: (previous, current) =>
+              current is DashboardLoading ||
+              current is DashboardInitial ||
+              current is DashboardError ||
+              current is DashboardLoadedState ||
+              current is DashboardRefreshing,
+          listener: (context, state) {
+            if (state is DashboardLoadedState || state is DashboardRefreshing) {
+              _propertyDetailFutures.clear();
+            }
+          },
           builder: (context, state) {
             if (state is DashboardLoading || state is DashboardInitial) {
               return const Padding(
@@ -144,6 +162,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
               return RefreshIndicator(
                 onRefresh: () async {
+                  _propertyDetailFutures.clear();
                   context.read<DashboardBloc>().add(RefreshDashboard());
                 },
                 child: SingleChildScrollView(
@@ -1253,7 +1272,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _buildRecentPropertyCard(_DisplayProperty p) {
     return FutureBuilder<PropertyModel?>(
-      future: PropertiesRepository().getPropertyById(p.id),
+      future: _propertyDetailFuture(p.id),
       builder: (context, snapshot) {
         final fullProperty = snapshot.data;
         final hasImage = fullProperty != null && fullProperty.images.isNotEmpty;
@@ -1266,7 +1285,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         return Container(
           margin: const EdgeInsets.only(bottom: CRMSpacing.m),
           decoration: BoxDecoration(
-            color: CRMColors.cardBgOf(context).withValues(alpha: 0.55),
+            color: CRMColors.cardBgOf(context),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: _atmosphere.withValues(alpha: 0.35),
@@ -1280,11 +1299,9 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: InkWell(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
                 onTap: () => _openPropertyDetails(p.id),
                 borderRadius: BorderRadius.circular(16),
                 child: Padding(
@@ -1444,7 +1461,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ),
               ),
-            ),
           ),
         );
       },
@@ -1452,32 +1468,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildPropertyThumbnail(String url) {
-    if (url.startsWith('data:image') || url.contains('base64')) {
-      try {
-        final base64Str = url.split(',').last;
-        return Image.memory(base64Decode(base64Str), fit: BoxFit.cover);
-      } catch (_) {}
-    }
-    if (kIsWeb) {
-      return Image.network(
-        url,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) =>
-            const Icon(Icons.broken_image_outlined, size: 16),
-      );
-    }
-    return CachedNetworkImage(
-      imageUrl: url,
+    return CrmNetworkImage(
+      url: url,
       fit: BoxFit.cover,
-      placeholder: (context, url) => const Center(
-        child: SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(strokeWidth: 1.5),
-        ),
-      ),
-      errorWidget: (context, url, error) =>
-          const Icon(Icons.broken_image_outlined, size: 16),
+      cacheLogicalWidth: 110,
+      cacheLogicalHeight: 85,
     );
   }
 

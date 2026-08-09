@@ -1,6 +1,6 @@
-import 'dart:convert';
+import 'dart:ui' as ui;
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import '../tokens/app_colors.dart';
 import '../tokens/app_spacing.dart';
@@ -11,7 +11,7 @@ import '../../../../features/properties/models/property_model.dart';
 import '../../utils/budget_formatter.dart';
 import 'cards.dart';
 import 'buttons.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'crm_network_image.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'crm_embedded_video_player.dart';
 import '../../../../features/auth/bloc/auth_bloc.dart';
@@ -267,12 +267,17 @@ class BuildPropertyDetailWidget extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Image Section
-                      CRMImageSlider(images: property.images),
-                      if (property.videos.isNotEmpty) ...[
-                        const SizedBox(height: CRMSpacing.m),
-                        _buildVideoSection(context, property.videos),
-                      ],
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Property Images',
+                            style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                          ),
+                          const SizedBox(height: CRMSpacing.s),
+                          CRMImageSlider(images: property.images, videos: property.videos),
+                        ],
+                      ),
                       const SizedBox(height: CRMSpacing.l),
                       
                       // Responsive Dynamic details Cards
@@ -330,15 +335,21 @@ class BuildPropertyDetailWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Property Videos',
+          'Property Video',
           style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
         ),
         const SizedBox(height: CRMSpacing.s),
         ...videos.map((url) => Padding(
           padding: const EdgeInsets.only(bottom: CRMSpacing.m),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-            child: CRMEmbeddedVideoPlayer(videoUrl: url),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                child: CRMEmbeddedVideoPlayer(videoUrl: url),
+              ),
+            ),
           ),
         )).toList(),
       ],
@@ -348,7 +359,8 @@ class BuildPropertyDetailWidget extends StatelessWidget {
 
 class CRMImageSlider extends StatefulWidget {
   final List<String> images;
-  const CRMImageSlider({super.key, required this.images});
+  final List<String> videos;
+  const CRMImageSlider({super.key, required this.images, required this.videos});
 
   @override
   State<CRMImageSlider> createState() => _CRMImageSliderState();
@@ -357,25 +369,51 @@ class CRMImageSlider extends StatefulWidget {
 class _CRMImageSliderState extends State<CRMImageSlider> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
+  Timer? _carouselTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _carouselTimer?.cancel();
+    if (widget.images.length > 1) {
+      _carouselTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+        if (_pageController.hasClients) {
+          final nextPage = (_currentIndex + 1) % widget.images.length;
+          _pageController.animateToPage(
+            nextPage,
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
+    _carouselTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasImages = widget.images.isNotEmpty;
-    if (!hasImages) {
+    final images = widget.images;
+    final totalCount = images.length;
+    final hasVideo = widget.videos.isNotEmpty;
+
+    if (totalCount == 0) {
       return Container(
-        height: 320,
+        height: 240,
         width: double.infinity,
         decoration: BoxDecoration(
           color: CRMColors.cardBgOf(context),
           borderRadius: BorderRadius.circular(CRMBorderRadius.card),
           border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 0.5),
-          boxShadow: CRMShadows.soft,
         ),
         child: Center(
           child: Column(
@@ -393,18 +431,269 @@ class _CRMImageSliderState extends State<CRMImageSlider> {
       );
     }
 
-    return Container(
-      height: 360,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: CRMColors.cardBgOf(context),
-        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-        border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 0.5),
-        boxShadow: CRMShadows.soft,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(CRMBorderRadius.card - 0.5),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double width = constraints.maxWidth;
+        final double height = width > 768 ? 380.0 : 260.0;
+        final double spacing = 8.0;
+        final bool isDesktop = width > 768;
+
+        if (hasVideo) {
+          if (isDesktop) {
+            // Side-by-Side: Left is auto-sliding image, Right is video player
+            final halfWidth = (width - spacing) / 2;
+            return SizedBox(
+              width: width,
+              height: height,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: halfWidth,
+                    height: height,
+                    child: _buildMainImageSlider(context, height, totalCount),
+                  ),
+                  SizedBox(width: spacing),
+                  SizedBox(
+                    width: halfWidth,
+                    height: height,
+                    child: CRMVideoSlider(videos: widget.videos),
+                  ),
+                ],
+              ),
+            );
+          } else {
+            // Mobile: Stacked: Top is auto-sliding image, Bottom is video player
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildMainImageSlider(context, height, totalCount),
+                SizedBox(height: spacing * 2),
+                Text(
+                  'Property Video',
+                  style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                ),
+                const SizedBox(height: CRMSpacing.s),
+                CRMVideoSlider(videos: widget.videos),
+              ],
+            );
+          }
+        }
+
+        // NO VIDEO: Fall back to original dynamic image grids (Desktop only, Mobile is single main slider)
+        if (!isDesktop) {
+          return _buildMainImageSlider(context, height, totalCount);
+        }
+
+        if (totalCount == 1) {
+          return _buildMainImageSlider(context, height, totalCount);
+        } else if (totalCount == 2) {
+          final halfWidth = (width - spacing) / 2;
+          return SizedBox(
+            width: width,
+            height: height,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: halfWidth,
+                  height: height,
+                  child: _buildMainImageSlider(context, height, totalCount),
+                ),
+                SizedBox(width: spacing),
+                SizedBox(
+                  width: halfWidth,
+                  height: height,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                    child: _buildGalleryTile(context, images[1], 1),
+                  ),
+                ),
+              ],
+            ),
+          );
+        } else if (totalCount == 3) {
+          final leftWidth = (width - spacing) * 0.65;
+          final rightWidth = (width - spacing) * 0.35;
+          final rightHeight = (height - spacing) / 2;
+          return SizedBox(
+            width: width,
+            height: height,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: leftWidth,
+                  height: height,
+                  child: _buildMainImageSlider(context, height, totalCount),
+                ),
+                SizedBox(width: spacing),
+                SizedBox(
+                  width: rightWidth,
+                  height: height,
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        width: rightWidth,
+                        height: rightHeight,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                          child: _buildGalleryTile(context, images[1], 1),
+                        ),
+                      ),
+                      SizedBox(height: spacing),
+                      SizedBox(
+                        width: rightWidth,
+                        height: rightHeight,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                          child: _buildGalleryTile(context, images[2], 2),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        } else if (totalCount == 4) {
+          final leftWidth = (width - spacing) * 0.6;
+          final rightWidth = (width - spacing) * 0.4;
+          final rightHeight = (height - (spacing * 2)) / 3;
+          return SizedBox(
+            width: width,
+            height: height,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: leftWidth,
+                  height: height,
+                  child: _buildMainImageSlider(context, height, totalCount),
+                ),
+                SizedBox(width: spacing),
+                SizedBox(
+                  width: rightWidth,
+                  height: height,
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        width: rightWidth,
+                        height: rightHeight,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                          child: _buildGalleryTile(context, images[1], 1),
+                        ),
+                      ),
+                      SizedBox(height: spacing),
+                      SizedBox(
+                        width: rightWidth,
+                        height: rightHeight,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                          child: _buildGalleryTile(context, images[2], 2),
+                        ),
+                      ),
+                      SizedBox(height: spacing),
+                      SizedBox(
+                        width: rightWidth,
+                        height: rightHeight,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                          child: _buildGalleryTile(context, images[3], 3),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        } else {
+          final leftWidth = (width - spacing) * 0.55;
+          final rightWidth = (width - spacing) * 0.45;
+          final rightTileWidth = (rightWidth - spacing) / 2;
+          final rightTileHeight = (height - spacing) / 2;
+
+          return SizedBox(
+            width: width,
+            height: height,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: leftWidth,
+                  height: height,
+                  child: _buildMainImageSlider(context, height, totalCount),
+                ),
+                SizedBox(width: spacing),
+                SizedBox(
+                  width: rightWidth,
+                  height: height,
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: rightTileWidth,
+                            height: rightTileHeight,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                              child: _buildGalleryTile(context, images[1], 1),
+                            ),
+                          ),
+                          SizedBox(width: spacing),
+                          SizedBox(
+                            width: rightTileWidth,
+                            height: rightTileHeight,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                              child: _buildGalleryTile(context, images[2], 2),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: spacing),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: rightTileWidth,
+                            height: rightTileHeight,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                              child: _buildGalleryTile(context, images[3], 3),
+                            ),
+                          ),
+                          SizedBox(width: spacing),
+                          SizedBox(
+                            width: rightTileWidth,
+                            height: rightTileHeight,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                              child: _buildGalleryTile(
+                                context,
+                                images[4],
+                                4,
+                                showOverlay: totalCount > 5,
+                                overlayText: '+${totalCount - 5}',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildMainImageSlider(BuildContext context, double height, int totalCount) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+      child: SizedBox(
+        height: height,
         child: Stack(
+          fit: StackFit.expand,
           children: [
             PageView.builder(
               controller: _pageController,
@@ -419,92 +708,67 @@ class _CRMImageSliderState extends State<CRMImageSlider> {
                   onTap: () {
                     showDialog(
                       context: context,
-                      barrierColor: Colors.black.withOpacity(0.85),
+                      barrierColor: Colors.black.withOpacity(0.9),
                       builder: (context) => CRMImageZoomViewer(
                         images: widget.images,
                         initialIndex: index,
                       ),
                     );
                   },
-                  child: _buildPropertyImage(widget.images[index]),
+                  child: CrmNetworkImage(
+                    url: widget.images[index],
+                    fit: BoxFit.cover,
+                    placeholder: (context) => const Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2.0),
+                      ),
+                    ),
+                    error: (context) => Container(
+                      color: CRMColors.cardBgOf(context),
+                      child: const Icon(Icons.broken_image_outlined, color: Colors.white54, size: 32),
+                    ),
+                  ),
                 );
               },
             ),
-            if (_currentIndex > 0)
-              Positioned(
-                left: 12,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: CircleAvatar(
-                    radius: 18,
-                    backgroundColor: Colors.black45,
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 14),
-                      padding: EdgeInsets.zero,
-                      onPressed: () {
-                        _pageController.previousPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            if (_currentIndex < widget.images.length - 1)
-              Positioned(
-                right: 12,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: CircleAvatar(
-                    radius: 18,
-                    backgroundColor: Colors.black45,
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
-                      padding: EdgeInsets.zero,
-                      onPressed: () {
-                        _pageController.nextPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
             Positioned(
-              bottom: 16,
-              left: 0,
-              right: 0,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(widget.images.length, (index) {
-                  return Container(
-                    width: 6,
-                    height: 6,
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _currentIndex == index ? Colors.white : Colors.white54,
+              bottom: 12,
+              right: 12,
+              child: GestureDetector(
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    barrierColor: Colors.black.withOpacity(0.9),
+                    builder: (context) => CRMImageZoomViewer(
+                      images: widget.images,
+                      initialIndex: _currentIndex,
                     ),
                   );
-                }),
-              ),
-            ),
-            Positioned(
-              top: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${_currentIndex + 1}/${widget.images.length}',
-                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.55),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white24, width: 0.5),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.photo_library_outlined, color: Colors.white, size: 14),
+                      const SizedBox(width: 6),
+                      Text(
+                        'View All $totalCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -514,30 +778,74 @@ class _CRMImageSliderState extends State<CRMImageSlider> {
     );
   }
 
-  Widget _buildPropertyImage(String url) {
-    if (url.startsWith('data:image') || url.contains('base64')) {
-      try {
-        final base64Str = url.split(',').last;
-        return Image.memory(base64Decode(base64Str), fit: BoxFit.cover);
-      } catch (_) {}
-    }
-    if (kIsWeb) {
-      return Image.network(
-        url,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => Center(
-          child: Icon(Icons.broken_image_outlined, color: CRMColors.textMutedOf(context), size: 48),
-        ),
-      );
-    }
-    return CachedNetworkImage(
-      imageUrl: url,
-      fit: BoxFit.cover,
-      placeholder: (context, url) => const Center(
-        child: CircularProgressIndicator(),
-      ),
-      errorWidget: (context, url, error) => Center(
-        child: Icon(Icons.broken_image_outlined, color: CRMColors.textMutedOf(context), size: 48),
+  Widget _buildGalleryTile(
+    BuildContext context,
+    String url,
+    int index, {
+    bool showOverlay = false,
+    String? overlayText,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        showDialog(
+          context: context,
+          barrierColor: Colors.black.withOpacity(0.9),
+          builder: (context) => CRMImageZoomViewer(
+            images: widget.images,
+            initialIndex: index,
+          ),
+        );
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CrmNetworkImage(
+            url: url,
+            fit: BoxFit.cover,
+            placeholder: (context) => const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.0),
+              ),
+            ),
+            error: (context) => Container(
+              color: CRMColors.cardBgOf(context),
+              child: Icon(Icons.broken_image_outlined,
+                  color: CRMColors.textMutedOf(context), size: 32),
+            ),
+          ),
+          if (showOverlay && overlayText != null) ...[
+            Container(
+              color: Colors.black.withOpacity(0.55),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      overlayText,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Photos',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -559,6 +867,7 @@ class CRMImageZoomViewer extends StatefulWidget {
 
 class _CRMImageZoomViewerState extends State<CRMImageZoomViewer> {
   late PageController _pageController;
+  late ScrollController _thumbScrollController;
   late int _currentIndex;
 
   @override
@@ -566,63 +875,131 @@ class _CRMImageZoomViewerState extends State<CRMImageZoomViewer> {
     super.initState();
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
+    _thumbScrollController = ScrollController();
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToThumbnail(_currentIndex);
+    });
   }
 
   @override
   void dispose() {
     _pageController.dispose();
+    _thumbScrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollToThumbnail(int index) {
+    if (_thumbScrollController.hasClients) {
+      final double targetOffset = index * 68.0 - (MediaQuery.sizeOf(context).width / 2) + 34.0;
+      final double maxScroll = _thumbScrollController.position.maxScrollExtent;
+      final double minScroll = _thumbScrollController.position.minScrollExtent;
+      _thumbScrollController.animateTo(
+        targetOffset.clamp(minScroll, maxScroll),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final isDesktop = size.width > 600;
+
     return Dialog(
       backgroundColor: Colors.black,
       insetPadding: EdgeInsets.zero,
       child: Stack(
         children: [
-          PageView.builder(
-            controller: _pageController,
-            itemCount: widget.images.length,
-            onPageChanged: (idx) {
-              setState(() {
-                _currentIndex = idx;
-              });
-            },
-            itemBuilder: (context, index) {
-              return InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 4.0,
-                child: Center(
-                  child: _buildZoomImage(widget.images[index]),
-                ),
-              );
-            },
-          ),
-          Positioned(
-            top: 24,
-            right: 24,
-            child: CircleAvatar(
-              backgroundColor: Colors.black54,
-              child: IconButton(
-                icon: const Icon(Icons.close_rounded, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
+          // Main Image Viewer
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: PageView.builder(
+                controller: _pageController,
+                itemCount: widget.images.length,
+                onPageChanged: (idx) {
+                  setState(() {
+                    _currentIndex = idx;
+                  });
+                  _scrollToThumbnail(idx);
+                },
+                itemBuilder: (context, index) {
+                  return InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Center(
+                      child: CrmNetworkImage(
+                        url: widget.images[index],
+                        fit: BoxFit.contain,
+                        placeholder: (context) => const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                        error: (context) => const Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white60,
+                          size: 64,
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
-          if (_currentIndex > 0)
+
+          // Header: Indicator and Close Button
+          Positioned(
+            top: 20,
+            left: 20,
+            right: 20,
+            child: SafeArea(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${_currentIndex + 1} / ${widget.images.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  CircleAvatar(
+                    backgroundColor: Colors.black54,
+                    child: IconButton(
+                      icon: const Icon(Icons.close_rounded, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Left Arrow Control (Desktop)
+          if (isDesktop && _currentIndex > 0)
             Positioned(
-              left: 20,
+              left: 24,
               top: 0,
               bottom: 0,
               child: Center(
                 child: CircleAvatar(
                   backgroundColor: Colors.black54,
+                  radius: 22,
                   child: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
                     onPressed: () {
                       _pageController.previousPage(
-                        duration: const Duration(milliseconds: 300),
+                        duration: const Duration(milliseconds: 350),
                         curve: Curves.easeInOut,
                       );
                     },
@@ -630,19 +1007,22 @@ class _CRMImageZoomViewerState extends State<CRMImageZoomViewer> {
                 ),
               ),
             ),
-          if (_currentIndex < widget.images.length - 1)
+
+          // Right Arrow Control (Desktop)
+          if (isDesktop && _currentIndex < widget.images.length - 1)
             Positioned(
-              right: 20,
+              right: 24,
               top: 0,
               bottom: 0,
               child: Center(
                 child: CircleAvatar(
                   backgroundColor: Colors.black54,
+                  radius: 22,
                   child: IconButton(
-                    icon: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 18),
+                    icon: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 20),
                     onPressed: () {
                       _pageController.nextPage(
-                        duration: const Duration(milliseconds: 300),
+                        duration: const Duration(milliseconds: 350),
                         curve: Curves.easeInOut,
                       );
                     },
@@ -650,55 +1030,67 @@ class _CRMImageZoomViewerState extends State<CRMImageZoomViewer> {
                 ),
               ),
             ),
+
+          // Bottom Thumbnail Navigator
           Positioned(
             bottom: 24,
             left: 0,
             right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '${_currentIndex + 1} / ${widget.images.length}',
-                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-                ),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 56,
+                    child: ListView.builder(
+                      controller: _thumbScrollController,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: widget.images.length,
+                      itemBuilder: (context, index) {
+                        final isSelected = index == _currentIndex;
+                        return GestureDetector(
+                          onTap: () {
+                            _pageController.animateToPage(
+                              index,
+                              duration: const Duration(milliseconds: 350),
+                              curve: Curves.easeInOut,
+                            );
+                          },
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            margin: const EdgeInsets.symmetric(horizontal: 6),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected ? Colors.white : Colors.white24,
+                                width: isSelected ? 2.5 : 1.0,
+                              ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: CrmNetworkImage(
+                                url: widget.images[index],
+                                fit: BoxFit.cover,
+                                placeholder: (context) => Container(color: Colors.white10),
+                                error: (context) => Container(
+                                  color: Colors.white10,
+                                  child: const Icon(Icons.image, color: Colors.white30, size: 16),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildZoomImage(String url) {
-    if (url.startsWith('data:image') || url.contains('base64')) {
-      try {
-        final base64Str = url.split(',').last;
-        return Image.memory(base64Decode(base64Str));
-      } catch (_) {}
-    }
-    if (kIsWeb) {
-      return Image.network(
-        url,
-        errorBuilder: (context, error, stackTrace) => const Icon(
-          Icons.broken_image_outlined,
-          color: Colors.white60,
-          size: 64,
-        ),
-      );
-    }
-    return CachedNetworkImage(
-      imageUrl: url,
-      placeholder: (context, url) => const Center(
-        child: CircularProgressIndicator(color: Colors.white),
-      ),
-      errorWidget: (context, url, error) => const Icon(
-        Icons.broken_image_outlined,
-        color: Colors.white60,
-        size: 64,
       ),
     );
   }
@@ -882,5 +1274,147 @@ String _getParkingDisplay(int parkingVal) {
     return 'Allocated - Ground Floor';
   } else {
     return 'Open';
+  }
+}
+
+class CRMVideoSlider extends StatefulWidget {
+  final List<String> videos;
+  const CRMVideoSlider({super.key, required this.videos});
+
+  @override
+  State<CRMVideoSlider> createState() => _CRMVideoSliderState();
+}
+
+class _CRMVideoSliderState extends State<CRMVideoSlider> {
+  final PageController _pageController = PageController();
+  int _currentIndex = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.videos.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double width = constraints.maxWidth;
+        final double containerWidth = width > 720 ? 720 : width;
+
+        return Center(
+          child: SizedBox(
+            width: containerWidth,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  children: [
+                    PageView.builder(
+                      controller: _pageController,
+                      itemCount: widget.videos.length,
+                      onPageChanged: (index) {
+                        setState(() {
+                          _currentIndex = index;
+                        });
+                      },
+                      itemBuilder: (context, index) {
+                        return Container(
+                          color: Colors.black,
+                          child: CRMEmbeddedVideoPlayer(videoUrl: widget.videos[index]),
+                        );
+                      },
+                    ),
+                    if (_currentIndex > 0)
+                      Positioned(
+                        left: 16,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: CircleAvatar(
+                            radius: 20,
+                            backgroundColor: Colors.black54,
+                            child: IconButton(
+                              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
+                              onPressed: () {
+                                _pageController.previousPage(
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeInOut,
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (_currentIndex < widget.videos.length - 1)
+                      Positioned(
+                        right: 16,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: CircleAvatar(
+                            radius: 20,
+                            backgroundColor: Colors.black54,
+                            child: IconButton(
+                              icon: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
+                              onPressed: () {
+                                _pageController.nextPage(
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeInOut,
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (widget.videos.length > 1) ...[
+                      Positioned(
+                        bottom: 16,
+                        left: 0,
+                        right: 0,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(widget.videos.length, (index) {
+                            return Container(
+                              width: 6,
+                              height: 6,
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _currentIndex == index ? Colors.white : Colors.white54,
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                      Positioned(
+                        top: 16,
+                        right: 16,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${_currentIndex + 1}/${widget.videos.length}',
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

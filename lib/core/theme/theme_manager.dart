@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,6 +19,11 @@ class ThemeManager extends ChangeNotifier {
   bool get isLoaded => _loaded;
   bool get isRentMode => _isRentMode;
 
+  /// Updates Rent/Re-Sale accent mode.
+  ///
+  /// Still notifies listeners so [PropKartTheme] primary colors refresh, but
+  /// callers should also [State.setState] locally so list filtering does not
+  /// depend solely on a full-app rebuild.
   void setRentMode(bool value) {
     if (_isRentMode == value) return;
     _isRentMode = value;
