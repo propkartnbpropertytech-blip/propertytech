@@ -829,6 +829,37 @@ class _UsersScreenState extends State<UsersScreen> {
               .length;
         }
 
+        if (MediaQuery.of(context).size.width < 600) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              CRMKPICard(
+                title: "TOTAL EMPLOYEES",
+                value: total.toString(),
+                icon: Icons.people_rounded,
+                iconColor: CRMColors.primary,
+                benefit: 'Everyone with CRM access in one place',
+              ),
+              const SizedBox(height: CRMSpacing.m),
+              CRMKPICard(
+                title: "ACTIVE SYSTEM USERS",
+                value: active.toString(),
+                icon: Icons.check_circle_outline_rounded,
+                iconColor: CRMColors.success,
+                benefit: 'Logins that can work the pipeline today',
+              ),
+              const SizedBox(height: CRMSpacing.m),
+              CRMKPICard(
+                title: "ADMINISTRATORS",
+                value: admins.toString(),
+                icon: Icons.admin_panel_settings_rounded,
+                iconColor: CRMColors.info,
+                benefit: 'Roles that control workspace security',
+              ),
+            ],
+          );
+        }
+
         final int crossAxisCount = CRMBreakpoints.kpiColumns(context, desktop: 3);
         final double childAspectRatio = CRMBreakpoints.kpiAspectRatio(context);
 

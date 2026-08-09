@@ -195,7 +195,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         : GestureDetector(
                             onTap: () => _openPropertyDetails(context, p),
                             child: Container(
-                              height: 210,
+                              height: 300,
                               width: double.infinity,
                               color: CRMColors.skeletonBase,
                               child: Center(
@@ -3195,7 +3195,7 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
       url: url,
       fit: BoxFit.cover,
       cacheLogicalWidth: 400,
-      cacheLogicalHeight: 210,
+      cacheLogicalHeight: 300,
       error: (context) => Container(
         color: CRMColors.backgroundOf(context),
         child: const Icon(Icons.broken_image_outlined, size: 24, color: Colors.grey),
@@ -3214,7 +3214,7 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
         GestureDetector(
           onTap: widget.onTap,
           child: Container(
-            height: 210,
+            height: 300,
             width: double.infinity,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
