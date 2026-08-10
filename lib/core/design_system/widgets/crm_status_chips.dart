@@ -66,7 +66,13 @@ class CRMStatusChip extends StatelessWidget {
         color: _getBgColor(context),
         borderRadius: BorderRadius.circular(CRMBorderRadius.round),
         border: Border.all(
-          color: _getTextColor(context).withOpacity(0.12),
+          color: _getTextColor(context).withOpacity(
+            (CRMColors.isDark &&
+                    CRMColors.isRentMode &&
+                    _getTextColor(context) == CRMColors.primaryOf(context))
+                ? 0.45
+                : 0.12,
+          ),
           width: 0.5,
         ),
       ),

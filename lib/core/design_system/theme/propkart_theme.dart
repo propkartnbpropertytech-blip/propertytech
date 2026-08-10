@@ -163,7 +163,9 @@ class PropKartTheme {
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: colors.primary,
-        foregroundColor: Colors.white,
+        foregroundColor: (brightness == Brightness.dark && !CRMColors.isRentMode)
+            ? const Color(0xFF111827)
+            : Colors.white,
         elevation: 4,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CRMBorderRadius.xl),

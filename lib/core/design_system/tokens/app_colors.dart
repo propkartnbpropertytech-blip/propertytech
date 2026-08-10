@@ -26,17 +26,17 @@ class CRMColors {
 
   static Color getPrimaryColor(bool dark, bool rent) {
     if (rent) {
-      return dark ? const Color(0xFF8FB9A8) : const Color(0xFF5E8B7E); // rent green
+      return dark ? const Color(0xFFD97706) : const Color(0xFF5E8B7E); // rent orange (dark) / green (light)
     } else {
-      return dark ? const Color(0xFFD4AF37) : const Color(0xFFB8952A); // resale gold
+      return dark ? const Color(0xFFB8C7F5) : const Color(0xFFB8952A); // resale periwinkle (dark) / gold (light)
     }
   }
 
   static Color getPrimaryHoverColor(bool dark, bool rent) {
     if (rent) {
-      return dark ? const Color(0xFF7FA896) : const Color(0xFF4D7267);
+      return dark ? const Color(0xFFF59E0B) : const Color(0xFF4D7267);
     } else {
-      return dark ? const Color(0xFFB8942A) : const Color(0xFF9A7C1F);
+      return dark ? const Color(0xFFC7D3FA) : const Color(0xFF9A7C1F);
     }
   }
 
@@ -46,20 +46,20 @@ class CRMColors {
 
   static Color getAccentColor(bool dark, bool rent) {
     if (rent) {
-      return dark ? const Color(0xFFA8CBBC) : const Color(0xFF6E9B8C);
+      return dark ? const Color(0xFFF59E0B) : const Color(0xFF6E9B8C);
     } else {
-      return dark ? const Color(0xFFE4C76A) : const Color(0xFFC9A84C);
+      return dark ? const Color(0xFFC7D3FA) : const Color(0xFFC9A84C);
     }
   }
 
   static List<Color> getGradientPrimaryColor(bool dark, bool rent) {
     if (rent) {
       return dark
-          ? const [Color(0xFFA8CBBC), Color(0xFF8FB9A8)]
+          ? const [Color(0xFFF59E0B), Color(0xFFD97706)]
           : const [Color(0xFF7FA896), Color(0xFF5E8B7E)];
     } else {
       return dark
-          ? const [Color(0xFFE4C76A), Color(0xFFD4AF37)]
+          ? const [Color(0xFFC7D3FA), Color(0xFFB8C7F5)]
           : const [Color(0xFFC9A84C), Color(0xFFB8952A)];
     }
   }
@@ -69,23 +69,23 @@ class CRMColors {
   static Color get secondary => getSecondaryColor(isDark, isRentMode);
   static Color get accent => getAccentColor(isDark, isRentMode);
 
-  /// Soft sage atmosphere for Rent — calm leasing desk (not cyan/blue).
+  /// Soft orange atmosphere for Rent — warm leasing desk (dark mode only).
   static Color get rentAccent =>
-      isDark ? const Color(0xFF8FB9A8) : const Color(0xFF5E8B7E);
+      isDark ? const Color(0xFFD97706) : const Color(0xFF5E8B7E);
 
-  /// Gold atmosphere for Re-Sale.
+  /// Periwinkle atmosphere for Re-Sale (dark mode only).
   static Color get resaleAccent =>
-      isDark ? const Color(0xFFD4AF37) : const Color(0xFFB8952A);
+      isDark ? const Color(0xFFB8C7F5) : const Color(0xFFB8952A);
 
   static Color atmosphereAccent(bool isRent) =>
       isRent ? rentAccent : resaleAccent;
 
   static List<Color> atmosphereGradient(bool isRent) => isRent
       ? (isDark
-          ? const [Color(0xFFA8CBBC), Color(0xFF8FB9A8)]
+          ? const [Color(0xFFF59E0B), Color(0xFFD97706)]
           : const [Color(0xFF7FA896), Color(0xFF5E8B7E)])
       : (isDark
-          ? const [Color(0xFFE4C76A), Color(0xFFD4AF37)]
+          ? const [Color(0xFFC7D3FA), Color(0xFFB8C7F5)]
           : const [Color(0xFFC9A84C), Color(0xFFB8952A)]);
 
   // Sidebar follows theme: ink rail in dark, sunlit rail in light.
@@ -126,10 +126,10 @@ class CRMColors {
   // ── Chart / graph ──────────────────────────────────────────
   static List<Color> get chartColors => isDark
       ? const [
-          Color(0xFFD4AF37),
-          Color(0xFF8FB9A8),
+          Color(0xFFB8C7F5),
+          Color(0xFFD97706),
           Color(0xFFC4A8C6),
-          Color(0xFFE4C76A),
+          Color(0xFFC7D3FA),
           Color(0xFF6B87A1),
           Color(0xFFEF4444),
         ]
@@ -306,8 +306,8 @@ class PropKartColors extends ThemeExtension<PropKartColors> {
         primaryHover: CRMColors.getPrimaryHoverColor(true, rent),
         secondary: CRMColors.getSecondaryColor(true, rent),
         accent: CRMColors.getAccentColor(true, rent),
-        rentAccent: const Color(0xFF8FB9A8),
-        resaleAccent: const Color(0xFFD4AF37),
+        rentAccent: const Color(0xFFD97706),
+        resaleAccent: const Color(0xFFB8C7F5),
         border: const Color(0xFF243044),
         divider: const Color(0xFF1A2436),
         text: const Color(0xFFF3F4F6),
@@ -323,17 +323,17 @@ class PropKartColors extends ThemeExtension<PropKartColors> {
         skeletonBase: const Color(0xFF1A2436),
         skeletonHighlight: const Color(0xFF2A3448),
         chartColors: rent ? const [
-          Color(0xFF8FB9A8),
-          Color(0xFF8FB9A8),
-          Color(0xFFD4AF37),
-          Color(0xFFE4C76A),
+          Color(0xFFD97706),
+          Color(0xFFD97706),
+          Color(0xFFB8C7F5),
+          Color(0xFFC7D3FA),
           Color(0xFF6B87A1),
           Color(0xFFEF4444),
         ] : const [
-          Color(0xFFD4AF37),
-          Color(0xFF8FB9A8),
-          Color(0xFFD4AF37),
-          Color(0xFFE4C76A),
+          Color(0xFFB8C7F5),
+          Color(0xFFD97706),
+          Color(0xFFB8C7F5),
+          Color(0xFFC7D3FA),
           Color(0xFF6B87A1),
           Color(0xFFEF4444),
         ],

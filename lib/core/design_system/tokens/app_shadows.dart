@@ -75,7 +75,7 @@ class CRMShadows {
 
   static List<BoxShadow> get primaryGlow => [
         BoxShadow(
-          color: _primaryGlow(CRMColors.isDark ? 0.35 : 0.22),
+          color: _primaryGlow(CRMColors.isDark ? (CRMColors.isRentMode ? 0.20 : 0.18) : 0.22),
           blurRadius: 18,
           offset: const Offset(0, 6),
         ),
@@ -83,7 +83,7 @@ class CRMShadows {
 
   static List<BoxShadow> atmosphereGlow(Color accent) => [
         BoxShadow(
-          color: accent.withValues(alpha: CRMColors.isDark ? 0.28 : 0.16),
+          color: accent.withValues(alpha: CRMColors.isDark ? (CRMColors.isRentMode ? 0.20 : 0.18) : 0.16),
           blurRadius: 20,
           offset: const Offset(0, 8),
         ),

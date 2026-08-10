@@ -46,7 +46,9 @@ class _CRMButtonState extends State<CRMButton> {
     switch (widget.variant) {
       case CRMButtonVariant.primary:
         bgColor = CRMColors.primaryOf(context);
-        fgColor = Colors.white;
+        fgColor = (CRMColors.isDark && !CRMColors.isRentMode)
+            ? const Color(0xFF111827)
+            : Colors.white;
         shadows = widget.onPressed != null && !widget.isLoading
             ? CRMShadows.primaryGlow
             : null;

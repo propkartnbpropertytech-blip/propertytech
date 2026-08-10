@@ -1432,7 +1432,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 label: Text(
                   cat,
                   style: TextStyle(
-                    color: isSelected ? Colors.white : CRMColors.textSecondaryOf(context),
+                    color: isSelected
+                        ? ((CRMColors.isDark && !CRMColors.isRentMode) ? const Color(0xFF111827) : Colors.white)
+                        : CRMColors.textSecondaryOf(context),
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                     fontSize: 13,
                   ),
@@ -1978,7 +1980,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           style: TextStyle(
             fontSize: 12,
             color: isSelected
-                ? Colors.white
+                ? (label == 'Re-Sale' && CRMColors.isDark ? const Color(0xFF111827) : Colors.white)
                 : CRMColors.textSecondaryOf(context),
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
           ),

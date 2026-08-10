@@ -687,7 +687,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           style: TextStyle(
             fontSize: 14,
             color: isSelected
-                ? Colors.white
+                ? (label == 'Re-Sale' && CRMColors.isDark ? const Color(0xFF111827) : Colors.white)
                 : CRMColors.textSecondaryOf(context),
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
           ),

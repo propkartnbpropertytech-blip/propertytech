@@ -801,7 +801,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         child: Text(
           label,
           style: CRMTypography.bodyMedium.copyWith(
-            color: isSelected ? Colors.white : CRMColors.textSecondary,
+            color: isSelected
+                ? (label == 'Re-Sale' && CRMColors.isDark ? const Color(0xFF111827) : Colors.white)
+                : CRMColors.textSecondary,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
           ),
         ),
