@@ -82,7 +82,7 @@ class CRMBrandLockup extends StatelessWidget {
                 ),
                 if (!compact)
                   Text(
-                    'Property CRM',
+                    '',
                     style: CRMTypography.caption.copyWith(
                       color: textColor.withValues(alpha: 0.55),
                       fontSize: 10,

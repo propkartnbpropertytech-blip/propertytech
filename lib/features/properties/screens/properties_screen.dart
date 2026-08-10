@@ -1239,7 +1239,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     if (_activeCategoryTab == 'Residential') {
       final statusCount = filteredByListingAndCategory.length;
       final kpi = CRMKPICard(
-        title: '${_selectedStatusFilter ?? "All Status"} listings',
+        title: '${_selectedStatusFilter ?? "Inventory"} listings',
         value: '$statusCount',
         icon: Icons.bolt_rounded,
         iconColor: CRMColors.primaryOf(context),
@@ -1287,7 +1287,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     } else if (_activeCategoryTab == 'Commercial') {
       final statusCount = filteredByListingAndCategory.length;
       final kpi = CRMKPICard(
-        title: 'Commercial (${_selectedStatusFilter ?? "All Status"})',
+        title: 'Commercial (${_selectedStatusFilter ?? "Inventory"})',
         value: '$statusCount',
         icon: Icons.business_center_outlined,
         iconColor: CRMColors.primaryOf(context),
@@ -1338,7 +1338,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     } else if (_activeCategoryTab == 'Industrial') {
       final statusCount = filteredByListingAndCategory.length;
       final kpi = CRMKPICard(
-        title: 'Industrial (${_selectedStatusFilter ?? "All Status"})',
+        title: 'Industrial (${_selectedStatusFilter ?? "Inventory"})',
         value: '$statusCount',
         icon: Icons.factory_outlined,
         iconColor: CRMColors.primaryOf(context),
@@ -1378,7 +1378,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     } else if (_activeCategoryTab == 'Land & Plot') {
       final statusCount = filteredByListingAndCategory.length;
       final kpi = CRMKPICard(
-        title: 'Land & Plots (${_selectedStatusFilter ?? "All Status"})',
+        title: 'Land & Plots (${_selectedStatusFilter ?? "Inventory"})',
         value: '$statusCount',
         icon: Icons.landscape_outlined,
         iconColor: CRMColors.primaryOf(context),
