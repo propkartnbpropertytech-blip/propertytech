@@ -18,8 +18,15 @@ const Color _kWhatsAppGreen = Color(0xFF25D366);
 
 class SharePropertiesPage extends StatefulWidget {
   final String sessionId;
+  final String? agentName;
+  final String? agentMobile;
 
-  const SharePropertiesPage({super.key, required this.sessionId});
+  const SharePropertiesPage({
+    super.key,
+    required this.sessionId,
+    this.agentName,
+    this.agentMobile,
+  });
 
   @override
   State<SharePropertiesPage> createState() => _SharePropertiesPageState();
@@ -169,8 +176,8 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
     }
 
     final isDesktop = MediaQuery.of(context).size.width >= 900;
-    final agentName = _agent?['full_name'] ?? 'Agent';
-    final agentMobile = _agent?['mobile'] ?? '';
+    final agentName = _agent?['full_name'] ?? widget.agentName ?? 'Agent';
+    final agentMobile = _agent?['mobile'] ?? widget.agentMobile ?? '';
 
     final headerBlock = Container(
       width: double.infinity,

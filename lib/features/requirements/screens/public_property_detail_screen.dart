@@ -17,11 +17,15 @@ const Color _kWhatsAppGreen = Color(0xFF25D366);
 class PublicPropertyDetailScreen extends StatefulWidget {
   final String sessionId;
   final String propertyId;
+  final String? agentName;
+  final String? agentMobile;
 
   const PublicPropertyDetailScreen({
     super.key,
     required this.sessionId,
     required this.propertyId,
+    this.agentName,
+    this.agentMobile,
   });
 
   @override
@@ -171,8 +175,8 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
 
     final p = _property!;
     final propModel = PropertyModel.fromJson(p);
-    final agentName = _agent?['full_name'] ?? 'Agent';
-    final agentMobile = _agent?['mobile'] ?? '';
+    final agentName = _agent?['full_name'] ?? widget.agentName ?? 'Agent';
+    final agentMobile = _agent?['mobile'] ?? widget.agentMobile ?? '';
     final code = propModel.propertyCode;
     final double priceVal = propModel.price;
     final price = priceVal > 0

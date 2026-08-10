@@ -6,6 +6,7 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
+import 'web_reload.dart';
 
 class UpdateDialog extends StatelessWidget {
   final bool isForceUpdate;
@@ -22,11 +23,14 @@ class UpdateDialog extends StatelessWidget {
   });
 
   Future<void> _handleUpdateAction(BuildContext context) async {
-    String storeUrl = "comingsoon";
-    if (!kIsWeb) {
-      if (Platform.isAndroid) storeUrl = androidLink;
-      if (Platform.isIOS) storeUrl = iosLink;
+    if (kIsWeb) {
+      reloadWeb();
+      return;
     }
+
+    String storeUrl = "comingsoon";
+    if (Platform.isAndroid) storeUrl = androidLink;
+    if (Platform.isIOS) storeUrl = iosLink;
 
     if (storeUrl == "comingsoon") {
       ScaffoldMessenger.of(context).showSnackBar(

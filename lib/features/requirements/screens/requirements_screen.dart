@@ -2423,8 +2423,27 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   );
                                   if (response.data != null && response.data['success'] == true) {
                                     final sessionId = response.data['data']['session']['id'];
+                                    final authState = context.read<AuthBloc>().state;
+                                    String? currentAgentName;
+                                    String? currentAgentMobile;
+                                    if (authState is Authenticated) {
+                                      currentAgentName = authState.user.fullName;
+                                      currentAgentMobile = authState.user.mobile;
+                                    }
+
                                     setDialogState(() {
-                                      generatedLink = "${AppConfig.publicShareBaseUrl}/$sessionId";
+                                      var link = "${AppConfig.publicShareBaseUrl}/$sessionId";
+                                      final queryParams = <String>[];
+                                      if (currentAgentName != null && currentAgentName.isNotEmpty) {
+                                        queryParams.add("agentName=${Uri.encodeComponent(currentAgentName)}");
+                                      }
+                                      if (currentAgentMobile != null && currentAgentMobile.isNotEmpty) {
+                                        queryParams.add("agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+                                      }
+                                      if (queryParams.isNotEmpty) {
+                                        link += "?${queryParams.join('&')}";
+                                      }
+                                      generatedLink = link;
                                       isGeneratingLink = false;
                                     });
                                   } else {
@@ -3753,10 +3772,20 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                         final dateStr = s['created_at'] != null 
                             ? DateFormat('dd-MM-yyyy').format(DateTime.parse(s['created_at'].toString()))
                             : '-';
-                        final agentName = s['agent']?['full_name'] ?? '-';
+                        final agentName = s['agent']?['full_name']?.toString() ?? '-';
                         final status = s['status'] ?? 'Active';
-                        final link = "${AppConfig.publicShareBaseUrl}/${s['id']}";
-                        final agentMobile = s['agent']?['mobile'] ?? '';
+                        final agentMobile = s['agent']?['mobile']?.toString() ?? '';
+                        var link = "${AppConfig.publicShareBaseUrl}/${s['id']}";
+                        final queryParams = <String>[];
+                        if (agentName != '-' && agentName.isNotEmpty) {
+                          queryParams.add("agentName=${Uri.encodeComponent(agentName)}");
+                        }
+                        if (agentMobile.isNotEmpty) {
+                          queryParams.add("agentMobile=${Uri.encodeComponent(agentMobile)}");
+                        }
+                        if (queryParams.isNotEmpty) {
+                          link += "?${queryParams.join('&')}";
+                        }
 
                         return DataRow(
                           cells: [

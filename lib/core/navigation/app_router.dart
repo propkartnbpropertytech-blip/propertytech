@@ -233,7 +233,13 @@ class AppRouter {
         path: '/share/:sessionId',
         builder: (context, state) {
           final sessionId = state.pathParameters['sessionId']!;
-          return SharePropertiesPage(sessionId: sessionId);
+          final agentName = state.uri.queryParameters['agentName'];
+          final agentMobile = state.uri.queryParameters['agentMobile'];
+          return SharePropertiesPage(
+            sessionId: sessionId,
+            agentName: agentName,
+            agentMobile: agentMobile,
+          );
         },
       ),
       GoRoute(
@@ -241,7 +247,14 @@ class AppRouter {
         builder: (context, state) {
           final sessionId = state.pathParameters['sessionId']!;
           final propertyId = state.pathParameters['propertyId']!;
-          return PublicPropertyDetailScreen(sessionId: sessionId, propertyId: propertyId);
+          final agentName = state.uri.queryParameters['agentName'];
+          final agentMobile = state.uri.queryParameters['agentMobile'];
+          return PublicPropertyDetailScreen(
+            sessionId: sessionId,
+            propertyId: propertyId,
+            agentName: agentName,
+            agentMobile: agentMobile,
+          );
         },
       ),
     ],

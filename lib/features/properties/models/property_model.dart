@@ -130,18 +130,18 @@ class PropertyModel {
   });
 
   factory PropertyModel.fromJson(Map<String, dynamic> json) {
-    final category = json['category'] as Map<String, dynamic>?;
-    final propType = json['property_type'] as Map<String, dynamic>?;
-    final config = json['configuration'] as Map<String, dynamic>?;
-    final listing = json['listing_type'] as Map<String, dynamic>?;
-    final status = json['property_status'] as Map<String, dynamic>?;
-    final city = json['city'] as Map<String, dynamic>?;
-    final area = json['area'] as Map<String, dynamic>?;
-    final furnishing = json['furnishing_type'] as Map<String, dynamic>?;
-    final facing = json['facing_type'] as Map<String, dynamic>?;
-    final ownership = json['ownership_type'] as Map<String, dynamic>?;
-    final brokerage = json['brokerage_type'] as Map<String, dynamic>?;
-    final creator = json['creator'] as Map<String, dynamic>?;
+    final category = json['category'] != null ? Map<String, dynamic>.from(json['category'] as Map) : null;
+    final propType = json['property_type'] != null ? Map<String, dynamic>.from(json['property_type'] as Map) : null;
+    final config = json['configuration'] != null ? Map<String, dynamic>.from(json['configuration'] as Map) : null;
+    final listing = json['listing_type'] != null ? Map<String, dynamic>.from(json['listing_type'] as Map) : null;
+    final status = json['property_status'] != null ? Map<String, dynamic>.from(json['property_status'] as Map) : null;
+    final city = json['city'] != null ? Map<String, dynamic>.from(json['city'] as Map) : null;
+    final area = json['area'] != null ? Map<String, dynamic>.from(json['area'] as Map) : null;
+    final furnishing = json['furnishing_type'] != null ? Map<String, dynamic>.from(json['furnishing_type'] as Map) : null;
+    final facing = json['facing_type'] != null ? Map<String, dynamic>.from(json['facing_type'] as Map) : null;
+    final ownership = json['ownership_type'] != null ? Map<String, dynamic>.from(json['ownership_type'] as Map) : null;
+    final brokerage = json['brokerage_type'] != null ? Map<String, dynamic>.from(json['brokerage_type'] as Map) : null;
+    final creator = json['creator'] != null ? Map<String, dynamic>.from(json['creator'] as Map) : null;
 
     final List<String> imageList = [];
     final jsonPropertyImages = json['property_images'];
@@ -253,7 +253,7 @@ class PropertyModel {
       videos: videoList,
       adminId: json['admin_id'] as String?,
       organizationId: json['organization_id'] as String?,
-      additionalDetails: json['additional_details'] as Map<String, dynamic>?,
+      additionalDetails: json['additional_details'] != null ? Map<String, dynamic>.from(json['additional_details'] as Map) : null,
     );
   }
 

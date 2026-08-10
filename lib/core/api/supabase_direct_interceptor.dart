@@ -26,8 +26,8 @@ class SupabaseDirectInterceptor extends Interceptor {
           'maintenance_message': '',
           'android_link': 'comingsoon',
           'ios_link': 'comingsoon',
-          'min_version': '1.0.0',
-          'max_version': '1.0.0',
+          'min_version': '1.1.0',
+          'max_version': '1.1.0',
           'latest_terms_version': 1,
           'latest_privacy_version': 1,
           'enable_ai': true,
@@ -647,7 +647,7 @@ class SupabaseDirectInterceptor extends Interceptor {
 
       if (path.startsWith('/share-sessions/requirement/')) {
         final reqId = path.split('/').last;
-        final data = await _supabase.from('share_sessions').select('*').eq('requirement_id', reqId).order('created_at', ascending: false);
+        final data = await _supabase.from('share_sessions').select('*, agent:users!shared_by(id, full_name, mobile)').eq('requirement_id', reqId).order('created_at', ascending: false);
         return handler.resolve(Response(
           requestOptions: options,
           data: {'success': true, 'data': {'history': data}},
