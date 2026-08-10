@@ -38,6 +38,9 @@ import 'package:collection/collection.dart';
 import 'package:propkart/core/storage/repository_coordinator.dart';
 import 'package:propkart/core/storage/model_mappers.dart';
 import 'package:propkart/core/storage/isar_collections.dart';
+import '../../../core/utils/file_downloader.dart';
+import '../utils/property_share_pdf.dart';
+import '../../../core/api/cloudinary_uploader.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color kWhatsAppGreen = Color(0xFF25D366);
@@ -2240,6 +2243,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         List<String> selectedPropIds = [];
         bool isInitLoading = true;
         bool isGeneratingLink = false;
+        bool isSharingPdf = false;
         String? error;
         String? generatedLink;
 
@@ -2390,7 +2394,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                         title: Text(title, style: CRMTypography.body.copyWith(color: CRMColors.textOf(context))),
                                         value: isSelected,
                                         activeColor: CRMColors.primary,
-                                        onChanged: isGeneratingLink ? null : (val) {
+                                        onChanged: (isGeneratingLink || isSharingPdf) ? null : (val) {
                                           setDialogState(() {
                                             if (val == true) {
                                               selectedPropIds.add(p.id);
@@ -2403,74 +2407,165 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                     },
                                   ),
                                 ),
+                  actionsAlignment: MainAxisAlignment.spaceBetween,
                   actions: [
                     TextButton(
-                      onPressed: isGeneratingLink ? null : () => Navigator.pop(context),
+                      onPressed: (isGeneratingLink || isSharingPdf) ? null : () => Navigator.pop(context),
                       child: const Text("Cancel"),
                     ),
                     if (!isInitLoading && error == null && matchedProps.isNotEmpty)
-                      ElevatedButton(
-                        onPressed: selectedPropIds.isEmpty || isGeneratingLink
-                            ? null
-                            : () async {
-                                setDialogState(() => isGeneratingLink = true);
-                                try {
-                                  final response = await DioClient.dio.post(
-                                    '/share-sessions',
-                                    data: {
-                                      'requirement_id': req.id,
-                                      'property_ids': selectedPropIds,
-                                      'expiry_days': 7
-                                    },
-                                  );
-                                  if (response.data != null && response.data['success'] == true) {
-                                    final sessionId = response.data['data']['session']['id'];
-                                    final authState = context.read<AuthBloc>().state;
-                                    String? currentAgentName;
-                                    String? currentAgentMobile;
-                                    if (authState is Authenticated) {
-                                      currentAgentName = authState.user.fullName;
-                                      currentAgentMobile = authState.user.mobile;
-                                    }
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          OutlinedButton(
+                            onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
+                                ? null
+                                : () async {
+                                    setDialogState(() => isSharingPdf = true);
+                                    try {
+                                      final selected = matchedProps
+                                          .where((p) => selectedPropIds.contains(p.id))
+                                          .toList();
+                                      final bytes = await PropertySharePdf.build(selected);
+                                      final fileName = selected.length == 1
+                                          ? PropertySharePdf.fileName(selected.first)
+                                          : 'Selected_Properties_Details.pdf';
+                                      
+                                      await FileDownloader.download(bytes, fileName);
+                                      
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              selected.length == 1
+                                                  ? 'Property PDF ready to share.'
+                                                  : 'Selected properties PDF ready to share.',
+                                            ),
+                                          ),
+                                        );
+                                      }
 
-                                    setDialogState(() {
-                                      var link = "${AppConfig.publicShareBaseUrl}/$sessionId";
-                                      final queryParams = <String>[];
-                                      if (currentAgentName != null && currentAgentName.isNotEmpty) {
-                                        queryParams.add("agentName=${Uri.encodeComponent(currentAgentName)}");
+                                      final phone = req.clientMobile;
+                                      final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+                                      String formattedPhone = cleanPhone;
+                                      if (cleanPhone.length == 10) {
+                                        formattedPhone = '91$cleanPhone';
                                       }
-                                      if (currentAgentMobile != null && currentAgentMobile.isNotEmpty) {
-                                        queryParams.add("agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+
+                                      // Try launching native WhatsApp scheme first to open desktop/mobile app directly
+                                      final nativeUrl = "whatsapp://send?phone=$formattedPhone";
+                                      final nativeUri = Uri.parse(nativeUrl);
+                                      
+                                      if (await canLaunchUrl(nativeUri)) {
+                                        await launchUrl(nativeUri, mode: LaunchMode.externalApplication);
+                                      } else {
+                                        // Fallback to WhatsApp Web directly, which bypasses the landing page
+                                        final webUrl = "https://web.whatsapp.com/send?phone=$formattedPhone";
+                                        final webUri = Uri.parse(webUrl);
+                                        if (await canLaunchUrl(webUri)) {
+                                          await launchUrl(webUri, mode: LaunchMode.externalApplication);
+                                        } else {
+                                          // Last resort fallback
+                                          final fallbackUrl = "https://wa.me/$formattedPhone";
+                                          final fallbackUri = Uri.parse(fallbackUrl);
+                                          if (await canLaunchUrl(fallbackUri)) {
+                                            await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
+                                          }
+                                        }
                                       }
-                                      if (queryParams.isNotEmpty) {
-                                        link += "?${queryParams.join('&')}";
+                                    } catch (e) {
+                                      debugPrint('Share PDF failed: $e');
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Failed to create property PDF.'),
+                                            backgroundColor: CRMColors.danger,
+                                          ),
+                                        );
                                       }
-                                      generatedLink = link;
-                                      isGeneratingLink = false;
-                                    });
-                                  } else {
-                                    setDialogState(() {
-                                      error = "Failed to generate link.";
-                                      isGeneratingLink = false;
-                                    });
-                                  }
-                                } catch (e) {
-                                  setDialogState(() {
-                                    error = "Failed to generate link.";
-                                    isGeneratingLink = false;
-                                  });
-                                }
-                              },
-                        child: const Text("Generate Link"),
+                                    } finally {
+                                      if (context.mounted) {
+                                        setDialogState(() => isSharingPdf = false);
+                                      }
+                                    }
+                                  },
+                            child: const Text("Share PDF"),
+                          ),
+                          const SizedBox(width: CRMSpacing.s),
+                          ElevatedButton(
+                            onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
+                                ? null
+                                : () async {
+                                    setDialogState(() => isGeneratingLink = true);
+                                    try {
+                                      final response = await DioClient.dio.post(
+                                        '/share-sessions',
+                                        data: {
+                                          'requirement_id': req.id,
+                                          'property_ids': selectedPropIds,
+                                          'expiry_days': 7
+                                        },
+                                      );
+                                      if (response.data != null && response.data['success'] == true) {
+                                        final sessionId = response.data['data']['session']['id'];
+                                        final authState = context.read<AuthBloc>().state;
+                                        String? currentAgentName;
+                                        String? currentAgentMobile;
+                                        if (authState is Authenticated) {
+                                          currentAgentName = authState.user.fullName;
+                                          currentAgentMobile = authState.user.mobile;
+                                        }
+
+                                        setDialogState(() {
+                                          var link = "${AppConfig.publicShareBaseUrl}/$sessionId";
+                                          final queryParams = <String>[];
+                                          if (currentAgentName != null && currentAgentName.isNotEmpty) {
+                                            queryParams.add("agentName=${Uri.encodeComponent(currentAgentName)}");
+                                          }
+                                          if (currentAgentMobile != null && currentAgentMobile.isNotEmpty) {
+                                            queryParams.add("agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+                                          }
+                                          if (queryParams.isNotEmpty) {
+                                            link += "?${queryParams.join('&')}";
+                                          }
+                                          generatedLink = link;
+                                          isGeneratingLink = false;
+                                        });
+                                      } else {
+                                        setDialogState(() {
+                                          error = "Failed to generate link.";
+                                          isGeneratingLink = false;
+                                        });
+                                      }
+                                    } catch (e) {
+                                      setDialogState(() {
+                                        error = "Failed to generate link.";
+                                        isGeneratingLink = false;
+                                      });
+                                    }
+                                  },
+                            child: const Text("Generate Link"),
+                          ),
+                        ],
                       ),
                   ],
                 ),
-                if (isGeneratingLink)
+                if (isGeneratingLink || isSharingPdf)
                   Positioned.fill(
                     child: Container(
                       color: CRMColors.overlayOf(context),
-                      child: const Center(
-                        child: CircularProgressIndicator(),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: CRMSpacing.s),
+                            Text(
+                              isSharingPdf ? 'Preparing property PDF(s)...' : 'Generating link...',
+                              style: CRMTypography.caption.copyWith(color: CRMColors.textOf(context)),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

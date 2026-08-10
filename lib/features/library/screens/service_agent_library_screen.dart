@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'dart:math';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
@@ -22,7 +25,7 @@ class ServiceAgentLibraryScreen extends StatefulWidget {
 
 class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
   // Local list representing the DB
-  late List<ServiceAgentDocument> _allDocuments;
+  List<ServiceAgentDocument> _allDocuments = [];
   List<ServiceAgentDocument> _filteredDocuments = [];
 
   // Table parameters
@@ -37,6 +40,20 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
   String _selectedDocType = 'All';
   String _selectedStatus = 'All';
   DateTimeRange? _selectedDateRange;
+  bool _showOtherTypesKpis = false;
+
+  List<String> get _dynamicDocTypes {
+    final types = _allDocuments.map((d) => d.documentType).toSet().toList();
+    if (!types.contains('Aadhaar Card')) {
+      types.insert(0, 'Aadhaar Card');
+    }
+    types.sort((a, b) {
+      if (a == 'Aadhaar Card') return -1;
+      if (b == 'Aadhaar Card') return 1;
+      return a.compareTo(b);
+    });
+    return ['All', ...types];
+  }
 
   // Dropdown options
   final List<String> _serviceTypes = [
@@ -72,20 +89,67 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     super.dispose();
   }
 
+  bool _isLoading = false;
+
   @override
   void initState() {
     super.initState();
-    _allDocuments = ServiceAgentDocument.getMockData();
-    _applyFiltersAndSort();
+    _loadDocumentsFromSupabase();
+  }
+
+  Future<void> _loadDocumentsFromSupabase() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final response = await Supabase.instance.client
+          .from('service_agent_documents')
+          .select()
+          .order('upload_date', ascending: false);
+      
+      final List<dynamic> data = response as List<dynamic>;
+      final docs = data.map((json) {
+        return ServiceAgentDocument(
+          id: json['id']?.toString() ?? '',
+          agentName: json['agent_name']?.toString() ?? '',
+          serviceType: json['service_type']?.toString() ?? '',
+          mobileNumber: json['mobile_number']?.toString() ?? '',
+          documentName: json['document_type']?.toString() ?? '',
+          documentType: json['document_type']?.toString() ?? '',
+          uploadDate: DateTime.parse(json['upload_date']?.toString() ?? DateTime.now().toIso8601String()),
+          uploadedBy: json['uploaded_by']?.toString() ?? 'admin',
+          status: DocumentStatusExtension.fromString(json['status']?.toString() ?? 'active'),
+          description: json['description']?.toString() ?? '',
+          fileSize: json['file_size']?.toString() ?? '0 KB',
+          fileExtension: json['file_extension']?.toString() ?? 'pdf',
+          fileUrl: json['file_url']?.toString() ?? '',
+        );
+      }).toList();
+
+      setState(() {
+        _allDocuments = docs;
+        _applyFiltersAndSort();
+      });
+    } catch (e) {
+      debugPrint("Error loading documents from Supabase: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   void _applyFiltersAndSort() {
     List<ServiceAgentDocument> temp = List.from(_allDocuments);
 
-    // Search
     final searchQuery = _searchController.text.trim().toLowerCase();
     if (searchQuery.isNotEmpty) {
-      temp = temp.where((doc) => doc.agentName.toLowerCase().contains(searchQuery) || doc.documentName.toLowerCase().contains(searchQuery)).toList();
+      temp = temp.where((doc) =>
+          doc.agentName.toLowerCase().contains(searchQuery) ||
+          doc.documentName.toLowerCase().contains(searchQuery) ||
+          doc.documentType.toLowerCase().contains(searchQuery)).toList();
     }
 
     // Service Type Filter
@@ -291,6 +355,35 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                         onPressed: () => Navigator.pop(context),
                       ),
                       const SizedBox(width: CRMSpacing.s),
+                      if (doc.fileUrl != null && doc.fileUrl!.startsWith('http')) ...[
+                        CRMButton(
+                          label: 'Open Document',
+                          variant: CRMButtonVariant.primary,
+                          prefixIcon: Icons.open_in_new_rounded,
+                          onPressed: () async {
+                            // Free Cloudinary plans block direct PDF delivery (401).
+                            // Open a derived JPG page preview when needed so the link always works.
+                            var openUrl = doc.fileUrl!;
+                            if (openUrl.contains('res.cloudinary.com') &&
+                                openUrl.toLowerCase().contains('.pdf') &&
+                                openUrl.contains('/upload/') &&
+                                !openUrl.contains('/upload/f_')) {
+                              openUrl = openUrl.replaceFirst('/upload/', '/upload/f_jpg/');
+                            }
+                            final uri = Uri.parse(openUrl);
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            } else {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Could not open document URL.')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                        const SizedBox(width: CRMSpacing.s),
+                      ],
                       CRMButton(
                         label: 'Download File',
                         variant: CRMButtonVariant.primary,
@@ -464,19 +557,28 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     );
 
     if (confirm == true) {
-      setState(() {
-        _allDocuments.removeWhere((d) => d.id == doc.id);
-        _applyFiltersAndSort();
-      });
+      try {
+        await Supabase.instance.client
+            .from('service_agent_documents')
+            .delete()
+            .eq('id', doc.id);
+        
+        setState(() {
+          _allDocuments.removeWhere((d) => d.id == doc.id);
+          _applyFiltersAndSort();
+        });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Document "${doc.documentName}" was successfully deleted.'),
-            backgroundColor: CRMColors.danger,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Document "${doc.documentName}" was successfully deleted.'),
+              backgroundColor: CRMColors.danger,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint("Error deleting document from Supabase: $e");
       }
     }
   }
@@ -487,15 +589,29 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
 
     final agentController = TextEditingController(text: existingDoc?.agentName);
     final mobileController = TextEditingController(text: existingDoc?.mobileNumber);
-    final nameController = TextEditingController(text: existingDoc?.documentName);
     final descController = TextEditingController(text: existingDoc?.description);
 
     String localServiceType = existingDoc?.serviceType ?? 'Electrician';
-    String localDocType = existingDoc?.documentType ?? 'ID Proof';
+    String localDocType = existingDoc?.documentType ?? 'Aadhaar Card';
+
+    bool isCustom = false;
+    if (isEditing) {
+      if (localDocType != 'Aadhaar Card') {
+        isCustom = true;
+        localDocType = 'Other';
+      }
+    }
+
+    final customDocTypeController = TextEditingController(
+      text: isCustom ? existingDoc?.documentType : '',
+    );
+    bool showCustomField = isCustom;
+
     DocumentStatus localStatus = existingDoc?.status ?? DocumentStatus.active;
     String localFileName = existingDoc?.documentName ?? '';
     String localFileExt = existingDoc?.fileExtension ?? 'pdf';
     String localFileSize = existingDoc?.fileSize ?? '0 KB';
+    String localFileUrl = existingDoc?.fileUrl ?? '';
 
     showDialog(
       context: context,
@@ -530,9 +646,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                               IconButton(
                                 icon: const Icon(Icons.close_rounded),
                                 onPressed: () async {
-                                  final nameVal = nameController.text;
-                                  final hasInput = nameVal.isNotEmpty ||
-                                      agentController.text.isNotEmpty ||
+                                  final hasInput = agentController.text.isNotEmpty ||
                                       mobileController.text.isNotEmpty;
 
                                   if (hasInput && !isEditing) {
@@ -610,28 +724,19 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                             ],
                           ),
                           const SizedBox(height: CRMSpacing.m),
-                          Row(
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: CRMTextField(
-                                  controller: nameController,
-                                  labelText: 'Document Name *',
-                                  hintText: 'e.g. GSTIN Certificate',
-                                  validator: (val) => val == null || val.trim().isEmpty ? 'Document name required' : null,
-                                ),
+                              Text(
+                                'Document Type *',
+                                style: CRMTypography.label.copyWith(color: CRMColors.textSecondaryOf(context)),
                               ),
-                              const SizedBox(width: CRMSpacing.m),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Document Type *',
-                                      style: CRMTypography.label.copyWith(color: CRMColors.textSecondaryOf(context)),
-                                    ),
-                                    const SizedBox(height: CRMSpacing.xs),
-                                    DropdownButtonFormField<String>(
-                                      value: localDocType,
+                              const SizedBox(height: CRMSpacing.xs),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: DropdownButtonFormField<String>(
+                                      value: ['Aadhaar Card', 'Other'].contains(localDocType) ? localDocType : 'Other',
                                       isExpanded: true,
                                       dropdownColor: CRMColors.surfaceElevatedOf(context),
                                       decoration: InputDecoration(
@@ -643,8 +748,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                                           borderSide: BorderSide(color: CRMColors.borderOf(context)),
                                         ),
                                       ),
-                                      items: _docTypes
-                                          .where((t) => t != 'All')
+                                      items: ['Aadhaar Card', 'Other']
                                           .map((t) => DropdownMenuItem(
                                                 value: t,
                                                 child: Text(t, style: TextStyle(color: CRMColors.textOf(context))),
@@ -654,13 +758,45 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                                         if (val != null) {
                                           setModalState(() {
                                             localDocType = val;
+                                            if (val == 'Other') {
+                                              showCustomField = true;
+                                            } else {
+                                              showCustomField = false;
+                                            }
                                           });
                                         }
                                       },
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(width: CRMSpacing.s),
+                                  IconButton(
+                                    icon: Icon(
+                                      showCustomField ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
+                                      color: CRMColors.primaryOf(context),
+                                    ),
+                                    onPressed: () {
+                                      setModalState(() {
+                                        showCustomField = !showCustomField;
+                                        if (showCustomField) {
+                                          localDocType = 'Other';
+                                        } else {
+                                          localDocType = 'Aadhaar Card';
+                                        }
+                                      });
+                                    },
+                                    tooltip: showCustomField ? 'Use dropdown' : 'Add custom document type',
+                                  ),
+                                ],
                               ),
+                              if (showCustomField) ...[
+                                const SizedBox(height: CRMSpacing.m),
+                                CRMTextField(
+                                  controller: customDocTypeController,
+                                  labelText: 'Custom Document Type *',
+                                  hintText: 'e.g. GST Certificate',
+                                  validator: (val) => val == null || val.trim().isEmpty ? 'Custom document type required' : null,
+                                ),
+                              ],
                             ],
                           ),
                           const SizedBox(height: CRMSpacing.m),
@@ -674,56 +810,21 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                           DragDropUploadZone(
                             initialFileName: localFileName,
                             initialFileSize: localFileSize,
-                            onFileSelected: (name, ext, size) {
+                            onOcrDetected: (detectedName) {
+                              setModalState(() {
+                                agentController.text = detectedName;
+                              });
+                            },
+                            onFileSelected: (name, ext, size, fileUrl) {
                               setModalState(() {
                                 localFileName = name;
                                 localFileExt = ext;
                                 localFileSize = size;
-                                if (nameController.text.trim().isEmpty && name.isNotEmpty) {
-                                  nameController.text = name.split('.').first;
-                                }
+                                localFileUrl = fileUrl;
                               });
                             },
                           ),
                           const SizedBox(height: CRMSpacing.m),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Status',
-                                style: CRMTypography.label.copyWith(color: CRMColors.textSecondaryOf(context)),
-                              ),
-                              const SizedBox(height: CRMSpacing.xs),
-                              Row(
-                                children: [
-                                  Radio<DocumentStatus>(
-                                    value: DocumentStatus.active,
-                                    groupValue: localStatus,
-                                    activeColor: CRMColors.primaryOf(context),
-                                    onChanged: (val) => setModalState(() => localStatus = val!),
-                                  ),
-                                  Text('Active', style: TextStyle(color: CRMColors.textOf(context))),
-                                  const SizedBox(width: CRMSpacing.s),
-                                  Radio<DocumentStatus>(
-                                    value: DocumentStatus.expired,
-                                    groupValue: localStatus,
-                                    activeColor: CRMColors.primaryOf(context),
-                                    onChanged: (val) => setModalState(() => localStatus = val!),
-                                  ),
-                                  Text('Expired', style: TextStyle(color: CRMColors.textOf(context))),
-                                  const SizedBox(width: CRMSpacing.s),
-                                  Radio<DocumentStatus>(
-                                    value: DocumentStatus.archived,
-                                    groupValue: localStatus,
-                                    activeColor: CRMColors.primaryOf(context),
-                                    onChanged: (val) => setModalState(() => localStatus = val!),
-                                  ),
-                                  Text('Archived', style: TextStyle(color: CRMColors.textOf(context))),
-                                ],
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: CRMSpacing.l),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
@@ -731,9 +832,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                                 label: 'Cancel',
                                 variant: CRMButtonVariant.outline,
                                 onPressed: () async {
-                                  final nameVal = nameController.text;
-                                  final hasInput = nameVal.isNotEmpty ||
-                                      agentController.text.isNotEmpty ||
+                                  final hasInput = agentController.text.isNotEmpty ||
                                       mobileController.text.isNotEmpty;
 
                                   if (hasInput && !isEditing) {
@@ -750,64 +849,131 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                               CRMButton(
                                 label: isEditing ? 'Save Changes' : 'Upload',
                                 variant: CRMButtonVariant.primary,
-                                onPressed: () {
-                                  if (formKey.currentState!.validate()) {
-                                    if (localFileName.isEmpty) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Please upload a document file.'),
-                                          backgroundColor: CRMColors.danger,
-                                        ),
-                                      );
-                                      return;
-                                    }
+                                onPressed: () async {
+                                  if (!formKey.currentState!.validate()) return;
 
-                                    if (isEditing) {
-                                      final idx = _allDocuments.indexWhere((d) => d.id == existingDoc.id);
-                                      if (idx != -1) {
-                                        setState(() {
-                                          _allDocuments[idx] = existingDoc.copyWith(
-                                            agentName: agentController.text.trim(),
-                                            serviceType: localServiceType,
-                                            mobileNumber: mobileController.text.trim(),
-                                            documentName: nameController.text.trim(),
-                                            documentType: localDocType,
-                                            description: descController.text.trim(),
-                                            status: localStatus,
-                                            fileSize: localFileSize,
-                                            fileExtension: localFileExt,
-                                          );
-                                        });
+                                  if (localFileName.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Please upload a document file.'),
+                                        backgroundColor: CRMColors.danger,
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  if (localFileUrl.isEmpty ||
+                                      localFileUrl.startsWith('mock://') ||
+                                      !localFileUrl.contains('res.cloudinary.com') ||
+                                      localFileUrl.contains('supabase.co') ||
+                                      localFileUrl.contains('storage/v1')) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Document must be uploaded to Cloudinary first (not Supabase Storage).',
+                                        ),
+                                        backgroundColor: CRMColors.danger,
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  final docTypeToSave = showCustomField
+                                      ? customDocTypeController.text.trim()
+                                      : localDocType;
+
+                                  String uploadedByName = 'Admin';
+                                  try {
+                                    final currentUser = Supabase.instance.client.auth.currentUser;
+                                    if (currentUser != null) {
+                                      final userProfile = await Supabase.instance.client
+                                          .from('users')
+                                          .select('full_name, roles(name)')
+                                          .eq('id', currentUser.id)
+                                          .maybeSingle();
+                                      if (userProfile != null) {
+                                        final roleName = userProfile['roles']?['name']?.toString();
+                                        final fullName = userProfile['full_name']?.toString();
+                                        if (roleName == 'Admin') {
+                                          uploadedByName = 'Admin';
+                                        } else if (roleName == 'Super Admin') {
+                                          uploadedByName = 'Super Admin';
+                                        } else if (roleName == 'Sales' && fullName != null && fullName.isNotEmpty) {
+                                          uploadedByName = fullName;
+                                        } else {
+                                          uploadedByName = roleName ?? fullName ?? currentUser.email ?? 'Admin';
+                                        }
+                                      } else {
+                                        uploadedByName = currentUser.email ?? 'Admin';
                                       }
+                                    }
+                                  } catch (e) {
+                                    uploadedByName = Supabase.instance.client.auth.currentUser?.email ?? 'Admin';
+                                  }
+
+                                  try {
+                                    if (isEditing) {
+                                      final updatedPayload = {
+                                        'agent_name': agentController.text.trim(),
+                                        'service_type': localServiceType,
+                                        'mobile_number': mobileController.text.trim(),
+                                        'document_type': docTypeToSave,
+                                        'description': descController.text.trim(),
+                                        'status': localStatus.displayName.toLowerCase(),
+                                        'file_size': localFileSize,
+                                        'file_extension': localFileExt,
+                                        'file_url': localFileUrl,
+                                        'uploaded_by': uploadedByName,
+                                      };
+
+                                      await Supabase.instance.client
+                                          .from('service_agent_documents')
+                                          .update(updatedPayload)
+                                          .eq('id', existingDoc.id);
                                     } else {
-                                      final newDoc = ServiceAgentDocument(
-                                        id: 'agent-${DateTime.now().millisecondsSinceEpoch}',
-                                        agentName: agentController.text.trim(),
-                                        serviceType: localServiceType,
-                                        mobileNumber: mobileController.text.trim(),
-                                        documentName: nameController.text.trim(),
-                                        documentType: localDocType,
-                                        uploadDate: DateTime.now(),
-                                        uploadedBy: 'admin',
-                                        status: localStatus,
-                                        description: descController.text.trim(),
-                                        fileSize: localFileSize,
-                                        fileExtension: localFileExt,
-                                      );
-                                      setState(() {
-                                        _allDocuments.insert(0, newDoc);
+                                      final newDocId = generateUuidV4();
+                                      final now = DateTime.now().toUtc().toIso8601String();
+
+                                      await Supabase.instance.client.from('service_agent_documents').insert({
+                                        'id': newDocId,
+                                        'agent_name': agentController.text.trim(),
+                                        'service_type': localServiceType,
+                                        'mobile_number': mobileController.text.trim(),
+                                        'document_type': docTypeToSave,
+                                        'description': descController.text.trim(),
+                                        'status': localStatus.displayName.toLowerCase(),
+                                        'file_size': localFileSize,
+                                        'file_extension': localFileExt,
+                                        'file_url': localFileUrl,
+                                        'upload_date': now,
+                                        'uploaded_by': uploadedByName,
                                       });
                                     }
 
-                                    _applyFiltersAndSort();
+                                    if (!context.mounted) return;
                                     Navigator.pop(context);
 
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    await _loadDocumentsFromSupabase();
+
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(this.context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                          isEditing ? 'Agent document updated!' : 'Agent document uploaded successfully!',
+                                          isEditing
+                                              ? 'Agent document updated!'
+                                              : 'Agent document uploaded successfully!',
                                         ),
                                         backgroundColor: CRMColors.success,
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  } catch (err) {
+                                    debugPrint('Error saving service agent document: $err');
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Save failed: ${err.toString()}'),
+                                        backgroundColor: CRMColors.danger,
                                         behavior: SnackBarBehavior.floating,
                                       ),
                                     );
@@ -853,7 +1019,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                     children: [
                       const LibraryBreadcrumb(currentPageName: 'Service Agent Library'),
                       Text(
-                        'Service Agent Document Library',
+                        'Service agents',
                         style: CRMTypography.pageTitle.copyWith(color: CRMColors.textOf(context)),
                       ),
                       Text(
@@ -875,7 +1041,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                       ),
                       const SizedBox(width: CRMSpacing.s),
                       CRMButton(
-                        label: 'Upload Document',
+                        label: 'Add agent',
                         prefixIcon: Icons.add_rounded,
                         onPressed: () => _showUploadEditDialog(),
                       ),
@@ -884,6 +1050,39 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                 ],
               ),
               const SizedBox(height: CRMSpacing.m),
+
+              if (_selectedServiceType != 'All') ...[
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: CRMSpacing.s),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _showOtherTypesKpis
+                              ? 'Showing other agent types KPIs'
+                              : 'Showing $_selectedServiceType KPIs only',
+                          style: CRMTypography.caption.copyWith(
+                            color: CRMColors.textSecondaryOf(context),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Switch.adaptive(
+                          value: _showOtherTypesKpis,
+                          activeColor: CRMColors.primaryOf(context),
+                          onChanged: (val) {
+                            setState(() {
+                              _showOtherTypesKpis = val;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
 
               // Top Cards Grid
               LayoutBuilder(builder: (context, constraints) {
@@ -898,41 +1097,11 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                     SizedBox(
                       width: cardWidth,
                       child: CRMKPICard(
-                        title: 'Total Agents Documents',
+                        title: 'Total Agents',
                         value: '$_totalCount',
                         icon: Icons.badge_rounded,
                         iconColor: CRMColors.primaryOf(context),
                         benefit: 'Vendor credentials ready when you need them',
-                      ),
-                    ),
-                    SizedBox(
-                      width: cardWidth,
-                      child: CRMKPICard(
-                        title: 'Active Documents',
-                        value: '$_activeCount',
-                        icon: Icons.check_circle_rounded,
-                        iconColor: CRMColors.success,
-                        benefit: 'Valid contracts keep service work moving',
-                      ),
-                    ),
-                    SizedBox(
-                      width: cardWidth,
-                      child: CRMKPICard(
-                        title: 'Expired Documents',
-                        value: '$_expiredCount',
-                        icon: Icons.history_rounded,
-                        iconColor: CRMColors.danger,
-                        benefit: 'Renew SLAs before coverage gaps',
-                      ),
-                    ),
-                    SizedBox(
-                      width: cardWidth,
-                      child: CRMKPICard(
-                        title: 'Recent Uploads (7d)',
-                        value: '$_recentCount',
-                        icon: Icons.cloud_done_rounded,
-                        iconColor: CRMColors.info,
-                        benefit: 'Latest proofs keep vendors accountable',
                       ),
                     ),
                   ],
@@ -964,7 +1133,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                     const SizedBox(height: CRMSpacing.s),
                     LayoutBuilder(
                       builder: (context, filterConstraints) {
-                        int rowColumns = isDesktop ? 4 : (isTablet ? 2 : 2);
+                        int rowColumns = isDesktop ? 3 : (isTablet ? 3 : 2);
                         double filterSpacing = CRMSpacing.s;
                         double inputWidth = ((filterConstraints.maxWidth - (filterSpacing * (rowColumns - 1))) / rowColumns) - 1.0;
 
@@ -989,17 +1158,15 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                             ),
                             // Service Type Dropdown
                             _buildFilterDropdown('Service Type', _selectedServiceType, _serviceTypes, (val) {
-                              setState(() => _selectedServiceType = val!);
+                              setState(() {
+                                _selectedServiceType = val!;
+                                _showOtherTypesKpis = false;
+                              });
                               _applyFiltersAndSort();
                             }, inputWidth),
                             // Doc Type Dropdown
-                            _buildFilterDropdown('Doc Type', _selectedDocType, _docTypes, (val) {
+                            _buildFilterDropdown('Doc Type', _selectedDocType, _dynamicDocTypes, (val) {
                               setState(() => _selectedDocType = val!);
-                              _applyFiltersAndSort();
-                            }, inputWidth),
-                            // Status Dropdown
-                            _buildFilterDropdown('Status', _selectedStatus, ['All', 'Active', 'Expired', 'Archived'], (val) {
-                              setState(() => _selectedStatus = val!);
                               _applyFiltersAndSort();
                             }, inputWidth),
                           ],
@@ -1026,182 +1193,221 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                               _buildMobilePagination(),
                             ],
                           )
-                        : CRMDataTable<ServiceAgentDocument>(
-                            currentPage: _currentPage,
-                            totalPages: _totalPages,
-                            onPageChanged: (page) {
-                              setState(() {
-                                _currentPage = page;
-                              });
-                            },
-                            totalItems: _filteredDocuments.length,
-                            itemsPerPage: _pageSize,
-                            onItemsPerPageChanged: (rows) {
-                              setState(() {
-                                _pageSize = rows;
-                                _currentPage = 1;
-                              });
-                              _applyFiltersAndSort();
-                            },
-                            sortField: _sortField,
-                        sortAscending: _sortAscending,
-                        onSort: (field, ascending) {
-                          setState(() {
-                            _sortField = field;
-                            _sortAscending = ascending;
-                          });
-                          _applyFiltersAndSort();
-                        },
-                        columns: [
-                          CRMColumn<ServiceAgentDocument>(
-                            label: 'Agent Name',
-                            sortable: true,
-                            sortField: 'agentName',
-                            width: 180,
-                            cellBuilder: (doc) => Text(
-                              doc.agentName,
-                              style: CRMTypography.bodyMedium.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: CRMColors.textOf(context),
-                              ),
-                            ),
-                          ),
-                          CRMColumn<ServiceAgentDocument>(
-                            label: 'Service Type',
-                            sortable: true,
-                            sortField: 'serviceType',
-                            width: 140,
-                            cellBuilder: (doc) => Text(doc.serviceType, style: TextStyle(color: CRMColors.textOf(context))),
-                          ),
-                          CRMColumn<ServiceAgentDocument>(
-                            label: 'Mobile Number',
-                            width: 140,
-                            cellBuilder: (doc) => Text(doc.mobileNumber, style: TextStyle(color: CRMColors.textOf(context))),
-                          ),
-                          CRMColumn<ServiceAgentDocument>(
-                            label: 'Document Name',
-                            sortable: true,
-                            sortField: 'documentName',
-                            width: 250,
-                            cellBuilder: (doc) => Row(
-                              children: [
-                                FileIconHelper.getIconForExtension(doc.fileExtension),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        doc.documentName,
-                                        style: CRMTypography.bodyMedium.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: CRMColors.textOf(context),
+                        : LayoutBuilder(
+                            builder: (context, constraints) {
+                              final availableWidth = constraints.maxWidth;
+                              final contentWidth = availableWidth - 200.0;
+                              final double scaleFactor = contentWidth > 780 ? (contentWidth / 780) : 1.0;
+                              
+                              final nameWidth = 140 * scaleFactor;
+                              final serviceWidth = 110 * scaleFactor;
+                              final mobileWidth = 110 * scaleFactor;
+                              final docTypeWidth = 160 * scaleFactor;
+                              final uploadDateWidth = 100 * scaleFactor;
+                              final uploadedByWidth = 100 * scaleFactor;
+                              final actionsWidth = 60 * scaleFactor;
+
+                              return CRMDataTable<ServiceAgentDocument>(
+                                currentPage: _currentPage,
+                                totalPages: _totalPages,
+                                onPageChanged: (page) {
+                                  setState(() {
+                                    _currentPage = page;
+                                  });
+                                },
+                                totalItems: _filteredDocuments.length,
+                                itemsPerPage: _pageSize,
+                                onItemsPerPageChanged: (rows) {
+                                  setState(() {
+                                    _pageSize = rows;
+                                    _currentPage = 1;
+                                  });
+                                  _applyFiltersAndSort();
+                                },
+                                sortField: _sortField,
+                                sortAscending: _sortAscending,
+                                onSort: (field, ascending) {
+                                  setState(() {
+                                    _sortField = field;
+                                    _sortAscending = ascending;
+                                  });
+                                  _applyFiltersAndSort();
+                                },
+                                columns: [
+                                  CRMColumn<ServiceAgentDocument>(
+                                    label: 'Agent Name',
+                                    sortable: true,
+                                    sortField: 'agentName',
+                                    width: nameWidth,
+                                    cellBuilder: (doc) => Text(
+                                      doc.agentName,
+                                      style: CRMTypography.bodyMedium.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: CRMColors.textOf(context),
+                                      ),
+                                    ),
+                                  ),
+                                  CRMColumn<ServiceAgentDocument>(
+                                    label: 'Service Type',
+                                    sortable: true,
+                                    sortField: 'serviceType',
+                                    width: serviceWidth,
+                                    cellBuilder: (doc) => Text(doc.serviceType, style: TextStyle(color: CRMColors.textOf(context))),
+                                  ),
+                                  CRMColumn<ServiceAgentDocument>(
+                                    label: 'Mobile Number',
+                                    width: mobileWidth,
+                                    cellBuilder: (doc) => Text(doc.mobileNumber, style: TextStyle(color: CRMColors.textOf(context))),
+                                  ),
+                                  CRMColumn<ServiceAgentDocument>(
+                                    label: 'Document Type',
+                                    sortable: true,
+                                    sortField: 'documentType',
+                                    width: docTypeWidth,
+                                    cellBuilder: (doc) => Row(
+                                      children: [
+                                        FileIconHelper.getIconForExtension(doc.fileExtension),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                doc.documentType,
+                                                style: CRMTypography.bodyMedium.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: CRMColors.textOf(context),
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              Text(
+                                                doc.fileSize,
+                                                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              TextButton(
+                                                onPressed: () async {
+                                                  final url = doc.fileUrl;
+                                                  if (url != null && url.isNotEmpty) {
+                                                    final uri = Uri.parse(url);
+                                                    if (await canLaunchUrl(uri)) {
+                                                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                                    }
+                                                  } else {
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text('No document URL available for this file.'),
+                                                        backgroundColor: CRMColors.danger,
+                                                      ),
+                                                    );
+                                                  }
+                                                },
+                                                style: TextButton.styleFrom(
+                                                  padding: EdgeInsets.zero,
+                                                  minimumSize: const Size(0, 0),
+                                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                ),
+                                                child: Text(
+                                                  'View',
+                                                  style: TextStyle(
+                                                    color: CRMColors.primaryOf(context),
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        doc.fileSize,
-                                        style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          CRMColumn<ServiceAgentDocument>(
-                            label: 'Document Type',
-                            sortable: true,
-                            sortField: 'documentType',
-                            width: 150,
-                            cellBuilder: (doc) => Text(doc.documentType, style: TextStyle(color: CRMColors.textOf(context))),
-                          ),
-                          CRMColumn<ServiceAgentDocument>(
-                            label: 'Upload Date',
-                            sortable: true,
-                            sortField: 'uploadDate',
-                            width: 120,
-                            cellBuilder: (doc) => Text(
-                              DateFormat('dd MMM yyyy').format(doc.uploadDate),
-                              style: TextStyle(color: CRMColors.textOf(context)),
-                            ),
-                          ),
-                          CRMColumn<ServiceAgentDocument>(
-                            label: 'Uploaded By',
-                            width: 110,
-                            cellBuilder: (doc) => Text(doc.uploadedBy, style: TextStyle(color: CRMColors.textOf(context))),
-                          ),
-                          CRMColumn<ServiceAgentDocument>(
-                            label: 'Status',
-                            sortable: true,
-                            sortField: 'status',
-                            width: 110,
-                            cellBuilder: (doc) => CRMStatusChip(status: doc.status.displayName),
-                          ),
-                          CRMColumn<ServiceAgentDocument>(
-                            label: 'Actions',
-                            width: 80,
-                            cellBuilder: (doc) => PopupMenuButton<String>(
-                              icon: Icon(Icons.more_vert_rounded, color: CRMColors.textSecondaryOf(context)),
-                              onSelected: (val) {
-                                switch (val) {
-                                  case 'view':
-                                    _viewDocument(doc);
-                                    break;
-                                  case 'download':
-                                    _downloadDocument(doc);
-                                    break;
-                                  case 'edit':
-                                    _showUploadEditDialog(doc);
-                                    break;
-                                  case 'share':
-                                    _shareDocument(doc);
-                                    break;
-                                  case 'delete':
-                                    _deleteDocument(doc);
-                                    break;
-                                }
-                              },
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                  value: 'view',
-                                  child: Row(
-                                    children: [Icon(Icons.visibility_outlined, size: 18), SizedBox(width: 8), Text('View')],
+                                  CRMColumn<ServiceAgentDocument>(
+                                    label: 'Upload Date',
+                                    sortable: true,
+                                    sortField: 'uploadDate',
+                                    width: uploadDateWidth,
+                                    cellBuilder: (doc) => Text(
+                                      DateFormat('dd MMM yyyy').format(doc.uploadDate),
+                                      style: TextStyle(color: CRMColors.textOf(context)),
+                                    ),
                                   ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'download',
-                                  child: Row(
-                                    children: [Icon(Icons.download_rounded, size: 18), SizedBox(width: 8), Text('Download')],
+                                  CRMColumn<ServiceAgentDocument>(
+                                    label: 'Uploaded By',
+                                    width: uploadedByWidth,
+                                    cellBuilder: (doc) {
+                                      final text = doc.uploadedBy.trim();
+                                      String display = text;
+                                      if (text.toLowerCase() == 'admin' || text.toLowerCase() == 'admin@nbdeveloper.com') {
+                                        display = 'Admin';
+                                      } else if (text.toLowerCase() == 'super admin' || text.toLowerCase() == 'super_admin') {
+                                        display = 'Super Admin';
+                                      } else if (text.contains('@')) {
+                                        display = text.split('@').first;
+                                        if (display.isNotEmpty) {
+                                          display = display[0].toUpperCase() + display.substring(1);
+                                        }
+                                      }
+                                      return Text(display, style: TextStyle(color: CRMColors.textOf(context)));
+                                    },
                                   ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(
-                                    children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('Edit')],
+                                  CRMColumn<ServiceAgentDocument>(
+                                    label: 'Actions',
+                                    width: actionsWidth,
+                                    cellBuilder: (doc) => PopupMenuButton<String>(
+                                      icon: Icon(Icons.more_vert_rounded, color: CRMColors.textSecondaryOf(context)),
+                                      onSelected: (val) {
+                                        switch (val) {
+                                          case 'view':
+                                            _viewDocument(doc);
+                                            break;
+                                          case 'edit':
+                                            _showUploadEditDialog(doc);
+                                            break;
+                                          case 'share':
+                                            _shareDocument(doc);
+                                            break;
+                                          case 'delete':
+                                            _deleteDocument(doc);
+                                            break;
+                                        }
+                                      },
+                                      itemBuilder: (context) => [
+                                        const PopupMenuItem(
+                                          value: 'view',
+                                          child: Row(
+                                            children: [Icon(Icons.visibility_outlined, size: 18), SizedBox(width: 8), Text('View')],
+                                          ),
+                                        ),
+                                        const PopupMenuItem(
+                                          value: 'edit',
+                                          child: Row(
+                                            children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('Edit')],
+                                          ),
+                                        ),
+                                        const PopupMenuItem(
+                                          value: 'share',
+                                          child: Row(
+                                            children: [Icon(Icons.share_outlined, size: 18), SizedBox(width: 8), Text('Share')],
+                                          ),
+                                        ),
+                                        const PopupMenuDivider(),
+                                        const PopupMenuItem(
+                                          value: 'delete',
+                                          child: Row(
+                                            children: [Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18), SizedBox(width: 8), Text('Delete', style: TextStyle(color: CRMColors.danger))],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'share',
-                                  child: Row(
-                                    children: [Icon(Icons.share_outlined, size: 18), SizedBox(width: 8), Text('Share')],
-                                  ),
-                                ),
-                                const PopupMenuDivider(),
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18), SizedBox(width: 8), Text('Delete', style: TextStyle(color: CRMColors.danger))],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        items: _paginatedDocuments,
-                      )),
+                                ],
+                                items: _paginatedDocuments,
+                              );
+                            },
+                          )),
             ],
           ),
         ),
@@ -1278,7 +1484,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      doc.documentName,
+                      doc.documentType,
                       style: CRMTypography.bodyMedium.copyWith(
                         fontWeight: FontWeight.bold,
                         color: CRMColors.textOf(context),
@@ -1287,7 +1493,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      '${doc.fileSize} • ${doc.documentType}',
+                      '${doc.fileSize} • ${doc.agentName}',
                       style: CRMTypography.caption.copyWith(
                         color: CRMColors.textSecondaryOf(context),
                       ),
@@ -1439,4 +1645,23 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
       ),
     );
   }
+}
+
+String generateUuidV4() {
+  final random = Random.secure();
+  final hexDigits = '0123456789abcdef';
+  final charCodes = List<int>.generate(36, (index) {
+    if (index == 8 || index == 13 || index == 18 || index == 23) {
+      return 45; // '-'
+    }
+    if (index == 14) {
+      return 52; // '4'
+    }
+    final digit = random.nextInt(16);
+    if (index == 19) {
+      return hexDigits.codeUnitAt((digit & 0x3) | 0x8);
+    }
+    return hexDigits.codeUnitAt(digit);
+  });
+  return String.fromCharCodes(charCodes);
 }

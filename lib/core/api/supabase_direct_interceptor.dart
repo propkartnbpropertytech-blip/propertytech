@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -918,6 +919,52 @@ class SupabaseDirectInterceptor extends Interceptor {
           data: {'success': true, 'data': data},
           statusCode: 200,
         ));
+      }
+
+      // 10.b Service Agent Document Upload Interceptor
+      if (path == '/service-agent/upload' && method == 'POST') {
+        if (options.data is FormData) {
+          final formData = options.data as FormData;
+          final fileField = formData.files.firstWhere(
+            (element) => element.key == 'file' || element.key == 'document',
+          );
+          final file = fileField.value;
+          // Read ALL chunks — `.first` only keeps the first packet and corrupts PDFs.
+          final bytesBuilder = BytesBuilder(copy: false);
+          await for (final chunk in file.finalize()) {
+            bytesBuilder.add(chunk);
+          }
+          final bytes = bytesBuilder.takeBytes();
+
+          // Enforce PDF check
+          final filename = file.filename ?? 'document.pdf';
+          final ext = filename.split('.').last.toLowerCase();
+          if (ext != 'pdf') {
+            throw Exception("Strict Warning: Only PDF documents are allowed!");
+          }
+
+          // Enforce max size 10MB (matches upload UI)
+          if (bytes.length > 10 * 1024 * 1024) {
+            throw Exception("Strict Warning: File size exceeds the 10MB limit!");
+          }
+
+          final String publicUrl = await CloudinaryUploader.uploadServiceAgentPdf(
+            bytes: bytes,
+            filename: filename,
+          );
+
+          return handler.resolve(Response(
+            requestOptions: options,
+            data: {
+              'success': true,
+              'data': {
+                'url': publicUrl,
+                'publicUrl': publicUrl,
+              }
+            },
+            statusCode: 200,
+          ));
+        }
       }
 
       // 11. Profile Uploads & Updates

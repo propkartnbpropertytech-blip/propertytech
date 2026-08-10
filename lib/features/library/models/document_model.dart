@@ -340,6 +340,7 @@ class ServiceAgentDocument {
   final String description;
   final String fileSize;
   final String fileExtension;
+  final String? fileUrl;
 
   ServiceAgentDocument({
     required this.id,
@@ -354,6 +355,7 @@ class ServiceAgentDocument {
     required this.description,
     required this.fileSize,
     required this.fileExtension,
+    this.fileUrl,
   });
 
   ServiceAgentDocument copyWith({
@@ -369,6 +371,7 @@ class ServiceAgentDocument {
     String? description,
     String? fileSize,
     String? fileExtension,
+    String? fileUrl,
   }) {
     return ServiceAgentDocument(
       id: id ?? this.id,
@@ -383,95 +386,11 @@ class ServiceAgentDocument {
       description: description ?? this.description,
       fileSize: fileSize ?? this.fileSize,
       fileExtension: fileExtension ?? this.fileExtension,
+      fileUrl: fileUrl ?? this.fileUrl,
     );
   }
 
   static List<ServiceAgentDocument> getMockData() {
-    return [
-      ServiceAgentDocument(
-        id: 'agent-1',
-        agentName: 'A1 Electricians Ltd',
-        serviceType: 'Electrician',
-        mobileNumber: '+91 98765 43210',
-        documentName: 'GSTIN Registration Document',
-        documentType: 'GST Certificate',
-        uploadDate: DateTime.now().subtract(const Duration(days: 180)),
-        uploadedBy: 'admin',
-        status: DocumentStatus.active,
-        description: 'Verified GST Certificate for tax compliance checking.',
-        fileSize: '1.2 MB',
-        fileExtension: 'pdf',
-      ),
-      ServiceAgentDocument(
-        id: 'agent-2',
-        agentName: 'Rapid Plumbing Co',
-        serviceType: 'Plumber',
-        mobileNumber: '+91 87654 32109',
-        documentName: 'Service Level Agreement 2026',
-        documentType: 'Service Agreement',
-        uploadDate: DateTime.now().subtract(const Duration(days: 10)),
-        uploadedBy: 'admin',
-        status: DocumentStatus.active,
-        description: 'Corporate SLA outlining callout times and emergency repair rates.',
-        fileSize: '2.5 MB',
-        fileExtension: 'pdf',
-      ),
-      ServiceAgentDocument(
-        id: 'agent-3',
-        agentName: 'Cooling Point Systems',
-        serviceType: 'AC Technician',
-        mobileNumber: '+91 76543 21098',
-        documentName: 'AC Repair & Install Price Sheet',
-        documentType: 'Price List',
-        uploadDate: DateTime.now().subtract(const Duration(days: 5)),
-        uploadedBy: 'admin',
-        status: DocumentStatus.active,
-        description: 'Standard retail pricelist for AC servicing, filter replacement, and installation.',
-        fileSize: '450 KB',
-        fileExtension: 'xlsx',
-      ),
-      ServiceAgentDocument(
-        id: 'agent-4',
-        agentName: 'Amit Carpenter Services',
-        serviceType: 'Carpenter',
-        mobileNumber: '+91 65432 10987',
-        documentName: 'Aadhaar Identification Card',
-        documentType: 'ID Proof',
-        uploadDate: DateTime.now().subtract(const Duration(days: 365)),
-        uploadedBy: 'admin',
-        status: DocumentStatus.expired,
-        description: 'Aadhaar Card copy (needs renewal validation).',
-        fileSize: '950 KB',
-        fileExtension: 'jpg',
-      ),
-      ServiceAgentDocument(
-        id: 'agent-5',
-        agentName: 'Rainbow Painters',
-        serviceType: 'Painter',
-        mobileNumber: '+91 54321 09876',
-        documentName: 'Penthouse Painting Project Photos',
-        documentType: 'Work Photos',
-        uploadDate: DateTime.now().subtract(const Duration(hours: 2)),
-        uploadedBy: 'admin',
-        status: DocumentStatus.active,
-        description: 'Portfolio images demonstrating premium velvet finish painting.',
-        fileSize: '6.4 MB',
-        fileExtension: 'jpg',
-      ),
-      ServiceAgentDocument(
-        id: 'agent-6',
-        agentName: 'Zero Bug Exterminators',
-        serviceType: 'Pest Control',
-        mobileNumber: '+91 43210 98765',
-        documentName: 'Termite Treatment Invoice #328',
-        documentType: 'Invoice',
-        uploadDate: DateTime.now().subtract(const Duration(days: 40)),
-        uploadedBy: 'admin',
-        status: DocumentStatus.archived,
-        description: 'Billing invoice for annual termite control treatment.',
-        fileSize: '320 KB',
-        fileExtension: 'pdf',
-      ),
-    ];
+    return [];
   }
 }

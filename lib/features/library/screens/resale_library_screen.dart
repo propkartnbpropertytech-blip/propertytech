@@ -813,7 +813,7 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                           DragDropUploadZone(
                             initialFileName: localFileName,
                             initialFileSize: localFileSize,
-                            onFileSelected: (name, ext, size) {
+                            onFileSelected: (name, ext, size, fileUrl) {
                               setModalState(() {
                                 localFileName = name;
                                 localFileExt = ext;

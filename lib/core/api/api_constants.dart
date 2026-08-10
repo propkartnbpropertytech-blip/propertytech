@@ -24,9 +24,9 @@ class ApiConstants {
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vbXlseHB5ZXFudHBoYmFycWJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU3NDkzMzQsImV4cCI6MjEwMTMyNTMzNH0.xxxe4If9NHdkJgsH4D5xxltejDXIZ5B9txEyhcTqeUc',
   );
 
-  static const String cloudinaryCloudName = "jdvya1gl";
-  static const String cloudinaryApiKey = "131871686761399";
-  static const String cloudinaryApiSecret = "mXh1pyefWhgjKN5oi8fp3Xe7a7w";
+  static const String cloudinaryCloudName = "ujn8lj3r";
+  static const String cloudinaryApiKey = "495168782694392";
+  static const String cloudinaryApiSecret = "Mle5fuL-8IOhq_L0R0HIusM_jDE";
 
   static const sentryDsn = String.fromEnvironment(
     'SENTRY_DSN',

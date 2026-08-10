@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http_parser/http_parser.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
+import 'dart:io' show File;
+import 'dart:typed_data';
+import '../../../core/api/api_constants.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
-import '../../../core/design_system/widgets/cards.dart';
 
 /// Breadcrumb navigation item
 class LibraryBreadcrumb extends StatelessWidget {
@@ -73,13 +80,15 @@ class LibraryBreadcrumb extends StatelessWidget {
 
 /// Simulated Drag and Drop File Upload Zone
 class DragDropUploadZone extends StatefulWidget {
-  final Function(String fileName, String extension, String size) onFileSelected;
+  final Function(String fileName, String extension, String size, String fileUrl) onFileSelected;
+  final Function(String detectedName)? onOcrDetected;
   final String? initialFileName;
   final String? initialFileSize;
 
   const DragDropUploadZone({
     super.key,
     required this.onFileSelected,
+    this.onOcrDetected,
     this.initialFileName,
     this.initialFileSize,
   });
@@ -91,6 +100,7 @@ class DragDropUploadZone extends StatefulWidget {
 class _DragDropUploadZoneState extends State<DragDropUploadZone> {
   bool _isHovering = false;
   bool _isSimulatingUpload = false;
+  bool _isAnalyzingOcr = false;
   double _uploadProgress = 0.0;
   String? _fileName;
   String? _fileSize;
@@ -102,17 +112,174 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
     _fileSize = widget.initialFileSize;
   }
 
+  Future<void> _runOcrSpaceApi(PlatformFile file) async {
+    setState(() {
+      _isAnalyzingOcr = true;
+    });
+
+    try {
+      final dio = Dio();
+      final formData = FormData();
+      formData.fields.add(const MapEntry('apikey', 'K84667566288957'));
+      formData.fields.add(const MapEntry('language', 'eng'));
+      formData.fields.add(const MapEntry('isOverlayRequired', 'false'));
+
+      if (kIsWeb) {
+        if (file.bytes != null) {
+          formData.files.add(MapEntry(
+            'file',
+            MultipartFile.fromBytes(file.bytes!, filename: file.name),
+          ));
+        } else {
+          debugPrint("[OCR] No file bytes available on web");
+          setState(() {
+            _isAnalyzingOcr = false;
+          });
+          return;
+        }
+      } else {
+        if (file.path != null) {
+          formData.files.add(MapEntry(
+            'file',
+            await MultipartFile.fromFile(file.path!, filename: file.name),
+          ));
+        } else {
+          debugPrint("[OCR] No file path available on mobile/desktop");
+          setState(() {
+            _isAnalyzingOcr = false;
+          });
+          return;
+        }
+      }
+
+      debugPrint("[OCR] Sending request to OCR.space API...");
+      final response = await dio.post(
+        'https://api.ocr.space/parse/image',
+        data: formData,
+      );
+
+      debugPrint("[OCR] Response status: ${response.statusCode}");
+      if (response.statusCode == 200 && response.data != null) {
+        final results = response.data['ParsedResults'];
+        if (results != null && results is List && results.isNotEmpty) {
+          final parsedText = results[0]['ParsedText'] as String?;
+          if (parsedText != null && parsedText.isNotEmpty) {
+            debugPrint("[OCR] Parsed Text: $parsedText");
+            final detectedName = _extractNameFromOcrText(parsedText);
+            if (detectedName != null && detectedName.isNotEmpty) {
+              debugPrint("[OCR] Detected Name: $detectedName");
+              if (widget.onOcrDetected != null) {
+                widget.onOcrDetected!(detectedName);
+              }
+            } else {
+              debugPrint("[OCR] Could not extract a name from OCR text");
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("[OCR] Failed: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAnalyzingOcr = false;
+        });
+      }
+    }
+  }
+
+  String? _extractNameFromOcrText(String text) {
+    final lines = text.split('\n').map((l) => l.trim()).toList();
+
+    // 1. Check for "Name:" or "Name" patterns
+    final nameRegex = RegExp(r'(?:Name|NAME)\s*[:\-\s]\s*([A-Za-z\s]+)', caseSensitive: false);
+    for (final line in lines) {
+      final match = nameRegex.firstMatch(line);
+      if (match != null) {
+        final extracted = match.group(1)?.trim();
+        if (extracted != null && extracted.length > 2) {
+          return _cleanName(extracted);
+        }
+      }
+    }
+
+    // 2. Aadhaar pattern: name is often the line before "DOB" or "Year of Birth" or "Gender"
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i].toLowerCase();
+      if (line.contains('dob') || line.contains('date of birth') || line.contains('yob') || line.contains('year of birth')) {
+        if (i > 0) {
+          final potentialName = lines[i - 1].trim();
+          if (potentialName.length > 2 && RegExp(r'^[A-Za-z\s]+$').hasMatch(potentialName)) {
+            return _cleanName(potentialName);
+          }
+        }
+      }
+    }
+
+    // 3. Fallback: find the first line that looks like a name (2-3 words, only alphabetic)
+    for (final line in lines) {
+      final words = line.split(RegExp(r'\s+'));
+      if (words.length >= 2 && words.length <= 4) {
+        if (RegExp(r'^[A-Za-z\s]+$').hasMatch(line)) {
+          final lower = line.toLowerCase();
+          if (!lower.contains('government') &&
+              !lower.contains('india') &&
+              !lower.contains('unique') &&
+              !lower.contains('identity') &&
+              !lower.contains('address') &&
+              !lower.contains('authority')) {
+            return _cleanName(line);
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  String _cleanName(String name) {
+    return name.replaceAll(RegExp(r'[^A-Za-z\s]'), '').trim();
+  }
+
   Future<void> _pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
       );
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
         final name = file.name;
-        final ext = file.extension ?? name.split('.').last;
+        final ext = (file.extension ?? name.split('.').last).toLowerCase();
+
+        if (ext != 'pdf') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Strict Warning: Only PDF documents are allowed to be uploaded!'),
+                backgroundColor: CRMColors.danger,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+
         final sizeBytes = file.size;
+        // Enforce max size 10MB (matches UI copy)
+        if (sizeBytes > 10 * 1024 * 1024) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Strict Warning: File size exceeds the 10MB limit!'),
+                backgroundColor: CRMColors.danger,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+
         final double sizeMB = sizeBytes / (1024 * 1024);
         final sizeStr = sizeMB > 0.1 ? '${sizeMB.toStringAsFixed(1)} MB' : '${(sizeBytes / 1024).toStringAsFixed(0)} KB';
 
@@ -123,20 +290,111 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
           _fileSize = sizeStr;
         });
 
-        // Simulate a smooth modern upload progression
-        for (int i = 0; i <= 10; i++) {
-          await Future.delayed(const Duration(milliseconds: 120));
+        // Simulate a smooth modern upload progression while uploading
+        for (int i = 0; i <= 4; i++) {
+          await Future.delayed(const Duration(milliseconds: 80));
           if (!mounted) return;
           setState(() {
             _uploadProgress = i / 10.0;
           });
         }
 
-        setState(() {
-          _isSimulatingUpload = false;
-        });
+        // Extract bytes for Cloudinary upload
+        final List<int>? bytes = file.bytes ?? (kIsWeb ? null : await File(file.path!).readAsBytes());
+        String uploadedUrl = '';
+        if (bytes == null || bytes.isEmpty) {
+          if (mounted) {
+            setState(() {
+              _isSimulatingUpload = false;
+              _fileName = null;
+              _fileSize = null;
+              _uploadProgress = 0.0;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Could not read file bytes. Please try again.'),
+                backgroundColor: CRMColors.danger,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
 
-        widget.onFileSelected(name, ext, sizeStr);
+        try {
+          // CLOUDINARY_ONLY_V4 — upload straight to ujn8lj3r/library_docs (never Supabase Storage)
+          debugPrint("[CLOUDINARY_ONLY_V4] Uploading $name (${bytes.length} bytes) → library_docs");
+          final uploadBytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+
+          final int timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+          const folder = 'library_docs';
+          final String toSign =
+              'folder=$folder&timestamp=$timestamp${ApiConstants.cloudinaryApiSecret}';
+          final String signature = sha1.convert(utf8.encode(toSign)).toString();
+
+          final formData = FormData.fromMap({
+            'file': MultipartFile.fromBytes(
+              uploadBytes,
+              filename: name,
+              contentType: MediaType('application', 'pdf'),
+            ),
+            'api_key': ApiConstants.cloudinaryApiKey,
+            'timestamp': timestamp,
+            'signature': signature,
+            'folder': folder,
+          });
+
+          final cloudResponse = await Dio(
+            BaseOptions(
+              connectTimeout: const Duration(seconds: 60),
+              receiveTimeout: const Duration(seconds: 60),
+              sendTimeout: const Duration(seconds: 60),
+            ),
+          ).post(
+            'https://api.cloudinary.com/v1_1/${ApiConstants.cloudinaryCloudName}/image/upload',
+            data: formData,
+          );
+
+          uploadedUrl = (cloudResponse.data?['secure_url'] ?? '').toString();
+
+          if (uploadedUrl.isEmpty ||
+              !uploadedUrl.contains('res.cloudinary.com') ||
+              !uploadedUrl.contains(ApiConstants.cloudinaryCloudName) ||
+              uploadedUrl.contains('supabase.co') ||
+              uploadedUrl.contains('storage/v1')) {
+            throw Exception('Cloudinary-only required. Got: $uploadedUrl');
+          }
+
+          if (!mounted) return;
+          setState(() {
+            _uploadProgress = 1.0;
+            _isSimulatingUpload = false;
+          });
+          debugPrint("[CLOUDINARY_ONLY_V4] OK: $uploadedUrl");
+          widget.onFileSelected(name, ext, sizeStr, uploadedUrl);
+        } catch (uploadError) {
+          debugPrint("[CLOUDINARY_ONLY_V4] FAILED: $uploadError");
+          if (!mounted) return;
+          setState(() {
+            _isSimulatingUpload = false;
+            _fileName = null;
+            _fileSize = null;
+            _uploadProgress = 0.0;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Cloudinary upload failed: $uploadError'),
+              backgroundColor: CRMColors.danger,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+
+        // Run OCR auto-detection if it is an image or PDF
+        if (ext == 'jpg' || ext == 'jpeg' || ext == 'png' || ext == 'pdf') {
+          await _runOcrSpaceApi(file);
+        }
       }
     } catch (e) {
       debugPrint("File picking failed: $e");
@@ -148,8 +406,9 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
       _fileName = null;
       _fileSize = null;
       _uploadProgress = 0.0;
+      _isAnalyzingOcr = false;
     });
-    widget.onFileSelected('', '', '');
+    widget.onFileSelected('', '', '', '');
   }
 
   @override
@@ -169,7 +428,7 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
           onExit: (_) => setState(() => _isHovering = false),
           cursor: SystemMouseCursors.click,
           child: GestureDetector(
-            onTap: _isSimulatingUpload ? null : (hasFile ? null : _pickFile),
+            onTap: _isSimulatingUpload || _isAnalyzingOcr ? null : (hasFile ? null : _pickFile),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               width: double.infinity,
@@ -184,7 +443,7 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
                       ? CRMColors.primaryOf(context).withOpacity(0.5)
                       : (_isHovering ? CRMColors.primaryOf(context) : CRMColors.borderOf(context)),
                   width: _isHovering || hasFile ? 1.5 : 1.0,
-                  style: hasFile ? BorderStyle.solid : BorderStyle.solid,
+                  style: BorderStyle.solid,
                 ),
               ),
               child: Column(
@@ -210,6 +469,23 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
                     Text(
                       '${(_uploadProgress * 100).toStringAsFixed(0)}% uploaded',
                       style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                    ),
+                  ] else if (_isAnalyzingOcr) ...[
+                    Icon(Icons.document_scanner_rounded, color: CRMColors.primaryOf(context), size: 40),
+                    const SizedBox(height: CRMSpacing.m),
+                    Text(
+                      'Auto-detecting agent name via OCR...',
+                      style: CRMTypography.bodyMedium.copyWith(
+                        color: CRMColors.textOf(context),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: CRMSpacing.s),
+                    const SizedBox(
+                      width: 150,
+                      child: LinearProgressIndicator(
+                        minHeight: 3,
+                      ),
                     ),
                   ] else if (hasFile) ...[
                     Row(
@@ -260,7 +536,7 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
                     ),
                     const SizedBox(height: CRMSpacing.xxs),
                     Text(
-                      'Supports PDF, Word, Excel, Images, and Videos (Max 10MB)',
+                      'Supports PDF only (Max 10MB)',
                       style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
                       textAlign: TextAlign.center,
                     ),
