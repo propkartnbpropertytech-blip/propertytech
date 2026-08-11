@@ -121,19 +121,20 @@ class RequirementModel {
       }
     }
 
-    // Handle configuration name from joined object
+    // Handle configuration name from joined object or multi-select configIds
     String? configName;
     if (json['configurationName'] != null) {
       configName = json['configurationName'];
     } else if (json['configuration'] != null && json['configuration'] is Map) {
       configName = json['configuration']['name'];
     }
-    if (configName == null && configIds.isNotEmpty) {
+    if (configIds.isNotEmpty) {
       final names = configIds
           .map((id) => LookupLocalRepository.getLookupNameSync(id))
           .whereType<String>()
+          .where((n) => n.isNotEmpty && n != 'N/A')
           .toList();
-      if (names.isNotEmpty) {
+      if (names.isNotEmpty && (names.length > 1 || configName == null || configName.isEmpty)) {
         configName = names.join(', ');
       }
     }

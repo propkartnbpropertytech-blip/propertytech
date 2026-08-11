@@ -1797,17 +1797,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                                                      ),
                                                    ),
                                                 ),
-                                                DataCell(
-                                                  SizedBox(
-                                                    width: 160,
-                                                    child: Text(
-                                                      doc.area.isEmpty ? '-' : doc.area.join(', '),
-                                                      style: TextStyle(color: CRMColors.textOf(context), fontSize: 12),
-                                                      maxLines: 2,
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                ),
+                                                _buildAreaTableCell(context, doc.area),
                                                 DataCell(Text(DateFormat('dd MMM yyyy').format(doc.uploadDate), style: TextStyle(color: CRMColors.textOf(context)))),
                                                 DataCell(Text(displayUser, style: TextStyle(color: CRMColors.textOf(context)))),
                                                 DataCell(
@@ -1875,6 +1865,57 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildAreaCell(BuildContext context, List<String> areaList) {
+    final areaText = areaList.isEmpty ? '-' : areaList.join(', ');
+    final tooltipMessage = 'Area(s):\n$areaText';
+
+    return SizedBox(
+      width: 160,
+      child: Tooltip(
+        richMessage: WidgetSpan(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 340.0),
+            child: Text(
+              tooltipMessage,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12.5,
+                height: 1.4,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        margin: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(
+          color: CRMColors.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: CRMColors.primaryOf(context).withValues(alpha: 0.35),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Text(
+          areaText,
+          style: TextStyle(color: CRMColors.textOf(context), fontSize: 12),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+
+  DataCell _buildAreaTableCell(BuildContext context, List<String> areaList) {
+    return DataCell(_buildAreaCell(context, areaList));
   }
 }
 

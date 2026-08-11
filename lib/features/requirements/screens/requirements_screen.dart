@@ -884,15 +884,27 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return 'N/A';
   }
 
-  Widget _buildSpecsConfigCell(RequirementModel req) {
-    final specsText = '${req.propertyTypeName} (${req.configurationName ?? "-"})';
-    final listingLabel = getListingTypeLabel(req);
-    final isRent = listingLabel == 'Rent';
-
-    final tooltipMessage = 'Property Type(s): ${req.propertyTypeName}\nConfiguration: ${req.configurationName ?? "-"}\nListing Type: $listingLabel';
-
+  Widget _buildCustomTooltip({
+    required String message,
+    required Widget child,
+    required bool isRent,
+    double maxWidth = 340.0,
+  }) {
     return Tooltip(
-      message: tooltipMessage,
+      richMessage: WidgetSpan(
+        child: Container(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: Text(
+            message,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12.5,
+              height: 1.4,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
@@ -909,12 +921,23 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           ),
         ],
       ),
-      textStyle: const TextStyle(
-        color: Colors.white,
-        fontSize: 12.5,
-        height: 1.4,
-        fontWeight: FontWeight.w500,
-      ),
+      child: child,
+    );
+  }
+
+  Widget _buildSpecsConfigCell(RequirementModel req) {
+    final configStr = (req.configurationName != null && req.configurationName!.isNotEmpty)
+        ? req.configurationName!
+        : '-';
+    final specsText = '${req.propertyTypeName} ($configStr)';
+    final listingLabel = getListingTypeLabel(req);
+    final isRent = listingLabel == 'Rent';
+
+    final tooltipMessage = 'Property Type(s): ${req.propertyTypeName}\nConfiguration(s): $configStr\nListing Type: $listingLabel';
+
+    return _buildCustomTooltip(
+      message: tooltipMessage,
+      isRent: isRent,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -924,7 +947,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             child: Text(
               specsText,
               style: CRMTypography.body.copyWith(color: CRMColors.text),
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -946,6 +969,119 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildTargetAreasCell(RequirementModel req) {
+    final areasText = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : 'Any Area';
+    final listingLabel = getListingTypeLabel(req);
+    final isRent = listingLabel == 'Rent';
+
+    final tooltipMessage = 'Target Area(s):\n$areasText';
+
+    return SizedBox(
+      width: 160,
+      child: _buildCustomTooltip(
+        message: tooltipMessage,
+        isRent: isRent,
+        child: Text(
+          areasText,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
+        ),
+      ),
+    );
+  }
+
+  bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
+    // 1. Status Match
+    final statusName = p.propertyStatusName.toLowerCase();
+    final statusActive = statusName == 'available' || statusName.contains('available') || statusName.isEmpty;
+    if (!statusActive) return false;
+
+    // 2. Listing Type Match (Rent vs Re-Sale)
+    final reqListing = (req.listingTypeName ?? '').toLowerCase();
+    final propListing = (p.listingTypeName).toLowerCase();
+    bool listingTypeMatch = true;
+    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
+      final isReqRent = reqListing.contains('rent');
+      final isPropRent = propListing.contains('rent');
+      listingTypeMatch = (isReqRent == isPropRent);
+    } else if (req.listingTypeId != null && req.listingTypeId!.isNotEmpty && p.listingTypeId.isNotEmpty) {
+      listingTypeMatch = (p.listingTypeId == req.listingTypeId);
+    }
+    if (!listingTypeMatch) return false;
+
+    // 3. Category Match
+    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
+      if (p.categoryId != req.categoryId) return false;
+    }
+
+    // 4. Property Type Match (Supports multiple selected property types)
+    if (req.propertyTypeIds.isNotEmpty) {
+      bool typeMatch = req.propertyTypeIds.contains(p.propertyTypeId);
+      if (!typeMatch && req.propertyTypeName.isNotEmpty && p.propertyTypeName.isNotEmpty) {
+        final pTypeName = p.propertyTypeName.toLowerCase();
+        typeMatch = req.propertyTypeName.toLowerCase().split(',').any((t) {
+          final trimmed = t.trim();
+          return trimmed.isNotEmpty && (pTypeName.contains(trimmed) || trimmed.contains(pTypeName));
+        });
+      }
+      if (!typeMatch) return false;
+    } else if (req.propertyTypeId.isNotEmpty && p.propertyTypeId.isNotEmpty) {
+      if (p.propertyTypeId != req.propertyTypeId) {
+        final pTypeName = p.propertyTypeName.toLowerCase();
+        final reqTypeName = req.propertyTypeName.toLowerCase();
+        if (!reqTypeName.contains(pTypeName) && !pTypeName.contains(reqTypeName)) return false;
+      }
+    }
+
+    // 5. Configuration Match (Supports multiple selected configurations e.g. 2 BHK, 3 BHK, 4 BHK)
+    if (req.configurationIds.isNotEmpty) {
+      bool configMatch = p.configurationId != null && req.configurationIds.contains(p.configurationId);
+      if (!configMatch && req.configurationName != null && req.configurationName!.isNotEmpty && p.configurationName != null && p.configurationName!.isNotEmpty) {
+        final pConfigName = p.configurationName!.toLowerCase();
+        configMatch = req.configurationName!.toLowerCase().split(',').any((c) {
+          final trimmed = c.trim();
+          return trimmed.isNotEmpty && (pConfigName.contains(trimmed) || trimmed.contains(pConfigName));
+        });
+      }
+      if (!configMatch) return false;
+    } else if (req.configurationId != null && req.configurationId!.isNotEmpty) {
+      if (p.configurationId != null && p.configurationId!.isNotEmpty && p.configurationId != req.configurationId) {
+        final pConfigName = (p.configurationName ?? '').toLowerCase();
+        final reqConfigName = (req.configurationName ?? '').toLowerCase();
+        if (pConfigName.isNotEmpty && reqConfigName.isNotEmpty) {
+          if (!reqConfigName.contains(pConfigName) && !pConfigName.contains(reqConfigName)) {
+            return false;
+          }
+        }
+      }
+    }
+
+    // 6. Target Area Match (Matches if property is in ANY ONE of the target areas)
+    if (req.areaIds.isNotEmpty) {
+      bool areaMatch = req.areaIds.contains(p.areaId);
+      if (!areaMatch && req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
+        final pArea = p.areaName.trim().toLowerCase();
+        areaMatch = req.areaNames.any((aName) {
+          final trimmed = aName.trim().toLowerCase();
+          return trimmed.isNotEmpty && (trimmed == pArea || pArea.contains(trimmed) || trimmed.contains(pArea));
+        });
+      }
+      if (!areaMatch) return false;
+    }
+
+    // 7. Budget Range Match
+    if (req.maxBudget > 0) {
+      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
+      final maxB = req.maxBudget;
+      if (p.price < minB || p.price > maxB) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   Widget _buildAssignToDropdown(RequirementModel req) {
@@ -1306,20 +1442,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary),
                           ),
                         ),
-                        DataCell(
-                          SizedBox(
-                            width: 160,
-                            child: Tooltip(
-                              message: req.areaNames.join(', '),
-                              child: Text(
-                                req.areaNames.join(', '),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
-                              ),
-                            ),
-                          ),
-                        ),
+                        DataCell(_buildTargetAreasCell(req)),
                         DataCell(
                           PopupMenuButton<String>(
                             tooltip: 'Change Status',
@@ -2289,18 +2412,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             Future<void> loadMatches() async {
               try {
                 final properties = await PropertiesRepository().getProperties();
-                final matches = properties.where((p) {
-                  final statusName = p.propertyStatusName.toLowerCase();
-                  final statusActive = statusName == 'available' || statusName.contains('to be available');
-                  final listingTypeMatch = p.listingTypeId == req.listingTypeId;
-                  final catMatch = p.categoryId == req.categoryId;
-                  final typeMatch = p.propertyTypeId == req.propertyTypeId;
-                  final configMatch = req.configurationId == null || p.configurationId == req.configurationId;
-                  final budgetMatch = p.price >= req.minBudget && p.price <= req.maxBudget;
-                  final areaMatch = req.areaIds.isEmpty || req.areaIds.contains(p.areaId);
-
-                  return statusActive && listingTypeMatch && catMatch && typeMatch && configMatch && budgetMatch && areaMatch;
-                }).toList();
+                final matches = properties.where((p) => _isRequirementPropertyMatch(p, req)).toList();
 
                 setDialogState(() {
                   matchedProps = matches;
@@ -2913,20 +3025,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary),
                           ),
                         ),
-                        DataCell(
-                          SizedBox(
-                            width: 160,
-                            child: Tooltip(
-                              message: req.areaNames.join(', '),
-                              child: Text(
-                                req.areaNames.join(', '),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
-                              ),
-                            ),
-                          ),
-                        ),
+                        DataCell(_buildTargetAreasCell(req)),
                         DataCell(
                           PopupMenuButton<String>(
                             tooltip: 'Change Status',
@@ -3458,23 +3557,96 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
     _loadAndFilterMatches();
   }
 
+  bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
+    final statusName = p.propertyStatusName.toLowerCase();
+    final statusActive = statusName == 'available' || statusName.contains('available') || statusName.isEmpty;
+    if (!statusActive) return false;
+
+    final reqListing = (req.listingTypeName ?? '').toLowerCase();
+    final propListing = (p.listingTypeName).toLowerCase();
+    bool listingTypeMatch = true;
+    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
+      final isReqRent = reqListing.contains('rent');
+      final isPropRent = propListing.contains('rent');
+      listingTypeMatch = (isReqRent == isPropRent);
+    } else if (req.listingTypeId != null && req.listingTypeId!.isNotEmpty && p.listingTypeId.isNotEmpty) {
+      listingTypeMatch = (p.listingTypeId == req.listingTypeId);
+    }
+    if (!listingTypeMatch) return false;
+
+    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
+      if (p.categoryId != req.categoryId) return false;
+    }
+
+    if (req.propertyTypeIds.isNotEmpty) {
+      bool typeMatch = req.propertyTypeIds.contains(p.propertyTypeId);
+      if (!typeMatch && req.propertyTypeName.isNotEmpty && p.propertyTypeName.isNotEmpty) {
+        final pTypeName = p.propertyTypeName.toLowerCase();
+        typeMatch = req.propertyTypeName.toLowerCase().split(',').any((t) {
+          final trimmed = t.trim();
+          return trimmed.isNotEmpty && (pTypeName.contains(trimmed) || trimmed.contains(pTypeName));
+        });
+      }
+      if (!typeMatch) return false;
+    } else if (req.propertyTypeId.isNotEmpty && p.propertyTypeId.isNotEmpty) {
+      if (p.propertyTypeId != req.propertyTypeId) {
+        final pTypeName = p.propertyTypeName.toLowerCase();
+        final reqTypeName = req.propertyTypeName.toLowerCase();
+        if (!reqTypeName.contains(pTypeName) && !pTypeName.contains(reqTypeName)) return false;
+      }
+    }
+
+    if (req.configurationIds.isNotEmpty) {
+      bool configMatch = p.configurationId != null && req.configurationIds.contains(p.configurationId);
+      if (!configMatch && req.configurationName != null && req.configurationName!.isNotEmpty && p.configurationName != null && p.configurationName!.isNotEmpty) {
+        final pConfigName = p.configurationName!.toLowerCase();
+        configMatch = req.configurationName!.toLowerCase().split(',').any((c) {
+          final trimmed = c.trim();
+          return trimmed.isNotEmpty && (pConfigName.contains(trimmed) || trimmed.contains(pConfigName));
+        });
+      }
+      if (!configMatch) return false;
+    } else if (req.configurationId != null && req.configurationId!.isNotEmpty) {
+      if (p.configurationId != null && p.configurationId!.isNotEmpty && p.configurationId != req.configurationId) {
+        final pConfigName = (p.configurationName ?? '').toLowerCase();
+        final reqConfigName = (req.configurationName ?? '').toLowerCase();
+        if (pConfigName.isNotEmpty && reqConfigName.isNotEmpty) {
+          if (!reqConfigName.contains(pConfigName) && !pConfigName.contains(reqConfigName)) {
+            return false;
+          }
+        }
+      }
+    }
+
+    if (req.areaIds.isNotEmpty) {
+      bool areaMatch = req.areaIds.contains(p.areaId);
+      if (!areaMatch && req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
+        final pArea = p.areaName.trim().toLowerCase();
+        areaMatch = req.areaNames.any((aName) {
+          final trimmed = aName.trim().toLowerCase();
+          return trimmed.isNotEmpty && (trimmed == pArea || pArea.contains(trimmed) || trimmed.contains(pArea));
+        });
+      }
+      if (!areaMatch) return false;
+    }
+
+    if (req.maxBudget > 0) {
+      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
+      final maxB = req.maxBudget;
+      if (p.price < minB || p.price > maxB) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   Future<void> _loadAndFilterMatches() async {
     try {
       final properties = await _propertiesRepository.getProperties();
       final req = widget.requirement;
 
-      final matches = properties.where((p) {
-        final statusName = p.propertyStatusName.toLowerCase();
-        final statusActive = statusName == 'available' || statusName.contains('to be available');
-        final listingTypeMatch = p.listingTypeId == req.listingTypeId;
-        final catMatch = p.categoryId == req.categoryId;
-        final typeMatch = p.propertyTypeId == req.propertyTypeId;
-        final configMatch = req.configurationId == null || p.configurationId == req.configurationId;
-        final budgetMatch = p.price >= req.minBudget && p.price <= req.maxBudget;
-        final areaMatch = req.areaIds.isEmpty || req.areaIds.contains(p.areaId);
-
-        return statusActive && listingTypeMatch && catMatch && typeMatch && configMatch && budgetMatch && areaMatch;
-      }).toList();
+      final matches = properties.where((p) => _isRequirementPropertyMatch(p, req)).toList();
 
       setState(() {
         _matchedProperties = matches;
@@ -3490,6 +3662,9 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
       decoration: BoxDecoration(
         color: CRMColors.cardBg,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(CRMBorderRadius.l)),
@@ -3516,8 +3691,10 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
           ),
           const SizedBox(height: CRMSpacing.xs),
           Text(
-            "Showing properties that match criteria: ${widget.requirement.configurationName ?? '-'} ${widget.requirement.propertyTypeName} in ${widget.requirement.areaNames.join(', ')}",
+            "Showing properties that match criteria: ${widget.requirement.configurationName ?? '-'} ${widget.requirement.propertyTypeName} in ${widget.requirement.areaNames.isNotEmpty ? widget.requirement.areaNames.join(', ') : 'Any Area'}",
             style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: CRMSpacing.s),
           Row(
@@ -3563,8 +3740,7 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
               ),
             )
           else
-            ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+            Flexible(
               child: ListView.builder(
                 shrinkWrap: true,
                 itemCount: _matchedProperties.length,
