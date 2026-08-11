@@ -110,12 +110,13 @@ class RequirementModel {
     } else if (json['property_type'] != null && json['property_type'] is Map) {
       typeName = json['property_type']['name'] ?? '';
     }
-    if (typeName.isEmpty && propTypeIds.isNotEmpty) {
+    if (propTypeIds.isNotEmpty) {
       final names = propTypeIds
           .map((id) => LookupLocalRepository.getLookupNameSync(id))
           .whereType<String>()
+          .where((n) => n.isNotEmpty && n != 'N/A')
           .toList();
-      if (names.isNotEmpty) {
+      if (names.isNotEmpty && (names.length > 1 || typeName.isEmpty)) {
         typeName = names.join(', ');
       }
     }

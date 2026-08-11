@@ -881,8 +881,71 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
       }
     } catch (_) {}
-
     return 'N/A';
+  }
+
+  Widget _buildSpecsConfigCell(RequirementModel req) {
+    final specsText = '${req.propertyTypeName} (${req.configurationName ?? "-"})';
+    final listingLabel = getListingTypeLabel(req);
+    final isRent = listingLabel == 'Rent';
+
+    final tooltipMessage = 'Property Type(s): ${req.propertyTypeName}\nConfiguration: ${req.configurationName ?? "-"}\nListing Type: $listingLabel';
+
+    return Tooltip(
+      message: tooltipMessage,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        color: CRMColors.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: (isRent ? CRMColors.info : CRMColors.primary).withValues(alpha: 0.35),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      textStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 12.5,
+        height: 1.4,
+        fontWeight: FontWeight.w500,
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Text(
+              specsText,
+              style: CRMTypography.body.copyWith(color: CRMColors.text),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.xxs, vertical: 2),
+            decoration: BoxDecoration(
+              color: (isRent ? CRMColors.info : CRMColors.primary).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
+            ),
+            child: Text(
+              listingLabel,
+              style: CRMTypography.captionBold.copyWith(
+                fontSize: 10,
+                color: isRent ? CRMColors.info : CRMColors.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildAssignToDropdown(RequirementModel req) {
@@ -1236,33 +1299,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             _buildAssignToDropdown(req),
                           ),
                         ],
-                        DataCell(
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('${req.propertyTypeName} (${req.configurationName ?? "-"})', style: CRMTypography.body.copyWith(color: CRMColors.text)),
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.xxs, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: (getListingTypeLabel(req) == 'Rent'
-                                      ? CRMColors.info
-                                      : CRMColors.primary)
-                                      .withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
-                                ),
-                                child: Text(
-                                  getListingTypeLabel(req),
-                                  style: CRMTypography.captionBold.copyWith(
-                                    fontSize: 10,
-                                    color: getListingTypeLabel(req) == 'Rent' ? CRMColors.info : CRMColors.primary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        DataCell(_buildSpecsConfigCell(req)),
                         DataCell(
                           Text(
                             '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}',
@@ -2869,33 +2906,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ),
-                        DataCell(
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('${req.propertyTypeName} (${req.configurationName ?? "-"})', style: CRMTypography.body.copyWith(color: CRMColors.text)),
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.xxs, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: (getListingTypeLabel(req) == 'Rent'
-                                      ? CRMColors.info
-                                      : CRMColors.primary)
-                                      .withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
-                                ),
-                                child: Text(
-                                  getListingTypeLabel(req),
-                                  style: CRMTypography.captionBold.copyWith(
-                                    fontSize: 10,
-                                    color: getListingTypeLabel(req) == 'Rent' ? CRMColors.info : CRMColors.primary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        DataCell(_buildSpecsConfigCell(req)),
                         DataCell(
                           Text(
                             '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}',

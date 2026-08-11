@@ -571,6 +571,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       (t) => t.id == _selectedTypeId,
       orElse: () => LookupItem(id: '', name: 'N/A'),
     );
+    final typeNames = _selectedTypeIds.map((id) {
+      final match = _types.firstWhere((t) => t.id == id, orElse: () => LookupItem(id: id, name: id));
+      return match.name;
+    }).where((n) => n.isNotEmpty && n != 'N/A').toList();
     final configNames = _selectedConfigIds.map((id) {
       final match = _configurations.firstWhere((c) => c.id == id, orElse: () => LookupItem(id: id, name: id));
       return match.name;
@@ -602,7 +606,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       categoryId: _selectedCategoryId ?? '',
       categoryName: cat.name,
       propertyTypeId: _selectedTypeId ?? '',
-      propertyTypeName: type.name,
+      propertyTypeName: typeNames.isNotEmpty ? typeNames.join(', ') : type.name,
       propertyTypeIds: _selectedTypeIds,
       configurationId: _selectedConfigId,
       configurationIds: _selectedConfigIds,
