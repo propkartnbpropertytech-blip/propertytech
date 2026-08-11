@@ -8,6 +8,8 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import 'dart:io' show File;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
@@ -551,7 +553,405 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
   }
 }
 
-/// Helper to render beautiful standard file extension icons
+/// Image upload zone for Service Agent profile photo (Round / Circular avatar UI with auto-compression < 850KB).
+class AgentImageUploadZone extends StatefulWidget {
+  final Function(String imageUrl) onImageUploaded;
+  final String? initialImageUrl;
+
+  const AgentImageUploadZone({
+    super.key,
+    required this.onImageUploaded,
+    this.initialImageUrl,
+  });
+
+  @override
+  State<AgentImageUploadZone> createState() => _AgentImageUploadZoneState();
+}
+
+class _AgentImageUploadZoneState extends State<AgentImageUploadZone> {
+  bool _isHovering = false;
+  bool _isUploading = false;
+  double _uploadProgress = 0.0;
+  String? _imageUrl;
+  String _uploadStatusText = 'Uploading...';
+
+  @override
+  void initState() {
+    super.initState();
+    _imageUrl = widget.initialImageUrl;
+  }
+
+  Future<Uint8List> _compressToUnder850KB(Uint8List inputBytes, String ext) async {
+    const int maxAllowedBytes = 850 * 1024; // 870,400 bytes
+
+    if (inputBytes.length <= maxAllowedBytes) {
+      return inputBytes;
+    }
+
+    // 1. Try FlutterImageCompress on non-web
+    if (!kIsWeb) {
+      try {
+        int quality = 80;
+        int minDimension = 1200;
+        Uint8List current = inputBytes;
+
+        while (current.length > maxAllowedBytes && quality >= 20) {
+          final compressed = await FlutterImageCompress.compressWithList(
+            inputBytes,
+            quality: quality,
+            minWidth: minDimension,
+            minHeight: minDimension,
+            format: ext == 'png' ? CompressFormat.png : CompressFormat.jpeg,
+          );
+          if (compressed.isNotEmpty) {
+            current = compressed;
+          }
+          quality -= 15;
+          minDimension = (minDimension * 0.85).round();
+        }
+
+        if (current.length <= maxAllowedBytes) {
+          return current;
+        }
+      } catch (e) {
+        debugPrint('[COMPRESS] FlutterImageCompress fallback: $e');
+      }
+    }
+
+    // 2. Fallback via ui.instantiateImageCodec (works on Web, Desktop, Mobile)
+    try {
+      double scale = 0.8;
+      Uint8List current = inputBytes;
+
+      while (current.length > maxAllowedBytes && scale >= 0.15) {
+        final ui.Codec codec = await ui.instantiateImageCodec(inputBytes);
+        final ui.FrameInfo frame = await codec.getNextFrame();
+        final int targetW = (frame.image.width * scale).round();
+        final int targetH = (frame.image.height * scale).round();
+
+        final ui.Codec scaledCodec = await ui.instantiateImageCodec(
+          inputBytes,
+          targetWidth: targetW > 40 ? targetW : 40,
+          targetHeight: targetH > 40 ? targetH : 40,
+        );
+        final ui.FrameInfo scaledFrame = await scaledCodec.getNextFrame();
+        final ByteData? byteData = await scaledFrame.image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData != null) {
+          current = byteData.buffer.asUint8List();
+        }
+        scale -= 0.15;
+      }
+      return current;
+    } catch (e) {
+      debugPrint('[COMPRESS] Codec downscale error: $e');
+      return inputBytes;
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      final ext = (file.extension ?? 'jpg').toLowerCase();
+
+      setState(() {
+        _isUploading = true;
+        _uploadProgress = 0.1;
+        _uploadStatusText = 'Reading image...';
+      });
+
+      final List<int>? rawBytes =
+          file.bytes ?? (kIsWeb ? null : await File(file.path!).readAsBytes());
+      if (rawBytes == null || rawBytes.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _isUploading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not read image file. Please try again.'),
+              backgroundColor: CRMColors.danger,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      Uint8List uploadBytes = rawBytes is Uint8List ? rawBytes : Uint8List.fromList(rawBytes);
+
+      // Auto compress to under 850 KB if larger
+      if (uploadBytes.length > 850 * 1024) {
+        if (mounted) {
+          setState(() {
+            _uploadStatusText = 'Compressing image under 850 KB...';
+            _uploadProgress = 0.3;
+          });
+        }
+        uploadBytes = await _compressToUnder850KB(uploadBytes, ext);
+      }
+
+      if (mounted) {
+        setState(() {
+          _uploadStatusText = 'Uploading to Cloudinary...';
+          _uploadProgress = 0.6;
+        });
+      }
+
+      try {
+        final int timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        const folder = 'agent_images';
+        final String toSign =
+            'folder=$folder&timestamp=$timestamp${ApiConstants.cloudinaryApiSecret}';
+        final String signature = sha1.convert(utf8.encode(toSign)).toString();
+
+        final contentType = ext == 'png'
+            ? MediaType('image', 'png')
+            : ext == 'webp'
+                ? MediaType('image', 'webp')
+                : MediaType('image', 'jpeg');
+
+        final formData = FormData.fromMap({
+          'file': MultipartFile.fromBytes(
+            uploadBytes,
+            filename: file.name,
+            contentType: contentType,
+          ),
+          'api_key': ApiConstants.cloudinaryApiKey,
+          'timestamp': timestamp,
+          'signature': signature,
+          'folder': folder,
+        });
+
+        final cloudResponse = await Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 60),
+            receiveTimeout: const Duration(seconds: 60),
+            sendTimeout: const Duration(seconds: 60),
+          ),
+        ).post(
+          'https://api.cloudinary.com/v1_1/${ApiConstants.cloudinaryCloudName}/image/upload',
+          data: formData,
+        );
+
+        final uploadedUrl =
+            (cloudResponse.data?['secure_url'] ?? '').toString();
+
+        if (uploadedUrl.isEmpty || !uploadedUrl.contains('res.cloudinary.com')) {
+          throw Exception('Invalid Cloudinary response: $uploadedUrl');
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _uploadProgress = 1.0;
+          _isUploading = false;
+          _imageUrl = uploadedUrl;
+        });
+        widget.onImageUploaded(uploadedUrl);
+      } catch (uploadError) {
+        debugPrint('[AGENT_IMAGE_UPLOAD] FAILED: $uploadError');
+        if (!mounted) return;
+        setState(() {
+          _isUploading = false;
+          _uploadProgress = 0.0;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Image upload failed: $uploadError'),
+            backgroundColor: CRMColors.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Image picking failed: $e');
+    }
+  }
+
+  void _removeImage() {
+    setState(() {
+      _imageUrl = null;
+      _uploadProgress = 0.0;
+    });
+    widget.onImageUploaded('');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasImage = _imageUrl != null && _imageUrl!.isNotEmpty;
+
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'Service Agent Profile Photo',
+            style: CRMTypography.label.copyWith(
+              color: CRMColors.textSecondaryOf(context),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: CRMSpacing.s),
+          MouseRegion(
+            onEnter: (_) => setState(() => _isHovering = true),
+            onExit: (_) => setState(() => _isHovering = false),
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: _isUploading ? null : _pickImage,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Circular Outer Container
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 104,
+                    height: 104,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _isHovering
+                          ? CRMColors.primaryOf(context).withOpacity(0.08)
+                          : CRMColors.cardBgOf(context),
+                      border: Border.all(
+                        color: _isHovering || hasImage
+                            ? CRMColors.primaryOf(context)
+                            : CRMColors.borderOf(context).withOpacity(0.8),
+                        width: _isHovering || hasImage ? 2.5 : 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: CRMColors.primaryOf(context).withOpacity(_isHovering ? 0.15 : 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: _isUploading
+                        ? Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: CircularProgressIndicator(
+                              value: _uploadProgress > 0 ? _uploadProgress : null,
+                              strokeWidth: 3,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                CRMColors.primaryOf(context),
+                              ),
+                            ),
+                          )
+                        : (hasImage
+                            ? ClipOval(
+                                child: Image.network(
+                                  _imageUrl!,
+                                  width: 104,
+                                  height: 104,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: CRMColors.primaryOf(context).withOpacity(0.1),
+                                    child: Icon(
+                                      Icons.person_rounded,
+                                      size: 48,
+                                      color: CRMColors.primaryOf(context),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.add_a_photo_rounded,
+                                    color: _isHovering
+                                        ? CRMColors.primaryOf(context)
+                                        : CRMColors.primaryOf(context).withOpacity(0.7),
+                                    size: 30,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Add Photo',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: CRMColors.primaryOf(context),
+                                    ),
+                                  ),
+                                ],
+                              )),
+                  ),
+
+                  // Camera Edit Badge / Remove Badge at Bottom Right
+                  if (hasImage && !_isUploading)
+                    Positioned(
+                      bottom: 2,
+                      right: 2,
+                      child: GestureDetector(
+                        onTap: _removeImage,
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: CRMColors.danger,
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black26, blurRadius: 4),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    )
+                  else if (!hasImage && !_isUploading)
+                    Positioned(
+                      bottom: 2,
+                      right: 2,
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: CRMColors.primaryOf(context),
+                          border: Border.all(color: Colors.white, width: 2),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black12, blurRadius: 4),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt_rounded,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: CRMSpacing.xs),
+          Text(
+            _isUploading
+                ? _uploadStatusText
+                : (hasImage
+                    ? 'Tap photo to change'
+                    : 'JPG, PNG, WebP • Auto-compressed < 850 KB'),
+            style: CRMTypography.caption.copyWith(
+              color: CRMColors.textMutedOf(context),
+              fontSize: 11,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
 class FileIconHelper {
   static Widget getIconForExtension(String extension, {double size = 20}) {
     final ext = extension.toLowerCase().trim();

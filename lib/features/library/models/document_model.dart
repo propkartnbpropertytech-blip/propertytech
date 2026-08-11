@@ -342,6 +342,12 @@ class ServiceAgentDocument {
   final String fileExtension;
   final String? fileUrl;
 
+  // New fields
+  final String approvalStatus; // 'pending', 'approved', 'rejected', 'active'
+  final String? agentImageUrl;
+  final String? dateOfBirth;
+  final List<String> area;
+
   ServiceAgentDocument({
     required this.id,
     required this.agentName,
@@ -356,6 +362,10 @@ class ServiceAgentDocument {
     required this.fileSize,
     required this.fileExtension,
     this.fileUrl,
+    this.approvalStatus = 'approved',
+    this.agentImageUrl,
+    this.dateOfBirth,
+    this.area = const [],
   });
 
   ServiceAgentDocument copyWith({
@@ -372,6 +382,10 @@ class ServiceAgentDocument {
     String? fileSize,
     String? fileExtension,
     String? fileUrl,
+    String? approvalStatus,
+    String? agentImageUrl,
+    String? dateOfBirth,
+    List<String>? area,
   }) {
     return ServiceAgentDocument(
       id: id ?? this.id,
@@ -387,6 +401,10 @@ class ServiceAgentDocument {
       fileSize: fileSize ?? this.fileSize,
       fileExtension: fileExtension ?? this.fileExtension,
       fileUrl: fileUrl ?? this.fileUrl,
+      approvalStatus: approvalStatus ?? this.approvalStatus,
+      agentImageUrl: agentImageUrl ?? this.agentImageUrl,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
+      area: area ?? this.area,
     );
   }
 
