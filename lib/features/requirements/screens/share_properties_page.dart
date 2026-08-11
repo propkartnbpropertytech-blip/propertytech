@@ -35,7 +35,6 @@ class SharePropertiesPage extends StatefulWidget {
 class _SharePropertiesPageState extends State<SharePropertiesPage> {
   bool _isLoading = true;
   String? _errorMessage;
-  Map<String, dynamic>? _session;
   Map<String, dynamic>? _agent;
   List<dynamic> _properties = [];
 
@@ -51,7 +50,6 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
       if (response.data != null && response.data['success'] == true) {
         final data = response.data['data'];
         setState(() {
-          _session = data['session'];
           _agent = data['agent'];
           _properties = data['properties'] ?? [];
           _isLoading = false;
@@ -118,6 +116,47 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
     }
   }
 
+  bool _isRentProperty(Map<String, dynamic> p) {
+    try {
+      final prop = PropertyModel.fromJson(p);
+      final typeName = prop.listingTypeName.toLowerCase();
+      if (typeName.contains('resale') || typeName.contains('re-sale') || typeName.contains('sale')) {
+        return false;
+      }
+      if (typeName.contains('rent') || typeName.contains('rental')) {
+        return true;
+      }
+    } catch (_) {}
+
+    final listingType = p['listing_type'];
+    String name = '';
+    if (listingType is Map) {
+      name = (listingType['name'] ?? '').toString().toLowerCase();
+    } else if (listingType != null) {
+      name = listingType.toString().toLowerCase();
+    }
+    if (name.contains('resale') || name.contains('re-sale') || name.contains('sale')) {
+      return false;
+    }
+    return true;
+  }
+
+  bool get _isRentCollection {
+    if (_properties.isEmpty) return true;
+    int rentCount = 0;
+    int resaleCount = 0;
+    for (var p in _properties) {
+      if (p is Map<String, dynamic>) {
+        if (_isRentProperty(p)) {
+          rentCount++;
+        } else {
+          resaleCount++;
+        }
+      }
+    }
+    return rentCount >= resaleCount;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -179,12 +218,15 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
     final agentName = _agent?['full_name'] ?? widget.agentName ?? 'Agent';
     final agentMobile = _agent?['mobile'] ?? widget.agentMobile ?? '';
 
+    final isRentColl = _isRentCollection;
+    final gradientColors = CRMColors.getGradientPrimaryColor(false, isRentColl);
+
     final headerBlock = Container(
       width: double.infinity,
       padding: const EdgeInsets.all(CRMSpacing.l),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [CRMColors.primary.withValues(alpha: 0.85), CRMColors.primaryHover],
+          colors: gradientColors,
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -311,6 +353,9 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
 
   Widget _buildPropertyItem(BuildContext context, Map<String, dynamic> p, String agentMobile) {
     final prop = PropertyModel.fromJson(p);
+    final isRentProp = _isRentProperty(p);
+    final propPrimary = CRMColors.getPrimaryColor(false, isRentProp);
+
     final double priceVal = prop.price;
     final price = priceVal > 0
         ? '${CRMCurrencyFormatter.format(priceVal)} (${CRMCurrencyFormatter.formatWords(priceVal).replaceAll('₹', '')})'
@@ -390,7 +435,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                 Text(
                   price,
                   style: CRMTypography.cardTitle.copyWith(
-                    color: CRMColors.primary,
+                    color: propPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -408,16 +453,16 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: CRMColors.primary.withValues(alpha: 0.08),
+                          color: propPrimary.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.bed_rounded, size: 14, color: CRMColors.primary),
+                            Icon(Icons.bed_rounded, size: 14, color: propPrimary),
                             const SizedBox(width: 4),
                             Text(
                               bedrooms,
-                              style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
+                              style: CRMTypography.captionBold.copyWith(color: propPrimary),
                             ),
                           ],
                         ),
@@ -428,16 +473,16 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: CRMColors.primary.withValues(alpha: 0.08),
+                          color: propPrimary.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.square_foot_rounded, size: 14, color: CRMColors.primary),
+                            Icon(Icons.square_foot_rounded, size: 14, color: propPrimary),
                             const SizedBox(width: 4),
                             Text(
                               areaSqft,
-                              style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
+                              style: CRMTypography.captionBold.copyWith(color: propPrimary),
                             ),
                           ],
                         ),
@@ -464,6 +509,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                   children: [
                     CRMButton(
                       label: "View Details",
+                      backgroundColor: propPrimary,
                       onPressed: () => context.push('/share/${widget.sessionId}/property/${prop.id}'),
                       height: 36,
                       padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
@@ -471,6 +517,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                     if (agentMobile.isNotEmpty) ...[
                       CRMButton(
                         label: "Call Agent",
+                        backgroundColor: propPrimary,
                         prefixIcon: Icons.phone_rounded,
                         onPressed: () => _launchUrlHelper("tel:$agentMobile", prop.id, "Call"),
                         height: 36,
@@ -478,6 +525,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                       ),
                       CRMButton(
                         label: "Interested",
+                        backgroundColor: propPrimary,
                         prefixIcon: Icons.star_rounded,
                         onPressed: () {
                           final text = Uri.encodeComponent("Hi, I am interested in property ${prop.propertyCode} from your shortlisted share.");
@@ -488,6 +536,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                       ),
                       CRMButton(
                         label: "Schedule Visit",
+                        backgroundColor: propPrimary,
                         prefixIcon: Icons.calendar_today_rounded,
                         onPressed: () {
                           final text = Uri.encodeComponent("Hi, I would like to schedule a visit for property ${prop.propertyCode} from your shortlisted share.");

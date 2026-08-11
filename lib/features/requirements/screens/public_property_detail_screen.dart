@@ -131,6 +131,31 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
     }
   }
 
+  bool _isRentProperty(Map<String, dynamic> p) {
+    try {
+      final prop = PropertyModel.fromJson(p);
+      final typeName = prop.listingTypeName.toLowerCase();
+      if (typeName.contains('resale') || typeName.contains('re-sale') || typeName.contains('sale')) {
+        return false;
+      }
+      if (typeName.contains('rent') || typeName.contains('rental')) {
+        return true;
+      }
+    } catch (_) {}
+
+    final listingType = p['listing_type'];
+    String name = '';
+    if (listingType is Map) {
+      name = (listingType['name'] ?? '').toString().toLowerCase();
+    } else if (listingType != null) {
+      name = listingType.toString().toLowerCase();
+    }
+    if (name.contains('resale') || name.contains('re-sale') || name.contains('sale')) {
+      return false;
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -312,6 +337,9 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
     }
 
     Widget buildDetailsSection() {
+      final isRentProp = _isRentProperty(p);
+      final propPrimary = CRMColors.getPrimaryColor(false, isRentProp);
+
       // 1. Basic Details Items
       final List<_DetailItem> basicItems = [];
       
@@ -530,7 +558,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
           Text(
             price,
             style: CRMTypography.headline.copyWith(
-              color: CRMColors.primary,
+              color: propPrimary,
               fontSize: 22,
               fontWeight: FontWeight.bold,
             ),
@@ -547,9 +575,9 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildDetailColumn(Icons.bed_rounded, "Bedrooms", "${p['bedrooms'] ?? '-'}"),
-                  _buildDetailColumn(Icons.square_foot_rounded, "Area", p['super_builtup_area'] != null ? "${p['super_builtup_area']} sqft" : "-"),
-                  _buildDetailColumn(Icons.event_available_rounded, "Available From", availableDisplay),
+                  _buildDetailColumn(Icons.bed_rounded, "Bedrooms", "${p['bedrooms'] ?? '-'}", primaryColor: propPrimary),
+                  _buildDetailColumn(Icons.square_foot_rounded, "Area", p['super_builtup_area'] != null ? "${p['super_builtup_area']} sqft" : "-", primaryColor: propPrimary),
+                  _buildDetailColumn(Icons.event_available_rounded, "Available From", availableDisplay, primaryColor: propPrimary),
                 ],
               ),
             ),
@@ -571,25 +599,25 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
 
           // Render Basic Details Card
           if (basicItems.isNotEmpty) ...[
-            _buildResponsiveDetailCard('Basic Details', basicItems),
+            _buildResponsiveDetailCard('Basic Details', basicItems, primaryColor: propPrimary),
             const SizedBox(height: CRMSpacing.l),
           ],
 
           // Render Specifications & Floor Details Card
           if (specsItems.isNotEmpty) ...[
-            _buildResponsiveDetailCard('Specifications & Floor Details', specsItems),
+            _buildResponsiveDetailCard('Specifications & Floor Details', specsItems, primaryColor: propPrimary),
             const SizedBox(height: CRMSpacing.l),
           ],
 
           // Render Location & Address Card
           if (locationItems.isNotEmpty) ...[
-            _buildResponsiveDetailCard('Location & Address', locationItems),
+            _buildResponsiveDetailCard('Location & Address', locationItems, primaryColor: propPrimary),
             const SizedBox(height: CRMSpacing.l),
           ],
 
           // Render Key Details Card
           if (contactsItems.isNotEmpty) ...[
-            _buildResponsiveDetailCard('Contacts & Key Management', contactsItems),
+            _buildResponsiveDetailCard('Contacts & Key Management', contactsItems, primaryColor: propPrimary),
             const SizedBox(height: CRMSpacing.l),
           ],
 
@@ -613,13 +641,13 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: CRMColors.primary.withValues(alpha: 0.08),
+                    color: propPrimary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                    border: Border.all(color: CRMColors.primary.withValues(alpha: 0.15)),
+                    border: Border.all(color: propPrimary.withValues(alpha: 0.15)),
                   ),
                   child: Text(
                     am.toString(),
-                    style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
+                    style: CRMTypography.captionBold.copyWith(color: propPrimary),
                   ),
                 );
               }).toList(),
@@ -634,10 +662,10 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
                 children: [
                   CircleAvatar(
                     radius: 20,
-                    backgroundColor: CRMColors.primary.withValues(alpha: 0.1),
+                    backgroundColor: propPrimary.withValues(alpha: 0.1),
                     child: Text(
                       agentName.isNotEmpty ? agentName[0].toUpperCase() : 'A',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: TextStyle(fontWeight: FontWeight.bold, color: propPrimary),
                     ),
                   ),
                   const SizedBox(width: CRMSpacing.m),
@@ -809,10 +837,10 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
       );
   }
 
-  Widget _buildDetailColumn(IconData icon, String label, String value) {
+  Widget _buildDetailColumn(IconData icon, String label, String value, {Color? primaryColor}) {
     return Column(
       children: [
-        Icon(icon, size: 24, color: CRMColors.primary),
+        Icon(icon, size: 24, color: primaryColor ?? CRMColors.primary),
         const SizedBox(height: CRMSpacing.xxs),
         Text(label, style: CRMTypography.caption.copyWith(color: CRMColors.textMuted)),
         Text(value, style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context))),
@@ -865,7 +893,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
     }
   }
 
-  Widget _buildResponsiveDetailCard(String title, List<_DetailItem> items) {
+  Widget _buildResponsiveDetailCard(String title, List<_DetailItem> items, {Color? primaryColor}) {
     if (items.isEmpty) return const SizedBox.shrink();
 
     return LayoutBuilder(
@@ -880,10 +908,10 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
             children: [
               Text(
                 title,
-                style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primaryOf(context), fontWeight: FontWeight.bold),
+                style: CRMTypography.bodyMedium.copyWith(color: primaryColor ?? CRMColors.primaryOf(context), fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: CRMSpacing.s),
-              Divider(color: CRMColors.borderOf(context).withOpacity(0.6), thickness: 0.5),
+              Divider(color: CRMColors.borderOf(context).withValues(alpha: 0.6), thickness: 0.5),
               const SizedBox(height: CRMSpacing.s),
               Wrap(
                 spacing: CRMSpacing.m,

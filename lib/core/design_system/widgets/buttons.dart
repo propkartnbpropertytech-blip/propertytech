@@ -17,6 +17,9 @@ class CRMButton extends StatefulWidget {
   final double? height;
   final EdgeInsetsGeometry? padding;
 
+  final Color? backgroundColor;
+  final Color? foregroundColor;
+
   const CRMButton({
     super.key,
     required this.label,
@@ -27,6 +30,8 @@ class CRMButton extends StatefulWidget {
     this.width,
     this.height,
     this.padding,
+    this.backgroundColor,
+    this.foregroundColor,
   });
 
   @override
@@ -45,12 +50,21 @@ class _CRMButtonState extends State<CRMButton> {
 
     switch (widget.variant) {
       case CRMButtonVariant.primary:
-        bgColor = CRMColors.primaryOf(context);
-        fgColor = (CRMColors.isDark && !CRMColors.isRentMode)
-            ? const Color(0xFF111827)
-            : Colors.white;
+        bgColor = widget.backgroundColor ?? CRMColors.primaryOf(context);
+        fgColor = widget.foregroundColor ??
+            ((CRMColors.isDark && !CRMColors.isRentMode)
+                ? const Color(0xFF111827)
+                : Colors.white);
         shadows = widget.onPressed != null && !widget.isLoading
-            ? CRMShadows.primaryGlow
+            ? (widget.backgroundColor != null
+                ? [
+                    BoxShadow(
+                      color: widget.backgroundColor!.withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : CRMShadows.primaryGlow)
             : null;
         break;
       case CRMButtonVariant.secondary:
@@ -69,8 +83,8 @@ class _CRMButtonState extends State<CRMButton> {
     }
 
     if (widget.onPressed == null) {
-      bgColor = bgColor.withOpacity(0.45);
-      fgColor = fgColor.withOpacity(0.55);
+      bgColor = bgColor.withValues(alpha: 0.45);
+      fgColor = fgColor.withValues(alpha: 0.55);
       shadows = null;
     }
 
