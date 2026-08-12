@@ -116,11 +116,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   bool _hasEditAccess(PropertyModel p, UserModel? currentUser) {
     if (currentUser == null) return false;
-    if (currentUser.role == 'Super Admin') return true;
-    if (p.createdBy == currentUser.id) return true;
-    if (currentUser.role == 'Telecaller' && p.adminId != null && p.adminId == currentUser.adminId) return true;
-    if (currentUser.role == 'Admin' && p.adminId == currentUser.id) return true;
-    return false;
+    // Allow all sales persons and management roles to edit and delete all properties on Properties page
+    return true;
   }
 
   void _showDeleteConfirmDialog(BuildContext context, PropertyModel p) {
@@ -2359,15 +2356,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
 
   Widget _buildActionToolbar() {
-    final refreshButton = IconButton(
-      icon: Icon(Icons.refresh_rounded, color: CRMColors.textSecondaryOf(context)),
-      onPressed: _loadProperties,
-    );
-
-    return Align(
-      alignment: Alignment.centerRight,
-      child: refreshButton,
-    );
+    return const SizedBox.shrink();
   }
 
   void _showAddEditPropertyDialog(

@@ -17,6 +17,7 @@ class CRMTextField extends StatelessWidget {
   final int? maxLines;
   final ValueChanged<String>? onChanged;
   final FocusNode? focusNode;
+  final VoidCallback? onTap;
 
   const CRMTextField({
     super.key,
@@ -33,6 +34,7 @@ class CRMTextField extends StatelessWidget {
     this.maxLines = 1,
     this.onChanged,
     this.focusNode,
+    this.onTap,
   });
 
   @override
@@ -54,6 +56,7 @@ class CRMTextField extends StatelessWidget {
           keyboardType: keyboardType,
           obscureText: obscureText,
           readOnly: readOnly,
+          onTap: onTap,
           style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
           decoration: InputDecoration(
             hintText: hintText,

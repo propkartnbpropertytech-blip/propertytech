@@ -943,7 +943,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 220),
+            constraints: const BoxConstraints(maxWidth: 135),
             child: Text(
               specsText,
               style: CRMTypography.body.copyWith(color: CRMColors.text),
@@ -979,7 +979,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final tooltipMessage = 'Target Area(s):\n$areasText';
 
     return SizedBox(
-      width: 160,
+      width: 125,
       child: _buildCustomTooltip(
         message: tooltipMessage,
         isRent: isRent,
@@ -1367,6 +1367,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   emptyDescription: 'Try adjusting filters or create a new requirement pipeline.',
                   dataRowMinHeight: 56.0,
                   dataRowMaxHeight: 64.0,
+                  columnSpacing: 10.0,
+                  horizontalMargin: 12.0,
                   columns: [
                     const DataColumn(label: Text('Client')),
                     if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')) ...[
@@ -1390,38 +1392,48 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     return DataRow(
                       cells: [
                         DataCell(
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              GestureDetector(
-                                onTap: () => _showRequirementDetailDrawer(req),
-                                child: Text(
-                                  req.clientName,
-                                  style: CRMTypography.bodyMedium.copyWith(
-                                    color: CRMColors.primary,
-                                    fontWeight: FontWeight.bold,
-                                    decoration: TextDecoration.underline,
+                          SizedBox(
+                            width: 135,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                GestureDetector(
+                                  onTap: () => _showRequirementDetailDrawer(req),
+                                  child: Text(
+                                    req.clientName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: CRMTypography.bodyMedium.copyWith(
+                                      color: CRMColors.primary,
+                                      fontWeight: FontWeight.bold,
+                                      decoration: TextDecoration.underline,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(req.clientMobile, style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary)),
-                              if (req.nextFollowupDate != null) ...[
                                 const SizedBox(height: 2),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.alarm_rounded, size: 12, color: CRMColors.warning),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!)),
-                                      style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 11),
-                                    ),
-                                  ],
+                                Text(
+                                  req.clientMobile,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
                                 ),
+                                if (req.nextFollowupDate != null) ...[
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.alarm_rounded, size: 12, color: CRMColors.warning),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!)),
+                                        style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 11),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                         if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')) ...[
@@ -2976,6 +2988,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   emptyDescription: 'Requirements marked as "Won" will appear here.',
                   dataRowMinHeight: 56.0,
                   dataRowMaxHeight: 64.0,
+                  columnSpacing: 10.0,
+                  horizontalMargin: 12.0,
                   columns: [
                     const DataColumn(label: Text('Client')),
                     if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
@@ -2991,24 +3005,34 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     return DataRow(
                       cells: [
                         DataCell(
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              GestureDetector(
-                                onTap: () => _showRequirementDetailDrawer(req),
-                                child: Text(
-                                  req.clientName,
-                                  style: CRMTypography.bodyMedium.copyWith(
-                                    color: CRMColors.primary,
-                                    fontWeight: FontWeight.bold,
-                                    decoration: TextDecoration.underline,
+                          SizedBox(
+                            width: 135,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                GestureDetector(
+                                  onTap: () => _showRequirementDetailDrawer(req),
+                                  child: Text(
+                                    req.clientName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: CRMTypography.bodyMedium.copyWith(
+                                      color: CRMColors.primary,
+                                      fontWeight: FontWeight.bold,
+                                      decoration: TextDecoration.underline,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(req.clientMobile, style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary)),
-                            ],
+                                const SizedBox(height: 2),
+                                Text(
+                                  req.clientMobile,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))

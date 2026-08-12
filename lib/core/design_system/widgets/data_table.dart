@@ -16,6 +16,8 @@ class CRMDataTable extends StatelessWidget {
   final bool showCheckboxColumn;
   final double? dataRowMinHeight;
   final double? dataRowMaxHeight;
+  final double? columnSpacing;
+  final double? horizontalMargin;
   final bool showDecoration;
 
   const CRMDataTable({
@@ -29,6 +31,8 @@ class CRMDataTable extends StatelessWidget {
     this.showCheckboxColumn = true,
     this.dataRowMinHeight,
     this.dataRowMaxHeight,
+    this.columnSpacing,
+    this.horizontalMargin,
     this.showDecoration = true,
   });
 
@@ -68,12 +72,17 @@ class CRMDataTable extends StatelessWidget {
         builder: (context, constraints) {
           final double availableWidth = constraints.maxWidth;
           final int colCount = columns.length;
-          final double baseContentWidth = colCount * 130.0 + CRMSpacing.m * 2;
+          final double margin = horizontalMargin ?? CRMSpacing.m;
+          final double baseContentWidth = colCount * 105.0 + margin * 2;
           
-          double spacing = CRMSpacing.m;
-          if (colCount > 1 && availableWidth > baseContentWidth) {
-            spacing = (availableWidth - baseContentWidth) / (colCount - 1);
-            if (spacing < CRMSpacing.s) spacing = CRMSpacing.s;
+          double spacing = columnSpacing ?? CRMSpacing.m;
+          if (columnSpacing == null && colCount > 1) {
+            if (availableWidth > baseContentWidth) {
+              spacing = (availableWidth - baseContentWidth) / (colCount - 1);
+              if (spacing < 8.0) spacing = 8.0;
+            } else {
+              spacing = 8.0;
+            }
           }
 
           return SingleChildScrollView(
@@ -87,7 +96,7 @@ class CRMDataTable extends StatelessWidget {
                 dataRowMinHeight: dataRowMinHeight ?? 52.0,
                 dataRowMaxHeight: dataRowMaxHeight ?? 64.0,
                 dividerThickness: 0.5,
-                horizontalMargin: CRMSpacing.m,
+                horizontalMargin: margin,
                 columnSpacing: spacing,
                 columns: columns,
                 rows: rows,

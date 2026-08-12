@@ -413,6 +413,27 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     }
   }
 
+  static String _formatDob(String? rawDob) {
+    if (rawDob == null || rawDob.trim().isEmpty) return '-';
+    final trimmed = rawDob.trim();
+    if (trimmed.length == 8 && RegExp(r'^\d{8}$').hasMatch(trimmed)) {
+      final day = trimmed.substring(0, 2);
+      final month = trimmed.substring(2, 4);
+      final year = trimmed.substring(4, 8);
+      return '$day/$month/$year';
+    }
+    if (RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(trimmed)) {
+      try {
+        final dt = DateTime.parse(trimmed);
+        return DateFormat('dd/MM/yyyy').format(dt);
+      } catch (_) {}
+    }
+    if (RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(trimmed)) {
+      return trimmed;
+    }
+    return trimmed;
+  }
+
   void _viewDocument(ServiceAgentDocument doc) {
     showDialog(context: context, builder: (context) {
       final isVideo = doc.fileExtension == 'mp4' || doc.fileExtension == 'mov';
@@ -428,7 +449,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                 Row(children: [
                   FileIconHelper.getIconForExtension(doc.fileExtension, size: 28),
                   const SizedBox(width: CRMSpacing.s),
-                  Expanded(child: Text(doc.documentName,
+                  Expanded(child: Text(doc.agentName.isNotEmpty ? doc.agentName : doc.documentName,
                       style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
                       maxLines: 1, overflow: TextOverflow.ellipsis)),
                   CRMStatusChip(status: doc.status.displayName),
@@ -448,11 +469,11 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                   ),
                 _buildDetailRow(context, 'Agent Name:', doc.agentName),
                 if (doc.dateOfBirth != null && doc.dateOfBirth!.isNotEmpty)
-                  _buildDetailRow(context, 'Date of Birth:', doc.dateOfBirth!),
+                  _buildDetailRow(context, 'Date of Birth:', _formatDob(doc.dateOfBirth)),
                 _buildDetailRow(context, 'Role:', doc.serviceType),
                 _buildDetailRow(context, 'Mobile Number:', doc.mobileNumber),
                 _buildDetailRow(context, 'Identity:', doc.documentType),
-                if (doc.area.isNotEmpty) _buildDetailRow(context, 'Area:', doc.area.join(', ')),
+                if (doc.area.isNotEmpty) _buildDetailRow(context, 'Area:', '', badgeItems: doc.area),
                 _buildDetailRow(context, 'Uploaded On:', DateFormat('dd MMM yyyy, hh:mm a').format(doc.uploadDate)),
                 _buildDetailRow(context, 'Uploaded By:', doc.uploadedBy),
                 _buildDetailRow(context, 'File Details:', '${doc.fileSize} (${doc.fileExtension.toUpperCase()})'),
@@ -492,7 +513,180 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     });
   }
 
-  Widget _buildDetailRow(BuildContext context, String label, String value) {
+  void _showInScreenDocumentViewer(BuildContext context, ServiceAgentDocument doc) {
+    final String? fileUrl = doc.fileUrl;
+    if (fileUrl == null || fileUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No document URL available.'),
+          backgroundColor: CRMColors.danger,
+        ),
+      );
+      return;
+    }
+
+    String previewUrl = fileUrl;
+    if (fileUrl.contains('cloudinary.com') && fileUrl.toLowerCase().endsWith('.pdf')) {
+      previewUrl = fileUrl.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '.jpg');
+    }
+
+    final isImageOrPdf = fileUrl.toLowerCase().contains('cloudinary.com') ||
+        ['jpg', 'jpeg', 'png', 'webp', 'pdf'].contains(doc.fileExtension.toLowerCase());
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: CRMColors.surfaceElevatedOf(dialogContext),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.dialog)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800, maxHeight: 750),
+            child: Padding(
+              padding: const EdgeInsets.all(CRMSpacing.l),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      FileIconHelper.getIconForExtension(doc.fileExtension, size: 28),
+                      const SizedBox(width: CRMSpacing.s),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              doc.documentType,
+                              style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(dialogContext)),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (doc.agentName.isNotEmpty)
+                              Text(
+                                doc.agentName,
+                                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(dialogContext)),
+                              ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(dialogContext),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: CRMSpacing.m),
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: CRMColors.backgroundOf(dialogContext),
+                        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                        border: Border.all(color: CRMColors.borderOf(dialogContext).withValues(alpha: 0.5)),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: isImageOrPdf
+                          ? Image.network(
+                              previewUrl,
+                              fit: BoxFit.contain,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Center(
+                                  child: CircularProgressIndicator(
+                                    color: CRMColors.primaryOf(dialogContext),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.description_outlined, size: 64, color: CRMColors.textMutedOf(dialogContext)),
+                                      const SizedBox(height: CRMSpacing.s),
+                                      Text(
+                                        'Document Preview (${doc.fileExtension.toUpperCase()})',
+                                        style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(dialogContext)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            )
+                          : Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.insert_drive_file_outlined, size: 64, color: CRMColors.textMutedOf(dialogContext)),
+                                  const SizedBox(height: CRMSpacing.s),
+                                  Text(
+                                    '${doc.documentName} (${doc.fileExtension.toUpperCase()})',
+                                    style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(dialogContext)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: CRMSpacing.m),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      CRMButton(
+                        label: 'Close',
+                        variant: CRMButtonVariant.outline,
+                        onPressed: () => Navigator.pop(dialogContext),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(BuildContext context, String label, String value, {List<String>? badgeItems}) {
+    if (badgeItems != null && badgeItems.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 140, child: Text(label, style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)))),
+            Expanded(
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: badgeItems.map((item) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: CRMColors.primaryOf(context).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: CRMColors.primaryOf(context).withValues(alpha: 0.25)),
+                    ),
+                    child: Text(
+                      item,
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.primaryOf(context),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -572,13 +766,41 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     }
   }
 
+  Future<void> _selectDobDate(BuildContext context, TextEditingController controller, StateSetter setModalState) async {
+    DateTime initial = DateTime(2000, 1, 1);
+    if (controller.text.trim().isNotEmpty) {
+      final formatted = _formatDob(controller.text.trim());
+      final parts = formatted.split('/');
+      if (parts.length == 3) {
+        final d = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        final y = int.tryParse(parts[2]);
+        if (d != null && m != null && y != null && y > 1900 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+          initial = DateTime(y, m, d);
+        }
+      }
+    }
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1930),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      final formatted = DateFormat('dd/MM/yyyy').format(picked);
+      setModalState(() {
+        controller.text = formatted;
+      });
+    }
+  }
+
   void _showUploadEditDialog([ServiceAgentDocument? existingDoc]) {
     final isEditing = existingDoc != null;
     final formKey = GlobalKey<FormState>();
     final agentController = TextEditingController(text: existingDoc?.agentName);
     final mobileController = TextEditingController(text: existingDoc?.mobileNumber);
     final descController = TextEditingController(text: existingDoc?.description);
-    final dobController = TextEditingController(text: existingDoc?.dateOfBirth ?? '');
+    final dobController = TextEditingController(text: _formatDob(existingDoc?.dateOfBirth));
 
     String localServiceType = existingDoc?.serviceType ?? 'Electrician';
     String localDocType = existingDoc?.documentType ?? 'Aadhaar Card';
@@ -632,8 +854,15 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                   ),
                   const SizedBox(height: CRMSpacing.m),
                   CRMTextField(
-                    controller: dobController, labelText: 'Date of Birth', hintText: 'DD/MM/YYYY',
-                    keyboardType: TextInputType.datetime,
+                    controller: dobController,
+                    labelText: 'Date of Birth',
+                    hintText: 'DD/MM/YYYY',
+                    readOnly: true,
+                    onTap: () => _selectDobDate(context, dobController, setModalState),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.calendar_month_rounded, size: 20),
+                      onPressed: () => _selectDobDate(context, dobController, setModalState),
+                    ),
                   ),
                   const SizedBox(height: CRMSpacing.m),
                   Row(children: [
@@ -1345,19 +1574,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                     ),
                     icon: const Icon(Icons.visibility_outlined, size: 14),
                     label: const Text('View Document', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    onPressed: () async {
-                      final url = doc.fileUrl;
-                      if (url != null && url.isNotEmpty) {
-                        final uri = Uri.parse(url);
-                        if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        }
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('No document URL available.'), backgroundColor: CRMColors.danger),
-                        );
-                      }
-                    },
+                    onPressed: () => _showInScreenDocumentViewer(context, doc),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1467,7 +1684,6 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
               const PopupMenuItem(value: 'view', child: Row(children: [Icon(Icons.visibility_outlined, size: 18), SizedBox(width: 8), Text('View')])),
               const PopupMenuItem(value: 'download', child: Row(children: [Icon(Icons.download_rounded, size: 18), SizedBox(width: 8), Text('Download')])),
               const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('Edit')])),
-              const PopupMenuItem(value: 'share', child: Row(children: [Icon(Icons.share_outlined, size: 18), SizedBox(width: 8), Text('Share')])),
               const PopupMenuDivider(),
               const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18), SizedBox(width: 8), Text('Delete', style: TextStyle(color: CRMColors.danger))])),
             ],
@@ -1679,12 +1895,10 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                                             columns: [
                                               DataColumn(label: Text('Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
                                               DataColumn(label: Text('Agent Name', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
-                                              DataColumn(label: Text('DOB', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
                                               DataColumn(label: Text('Role', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
                                               DataColumn(label: Text('Mobile Number', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
                                               DataColumn(label: Text('Identity', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
                                               DataColumn(label: Text('Area', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
-                                              DataColumn(label: Text('Upload Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
                                               DataColumn(label: Text('Uploaded By', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
                                               DataColumn(label: Text('Actions', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
                                             ],
@@ -1731,7 +1945,6 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                                                     ),
                                                   ),
                                                 ),
-                                                DataCell(Text(doc.dateOfBirth ?? '-', style: TextStyle(color: CRMColors.textOf(context), fontSize: 12))),
                                                 DataCell(Text(doc.serviceType, style: TextStyle(color: CRMColors.textOf(context)))),
                                                 DataCell(Text(doc.mobileNumber, style: TextStyle(color: CRMColors.textOf(context)))),
                                                 DataCell(
@@ -1743,22 +1956,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                                                          color: Colors.transparent,
                                                          child: InkWell(
                                                            borderRadius: BorderRadius.circular(8),
-                                                           onTap: () async {
-                                                             final url = doc.fileUrl;
-                                                             if (url != null && url.isNotEmpty) {
-                                                               final uri = Uri.parse(url);
-                                                               if (await canLaunchUrl(uri)) {
-                                                                 await launchUrl(uri, mode: LaunchMode.externalApplication);
-                                                               }
-                                                             } else {
-                                                               ScaffoldMessenger.of(context).showSnackBar(
-                                                                 const SnackBar(
-                                                                   content: Text('No document URL available.'),
-                                                                   backgroundColor: CRMColors.danger,
-                                                                 ),
-                                                               );
-                                                             }
-                                                           },
+                                                           onTap: () => _showInScreenDocumentViewer(context, doc),
                                                            child: Container(
                                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                                              decoration: BoxDecoration(
@@ -1798,7 +1996,6 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                                                    ),
                                                 ),
                                                 _buildAreaTableCell(context, doc.area),
-                                                DataCell(Text(DateFormat('dd MMM yyyy').format(doc.uploadDate), style: TextStyle(color: CRMColors.textOf(context)))),
                                                 DataCell(Text(displayUser, style: TextStyle(color: CRMColors.textOf(context)))),
                                                 DataCell(
                                                   PopupMenuButton<String>(
@@ -1814,7 +2011,6 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                                                     itemBuilder: (context) => [
                                                       const PopupMenuItem(value: 'view', child: Row(children: [Icon(Icons.visibility_outlined, size: 18), SizedBox(width: 8), Text('View')])),
                                                       const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('Edit')])),
-                                                      const PopupMenuItem(value: 'share', child: Row(children: [Icon(Icons.share_outlined, size: 18), SizedBox(width: 8), Text('Share')])),
                                                       const PopupMenuDivider(),
                                                       const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18), SizedBox(width: 8), Text('Delete', style: TextStyle(color: CRMColors.danger))])),
                                                     ],
