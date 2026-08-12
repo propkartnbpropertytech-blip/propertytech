@@ -43,6 +43,12 @@ class ApiConstants {
   static const logout = "/auth/logout";
   static const health = "/health";
 
+  /// Public web URL used in password-recovery emails (must be allow-listed in Supabase Auth).
+  static const passwordResetRedirectTo = 'https://propkart.nbpropertytech.com/reset-password';
+
+  /// Mobile deep-link scheme for recovery redirects into the native app.
+  static const passwordResetDeepLink = 'io.nbpropertytech.propkart://reset-password';
+
   static void assertConfig() {
     if (kDebugMode && !hasSupabaseConfig) {
       debugPrint('ApiConstants: Supabase URL/anon key missing — realtime disabled.');

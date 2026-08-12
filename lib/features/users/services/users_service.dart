@@ -171,6 +171,18 @@ class UsersService {
 
         if (response != null && response['success'] == true) {
           final userId = response['user']['id'];
+
+          // Sync profile_photo only — password_hash is already set by admin_create_user
+          if (userData['profile_photo'] != null) {
+            try {
+              await _supabase.from('users').update({
+                'profile_photo': userData['profile_photo'],
+              }).eq('id', userId);
+            } catch (e) {
+              debugPrint("Syncing user metadata to public.users table notice: $e");
+            }
+          }
+
           final joinedUser = await _supabase
               .from('users')
               .select('*, roles(id, name, description)')
@@ -221,7 +233,7 @@ class UsersService {
           ..remove('role')
           ..remove('roles');
 
-        // If password is provided, update it via RPC in auth.users
+        // If password is provided, update public.users + auth.users via RPC
         if (cleanData.containsKey('password') && cleanData['password'] != null && cleanData['password'].toString().isNotEmpty) {
           final newPassword = cleanData['password'].toString();
           await _supabase.rpc(
@@ -233,6 +245,7 @@ class UsersService {
           );
         }
         cleanData.remove('password');
+        cleanData.remove('password_hash');
 
         final response = await _supabase
             .from('users')
@@ -335,6 +348,43 @@ class UsersService {
               .delete()
               .or('user_id.eq.$id,requested_by.eq.$id');
         } catch (_) {}
+
+        // Nullify foreign key references to allow hard delete (without deleting listed properties)
+        try {
+          await _supabase.from('properties').update({'created_by': null}).eq('created_by', id);
+        } catch (e) {
+          debugPrint("Nullify properties.created_by error: $e");
+        }
+        try {
+          await _supabase.from('requirements').update({'created_by': null}).eq('created_by', id);
+        } catch (e) {
+          debugPrint("Nullify requirements.created_by error: $e");
+        }
+        try {
+          await _supabase.from('requirements').update({'admin_id': null}).eq('admin_id', id);
+        } catch (e) {
+          debugPrint("Nullify requirements.admin_id error: $e");
+        }
+        try {
+          await _supabase.from('site_visits').update({'scheduled_by': null}).eq('scheduled_by', id);
+        } catch (e) {
+          debugPrint("Nullify site_visits.scheduled_by error: $e");
+        }
+        try {
+          await _supabase.from('tasks').update({'created_by': null}).eq('created_by', id);
+        } catch (e) {
+          debugPrint("Nullify tasks.created_by error: $e");
+        }
+        try {
+          await _supabase.from('tasks').update({'assigned_to': null}).eq('assigned_to', id);
+        } catch (e) {
+          debugPrint("Nullify tasks.assigned_to error: $e");
+        }
+        try {
+          await _supabase.from('share_sessions').update({'shared_by': null}).eq('shared_by', id);
+        } catch (e) {
+          debugPrint("Nullify share_sessions.shared_by error: $e");
+        }
 
         // 3. Execute RPC to delete user from Supabase Auth & DB
         for (final paramKey in ['p_user_id', 'p_id', 'p_target_user_id', 'user_id', 'id']) {

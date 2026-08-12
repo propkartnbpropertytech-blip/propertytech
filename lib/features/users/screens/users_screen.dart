@@ -737,15 +737,6 @@ class _UsersScreenState extends State<UsersScreen> {
               _buildStatisticsRow(),
               const SizedBox(height: CRMSpacing.l),
 
-              // Reset Requests Section (if any requests exist)
-              _buildPasswordResetsSection(),
-              if (_passwordResets.isNotEmpty)
-                const SizedBox(height: CRMSpacing.l),
-
-              // 3. Search and Filters Card
-              _buildSearchAndFiltersCard(),
-              const SizedBox(height: CRMSpacing.l),
-
               // TabBar for Admin & Super Admin
               if (authState is Authenticated &&
                   (authState.user.role == 'Super Admin' || authState.user.role == 'Admin')) ...[
@@ -1246,13 +1237,18 @@ class _UsersScreenState extends State<UsersScreen> {
                             ? CRMColors.info.withOpacity(0.1)
                             : CRMColors.primary.withOpacity(0.1),
                         radius: 16,
-                        child: Icon(
-                          isAdmin
-                              ? Icons.admin_panel_settings_rounded
-                              : Icons.person_rounded,
-                          color: isAdmin ? CRMColors.info : CRMColors.primary,
-                          size: 16,
-                        ),
+                        backgroundImage: (user.profilePhoto != null && user.profilePhoto!.isNotEmpty)
+                            ? NetworkImage(user.profilePhoto!)
+                            : null,
+                        child: (user.profilePhoto != null && user.profilePhoto!.isNotEmpty)
+                            ? null
+                            : Icon(
+                                isAdmin
+                                    ? Icons.admin_panel_settings_rounded
+                                    : Icons.person_rounded,
+                                color: isAdmin ? CRMColors.info : CRMColors.primary,
+                                size: 16,
+                              ),
                       ),
                       const SizedBox(width: CRMSpacing.s),
                       Text(
@@ -1391,13 +1387,18 @@ class _UsersScreenState extends State<UsersScreen> {
                     ? CRMColors.info.withOpacity(0.1)
                     : CRMColors.primary.withOpacity(0.1),
                 radius: 18,
-                child: Icon(
-                  isAdmin
-                      ? Icons.admin_panel_settings_rounded
-                      : Icons.person_rounded,
-                  color: isAdmin ? CRMColors.info : CRMColors.primary,
-                  size: 18,
-                ),
+                backgroundImage: (user.profilePhoto != null && user.profilePhoto!.isNotEmpty)
+                    ? NetworkImage(user.profilePhoto!)
+                    : null,
+                child: (user.profilePhoto != null && user.profilePhoto!.isNotEmpty)
+                    ? null
+                    : Icon(
+                        isAdmin
+                            ? Icons.admin_panel_settings_rounded
+                            : Icons.person_rounded,
+                        color: isAdmin ? CRMColors.info : CRMColors.primary,
+                        size: 18,
+                      ),
               ),
               const SizedBox(width: CRMSpacing.s),
               Expanded(
@@ -1777,7 +1778,11 @@ class _UsersScreenState extends State<UsersScreen> {
                                               passwordController.text;
                                           await DioClient.dio.post(
                                             '/users/password-resets/${request['id']}/resolve',
-                                            data: {'newPassword': newPassword},
+                                            data: {
+                                              'newPassword': newPassword,
+                                              'userId': request['userId'],
+                                              'email': request['userEmail'],
+                                            },
                                           );
 
                                           Navigator.pop(dialogContext);
@@ -2268,11 +2273,16 @@ class _UsersScreenState extends State<UsersScreen> {
                                   backgroundColor:
                                       CRMColors.primary.withOpacity(0.1),
                                   radius: 20,
-                                  child: Icon(
-                                    Icons.person_rounded,
-                                    color: CRMColors.primary,
-                                    size: 20,
-                                  ),
+                                  backgroundImage: (salesman.profilePhoto != null && salesman.profilePhoto!.isNotEmpty)
+                                      ? NetworkImage(salesman.profilePhoto!)
+                                      : null,
+                                  child: (salesman.profilePhoto != null && salesman.profilePhoto!.isNotEmpty)
+                                      ? null
+                                      : Icon(
+                                          Icons.person_rounded,
+                                          color: CRMColors.primary,
+                                          size: 20,
+                                        ),
                                 ),
                                 const SizedBox(width: CRMSpacing.m),
                                 Column(
@@ -3052,6 +3062,8 @@ class _UsersScreenState extends State<UsersScreen> {
     });
 
     try {
+      final String fileExt = pickedFile.name.split('.').last.toLowerCase();
+      final bool isPng = fileExt == 'png';
       MultipartFile multipartFile;
 
       if (kIsWeb) {
@@ -3062,7 +3074,7 @@ class _UsersScreenState extends State<UsersScreen> {
         multipartFile = MultipartFile.fromBytes(
           bytes,
           filename: pickedFile.name,
-          contentType: MediaType('image', 'jpeg'),
+          contentType: MediaType('image', isPng ? 'png' : 'jpeg'),
         );
       } else {
         final File file = File(pickedFile.path);
@@ -3073,13 +3085,14 @@ class _UsersScreenState extends State<UsersScreen> {
         // Deterministic compression pipeline
         if (sizeInBytes > 0) {
           final String targetPath =
-              "${Directory.systemTemp.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg";
+              "${Directory.systemTemp.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
 
           // Step 1: Compress with 80% quality and resize max 800x800 px
           XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
             file.absolute.path,
             targetPath,
             quality: 80,
+            format: isPng ? CompressFormat.png : CompressFormat.jpeg,
             minWidth: 800,
             minHeight: 800,
           );
@@ -3091,12 +3104,13 @@ class _UsersScreenState extends State<UsersScreen> {
             // Step 2: If size exceeds 500 KB limit, re-compress with 70% quality
             if (compressedSize > 500 * 1024) {
               final String secondPath =
-                  "${Directory.systemTemp.path}/compressed_70_${DateTime.now().millisecondsSinceEpoch}.jpg";
+                  "${Directory.systemTemp.path}/compressed_70_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
               final XFile? secondCompressed =
                   await FlutterImageCompress.compressAndGetFile(
                     file.absolute.path,
                     secondPath,
                     quality: 70,
+                    format: isPng ? CompressFormat.png : CompressFormat.jpeg,
                     minWidth: 800,
                     minHeight: 800,
                   );
@@ -3117,8 +3131,8 @@ class _UsersScreenState extends State<UsersScreen> {
 
         multipartFile = await MultipartFile.fromFile(
           uploadFile.path,
-          filename: 'profile_photo.jpg',
-          contentType: MediaType('image', 'jpeg'),
+          filename: isPng ? 'profile_photo.png' : 'profile_photo.jpg',
+          contentType: MediaType('image', isPng ? 'png' : 'jpeg'),
         );
       }
 

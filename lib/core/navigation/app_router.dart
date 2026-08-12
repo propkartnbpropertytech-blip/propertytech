@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../features/auth/bloc/auth_bloc.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/auth/reset_password_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/properties/screens/properties_screen.dart';
 import '../../features/properties/screens/property_detail_screen.dart';
@@ -91,6 +92,16 @@ class AppRouter {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/reset-password',
+        builder: (context, state) => ResetPasswordScreen(
+          errorCode: state.uri.queryParameters['error_code'] ?? state.uri.queryParameters['error'],
+          errorDescription: state.uri.queryParameters['error_description'],
+          tokenHash: state.uri.queryParameters['token_hash'],
+          type: state.uri.queryParameters['type'],
+          code: state.uri.queryParameters['code'],
+        ),
       ),
       ShellRoute(
         builder: (context, state, child) => CRMAppShell(child: child),
@@ -258,6 +269,37 @@ class AppRouter {
         },
       ),
     ],
+    errorBuilder: (context, state) {
+      final uri = state.uri;
+      final path = uri.path;
+      // Production builds / deep links sometimes surface recovery URLs via errorBuilder.
+      if (path == '/reset-password' || path.startsWith('/reset-password')) {
+        return ResetPasswordScreen(
+          errorCode: uri.queryParameters['error_code'] ?? uri.queryParameters['error'],
+          errorDescription: uri.queryParameters['error_description'],
+          tokenHash: uri.queryParameters['token_hash'],
+          type: uri.queryParameters['type'],
+          code: uri.queryParameters['code'],
+        );
+      }
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Page Not Found', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                Text(state.error?.toString() ?? 'No routes for location: ${state.uri}', textAlign: TextAlign.center),
+                const SizedBox(height: 20),
+                TextButton(onPressed: () => context.go('/login'), child: const Text('Home')),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
     redirect: (context, state) async {
       _applySecureRouteSeo(state.matchedLocation);
       final authState = authBloc.state;
@@ -269,7 +311,8 @@ class AppRouter {
       final onAudit = state.matchedLocation.startsWith('/settings/audit-logs');
       final onTerms = state.matchedLocation == '/terms-and-conditions' || state.matchedLocation == '/terms_and_conditions' || state.uri.path == '/terms-and-conditions' || state.uri.path == '/terms_and_conditions';
       final onPrivacy = state.matchedLocation == '/privacy-policy' || state.matchedLocation == '/privacy_policy' || state.uri.path == '/privacy-policy' || state.uri.path == '/privacy_policy';
-      final isAuthGate = loggingIn || onSplash || onGetStarted || isPublicShare || onTerms || onPrivacy;
+      final onResetPassword = state.matchedLocation == '/reset-password' || state.uri.path == '/reset-password';
+      final isAuthGate = loggingIn || onSplash || onGetStarted || isPublicShare || onTerms || onPrivacy || onResetPassword;
 
       if (authState is Authenticated) {
         // Check 9-hour inactivity timeout

@@ -945,7 +945,6 @@ class SupabaseDirectInterceptor extends Interceptor {
             : payload['admin_id'];
 
         final String email = (payload['email'] ?? '').toString().trim();
-        final String newId = payload['id']?.toString() ?? _generateUuidV4();
 
         // 1. Purge any stale existing row in public.users for this email address
         final existing = await _supabase
@@ -976,65 +975,48 @@ class SupabaseDirectInterceptor extends Interceptor {
           }
         }
 
-        // 2. Insert new user profile directly into public.users table in Table Editor
-        final insertPayload = <String, dynamic>{
-          'id': newId,
-          'email': email,
-          'full_name': payload['full_name'] ?? payload['fullName'] ?? '',
-          'role_id': payload['role_id'] ?? payload['roleId'],
-          'organization_id': payload['organization_id'] ?? payload['organizationId'],
-          'admin_id': adminId,
-          'mobile': payload['mobile'] ?? payload['phone'],
-          'profile_photo': payload['profile_photo'] ?? payload['profilePhoto'],
-          'password_hash': payload['password'],
-          'is_active': true,
-          'created_at': DateTime.now().toIso8601String(),
-          'updated_at': DateTime.now().toIso8601String(),
-        };
+        // 2. Create via RPC so auth.users and public.users share the same id + password hash
+        final rpcResult = await _supabase.rpc(
+          'admin_create_user',
+          params: {
+            'p_email': email,
+            'p_password': payload['password'],
+            'p_full_name': payload['full_name'] ?? payload['fullName'] ?? '',
+            'p_role_id': payload['role_id'] ?? payload['roleId'],
+            'p_organization_id': payload['organization_id'] ?? payload['organizationId'],
+            'p_admin_id': adminId,
+            'p_mobile': payload['mobile'] ?? payload['phone'],
+          },
+        );
 
-        Map<String, dynamic>? createdUser;
-        try {
-          createdUser = await _supabase
-              .from('users')
-              .insert(insertPayload)
-              .select('*, roles(id, name, description)')
-              .single();
-        } catch (e) {
-          debugPrint("Direct insert into public.users notice: $e");
-          try {
-            await _supabase.from('users').upsert(insertPayload);
-            createdUser = await _supabase
-                .from('users')
-                .select('*, roles(id, name, description)')
-                .eq('id', newId)
-                .maybeSingle();
-          } catch (upsertErr) {
-            debugPrint("Direct upsert into public.users notice: $upsertErr");
-          }
+        if (rpcResult is! Map || rpcResult['success'] != true) {
+          throw Exception(rpcResult is Map ? (rpcResult['message'] ?? 'Failed to create user') : 'Failed to create user');
         }
 
-        // Best-effort optional sync to auth.users (ignore all errors so user creation never blocks)
-        try {
-          await _supabase.rpc(
-            'admin_create_user',
-            params: {
-              'p_email': email,
-              'p_password': payload['password'],
-              'p_full_name': payload['full_name'] ?? '',
-              'p_role_id': payload['role_id'],
-              'p_organization_id': payload['organization_id'],
-              'p_admin_id': adminId,
-              'p_mobile': payload['mobile'],
-            },
-          );
-        } catch (_) {}
+        final createdId = rpcResult['user']?['id']?.toString();
+        if (createdId == null || createdId.isEmpty) {
+          throw Exception('User created but no id returned');
+        }
+
+        final photo = payload['profile_photo'] ?? payload['profilePhoto'];
+        if (photo != null && photo.toString().isNotEmpty) {
+          try {
+            await _supabase.from('users').update({'profile_photo': photo}).eq('id', createdId);
+          } catch (_) {}
+        }
+
+        final createdUser = await _supabase
+            .from('users')
+            .select('*, roles(id, name, description)')
+            .eq('id', createdId)
+            .maybeSingle();
 
         return handler.resolve(Response(
           requestOptions: options,
           data: {
             'success': true,
             'message': 'User created successfully.',
-            'data': {'user': createdUser ?? insertPayload}
+            'data': {'user': createdUser ?? rpcResult['user']}
           },
           statusCode: 200,
         ));
@@ -1068,6 +1050,43 @@ class SupabaseDirectInterceptor extends Interceptor {
               .delete()
               .or('user_id.eq.$id,requested_by.eq.$id');
         } catch (_) {}
+
+        // Nullify foreign key references to allow hard delete (without deleting listed properties)
+        try {
+          await _supabase.from('properties').update({'created_by': null}).eq('created_by', id);
+        } catch (e) {
+          debugPrint("Nullify properties.created_by error: $e");
+        }
+        try {
+          await _supabase.from('requirements').update({'created_by': null}).eq('created_by', id);
+        } catch (e) {
+          debugPrint("Nullify requirements.created_by error: $e");
+        }
+        try {
+          await _supabase.from('requirements').update({'admin_id': null}).eq('admin_id', id);
+        } catch (e) {
+          debugPrint("Nullify requirements.admin_id error: $e");
+        }
+        try {
+          await _supabase.from('site_visits').update({'scheduled_by': null}).eq('scheduled_by', id);
+        } catch (e) {
+          debugPrint("Nullify site_visits.scheduled_by error: $e");
+        }
+        try {
+          await _supabase.from('tasks').update({'created_by': null}).eq('created_by', id);
+        } catch (e) {
+          debugPrint("Nullify tasks.created_by error: $e");
+        }
+        try {
+          await _supabase.from('tasks').update({'assigned_to': null}).eq('assigned_to', id);
+        } catch (e) {
+          debugPrint("Nullify tasks.assigned_to error: $e");
+        }
+        try {
+          await _supabase.from('share_sessions').update({'shared_by': null}).eq('shared_by', id);
+        } catch (e) {
+          debugPrint("Nullify share_sessions.shared_by error: $e");
+        }
 
         // 3. Try calling RPC to delete user from Supabase Auth & DB
         for (final paramKey in ['p_user_id', 'p_id', 'p_target_user_id', 'user_id', 'id']) {
@@ -1145,8 +1164,23 @@ class SupabaseDirectInterceptor extends Interceptor {
               'p_new_password': newPassword,
             },
           );
+          // admin_update_password already writes public.users + auth.users — do not
+          // re-set password_hash here (would re-salt and desync the two tables).
+
+          // Mark any pending password reset requests for this user as resolved
+          try {
+            await _supabase
+                .from('password_reset_requests')
+                .update({
+                  'status': 'resolved',
+                  'resolved_at': DateTime.now().toIso8601String(),
+                })
+                .eq('user_id', id)
+                .eq('status', 'pending');
+          } catch (_) {}
         }
         payload.remove('password');
+        payload.remove('password_hash');
         payload.remove('id');
         payload.remove('email');
         payload.remove('role');
@@ -1300,85 +1334,33 @@ class SupabaseDirectInterceptor extends Interceptor {
         }
 
         try {
-          // 1. Check if user exists in database (best-effort)
-          Map<String, dynamic>? userRecord;
-          try {
-            userRecord = await _supabase
-                .from('users')
-                .select('id, full_name, email, roles(name)')
-                .eq('email', email)
-                .limit(1)
-                .maybeSingle();
-          } catch (_) {}
+          // Call request_password_reset RPC (this handles verifying the email and inserting the request securely bypassing RLS)
+          final bool success = await _supabase.rpc(
+            'request_password_reset',
+            params: {'p_email': email},
+          );
 
-          final String userName = userRecord != null && userRecord['full_name'] != null && userRecord['full_name'].toString().isNotEmpty
-              ? userRecord['full_name'].toString()
-              : email;
-          final String userRole = userRecord != null && userRecord['roles'] != null && userRecord['roles']['name'] != null
-              ? userRecord['roles']['name'].toString()
-              : 'Sales';
+          if (!success) {
+            return handler.reject(DioException(
+              requestOptions: options,
+              type: DioExceptionType.badResponse,
+              response: Response(
+                requestOptions: options,
+                statusCode: 404,
+                data: {'success': false, 'message': 'This email address is not registered in our system.'},
+              ),
+            ));
+          }
 
-          // 2. Try sending password reset email via Supabase Auth (catch SMTP unconfigured error gracefully)
+          // Prefer a stable production URL so email clients open the web reset page.
+          // (Must be listed under Supabase Auth → Redirect URLs.)
           try {
-            await _supabase.auth.resetPasswordForEmail(email);
+            await _supabase.auth.resetPasswordForEmail(
+              email,
+              redirectTo: ApiConstants.passwordResetRedirectTo,
+            );
           } catch (e) {
             debugPrint("Supabase resetPasswordForEmail notice: $e");
-          }
-
-          // 3. Insert into password_reset_requests or audit_logs for admin notification
-          try {
-            final insertMap = <String, dynamic>{
-              'status': 'pending',
-            };
-            if (userRecord != null && userRecord['id'] != null) {
-              insertMap['user_id'] = userRecord['id'];
-              insertMap['requested_by'] = userRecord['id'];
-            }
-            if (userRecord != null && userRecord['admin_id'] != null) {
-              insertMap['requested_to'] = userRecord['admin_id'];
-            }
-
-            await _supabase.from('password_reset_requests').insert(insertMap);
-          } catch (e) {
-            debugPrint("password_reset_requests insert notice: $e");
-            try {
-              await _supabase.from('audit_logs').insert({
-                'action': 'password_reset_request',
-                'module': 'auth',
-                'description': jsonEncode({
-                  'userId': userRecord != null ? userRecord['id'] : null,
-                  'email': email,
-                  'userName': userName,
-                  'userRole': userRole,
-                  'status': 'pending',
-                }),
-                'created_at': DateTime.now().toIso8601String(),
-              });
-            } catch (_) {}
-          }
-
-          // 4. Create Notifications for Admin and Super Admin users
-          try {
-            final adminUsers = await _supabase
-                .from('users')
-                .select('id, roles(name)')
-                .or('roles.name.eq.Admin,roles.name.eq.Super Admin');
-
-            for (final admin in adminUsers) {
-              final adminId = admin['id'];
-              if (adminId != null) {
-                await _supabase.from('notifications').insert({
-                  'user_id': adminId,
-                  'title': 'Password Reset Request',
-                  'message': '$userName ($userRole) has requested a password reset.',
-                  'type': 'password_reset',
-                  'is_read': false,
-                  'created_at': DateTime.now().toIso8601String(),
-                });
-              }
-            }
-          } catch (e) {
-            debugPrint("Admin notification insert notice: $e");
           }
 
           return handler.resolve(Response(
@@ -1393,15 +1375,11 @@ class SupabaseDirectInterceptor extends Interceptor {
           final errorMsg = e.toString().replaceAll('Exception: ', '');
           return handler.reject(DioException(
             requestOptions: options,
-            error: e,
             type: DioExceptionType.badResponse,
             response: Response(
               requestOptions: options,
-              statusCode: 400,
-              data: {
-                'success': false,
-                'message': errorMsg.isNotEmpty ? errorMsg : 'Failed to send password reset request.',
-              },
+              statusCode: 500,
+              data: {'success': false, 'message': errorMsg},
             ),
           ));
         }
@@ -1415,30 +1393,34 @@ class SupabaseDirectInterceptor extends Interceptor {
         final requestId = pathSegments.length > 3 ? pathSegments[3] : '';
 
         if (newPassword.isNotEmpty && requestId.isNotEmpty) {
-          String targetUserId = requestId;
+          String? targetUserId;
+          String? targetEmail;
 
-          // 1. Try finding target user ID from password_reset_requests table
+          // Prefer explicit userId from request body when the UI provides it
+          if (payload['userId'] != null && payload['userId'].toString().isNotEmpty) {
+            targetUserId = payload['userId'].toString();
+          }
+          if (payload['email'] != null && payload['email'].toString().isNotEmpty) {
+            targetEmail = payload['email'].toString();
+          }
+
+          // 1. Resolve target user from password_reset_requests (no email column on this table)
           try {
             final reqRow = await _supabase
                 .from('password_reset_requests')
-                .select('user_id, email')
+                .select('user_id, requested_by')
                 .eq('id', requestId)
                 .maybeSingle();
 
-            if (reqRow != null && reqRow['user_id'] != null) {
-              targetUserId = reqRow['user_id'].toString();
-            } else if (reqRow != null && reqRow['email'] != null) {
-              final userRow = await _supabase
-                  .from('users')
-                  .select('id')
-                  .eq('email', reqRow['email'])
-                  .maybeSingle();
-              if (userRow != null) targetUserId = userRow['id'].toString();
+            if (reqRow != null) {
+              targetUserId ??= (reqRow['user_id'] ?? reqRow['requested_by'])?.toString();
             }
-          } catch (_) {}
+          } catch (e) {
+            debugPrint("password_reset_requests lookup notice: $e");
+          }
 
-          // Fallback: check audit_logs
-          if (targetUserId == requestId) {
+          // Fallback: audit_logs legacy payload
+          if (targetUserId == null || targetUserId == requestId) {
             try {
               final logRow = await _supabase.from('audit_logs').select('*').eq('id', requestId).maybeSingle();
               if (logRow != null && logRow['description'] != null) {
@@ -1448,43 +1430,61 @@ class SupabaseDirectInterceptor extends Interceptor {
                   if (data['userId'] != null) {
                     targetUserId = data['userId'].toString();
                   }
+                  targetEmail ??= data['email']?.toString();
                 }
               }
             } catch (_) {}
           }
 
-          // 2. Execute admin_update_password RPC in Supabase Auth
-          try {
-            await _supabase.rpc(
-              'admin_update_password',
-              params: {
-                'p_user_id': targetUserId,
-                'p_new_password': newPassword,
-              },
-            );
-          } catch (e) {
-            debugPrint("admin_update_password RPC notice: $e");
+          // Resolve email → public.users.id when needed
+          if ((targetUserId == null || targetUserId.isEmpty) && targetEmail != null) {
+            try {
+              final userRow = await _supabase
+                  .from('users')
+                  .select('id')
+                  .ilike('email', targetEmail)
+                  .isFilter('deleted_at', null)
+                  .maybeSingle();
+              if (userRow != null) targetUserId = userRow['id'].toString();
+            } catch (_) {}
           }
 
-          // 3. Direct update users table password timestamp
-          try {
-            await _supabase.from('users').update({
-              'updated_at': DateTime.now().toIso8601String(),
-            }).eq('id', targetUserId);
-          } catch (_) {}
+          if (targetUserId == null || targetUserId.isEmpty || targetUserId == requestId) {
+            throw Exception(
+              'Could not resolve the user for this password reset request. Refresh and try again.',
+            );
+          }
 
-          // 4. Mark password_reset_requests as resolved
+          // 2. Update public.users (source of truth) + sync auth.users
+          await _supabase.rpc(
+            'admin_update_password',
+            params: {
+              'p_user_id': targetUserId,
+              'p_new_password': newPassword,
+            },
+          );
+
+          // 3. Mark password_reset_requests as resolved
           try {
             await _supabase
                 .from('password_reset_requests')
                 .update({
                   'status': 'resolved',
-                  'updated_at': DateTime.now().toIso8601String(),
+                  'resolved_at': DateTime.now().toIso8601String(),
                 })
                 .eq('id', requestId);
+
+            await _supabase
+                .from('password_reset_requests')
+                .update({
+                  'status': 'resolved',
+                  'resolved_at': DateTime.now().toIso8601String(),
+                })
+                .eq('user_id', targetUserId)
+                .eq('status', 'pending');
           } catch (_) {}
 
-          // 5. Update audit_logs fallback
+          // 4. Update audit_logs fallback
           try {
             final logRow = await _supabase.from('audit_logs').select('*').eq('id', requestId).maybeSingle();
             if (logRow != null && logRow['description'] != null) {

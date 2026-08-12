@@ -168,6 +168,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
 
     try {
+      final String fileExt = pickedFile.name.split('.').last.toLowerCase();
+      final bool isPng = fileExt == 'png';
       MultipartFile multipartFile;
 
       if (kIsWeb) {
@@ -178,7 +180,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         multipartFile = MultipartFile.fromBytes(
           bytes,
           filename: pickedFile.name,
-          contentType: MediaType('image', 'jpeg'),
+          contentType: MediaType('image', isPng ? 'png' : 'jpeg'),
         );
       } else {
         final File file = File(pickedFile.path);
@@ -187,12 +189,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         if (sizeInBytes > 0) {
           final String targetPath =
-              "${Directory.systemTemp.path}/profile_${DateTime.now().millisecondsSinceEpoch}.jpg";
+              "${Directory.systemTemp.path}/profile_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
 
           XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
             file.absolute.path,
             targetPath,
             quality: 80,
+            format: isPng ? CompressFormat.png : CompressFormat.jpeg,
             minWidth: 800,
             minHeight: 800,
           );
@@ -203,11 +206,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             if (compressedSize > 500 * 1024) {
               final String secondPath =
-                  "${Directory.systemTemp.path}/profile_70_${DateTime.now().millisecondsSinceEpoch}.jpg";
+                  "${Directory.systemTemp.path}/profile_70_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
               final XFile? secondCompressed = await FlutterImageCompress.compressAndGetFile(
                 file.absolute.path,
                 secondPath,
                 quality: 70,
+                format: isPng ? CompressFormat.png : CompressFormat.jpeg,
                 minWidth: 800,
                 minHeight: 800,
               );
@@ -220,8 +224,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         multipartFile = await MultipartFile.fromFile(
           uploadFile.path,
-          filename: 'profile_photo.jpg',
-          contentType: MediaType('image', 'jpeg'),
+          filename: isPng ? 'profile_photo.png' : 'profile_photo.jpg',
+          contentType: MediaType('image', isPng ? 'png' : 'jpeg'),
         );
       }
 

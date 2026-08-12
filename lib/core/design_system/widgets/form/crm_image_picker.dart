@@ -83,6 +83,9 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
     });
 
     try {
+      final String fileExt = pickedFile.name.split('.').last.toLowerCase();
+      final bool isPng = fileExt == 'png';
+      final String mimeType = isPng ? 'image/png' : 'image/jpeg';
       List<int> uploadBytes;
       String filename = pickedFile.name;
 
@@ -93,12 +96,13 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
         }
       } else {
         final File file = File(pickedFile.path);
-        final String targetPath = "${Directory.systemTemp.path}/compressed_img_${DateTime.now().millisecondsSinceEpoch}.jpg";
+        final String targetPath = "${Directory.systemTemp.path}/compressed_img_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
         
         XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
           file.absolute.path,
           targetPath,
           quality: 70,
+          format: isPng ? CompressFormat.png : CompressFormat.jpeg,
           minWidth: 1000,
           minHeight: 1000,
         );
@@ -106,7 +110,7 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
         File uploadFile = file;
         if (compressedFile != null) {
           uploadFile = File(compressedFile.path);
-          filename = 'upload_image.jpg';
+          filename = isPng ? 'upload_image.png' : 'upload_image.jpg';
         }
 
         uploadBytes = await uploadFile.readAsBytes();
@@ -118,7 +122,7 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
       final publicUrl = await CloudinaryUploader.upload(
         bytes: uploadBytes,
         filename: filename,
-        mimeType: 'image/jpeg',
+        mimeType: mimeType,
         resourceType: 'image',
         fallbackEndpoint: widget.uploadEndpoint,
       );
@@ -192,6 +196,9 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
 
     try {
       for (final pickedFile in filesToUpload) {
+        final String fileExt = pickedFile.name.split('.').last.toLowerCase();
+        final bool isPng = fileExt == 'png';
+        final String mimeType = isPng ? 'image/png' : 'image/jpeg';
         List<int> uploadBytes;
         String filename = pickedFile.name;
 
@@ -202,12 +209,13 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
           }
         } else {
           final File file = File(pickedFile.path);
-          final String targetPath = "${Directory.systemTemp.path}/compressed_img_${DateTime.now().millisecondsSinceEpoch}.jpg";
+          final String targetPath = "${Directory.systemTemp.path}/compressed_img_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
           
           XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
             file.absolute.path,
             targetPath,
             quality: 70,
+            format: isPng ? CompressFormat.png : CompressFormat.jpeg,
             minWidth: 1000,
             minHeight: 1000,
           );
@@ -215,7 +223,7 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
           File uploadFile = file;
           if (compressedFile != null) {
             uploadFile = File(compressedFile.path);
-            filename = 'upload_image.jpg';
+            filename = isPng ? 'upload_image.png' : 'upload_image.jpg';
           }
 
           uploadBytes = await uploadFile.readAsBytes();
@@ -227,7 +235,7 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
         final publicUrl = await CloudinaryUploader.upload(
           bytes: uploadBytes,
           filename: filename,
-          mimeType: 'image/jpeg',
+          mimeType: mimeType,
           resourceType: 'image',
           fallbackEndpoint: widget.uploadEndpoint,
         );

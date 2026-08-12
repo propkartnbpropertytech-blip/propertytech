@@ -21,12 +21,31 @@ class AuthService {
           throw ApiException(message: "Auth succeeded but no user ID returned.");
         }
 
-        // Fetch custom user profile from public.users to get role and organization details
-        final userRow = await _supabase
+        // public.users is the source of truth for profile/role. Prefer id match,
+        // then fall back to email when auth.users and public.users IDs diverged.
+        Map<String, dynamic>? userRow = await _supabase
             .from('users')
             .select('*, roles(name), admin:users!created_by(id, full_name, email, roles(name))')
             .eq('id', userId)
-            .single();
+            .maybeSingle();
+
+        if (userRow == null) {
+          final email = authResponse.user?.email;
+          if (email != null && email.isNotEmpty) {
+            userRow = await _supabase
+                .from('users')
+                .select('*, roles(name), admin:users!created_by(id, full_name, email, roles(name))')
+                .ilike('email', email)
+                .isFilter('deleted_at', null)
+                .maybeSingle();
+          }
+        }
+
+        if (userRow == null) {
+          throw ApiException(
+            message: "Auth succeeded but no matching profile was found in users. Contact an administrator.",
+          );
+        }
 
         final sessionToken = authResponse.session?.accessToken;
         return _formatProfileResponse(userRow, sessionToken);
@@ -65,11 +84,27 @@ class AuthService {
         }
         
         final userId = session.user.id;
-        final userRow = await _supabase
+        Map<String, dynamic>? userRow = await _supabase
             .from('users')
             .select('*, roles(name), admin:users!created_by(id, full_name, email, roles(name))')
             .eq('id', userId)
-            .single();
+            .maybeSingle();
+
+        if (userRow == null) {
+          final email = session.user.email;
+          if (email != null && email.isNotEmpty) {
+            userRow = await _supabase
+                .from('users')
+                .select('*, roles(name), admin:users!created_by(id, full_name, email, roles(name))')
+                .ilike('email', email)
+                .isFilter('deleted_at', null)
+                .maybeSingle();
+          }
+        }
+
+        if (userRow == null) {
+          throw ApiException(message: "No matching profile was found in users.");
+        }
 
         return _formatProfileResponse(userRow, session.accessToken);
       } catch (e) {
@@ -128,10 +163,24 @@ class AuthService {
             .from('users')
             .select('*, roles(name), admin:users!created_by(id, full_name, email, roles(name))')
             .eq('id', currentUser.id)
-            .single();
+            .maybeSingle();
+
+        final profile = userRow ??
+            (currentUser.email != null && currentUser.email!.isNotEmpty
+                ? await _supabase
+                    .from('users')
+                    .select('*, roles(name), admin:users!created_by(id, full_name, email, roles(name))')
+                    .ilike('email', currentUser.email!)
+                    .isFilter('deleted_at', null)
+                    .maybeSingle()
+                : null);
+
+        if (profile == null) {
+          throw ApiException(message: "No matching profile was found in users.");
+        }
 
         final sessionToken = _supabase.auth.currentSession?.accessToken;
-        return _formatProfileResponse(userRow, sessionToken);
+        return _formatProfileResponse(profile, sessionToken);
       } catch (e) {
         throw ApiException(message: e.toString());
       }
