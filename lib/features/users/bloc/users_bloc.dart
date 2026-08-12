@@ -263,7 +263,9 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
         return;
       }
       await _usersRepository.deleteUser(event.id);
+      _cachedUsers.removeWhere((u) => u.id == event.id);
       emit(const UsersOperationSuccess(message: "User deleted successfully."));
+      emit(UsersLoaded(users: List.from(_cachedUsers), roles: _cachedRoles));
     } catch (e) {
       emit(UsersError(message: e.toString()));
       emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));

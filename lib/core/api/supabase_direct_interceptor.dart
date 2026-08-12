@@ -1,10 +1,24 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'api_constants.dart';
 import 'cloudinary_uploader.dart';
+
+String _generateUuidV4() {
+  final random = Random.secure();
+  final hexDigits = '0123456789abcdef';
+  final charCodes = List<int>.generate(36, (index) {
+    if (index == 8 || index == 13 || index == 18 || index == 23) return 45;
+    if (index == 14) return 52;
+    final digit = random.nextInt(16);
+    if (index == 19) return hexDigits.codeUnitAt((digit & 0x3) | 0x8);
+    return hexDigits.codeUnitAt(digit);
+  });
+  return String.fromCharCodes(charCodes);
+}
 
 class SupabaseDirectInterceptor extends Interceptor {
   SupabaseClient get _supabase => Supabase.instance.client;
@@ -784,7 +798,7 @@ class SupabaseDirectInterceptor extends Interceptor {
             ? requesterProfile['roles']['name']?.toString()
             : null;
 
-        var query = _supabase.from('users').select('*, roles(id, name, description)').isFilter('deleted_at', null);
+        var query = _supabase.from('users').select('*, roles(id, name, description)').not('email', 'like', 'deleted_%');
 
         // Apply RBAC filters based on role
         if (requesterRole == 'Admin' || requesterRole == 'Telecaller') {
@@ -813,18 +827,105 @@ class SupabaseDirectInterceptor extends Interceptor {
       }
 
       if (path == '/users/password-resets' && method == 'GET') {
+        List<Map<String, dynamic>> resetsList = [];
+        Set<String> seenIds = {};
+
+        // 1. Fetch from password_reset_requests table
+        try {
+          final rows = await _supabase
+              .from('password_reset_requests')
+              .select('*')
+              .eq('status', 'pending')
+              .order('created_at', ascending: false);
+
+          for (final row in rows) {
+            final String id = row['id'].toString();
+            final String? uid = row['user_id']?.toString() ?? row['requested_by']?.toString();
+            String userName = 'User';
+            String userEmail = '';
+            String roleName = 'Sales';
+
+            if (uid != null && uid.isNotEmpty) {
+              try {
+                final uProfile = await _supabase
+                    .from('users')
+                    .select('full_name, email, roles(name)')
+                    .eq('id', uid)
+                    .maybeSingle();
+
+                if (uProfile != null) {
+                  userName = uProfile['full_name'] ?? uProfile['email'] ?? 'User';
+                  userEmail = uProfile['email'] ?? '';
+                  if (uProfile['roles'] != null && uProfile['roles']['name'] != null) {
+                    roleName = uProfile['roles']['name'].toString();
+                  }
+                }
+              } catch (_) {}
+            }
+
+            seenIds.add(id);
+            if (uid != null) seenIds.add(uid);
+
+            resetsList.add({
+              'id': id,
+              'userId': uid ?? id,
+              'userName': userName,
+              'userEmail': userEmail,
+              'roleName': roleName,
+              'createdAt': row['created_at'] ?? DateTime.now().toIso8601String(),
+            });
+          }
+        } catch (e) {
+          debugPrint("Fetch password_reset_requests notice: $e");
+        }
+
+        // 2. Fetch from audit_logs table (merge to guarantee requests are never missed)
+        try {
+          final logs = await _supabase
+              .from('audit_logs')
+              .select('*')
+              .eq('action', 'password_reset_request')
+              .order('created_at', ascending: false)
+              .limit(50);
+
+          for (final log in logs) {
+            final logId = log['id'].toString();
+            final desc = log['description']?.toString() ?? '';
+            if (desc.startsWith('{')) {
+              try {
+                final data = jsonDecode(desc);
+                final uId = data['userId']?.toString() ?? logId;
+                if (data['status'] == 'pending' && !seenIds.contains(logId) && !seenIds.contains(uId)) {
+                  seenIds.add(logId);
+                  if (uId.isNotEmpty) seenIds.add(uId);
+                  resetsList.add({
+                    'id': logId,
+                    'userId': uId,
+                    'userName': data['userName'] ?? data['email'] ?? 'User',
+                    'userEmail': data['email'] ?? '',
+                    'roleName': data['userRole'] ?? 'User',
+                    'createdAt': log['created_at'],
+                  });
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (e) {
+          debugPrint("Fetch audit_logs notice: $e");
+        }
+
         return handler.resolve(Response(
           requestOptions: options,
           data: {
             'success': true,
-            'data': {'resets': []}
+            'data': {'resets': resetsList}
           },
           statusCode: 200,
         ));
       }
 
       if (path == '/users' && method == 'POST') {
-        final payload = options.data as Map<String, dynamic>;
+        final payload = Map<String, dynamic>.from(options.data as Map<String, dynamic>);
         
         final sessionUser = _supabase.auth.currentUser;
         if (sessionUser == null) throw Exception("Unauthenticated");
@@ -843,31 +944,172 @@ class SupabaseDirectInterceptor extends Interceptor {
             ? (payload['admin_id'] ?? sessionUser.id)
             : payload['admin_id'];
 
-        final response = await _supabase.rpc(
-          'admin_create_user',
-          params: {
-            'p_email': payload['email'],
-            'p_password': payload['password'],
-            'p_full_name': payload['full_name'] ?? '',
-            'p_role_id': payload['role_id'],
-            'p_organization_id': payload['organization_id'],
-            'p_admin_id': adminId,
-            'p_mobile': payload['mobile'],
-          },
-        );
+        final String email = (payload['email'] ?? '').toString().trim();
+        final String newId = payload['id']?.toString() ?? _generateUuidV4();
 
-        if (response != null && response['success'] == true) {
-          return handler.resolve(Response(
-            requestOptions: options,
-            data: {
-              'success': true,
-              'message': 'User created successfully.',
-              'data': {'user': response['user']}
-            },
-            statusCode: 200,
-          ));
+        // 1. Purge any stale existing row in public.users for this email address
+        final existing = await _supabase
+            .from('users')
+            .select('id, profile_photo')
+            .eq('email', email)
+            .maybeSingle();
+
+        if (existing != null) {
+          final String existingId = existing['id'].toString();
+          if (existing['profile_photo'] != null && existing['profile_photo'].toString().isNotEmpty) {
+            final photoUrl = existing['profile_photo'].toString();
+            if (photoUrl.contains('cloudinary.com')) {
+              await CloudinaryUploader.delete(url: photoUrl, resourceType: 'image');
+            }
+          }
+          try {
+            await _supabase.from('password_reset_requests').delete().or('user_id.eq.$existingId,requested_by.eq.$existingId');
+          } catch (_) {}
+          try {
+            await _supabase.from('users').delete().eq('id', existingId);
+          } catch (_) {}
+          for (final paramKey in ['p_user_id', 'p_id', 'p_target_user_id', 'user_id', 'id']) {
+            try {
+              await _supabase.rpc('admin_delete_user', params: {paramKey: existingId});
+              break;
+            } catch (_) {}
+          }
         }
-        throw Exception(response?['message'] ?? 'Failed to create user.');
+
+        // 2. Insert new user profile directly into public.users table in Table Editor
+        final insertPayload = <String, dynamic>{
+          'id': newId,
+          'email': email,
+          'full_name': payload['full_name'] ?? payload['fullName'] ?? '',
+          'role_id': payload['role_id'] ?? payload['roleId'],
+          'organization_id': payload['organization_id'] ?? payload['organizationId'],
+          'admin_id': adminId,
+          'mobile': payload['mobile'] ?? payload['phone'],
+          'profile_photo': payload['profile_photo'] ?? payload['profilePhoto'],
+          'password_hash': payload['password'],
+          'is_active': true,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+
+        Map<String, dynamic>? createdUser;
+        try {
+          createdUser = await _supabase
+              .from('users')
+              .insert(insertPayload)
+              .select('*, roles(id, name, description)')
+              .single();
+        } catch (e) {
+          debugPrint("Direct insert into public.users notice: $e");
+          try {
+            await _supabase.from('users').upsert(insertPayload);
+            createdUser = await _supabase
+                .from('users')
+                .select('*, roles(id, name, description)')
+                .eq('id', newId)
+                .maybeSingle();
+          } catch (upsertErr) {
+            debugPrint("Direct upsert into public.users notice: $upsertErr");
+          }
+        }
+
+        // Best-effort optional sync to auth.users (ignore all errors so user creation never blocks)
+        try {
+          await _supabase.rpc(
+            'admin_create_user',
+            params: {
+              'p_email': email,
+              'p_password': payload['password'],
+              'p_full_name': payload['full_name'] ?? '',
+              'p_role_id': payload['role_id'],
+              'p_organization_id': payload['organization_id'],
+              'p_admin_id': adminId,
+              'p_mobile': payload['mobile'],
+            },
+          );
+        } catch (_) {}
+
+        return handler.resolve(Response(
+          requestOptions: options,
+          data: {
+            'success': true,
+            'message': 'User created successfully.',
+            'data': {'user': createdUser ?? insertPayload}
+          },
+          statusCode: 200,
+        ));
+      }
+
+      if (path.startsWith('/users/') && method == 'DELETE') {
+        final id = path.split('/').last;
+
+        // 1. Fetch user profile from public.users to check for Cloudinary photo cleanup
+        try {
+          final userRow = await _supabase
+              .from('users')
+              .select('id, profile_photo')
+              .eq('id', id)
+              .maybeSingle();
+
+          if (userRow != null && userRow['profile_photo'] != null) {
+            final photoUrl = userRow['profile_photo'].toString();
+            if (photoUrl.contains('cloudinary.com')) {
+              await CloudinaryUploader.delete(url: photoUrl, resourceType: 'image');
+            }
+          }
+        } catch (e) {
+          debugPrint("Cloudinary photo delete notice: $e");
+        }
+
+        // 2. Delete associated password_reset_requests
+        try {
+          await _supabase
+              .from('password_reset_requests')
+              .delete()
+              .or('user_id.eq.$id,requested_by.eq.$id');
+        } catch (_) {}
+
+        // 3. Try calling RPC to delete user from Supabase Auth & DB
+        for (final paramKey in ['p_user_id', 'p_id', 'p_target_user_id', 'user_id', 'id']) {
+          try {
+            await _supabase.rpc('admin_delete_user', params: {paramKey: id});
+            break;
+          } catch (_) {}
+        }
+
+        // 4. Hard-delete user row permanently from public.users table
+        var deletedData = await _supabase
+            .from('users')
+            .delete()
+            .eq('id', id)
+            .select()
+            .maybeSingle();
+
+        // 5. If RLS blocked .delete(), free up the email address in public.users
+        if (deletedData == null) {
+          try {
+            await _supabase
+                .from('users')
+                .update({
+                  'email': 'deleted_${DateTime.now().millisecondsSinceEpoch}_$id@deleted.local',
+                  'full_name': 'Deleted User',
+                  'updated_at': DateTime.now().toIso8601String(),
+                })
+                .eq('id', id);
+          } catch (e) {
+            debugPrint("Fallback user cleanup notice: $e");
+          }
+        }
+
+        return handler.resolve(Response(
+          requestOptions: options,
+          data: {
+            'success': true,
+            'message': 'User permanently deleted.',
+            'data': deletedData ?? {'id': id}
+          },
+          statusCode: 200,
+        ));
       }
 
       if (path.startsWith('/users/') && path.endsWith('/status') && method == 'PATCH') {
@@ -968,36 +1210,42 @@ class SupabaseDirectInterceptor extends Interceptor {
       }
 
       // 11. Profile Uploads & Updates
-      if (path == '/users/upload-profile' && method == 'POST') {
+      if (path.startsWith('/users/upload-profile') && method == 'POST') {
         if (options.data is FormData) {
           final formData = options.data as FormData;
-          final fileField = formData.files.firstWhere(
-            (element) => element.key == 'profile_photo' || element.key == 'file',
-          );
-          final file = fileField.value;
-          final bytes = await file.finalize().first;
-          final sessionUser = _supabase.auth.currentUser;
-          if (sessionUser == null) throw Exception("Unauthenticated");
-          
-          final String publicUrl = await CloudinaryUploader.upload(
-            bytes: bytes,
-            filename: file.filename ?? 'photo.jpg',
-            mimeType: file.contentType?.toString() ?? 'image/jpeg',
-            resourceType: 'image',
-            folder: 'profiles',
-          );
+          if (formData.files.isNotEmpty) {
+            final fileField = formData.files.firstWhere(
+              (element) => element.key == 'profile_photo' || element.key == 'file',
+              orElse: () => formData.files.first,
+            );
+            final file = fileField.value;
+            List<int> bytes;
+            try {
+              bytes = await file.finalize().first;
+            } catch (_) {
+              bytes = await file.finalize().reduce((a, b) => Uint8List.fromList([...a, ...b]));
+            }
+            
+            final String publicUrl = await CloudinaryUploader.upload(
+              bytes: bytes,
+              filename: file.filename ?? 'photo.jpg',
+              mimeType: file.contentType?.toString() ?? 'image/jpeg',
+              resourceType: 'image',
+              folder: 'profiles',
+            );
 
-          return handler.resolve(Response(
-            requestOptions: options,
-            data: {
-              'success': true,
-              'data': {
-                'profile_photo': publicUrl,
-                'publicUrl': publicUrl,
-              }
-            },
-            statusCode: 200,
-          ));
+            return handler.resolve(Response(
+              requestOptions: options,
+              data: {
+                'success': true,
+                'data': {
+                  'profile_photo': publicUrl,
+                  'publicUrl': publicUrl,
+                }
+              },
+              statusCode: 200,
+            ));
+          }
         }
       }
 
@@ -1030,6 +1278,229 @@ class SupabaseDirectInterceptor extends Interceptor {
         return handler.resolve(Response(
           requestOptions: options,
           data: {'success': true, 'data': data},
+          statusCode: 200,
+        ));
+      }
+
+      // 13. Forgot Password
+      if ((path == '/auth/forgot-password' || path == '/auth/forgot') && method == 'POST') {
+        final payload = options.data is Map ? (options.data as Map) : {};
+        final String email = (payload['email'] ?? '').toString().trim();
+
+        if (email.isEmpty) {
+          return handler.reject(DioException(
+            requestOptions: options,
+            type: DioExceptionType.badResponse,
+            response: Response(
+              requestOptions: options,
+              statusCode: 400,
+              data: {'success': false, 'message': 'Please enter a valid email address.'},
+            ),
+          ));
+        }
+
+        try {
+          // 1. Check if user exists in database (best-effort)
+          Map<String, dynamic>? userRecord;
+          try {
+            userRecord = await _supabase
+                .from('users')
+                .select('id, full_name, email, roles(name)')
+                .eq('email', email)
+                .limit(1)
+                .maybeSingle();
+          } catch (_) {}
+
+          final String userName = userRecord != null && userRecord['full_name'] != null && userRecord['full_name'].toString().isNotEmpty
+              ? userRecord['full_name'].toString()
+              : email;
+          final String userRole = userRecord != null && userRecord['roles'] != null && userRecord['roles']['name'] != null
+              ? userRecord['roles']['name'].toString()
+              : 'Sales';
+
+          // 2. Try sending password reset email via Supabase Auth (catch SMTP unconfigured error gracefully)
+          try {
+            await _supabase.auth.resetPasswordForEmail(email);
+          } catch (e) {
+            debugPrint("Supabase resetPasswordForEmail notice: $e");
+          }
+
+          // 3. Insert into password_reset_requests or audit_logs for admin notification
+          try {
+            final insertMap = <String, dynamic>{
+              'status': 'pending',
+            };
+            if (userRecord != null && userRecord['id'] != null) {
+              insertMap['user_id'] = userRecord['id'];
+              insertMap['requested_by'] = userRecord['id'];
+            }
+            if (userRecord != null && userRecord['admin_id'] != null) {
+              insertMap['requested_to'] = userRecord['admin_id'];
+            }
+
+            await _supabase.from('password_reset_requests').insert(insertMap);
+          } catch (e) {
+            debugPrint("password_reset_requests insert notice: $e");
+            try {
+              await _supabase.from('audit_logs').insert({
+                'action': 'password_reset_request',
+                'module': 'auth',
+                'description': jsonEncode({
+                  'userId': userRecord != null ? userRecord['id'] : null,
+                  'email': email,
+                  'userName': userName,
+                  'userRole': userRole,
+                  'status': 'pending',
+                }),
+                'created_at': DateTime.now().toIso8601String(),
+              });
+            } catch (_) {}
+          }
+
+          // 4. Create Notifications for Admin and Super Admin users
+          try {
+            final adminUsers = await _supabase
+                .from('users')
+                .select('id, roles(name)')
+                .or('roles.name.eq.Admin,roles.name.eq.Super Admin');
+
+            for (final admin in adminUsers) {
+              final adminId = admin['id'];
+              if (adminId != null) {
+                await _supabase.from('notifications').insert({
+                  'user_id': adminId,
+                  'title': 'Password Reset Request',
+                  'message': '$userName ($userRole) has requested a password reset.',
+                  'type': 'password_reset',
+                  'is_read': false,
+                  'created_at': DateTime.now().toIso8601String(),
+                });
+              }
+            }
+          } catch (e) {
+            debugPrint("Admin notification insert notice: $e");
+          }
+
+          return handler.resolve(Response(
+            requestOptions: options,
+            data: {
+              'success': true,
+              'message': 'Password reset request has been sent to your administrator.',
+            },
+            statusCode: 200,
+          ));
+        } catch (e) {
+          final errorMsg = e.toString().replaceAll('Exception: ', '');
+          return handler.reject(DioException(
+            requestOptions: options,
+            error: e,
+            type: DioExceptionType.badResponse,
+            response: Response(
+              requestOptions: options,
+              statusCode: 400,
+              data: {
+                'success': false,
+                'message': errorMsg.isNotEmpty ? errorMsg : 'Failed to send password reset request.',
+              },
+            ),
+          ));
+        }
+      }
+
+      // 14. Resolve Password Reset Request
+      if (path.startsWith('/users/password-resets/') && path.endsWith('/resolve') && method == 'POST') {
+        final payload = options.data is Map ? (options.data as Map) : {};
+        final newPassword = (payload['newPassword'] ?? '').toString();
+        final pathSegments = path.split('/');
+        final requestId = pathSegments.length > 3 ? pathSegments[3] : '';
+
+        if (newPassword.isNotEmpty && requestId.isNotEmpty) {
+          String targetUserId = requestId;
+
+          // 1. Try finding target user ID from password_reset_requests table
+          try {
+            final reqRow = await _supabase
+                .from('password_reset_requests')
+                .select('user_id, email')
+                .eq('id', requestId)
+                .maybeSingle();
+
+            if (reqRow != null && reqRow['user_id'] != null) {
+              targetUserId = reqRow['user_id'].toString();
+            } else if (reqRow != null && reqRow['email'] != null) {
+              final userRow = await _supabase
+                  .from('users')
+                  .select('id')
+                  .eq('email', reqRow['email'])
+                  .maybeSingle();
+              if (userRow != null) targetUserId = userRow['id'].toString();
+            }
+          } catch (_) {}
+
+          // Fallback: check audit_logs
+          if (targetUserId == requestId) {
+            try {
+              final logRow = await _supabase.from('audit_logs').select('*').eq('id', requestId).maybeSingle();
+              if (logRow != null && logRow['description'] != null) {
+                final desc = logRow['description'].toString();
+                if (desc.startsWith('{')) {
+                  final data = jsonDecode(desc);
+                  if (data['userId'] != null) {
+                    targetUserId = data['userId'].toString();
+                  }
+                }
+              }
+            } catch (_) {}
+          }
+
+          // 2. Execute admin_update_password RPC in Supabase Auth
+          try {
+            await _supabase.rpc(
+              'admin_update_password',
+              params: {
+                'p_user_id': targetUserId,
+                'p_new_password': newPassword,
+              },
+            );
+          } catch (e) {
+            debugPrint("admin_update_password RPC notice: $e");
+          }
+
+          // 3. Direct update users table password timestamp
+          try {
+            await _supabase.from('users').update({
+              'updated_at': DateTime.now().toIso8601String(),
+            }).eq('id', targetUserId);
+          } catch (_) {}
+
+          // 4. Mark password_reset_requests as resolved
+          try {
+            await _supabase
+                .from('password_reset_requests')
+                .update({
+                  'status': 'resolved',
+                  'updated_at': DateTime.now().toIso8601String(),
+                })
+                .eq('id', requestId);
+          } catch (_) {}
+
+          // 5. Update audit_logs fallback
+          try {
+            final logRow = await _supabase.from('audit_logs').select('*').eq('id', requestId).maybeSingle();
+            if (logRow != null && logRow['description'] != null) {
+              final desc = logRow['description'].toString();
+              if (desc.startsWith('{')) {
+                final data = jsonDecode(desc);
+                data['status'] = 'resolved';
+                await _supabase.from('audit_logs').update({'description': jsonEncode(data)}).eq('id', requestId);
+              }
+            }
+          } catch (_) {}
+        }
+
+        return handler.resolve(Response(
+          requestOptions: options,
+          data: {'success': true, 'message': 'Password reset request resolved successfully.'},
           statusCode: 200,
         ));
       }

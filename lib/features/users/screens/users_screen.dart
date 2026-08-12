@@ -630,7 +630,7 @@ class _UsersScreenState extends State<UsersScreen> {
       context,
       title: "Confirm Deletion",
       content:
-          "Are you sure you want to delete ${user.fullName}? This operation will perform a soft delete.",
+          "Are you sure you want to delete ${user.fullName}? This user will be permanently removed from the system.",
     );
     if (confirmed == true && mounted) {
       context.read<UsersBloc>().add(DeleteUserRequested(id: user.id));
@@ -643,9 +643,22 @@ class _UsersScreenState extends State<UsersScreen> {
     final bool isMobile = screenWidth < 768;
 
     final authState = context.watch<AuthBloc>().state;
+    if (authState is AuthInitial || authState is AuthLoading) {
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     bool hasAccess = false;
     if (authState is Authenticated) {
-      hasAccess = authState.user.permissions.contains("users.read");
+      hasAccess = authState.user.permissions.contains("users.read") ||
+          authState.user.role.toLowerCase() == 'admin' ||
+          authState.user.role.toLowerCase() == 'super admin' ||
+          authState.user.role.toLowerCase() == 'telecaller' ||
+          authState.user.role.toLowerCase() == 'sales';
     }
 
     if (!hasAccess) {
@@ -733,15 +746,21 @@ class _UsersScreenState extends State<UsersScreen> {
               _buildSearchAndFiltersCard(),
               const SizedBox(height: CRMSpacing.l),
 
-              // TabBar for Super Admin
+              // TabBar for Admin & Super Admin
               if (authState is Authenticated &&
-                  authState.user.role == 'Super Admin') ...[
+                  (authState.user.role == 'Super Admin' || authState.user.role == 'Admin')) ...[
                 _buildTabBar(),
                 const SizedBox(height: CRMSpacing.m),
               ],
 
-              // 4. Employees Data Table
-              _buildEmployeesTable(),
+              // Content based on active tab
+              if (_activeTabIndex == 1)
+                _buildPasswordResetsTabContent()
+              else ...[
+                _buildSearchAndFiltersCard(),
+                const SizedBox(height: CRMSpacing.l),
+                _buildEmployeesTable(),
+              ],
             ],
           ),
         ),
@@ -1120,7 +1139,7 @@ class _UsersScreenState extends State<UsersScreen> {
           final isSuperAdmin =
               currentUser != null && currentUser.role == 'Super Admin';
           if (isSuperAdmin) {
-            if (_activeTabIndex == 0) {
+            if (_activeTabIndex == 2) {
               users = users
                   .where((u) => u.roleName.toLowerCase() == 'admin')
                   .toList();
@@ -1820,6 +1839,9 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Widget _buildTabBar() {
+    final authState = context.read<AuthBloc>().state;
+    final isSuperAdmin = authState is Authenticated && authState.user.role == 'Super Admin';
+
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -1833,23 +1855,33 @@ class _UsersScreenState extends State<UsersScreen> {
           ),
           boxShadow: CRMShadows.soft,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildTabItem(
-              0,
-              "Administrators",
-              Icons.admin_panel_settings_rounded,
-            ),
-            const SizedBox(width: 4),
-            _buildTabItem(1, "Employees (Sales/Telecaller)", Icons.people_rounded),
-          ],
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildTabItem(0, "Employees", Icons.people_rounded),
+              const SizedBox(width: 4),
+              _buildTabItem(
+                1,
+                _passwordResets.isNotEmpty
+                    ? "Password Requests (${_passwordResets.length})"
+                    : "Password Requests",
+                Icons.vpn_key_rounded,
+                badgeCount: _passwordResets.length,
+              ),
+              if (isSuperAdmin) ...[
+                const SizedBox(width: 4),
+                _buildTabItem(2, "Administrators", Icons.admin_panel_settings_rounded),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildTabItem(int index, String label, IconData icon) {
+  Widget _buildTabItem(int index, String label, IconData icon, {int badgeCount = 0}) {
     final isSelected = _activeTabIndex == index;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -1896,9 +1928,193 @@ class _UsersScreenState extends State<UsersScreen> {
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 ),
               ),
+              if (badgeCount > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: CRMColors.warning,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$badgeCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPasswordResetsTabContent() {
+    return CRMCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.vpn_key_rounded,
+                    color: CRMColors.warning,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    "Pending Password Reset Requests (${_passwordResets.length})",
+                    style: CRMTypography.sectionTitle.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+                tooltip: 'Refresh Requests',
+                onPressed: _fetchPasswordResets,
+              ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.m),
+          if (_isLoadingResets)
+            const Padding(
+              padding: EdgeInsets.all(32.0),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_passwordResets.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40.0),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.check_circle_outline_rounded,
+                        size: 48, color: CRMColors.success.withOpacity(0.8)),
+                    const SizedBox(height: 12),
+                    Text(
+                      "No Pending Password Reset Requests",
+                      style: CRMTypography.bodyMedium.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "Requests submitted by salespeople will appear here.",
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textMutedOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _passwordResets.length,
+              separatorBuilder: (context, index) =>
+                  Divider(color: CRMColors.borderOf(context).withOpacity(0.5)),
+              itemBuilder: (context, index) {
+                final r = _passwordResets[index];
+                final userName = r['userName'] ?? '';
+                final userEmail = r['userEmail'] ?? '';
+                final roleName = r['roleName'] ?? 'Sales';
+                final createdAtStr = r['createdAt'] ?? '';
+
+                String timeDisplay = 'recently';
+                try {
+                  final dt = DateTime.parse(createdAtStr);
+                  final diff = DateTime.now().difference(dt);
+                  if (diff.inMinutes < 60) {
+                    timeDisplay = '${diff.inMinutes}m ago';
+                  } else if (diff.inHours < 24) {
+                    timeDisplay = '${diff.inHours}h ago';
+                  } else {
+                    timeDisplay = '${diff.inDays}d ago';
+                  }
+                } catch (_) {}
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: CRMColors.warning.withOpacity(0.15),
+                        child: Text(
+                          userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                          style: const TextStyle(
+                            color: CRMColors.warning,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  userName,
+                                  style: CRMTypography.bodyMedium.copyWith(
+                                    color: CRMColors.textOf(context),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.warning.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    roleName,
+                                    style: CRMTypography.caption.copyWith(
+                                      color: CRMColors.warning,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "$userEmail • Requested $timeDisplay",
+                              style: CRMTypography.caption.copyWith(
+                                color: CRMColors.textSecondaryOf(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      CRMButton(
+                        label: "Reset Password",
+                        variant: CRMButtonVariant.primary,
+                        onPressed: () => _showResetPasswordDialog(r),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
       ),
     );
   }
