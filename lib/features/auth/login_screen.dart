@@ -201,7 +201,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               });
                               String errorMsg = 'Failed to submit request. Please try again.';
                               if (e is DioException) {
-                                errorMsg = e.response?.data['message'] ?? e.message ?? errorMsg;
+                                final resData = e.response?.data;
+                                if (resData is Map && resData['message'] != null) {
+                                  errorMsg = resData['message'].toString();
+                                } else if (e.message != null && e.message!.isNotEmpty) {
+                                  errorMsg = e.message!;
+                                }
                               }
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(

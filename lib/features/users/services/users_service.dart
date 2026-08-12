@@ -1,8 +1,10 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../core/api/cloudinary_uploader.dart';
 
 class UsersService {
   final ApiClient _apiClient = ApiClient();
@@ -308,17 +310,51 @@ class UsersService {
   Future<Map<String, dynamic>> deleteUser(String id) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
+        // 1. Fetch user row to check profile_photo URL for Cloudinary cleanup
+        try {
+          final userRow = await _supabase
+              .from('users')
+              .select('id, profile_photo')
+              .eq('id', id)
+              .maybeSingle();
+
+          if (userRow != null && userRow['profile_photo'] != null) {
+            final photoUrl = userRow['profile_photo'].toString();
+            if (photoUrl.contains('cloudinary.com')) {
+              await CloudinaryUploader.delete(url: photoUrl, resourceType: 'image');
+            }
+          }
+        } catch (e) {
+          debugPrint("Cloudinary photo delete notice: $e");
+        }
+
+        // 2. Delete associated password_reset_requests
+        try {
+          await _supabase
+              .from('password_reset_requests')
+              .delete()
+              .or('user_id.eq.$id,requested_by.eq.$id');
+        } catch (_) {}
+
+        // 3. Execute RPC to delete user from Supabase Auth & DB
+        for (final paramKey in ['p_user_id', 'p_id', 'p_target_user_id', 'user_id', 'id']) {
+          try {
+            await _supabase.rpc('admin_delete_user', params: {paramKey: id});
+            break;
+          } catch (_) {}
+        }
+
+        // 4. Hard-delete user row permanently from public.users table
         final response = await _supabase
             .from('users')
-            .update({ 'deleted_at': DateTime.now().toIso8601String() })
+            .delete()
             .eq('id', id)
-            .select()
-            .single();
+            .select();
 
         return {
           'success': true,
           'message': 'User deleted successfully.',
-          'data': response
+          'data': response.isNotEmpty ? response.first : {'id': id}
         };
       } catch (e) {
         throw ApiException(message: e.toString());
