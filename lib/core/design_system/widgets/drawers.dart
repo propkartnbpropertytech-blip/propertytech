@@ -407,6 +407,9 @@ class _CRMImageSliderState extends State<CRMImageSlider> {
     final hasVideo = widget.videos.isNotEmpty;
 
     if (totalCount == 0) {
+      if (hasVideo) {
+        return CRMVideoSlider(videos: widget.videos);
+      }
       return Container(
         height: 240,
         width: double.infinity,

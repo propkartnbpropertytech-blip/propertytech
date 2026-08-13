@@ -31,6 +31,7 @@ class SupabaseDirectInterceptor extends Interceptor {
 
     final path = options.path;
     final method = options.method.toUpperCase();
+    final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
 
     try {
       // 1. App Config Endpoint
@@ -422,63 +423,67 @@ class SupabaseDirectInterceptor extends Interceptor {
       }
 
       // 4. Properties Detail Retrieval
-      if (path.startsWith('/properties/')) {
+      if (path.startsWith('/properties/') && method == 'GET') {
         final id = path.split('/').last;
-        final data = await _supabase.from('properties').select('''
-          *,
-          category:property_categories(id, name),
-          property_type:property_types(id, name),
-          configuration:configurations(id, name),
-          listing_type:listing_types(id, name),
-          property_status:property_status(id, name),
-          city:cities(id, city_name),
-          area:areas(id, area_name, pincode),
-          furnishing_type:furnishing_types(id, name),
-          facing_type:facing_types(id, name),
-          ownership_type:ownership_types(id, name),
-          brokerage_type:brokerage_types(id, name),
-          property_images(*),
-          property_videos(*),
-          property_amenities(amenity:amenities(*)),
-          creator:users!created_by(id, full_name, mobile, email),
-          assignee:users!assigned_to(id, full_name, mobile, email)
-        ''').eq('id', id).single();
-        return handler.resolve(Response(
-          requestOptions: options,
-          data: {
-            'success': true,
-            'data': {'property': data}
-          },
-          statusCode: 200,
-        ));
+        if (uuidRegex.hasMatch(id)) {
+          final data = await _supabase.from('properties').select('''
+            *,
+            category:property_categories(id, name),
+            property_type:property_types(id, name),
+            configuration:configurations(id, name),
+            listing_type:listing_types(id, name),
+            property_status:property_status(id, name),
+            city:cities(id, city_name),
+            area:areas(id, area_name, pincode),
+            furnishing_type:furnishing_types(id, name),
+            facing_type:facing_types(id, name),
+            ownership_type:ownership_types(id, name),
+            brokerage_type:brokerage_types(id, name),
+            property_images(*),
+            property_videos(*),
+            property_amenities(amenity:amenities(*)),
+            creator:users!created_by(id, full_name, mobile, email),
+            assignee:users!assigned_to(id, full_name, mobile, email)
+          ''').eq('id', id).single();
+          return handler.resolve(Response(
+            requestOptions: options,
+            data: {
+              'success': true,
+              'data': {'property': data}
+            },
+            statusCode: 200,
+          ));
+        }
       }
 
       // 5. Requirements Detail Retrieval
-      if (path.startsWith('/requirements/')) {
+      if (path.startsWith('/requirements/') && method == 'GET') {
         final id = path.split('/').last;
-        final data = await _supabase.from('requirements').select('''
-          *,
-          category:property_categories(id, name),
-          property_type:property_types(id, name),
-          configuration:configurations(id, name),
-          listing_type:listing_types(id, name),
-          city:cities(id, city_name),
-          area:areas(id, area_name, pincode),
-          requirement_areas(area:areas(id, area_name, pincode)),
-          creator:users!created_by(id, full_name),
-          assignee:users!assigned_to(id, full_name),
-          followups(id, followup_date, status, notes, created_at),
-          site_visits(id, status, visit_date, remarks, created_at),
-          share_sessions(id, view_count, status, created_at)
-        ''').eq('id', id).single();
-        return handler.resolve(Response(
-          requestOptions: options,
-          data: {
-            'success': true,
-            'data': {'requirement': data}
-          },
-          statusCode: 200,
-        ));
+        if (uuidRegex.hasMatch(id)) {
+          final data = await _supabase.from('requirements').select('''
+            *,
+            category:property_categories(id, name),
+            property_type:property_types(id, name),
+            configuration:configurations(id, name),
+            listing_type:listing_types(id, name),
+            city:cities(id, city_name),
+            area:areas(id, area_name, pincode),
+            requirement_areas(area:areas(id, area_name, pincode)),
+            creator:users!created_by(id, full_name),
+            assignee:users!assigned_to(id, full_name),
+            followups(id, followup_date, status, notes, created_at),
+            site_visits(id, status, visit_date, remarks, created_at),
+            share_sessions(id, view_count, status, created_at)
+          ''').eq('id', id).single();
+          return handler.resolve(Response(
+            requestOptions: options,
+            data: {
+              'success': true,
+              'data': {'requirement': data}
+            },
+            statusCode: 200,
+          ));
+        }
       }
 
       // 6. Checklist Items CRUD
