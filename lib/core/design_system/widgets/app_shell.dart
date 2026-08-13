@@ -19,6 +19,7 @@ import 'dart:async';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../features/properties/services/properties_service.dart';
 import '../../../features/properties/models/property_model.dart';
+import '../../navigation/mobile_system_back_handler.dart';
 
 class CRMAppShell extends StatefulWidget {
   final Widget child;
@@ -731,7 +732,22 @@ class _CRMAppShellState extends State<CRMAppShell>
       curve: CRMMotion.emphasized,
     );
 
-    return Stack(
+    return MobileSystemBackHandler(
+      onBeforeBack: () async {
+        if (_searchOverlayEntry != null || _isMobileSearchActive) {
+          _hideSearchOverlay();
+          if (_isMobileSearchActive && mounted) {
+            setState(() => _isMobileSearchActive = false);
+          }
+          return true;
+        }
+        if (_notificationsPanelOpen) {
+          setState(() => _notificationsPanelOpen = false);
+          return true;
+        }
+        return false;
+      },
+      child: Stack(
           children: [
             FadeTransition(
               opacity: entryCurved,
@@ -935,6 +951,7 @@ class _CRMAppShellState extends State<CRMAppShell>
           },
         ),
       ],
+    ),
     );
   }
 

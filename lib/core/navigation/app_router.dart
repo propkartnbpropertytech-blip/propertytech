@@ -37,6 +37,7 @@ import '../../features/library/screens/rental_library_screen.dart';
 import '../../features/library/screens/resale_library_screen.dart';
 import '../../features/library/screens/service_agent_library_screen.dart';
 import '../utils/seo_helper.dart';
+import 'mobile_system_back_handler.dart';
 
 
 class GoRouterRefreshStream extends ChangeNotifier {
@@ -237,7 +238,9 @@ class AppRouter {
         path: '/properties/:id',
         builder: (context, state) {
           final id = state.pathParameters['id']!;
-          return PropertyDetailScreen(propertyId: id);
+          return MobileSystemBackHandler(
+            child: PropertyDetailScreen(propertyId: id),
+          );
         },
       ),
       GoRoute(
