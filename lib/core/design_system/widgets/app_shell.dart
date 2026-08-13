@@ -50,17 +50,10 @@ class _CRMAppShellState extends State<CRMAppShell>
     super.initState();
     _entryController = AnimationController(
       vsync: this,
-      duration: CRMMotion.entrySettle,
-      value: CRMAppShell._entrySettledThisSession ? 1.0 : 0.0,
+      duration: Duration.zero,
+      value: 1.0,
     );
-    if (!CRMAppShell._entrySettledThisSession) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _entryController.forward().whenComplete(() {
-          CRMAppShell._entrySettledThisSession = true;
-        });
-      });
-    }
+    CRMAppShell._entrySettledThisSession = true;
 
     _tabController = PersistentTabController(initialIndex: 0);
     _tabController.addListener(() {
@@ -1645,8 +1638,6 @@ class _CRMAppShellState extends State<CRMAppShell>
       userRole = userState.user.role;
       userFullName = userState.user.fullName;
       userProfilePhoto = userState.user.profilePhoto;
-    } else {
-      return const SizedBox.shrink();
     }
 
     final isExpanded = isMobile || (sidebarWidth == null ? _isSidebarExpanded : sidebarWidth > 200.0);

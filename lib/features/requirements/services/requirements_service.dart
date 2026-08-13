@@ -52,6 +52,59 @@ class RequirementsService {
     };
   }
 
+  Future<List<Map<String, dynamic>>> _hydrateRequirementUserNames(
+    List<Map<String, dynamic>> rows,
+  ) async {
+    final ids = <String>{};
+    for (final r in rows) {
+      final createdBy = r['created_by']?.toString();
+      final assignedTo = r['assigned_to']?.toString();
+      if (createdBy != null && createdBy.isNotEmpty) ids.add(createdBy);
+      if (assignedTo != null && assignedTo.isNotEmpty) ids.add(assignedTo);
+    }
+    if (ids.isEmpty) return rows;
+
+    try {
+      final names = await _supabase.rpc(
+        'user_display_names',
+        params: {'p_ids': ids.toList()},
+      );
+      final map = <String, String>{};
+      if (names is List) {
+        for (final n in names) {
+          if (n is Map) {
+            final id = n['id']?.toString();
+            final fullName = n['full_name']?.toString() ?? '';
+            if (id != null && id.isNotEmpty && fullName.isNotEmpty) {
+              map[id] = fullName;
+            }
+          }
+        }
+      }
+
+      return rows.map((r) {
+        final createdBy = r['created_by']?.toString();
+        final assignedTo = r['assigned_to']?.toString();
+        final existingCreator = r['creatorName']?.toString() ?? '';
+        final existingAssignee = r['assigneeName']?.toString() ?? '';
+        return {
+          ...r,
+          'creatorName': existingCreator.isNotEmpty ? existingCreator : map[createdBy],
+          'assigneeName': existingAssignee.isNotEmpty ? existingAssignee : map[assignedTo],
+        };
+      }).toList();
+    } catch (_) {
+      return rows;
+    }
+  }
+
+  Future<Map<String, dynamic>> _hydrateOneRequirementUserNames(
+    Map<String, dynamic> row,
+  ) async {
+    final hydrated = await _hydrateRequirementUserNames([row]);
+    return hydrated.first;
+  }
+
   Future<Map<String, dynamic>> getRequirements({
     String? search,
     String? configurationId,
@@ -111,7 +164,9 @@ class RequirementsService {
           }).toList();
         }
 
-        final mapped = requirements.map(_mapRequirementTargetAreas).toList();
+        final mapped = await _hydrateRequirementUserNames(
+          requirements.map(_mapRequirementTargetAreas).toList(),
+        );
 
         return {
           'success': true,
@@ -194,7 +249,7 @@ class RequirementsService {
 
         cleanRequirement['created_by'] = currentUserId;
         cleanRequirement['organization_id'] = orgId;
-        cleanRequirement['admin_id'] = adminId;
+        cleanRequirement['admin_id'] = adminId ?? currentUserId;
 
         final isCreatorAdminOrSuperAdmin = roleName.toLowerCase() == 'admin' || roleName.toLowerCase() == 'super admin';
 
@@ -247,7 +302,9 @@ class RequirementsService {
             .eq('id', requirementId)
             .single();
 
-        final mappedResponse = _mapRequirementTargetAreas(response);
+        final mappedResponse = await _hydrateOneRequirementUserNames(
+          _mapRequirementTargetAreas(response),
+        );
 
         return {
           'success': true,
@@ -302,6 +359,15 @@ class RequirementsService {
           cleanRequirement['assigned_to'] = null;
         }
 
+        Map<String, dynamic>? previousRow;
+        if (cleanRequirement.containsKey('assigned_to')) {
+          previousRow = await _supabase
+              .from('requirements')
+              .select('assigned_to, created_by, customer_name')
+              .eq('id', id)
+              .maybeSingle();
+        }
+
         // Multi-select sync helper
         cleanRequirement['furnishing_type_ids'] = furnishingTypeIds;
         cleanRequirement['furnishing_type_id'] = furnishingTypeIds.isNotEmpty ? furnishingTypeIds.first : null;
@@ -341,7 +407,16 @@ class RequirementsService {
             ''')
             .single();
 
-        final mappedResponse = _mapRequirementTargetAreas(response);
+        final mappedResponse = await _hydrateOneRequirementUserNames(
+          _mapRequirementTargetAreas(response),
+        );
+
+        if (previousRow != null) {
+          await _notifyLeadAssignmentChange(
+            previous: previousRow,
+            updated: mappedResponse,
+          );
+        }
 
         return {
           'success': true,
@@ -523,6 +598,63 @@ class RequirementsService {
       } catch (e) {
         throw ApiException(message: e.toString());
       }
+    }
+  }
+
+  Future<void> _notifyLeadAssignmentChange({
+    required Map<String, dynamic> previous,
+    required Map<String, dynamic> updated,
+  }) async {
+    try {
+      final previousAssigned = previous['assigned_to']?.toString();
+      final previousCreator = previous['created_by']?.toString();
+      final newAssigned = updated['assigned_to']?.toString();
+      if (previousAssigned == newAssigned) return;
+
+      final clientName = (updated['customer_name'] ?? previous['customer_name'] ?? 'a client').toString();
+      String newAssigneeName = 'another salesperson';
+      final assignee = updated['assignee'];
+      if (assignee is Map && assignee['full_name'] != null) {
+        newAssigneeName = assignee['full_name'].toString();
+      }
+
+      final now = DateTime.now().toIso8601String();
+      final rows = <Map<String, dynamic>>[];
+
+      if (newAssigned != null && newAssigned.isNotEmpty) {
+        rows.add({
+          'user_id': newAssigned,
+          'title': 'Lead assigned to you',
+          'message': 'Requirement for $clientName was assigned to you.',
+          'is_read': false,
+          'created_at': now,
+          'updated_at': now,
+        });
+      }
+
+      final previousOwner = (previousAssigned != null && previousAssigned.isNotEmpty)
+          ? previousAssigned
+          : previousCreator;
+      if (previousOwner != null &&
+          previousOwner.isNotEmpty &&
+          previousOwner != newAssigned) {
+        rows.add({
+          'user_id': previousOwner,
+          'title': 'Lead transferred',
+          'message': newAssigned != null && newAssigned.isNotEmpty
+              ? 'Requirement for $clientName was transferred to $newAssigneeName.'
+              : 'Requirement for $clientName is now unassigned.',
+          'is_read': false,
+          'created_at': now,
+          'updated_at': now,
+        });
+      }
+
+      if (rows.isNotEmpty) {
+        await _supabase.from('notifications').insert(rows);
+      }
+    } catch (_) {
+      // Assignment should still succeed even if a notification cannot be stored.
     }
   }
 }

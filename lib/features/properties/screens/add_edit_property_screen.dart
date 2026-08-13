@@ -99,6 +99,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   List<LookupItem> _localAmenities = [];
   final List<String> _depositMonthOptions = ['1 Month', '2 Month', '3 Month', '4 Month', '5 Month', '6 Month'];
   String? _selectedDepositMonth;
+  final FocusNode _titleFocusNode = FocusNode();
+  List<String> _propertyNameSuggestions = [];
+  double _titleFieldWidth = 360;
 
   @override
   void initState() {
@@ -107,6 +110,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     _priceController.addListener(_onPriceChanged);
     _remarksController.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadPropertyNameSuggestions();
       if (widget.property == null && CRMDraftRepository().hasDraft('property')) {
         _showRestoreDraftDialog();
       }
@@ -116,6 +120,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   @override
   void dispose() {
     _priceController.removeListener(_onPriceChanged);
+    _titleFocusNode.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
     _addressController.dispose();
@@ -1423,6 +1428,169 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     }
   }
 
+  String _compactPropertyName(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  List<String> _propertyNameTokens(String value) {
+    return value
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((token) => token.isNotEmpty)
+        .toList();
+  }
+
+  bool _propertyNameMatchesQuery(String propertyName, String query) {
+    final trimmedQuery = query.trim();
+    if (trimmedQuery.isEmpty) return false;
+
+    final compactName = _compactPropertyName(propertyName);
+    final compactQuery = _compactPropertyName(trimmedQuery);
+    if (compactQuery.isEmpty) return false;
+    if (compactName.contains(compactQuery)) return true;
+
+    final nameTokens = _propertyNameTokens(propertyName);
+    final queryTokens = _propertyNameTokens(trimmedQuery);
+    if (nameTokens.isEmpty || queryTokens.isEmpty) return false;
+
+    final wordsMatch = queryTokens.every(
+      (queryToken) => nameTokens.any((nameToken) => nameToken.contains(queryToken)),
+    );
+    if (wordsMatch) return true;
+
+    final sortedName = ([...nameTokens]..sort()).join();
+    final sortedQuery = ([...queryTokens]..sort()).join();
+    return sortedName.contains(sortedQuery);
+  }
+
+  int _propertyNameMatchRank(String propertyName, String query) {
+    final compactName = _compactPropertyName(propertyName);
+    final compactQuery = _compactPropertyName(query);
+    if (compactName == compactQuery) return 0;
+    if (compactName.startsWith(compactQuery)) return 1;
+    if (compactName.contains(compactQuery)) return 2;
+    return 3;
+  }
+
+  void _setPropertyNameSuggestions(Iterable<String> titles) {
+    final unique = <String, String>{};
+    for (final title in titles) {
+      final trimmed = title.trim();
+      if (trimmed.isEmpty) continue;
+      unique.putIfAbsent(trimmed.toLowerCase(), () => trimmed);
+    }
+    _propertyNameSuggestions = unique.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  Future<void> _loadPropertyNameSuggestions() async {
+    try {
+      final blocState = context.read<PropertiesBloc>().state;
+      if (blocState is PropertiesLoaded) {
+        _setPropertyNameSuggestions(blocState.properties.map((p) => p.title));
+        if (mounted) setState(() {});
+      }
+
+      final titles = await PropertiesService().getDistinctPropertyTitles();
+      if (!mounted) return;
+      setState(() => _setPropertyNameSuggestions(titles));
+    } catch (_) {}
+  }
+
+  Iterable<String> _matchingPropertyNames(String query) {
+    final matches = _propertyNameSuggestions
+        .where((name) => _propertyNameMatchesQuery(name, query))
+        .toList()
+      ..sort((a, b) {
+        final rank = _propertyNameMatchRank(a, query).compareTo(_propertyNameMatchRank(b, query));
+        if (rank != 0) return rank;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+    if (matches.length <= 12) return matches;
+    return matches.take(12);
+  }
+
+  Widget _buildPropertyNameField() {
+    return RawAutocomplete<String>(
+      textEditingController: _titleController,
+      focusNode: _titleFocusNode,
+      optionsBuilder: (textEditingValue) {
+        return _matchingPropertyNames(textEditingValue.text);
+      },
+      displayStringForOption: (option) => option,
+      onSelected: (selection) {
+        _titleController.value = TextEditingValue(
+          text: selection,
+          selection: TextSelection.collapsed(offset: selection.length),
+        );
+      },
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth.isFinite && constraints.maxWidth > 0) {
+              _titleFieldWidth = constraints.maxWidth;
+            }
+            return TextFormField(
+              controller: controller,
+              focusNode: focusNode,
+              style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+              decoration: InputDecoration(
+                labelText: 'Location / Property Name *',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                suffixIcon: IconButton(
+                  icon: Icon(Icons.search, color: CRMColors.primaryOf(context)),
+                  onPressed: _showSearchPropertyDialog,
+                  tooltip: 'Search existing properties',
+                ),
+              ),
+              validator: (v) => v!.isEmpty ? 'Location / Property Name is required' : null,
+              onFieldSubmitted: (_) => onFieldSubmitted(),
+            );
+          },
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        final fieldWidth = _titleFieldWidth;
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 6,
+            color: CRMColors.cardBgOf(context),
+            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+            child: SizedBox(
+              width: fieldWidth,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 240),
+                child: ListView.separated(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  separatorBuilder: (_, __) => Divider(
+                    height: 1,
+                    color: CRMColors.borderOf(context).withValues(alpha: 0.5),
+                  ),
+                  itemBuilder: (context, index) {
+                    final option = options.elementAt(index);
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        option,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
+                      ),
+                      onTap: () => onSelected(option),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildBasicStep(bool isMobile) {
     final selectedCategoryItem = widget.metadata.categories.firstWhere(
       (c) => c.id == _selectedCategory,
@@ -1474,20 +1642,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       padding: isMobile ? const EdgeInsets.all(CRMSpacing.s) : const EdgeInsets.all(CRMSpacing.m),
       child: Column(
         children: [
-          TextFormField(
-            controller: _titleController,
-            style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-            decoration: InputDecoration(
-              labelText: 'Location / Property Name *',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
-              suffixIcon: IconButton(
-                icon: Icon(Icons.search, color: CRMColors.primaryOf(context)),
-                onPressed: _showSearchPropertyDialog,
-                tooltip: 'Search existing properties',
-              ),
-            ),
-            validator: (v) => v!.isEmpty ? 'Location / Property Name is required' : null,
-          ),
+          _buildPropertyNameField(),
           const SizedBox(height: CRMSpacing.m),
 
           if (isMobile) ...[

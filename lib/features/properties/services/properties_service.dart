@@ -71,6 +71,38 @@ class PropertiesService {
     }
   }
 
+  Future<List<String>> getDistinctPropertyTitles() async {
+    if (ApiConstants.useSupabaseDirect) {
+      try {
+        final response = await _supabase
+            .from('properties')
+            .select('title')
+            .isFilter('deleted_at', null)
+            .not('title', 'is', null);
+        final unique = <String, String>{};
+        for (final row in response as List) {
+          final title = (row['title'] ?? '').toString().trim();
+          if (title.isEmpty) continue;
+          unique.putIfAbsent(title.toLowerCase(), () => title);
+        }
+        return unique.values.toList();
+      } catch (e) {
+        throw ApiException(message: e.toString());
+      }
+    }
+    final result = await getProperties();
+    final data = result['data'] as Map<String, dynamic>? ?? {};
+    final list = data['properties'] as List? ?? [];
+    final unique = <String, String>{};
+    for (final item in list) {
+      if (item is! Map) continue;
+      final title = (item['title'] ?? '').toString().trim();
+      if (title.isEmpty) continue;
+      unique.putIfAbsent(title.toLowerCase(), () => title);
+    }
+    return unique.values.toList();
+  }
+
   Future<Map<String, dynamic>> getProperties({
     String? search,
     String? categoryId,
@@ -720,6 +752,22 @@ class PropertiesService {
   }
 
   Future<Map<String, dynamic>> createArea(String cityId, String name, String pincode) async {
+    if (ApiConstants.useSupabaseDirect) {
+      try {
+        final response = await _supabase.from('areas').insert({
+          'city_id': cityId,
+          'area_name': name,
+          'pincode': pincode,
+        }).select().single();
+        return {
+          'success': true,
+          'message': 'Area created successfully',
+          'data': {'area': response},
+        };
+      } catch (e) {
+        throw ApiException(message: e.toString());
+      }
+    }
     try {
       final response = await _apiClient.post('/properties/areas', {
         'city_id': cityId,
@@ -838,6 +886,18 @@ class PropertiesService {
   }
 
   Future<void> deleteArea(String id) async {
+    if (ApiConstants.useSupabaseDirect) {
+      try {
+        final deleted = await _supabase.from('areas').delete().eq('id', id).select();
+        if (deleted.isEmpty) {
+          throw ApiException(message: 'Area could not be deleted.');
+        }
+      } catch (e) {
+        if (e is ApiException) rethrow;
+        throw ApiException(message: e.toString());
+      }
+      return;
+    }
     try {
       await _apiClient.delete('/properties/areas/$id');
     } on DioException catch (e) {
@@ -866,6 +926,27 @@ class PropertiesService {
   }
 
   Future<Map<String, dynamic>> updateArea(String id, String cityId, String name, String pincode) async {
+    if (ApiConstants.useSupabaseDirect) {
+      try {
+        final response = await _supabase.from('areas').update({
+          'city_id': cityId,
+          'area_name': name,
+          'pincode': pincode,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }).eq('id', id).select().maybeSingle();
+        if (response == null) {
+          throw ApiException(message: 'Area could not be updated.');
+        }
+        return {
+          'success': true,
+          'message': 'Area updated successfully',
+          'data': {'area': response},
+        };
+      } catch (e) {
+        if (e is ApiException) rethrow;
+        throw ApiException(message: e.toString());
+      }
+    }
     try {
       final response = await _apiClient.put('/properties/areas/$id', {
         'city_id': cityId,
