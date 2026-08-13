@@ -200,13 +200,17 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Icon(
-                                      Icons.image_not_supported_outlined,
+                                      p.videos.isNotEmpty
+                                          ? Icons.play_circle_outline_rounded
+                                          : Icons.image_not_supported_outlined,
                                       size: 40,
                                       color: CRMColors.textMutedOf(context),
                                     ),
                                     const SizedBox(height: CRMSpacing.xs),
                                     Text(
-                                      'No Image Available',
+                                      p.videos.isNotEmpty
+                                          ? 'Video Available'
+                                          : 'No Image Available',
                                       style: CRMTypography.caption.copyWith(
                                         color: CRMColors.textMutedOf(context),
                                         fontWeight: FontWeight.w500,
@@ -1107,10 +1111,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                             ],
                                           )
                                         : Icon(
-                                            Icons.image_not_supported_outlined,
+                                            p.videos.isNotEmpty
+                                                ? Icons.play_circle_outline_rounded
+                                                : Icons.image_not_supported_outlined,
                                             size: 18,
-                                            color:
-                                                CRMColors.textMutedOf(context),
+                                            color: p.videos.isNotEmpty
+                                                ? CRMColors.primaryOf(context)
+                                                : CRMColors.textMutedOf(context),
                                           ),
                                   ),
                                 );

@@ -329,7 +329,9 @@ class PropertiesService {
         cleanProperty['property_code'] = propertyCode;
         cleanProperty['created_by'] = currentUserId;
         cleanProperty['organization_id'] = orgId;
-        cleanProperty['admin_id'] = adminId;
+        // Admin / Super Admin have no parent admin_id. Stamp themselves so Sales
+        // on the Properties page can see these listings with the rest of the team.
+        cleanProperty['admin_id'] = adminId ?? currentUserId;
         cleanProperty['is_verified'] = false;
 
         // Insert Property
@@ -377,10 +379,33 @@ class PropertiesService {
           await _supabase.from('property_videos').insert(vidData);
         }
 
+        // Fetch fully populated property details to match backend structure
+        final populatedProperty = await _supabase.from('properties').select('''
+          *,
+          category:property_categories(id, name),
+          property_type:property_types(id, name),
+          configuration:configurations(id, name),
+          listing_type:listing_types(id, name),
+          property_status:property_status(id, name),
+          city:cities(id, city_name),
+          area:areas(id, area_name, pincode),
+          furnishing_type:furnishing_types(id, name),
+          facing_type:facing_types(id, name),
+          ownership_type:ownership_types(id, name),
+          brokerage_type:brokerage_types(id, name),
+          property_images(*),
+          property_videos(*),
+          property_amenities(amenity:amenities(*)),
+          creator:users!created_by(id, full_name, mobile, email),
+          assignee:users!assigned_to(id, full_name, mobile, email)
+        ''').eq('id', propertyId).single();
+
         return {
           'success': true,
           'message': 'Property created successfully',
-          'data': insertedProperty,
+          'data': {
+            'property': populatedProperty,
+          },
         };
       } catch (e) {
         throw ApiException(message: e.toString());
@@ -536,10 +561,33 @@ class PropertiesService {
           await _supabase.from('property_videos').insert(vidData);
         }
 
+        // Fetch fully populated property details to match backend structure
+        final populatedProperty = await _supabase.from('properties').select('''
+          *,
+          category:property_categories(id, name),
+          property_type:property_types(id, name),
+          configuration:configurations(id, name),
+          listing_type:listing_types(id, name),
+          property_status:property_status(id, name),
+          city:cities(id, city_name),
+          area:areas(id, area_name, pincode),
+          furnishing_type:furnishing_types(id, name),
+          facing_type:facing_types(id, name),
+          ownership_type:ownership_types(id, name),
+          brokerage_type:brokerage_types(id, name),
+          property_images(*),
+          property_videos(*),
+          property_amenities(amenity:amenities(*)),
+          creator:users!created_by(id, full_name, mobile, email),
+          assignee:users!assigned_to(id, full_name, mobile, email)
+        ''').eq('id', id).single();
+
         return {
           'success': true,
           'message': 'Property updated successfully',
-          'data': updatedProperty,
+          'data': {
+            'property': populatedProperty,
+          },
         };
       } catch (e) {
         throw ApiException(message: e.toString());
@@ -658,127 +706,50 @@ class PropertiesService {
   }
 
   Future<Map<String, dynamic>> createCity(String name) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        final trimmed = name.trim();
-        final existing = await _supabase.from('cities')
-            .select('id')
-            .ilike('city_name', trimmed)
-            .maybeSingle();
-        if (existing != null) {
-          throw ApiException(message: "City '$trimmed' already exists.");
-        }
-
-        final response = await _supabase.from('cities').insert({
-          'city_name': trimmed,
-          'state': 'Gujarat',
-          'country': 'India',
-        }).select().single();
-
-        return {
-          'success': true,
-          'message': 'City created successfully',
-          'data': {
-            'city': response,
-          }
-        };
-      } catch (e) {
-        throw ApiException(message: e.toString());
+    try {
+      final response = await _apiClient.post('/properties/cities', {'city_name': name});
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
       }
-    } else {
-      try {
-        final response = await _apiClient.post('/properties/cities', {'city_name': name});
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
   Future<Map<String, dynamic>> createArea(String cityId, String name, String pincode) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        final trimmedName = name.trim();
-        final trimmedPin = pincode.trim();
-        final existing = await _supabase.from('areas')
-            .select('id')
-            .eq('city_id', cityId)
-            .ilike('area_name', trimmedName)
-            .eq('pincode', trimmedPin)
-            .maybeSingle();
-        if (existing != null) {
-          throw ApiException(message: "Area '$trimmedName' with pincode '$trimmedPin' already exists in this city.");
-        }
-
-        final response = await _supabase.from('areas').insert({
-          'city_id': cityId,
-          'area_name': trimmedName,
-          'pincode': trimmedPin,
-        }).select().single();
-
-        return {
-          'success': true,
-          'message': 'Area created successfully',
-          'data': {
-            'area': response,
-          }
-        };
-      } catch (e) {
-        throw ApiException(message: e.toString());
+    try {
+      final response = await _apiClient.post('/properties/areas', {
+        'city_id': cityId,
+        'area_name': name,
+        'pincode': pincode,
+      });
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
       }
-    } else {
-      try {
-        final response = await _apiClient.post('/properties/areas', {
-          'city_id': cityId,
-          'area_name': name,
-          'pincode': pincode,
-        });
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
   Future<Map<String, dynamic>> createAmenity(String name) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        final response = await _supabase.from('amenities').insert({
-          'name': name,
-        }).select().single();
-
-        return {
-          'success': true,
-          'message': 'Amenity created successfully',
-          'data': response
-        };
-      } catch (e) {
-        throw ApiException(message: e.toString());
+    try {
+      final response = await _apiClient.post('/properties/amenities', {
+        'name': name,
+      });
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
       }
-    } else {
-      try {
-        final response = await _apiClient.post('/properties/amenities', {
-          'name': name,
-        });
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
@@ -857,114 +828,58 @@ class PropertiesService {
   }
 
   Future<void> deleteCity(String id) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        await _supabase.from('cities').delete().eq('id', id);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
-    } else {
-      try {
-        await _apiClient.delete('/properties/cities/$id');
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+    try {
+      await _apiClient.delete('/properties/cities/$id');
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
   Future<void> deleteArea(String id) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        await _supabase.from('areas').delete().eq('id', id);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
-    } else {
-      try {
-        await _apiClient.delete('/properties/areas/$id');
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+    try {
+      await _apiClient.delete('/properties/areas/$id');
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
   Future<Map<String, dynamic>> updateCity(String id, String name, {String state = "Gujarat", String country = "India"}) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        final response = await _supabase.from('cities').update({
-          'city_name': name,
-          'state': state,
-          'country': country,
-        }).eq('id', id).select().single();
-
-        return {
-          'success': true,
-          'message': 'City updated successfully',
-          'data': {
-            'city': response,
-          }
-        };
-      } catch (e) {
-        throw ApiException(message: e.toString());
+    try {
+      final response = await _apiClient.put('/properties/cities/$id', {
+        'city_name': name,
+        'state': state,
+        'country': country,
+      });
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
       }
-    } else {
-      try {
-        final response = await _apiClient.put('/properties/cities/$id', {
-          'city_name': name,
-          'state': state,
-          'country': country,
-        });
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
   Future<Map<String, dynamic>> updateArea(String id, String cityId, String name, String pincode) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        final response = await _supabase.from('areas').update({
-          'city_id': cityId,
-          'area_name': name,
-          'pincode': pincode,
-        }).eq('id', id).select().single();
-
-        return {
-          'success': true,
-          'message': 'Area updated successfully',
-          'data': {
-            'area': response,
-          }
-        };
-      } catch (e) {
-        throw ApiException(message: e.toString());
+    try {
+      final response = await _apiClient.put('/properties/areas/$id', {
+        'city_id': cityId,
+        'area_name': name,
+        'pincode': pincode,
+      });
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
       }
-    } else {
-      try {
-        final response = await _apiClient.put('/properties/areas/$id', {
-          'city_id': cityId,
-          'area_name': name,
-          'pincode': pincode,
-        });
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 

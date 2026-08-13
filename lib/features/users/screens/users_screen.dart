@@ -13,7 +13,6 @@ import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
-import '../../../core/design_system/widgets/data_table.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/api/dio_client.dart';
@@ -725,6 +724,7 @@ class _UsersScreenState extends State<UsersScreen> {
           }
         },
         child: SingleChildScrollView(
+          clipBehavior: Clip.hardEdge,
           padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.l),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1199,154 +1199,266 @@ class _UsersScreenState extends State<UsersScreen> {
           );
         }
 
-        final isInactiveFilter = _selectedStatus.toLowerCase() == 'inactive';
-        return CRMDataTable(
-          isLoading: isLoading,
-          emptyTitle: isInactiveFilter
-              ? 'No Inactive Employees Found'
-              : 'No Employees Found',
-          emptyDescription:
-              'Try adjusting your filters or add a new employee profile.',
-          dataRowMinHeight: 52.0,
-          dataRowMaxHeight: 60.0,
-          showCheckboxColumn: false,
-          columns: const [
-            DataColumn(label: Text('Full Name')),
-            DataColumn(label: Text('Role')),
-            DataColumn(label: Text('Email Address')),
-            DataColumn(label: Text('Mobile')),
-            DataColumn(label: Text('Active Logins')),
-            DataColumn(label: Text('Actions')),
-          ],
-          rows: users.map((user) {
-            final isAdmin = user.roleName.toLowerCase() == 'admin' || user.roleName.toLowerCase() == 'telecaller';
+        return _buildFullWidthEmployeesTable(
+          users: users,
+          isCurrentUserAdmin: isCurrentUserAdmin,
+        );
+      },
+    );
+  }
 
-             return DataRow(
-              onSelectChanged:
-                  (isCurrentUserAdmin && (user.roleName.toLowerCase() == 'sales' || user.roleName.toLowerCase() == 'telecaller'))
-                  ? (selected) {
-                      _showSalesmanDetails(user);
-                    }
-                  : null,
-              cells: [
-                DataCell(
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: isAdmin
-                            ? CRMColors.info.withOpacity(0.1)
-                            : CRMColors.primary.withOpacity(0.1),
-                        radius: 16,
-                        backgroundImage: (user.profilePhoto != null && user.profilePhoto!.isNotEmpty)
-                            ? NetworkImage(user.profilePhoto!)
-                            : null,
-                        child: (user.profilePhoto != null && user.profilePhoto!.isNotEmpty)
-                            ? null
-                            : Icon(
-                                isAdmin
-                                    ? Icons.admin_panel_settings_rounded
-                                    : Icons.person_rounded,
-                                color: isAdmin ? CRMColors.info : CRMColors.primary,
-                                size: 16,
-                              ),
-                      ),
-                      const SizedBox(width: CRMSpacing.s),
-                      Text(
-                        user.fullName,
-                        style: CRMTypography.bodyMedium.copyWith(
-                          color: CRMColors.text,
+  Widget _buildFullWidthEmployeesTable({
+    required List<UserModel> users,
+    required bool isCurrentUserAdmin,
+  }) {
+    Widget headerCell(String label, {TextAlign align = TextAlign.left}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: CRMSpacing.s,
+          vertical: CRMSpacing.s,
+        ),
+        child: Text(
+          label,
+          textAlign: align,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: CRMTypography.captionBold.copyWith(
+            color: CRMColors.textSecondaryOf(context),
+          ),
+        ),
+      );
+    }
+
+    Widget bodyCell(Widget child) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: CRMSpacing.s,
+          vertical: CRMSpacing.xs,
+        ),
+        child: child,
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(
+          color: CRMColors.borderOf(context).withOpacity(0.55),
+          width: 0.5,
+        ),
+        boxShadow: CRMShadows.soft,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Table(
+        columnWidths: const {
+          0: FlexColumnWidth(2.4),
+          1: FlexColumnWidth(1.1),
+          2: FlexColumnWidth(2.4),
+          3: FlexColumnWidth(1.4),
+          4: FlexColumnWidth(1.3),
+          5: FlexColumnWidth(1.1),
+        },
+        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        children: [
+          TableRow(
+            decoration: BoxDecoration(
+              color: CRMColors.sidebarBgOf(context),
+            ),
+            children: [
+              headerCell('Full Name'),
+              headerCell('Role'),
+              headerCell('Email Address'),
+              headerCell('Mobile'),
+              headerCell('Active Logins'),
+              headerCell('Actions'),
+            ],
+          ),
+          ...users.map((user) {
+            final isAdmin = user.roleName.toLowerCase() == 'admin' ||
+                user.roleName.toLowerCase() == 'telecaller';
+            final isClickable = isCurrentUserAdmin &&
+                (user.roleName.toLowerCase() == 'sales' ||
+                    user.roleName.toLowerCase() == 'telecaller');
+
+            return TableRow(
+              decoration: BoxDecoration(
+                color: CRMColors.cardBgOf(context),
+                border: Border(
+                  top: BorderSide(
+                    color: CRMColors.borderOf(context).withOpacity(0.5),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              children: [
+                bodyCell(
+                  InkWell(
+                    onTap: isClickable ? () => _showSalesmanDetails(user) : null,
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: isAdmin
+                              ? CRMColors.info.withOpacity(0.1)
+                              : CRMColors.primary.withOpacity(0.1),
+                          radius: 16,
+                          backgroundImage: (user.profilePhoto != null &&
+                                  user.profilePhoto!.isNotEmpty)
+                              ? NetworkImage(user.profilePhoto!)
+                              : null,
+                          child: (user.profilePhoto != null &&
+                                  user.profilePhoto!.isNotEmpty)
+                              ? null
+                              : Icon(
+                                  isAdmin
+                                      ? Icons.admin_panel_settings_rounded
+                                      : Icons.person_rounded,
+                                  color: isAdmin
+                                      ? CRMColors.info
+                                      : CRMColors.primary,
+                                  size: 16,
+                                ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: CRMSpacing.s,
-                      vertical: CRMSpacing.xxs,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isAdmin
-                          ? CRMColors.info.withOpacity(0.12)
-                          : CRMColors.primary.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(
-                        CRMBorderRadius.round,
-                      ),
-                    ),
-                    child: Text(
-                      user.roleName,
-                      style: CRMTypography.captionBold.copyWith(
-                        color: isAdmin ? CRMColors.info : CRMColors.primary,
-                      ),
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    user.email,
-                    style: CRMTypography.body.copyWith(
-                      color: CRMColors.textSecondary,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    user.mobile ?? '-',
-                    style: CRMTypography.body.copyWith(
-                      color: CRMColors.textSecondary,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Switch(
-                    value: user.isActive,
-                    activeColor: CRMColors.primary,
-                    onChanged: (val) {
-                      context.read<UsersBloc>().add(
-                        ToggleUserStatusRequested(id: user.id, isActive: val),
-                      );
-                    },
-                  ),
-                ),
-                DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isAdmin) ...[
-                        IconButton(
-                          icon: const Icon(
-                            Icons.analytics_outlined,
-                            color: CRMColors.warning,
-                            size: 18,
+                        const SizedBox(width: CRMSpacing.s),
+                        Expanded(
+                          child: Text(
+                            user.fullName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: CRMTypography.bodyMedium.copyWith(
+                              color: CRMColors.text,
+                            ),
                           ),
-                          onPressed: () => _showAdminStatsDialog(user),
                         ),
                       ],
-                      IconButton(
-                        icon: Icon(
-                          Icons.edit_outlined,
-                          color: CRMColors.primary,
-                          size: 18,
-                        ),
-                        onPressed: () => _showAddEditUserDialog(user),
+                    ),
+                  ),
+                ),
+                bodyCell(
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: CRMSpacing.s,
+                        vertical: CRMSpacing.xxs,
                       ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.delete_outline_rounded,
-                          color: CRMColors.danger,
-                          size: 18,
+                      decoration: BoxDecoration(
+                        color: isAdmin
+                            ? CRMColors.info.withOpacity(0.12)
+                            : CRMColors.primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(
+                          CRMBorderRadius.round,
                         ),
-                        onPressed: () => _showDeleteConfirmDialog(user),
                       ),
-                    ],
+                      child: Text(
+                        user.roleName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CRMTypography.captionBold.copyWith(
+                          color: isAdmin ? CRMColors.info : CRMColors.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                bodyCell(
+                  Text(
+                    user.email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: CRMTypography.body.copyWith(
+                      color: CRMColors.textSecondary,
+                    ),
+                  ),
+                ),
+                bodyCell(
+                  Text(
+                    user.mobile ?? '-',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: CRMTypography.body.copyWith(
+                      color: CRMColors.textSecondary,
+                    ),
+                  ),
+                ),
+                bodyCell(
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Switch(
+                      value: user.isActive,
+                      activeColor: CRMColors.primary,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (val) {
+                        context.read<UsersBloc>().add(
+                          ToggleUserStatusRequested(id: user.id, isActive: val),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                bodyCell(
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isAdmin)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.analytics_outlined,
+                                color: CRMColors.warning,
+                                size: 18,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              onPressed: () => _showAdminStatsDialog(user),
+                            ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.edit_outlined,
+                              color: CRMColors.primary,
+                              size: 18,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            onPressed: () => _showAddEditUserDialog(user),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.delete_outline_rounded,
+                              color: CRMColors.danger,
+                              size: 18,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            onPressed: () => _showDeleteConfirmDialog(user),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],
             );
-          }).toList(),
-        );
-      },
+          }),
+        ],
+      ),
     );
   }
 

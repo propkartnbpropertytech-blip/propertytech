@@ -67,9 +67,9 @@ class CloudinaryUploader {
 
         final cleanDio = Dio(
           BaseOptions(
-            connectTimeout: const Duration(seconds: 60),
-            receiveTimeout: const Duration(seconds: 60),
-            sendTimeout: const Duration(seconds: 60),
+            connectTimeout: const Duration(minutes: 10),
+            receiveTimeout: const Duration(minutes: 10),
+            sendTimeout: const Duration(minutes: 10),
           ),
         );
         final cloudResponse = await cleanDio.post(
@@ -128,7 +128,13 @@ class CloudinaryUploader {
             if (applyTransformation) 'transformation': transformation,
           });
 
-          final cleanDio = Dio();
+          final cleanDio = Dio(
+            BaseOptions(
+              connectTimeout: const Duration(minutes: 10),
+              receiveTimeout: const Duration(minutes: 10),
+              sendTimeout: const Duration(minutes: 10),
+            ),
+          );
           final cloudResponse = await cleanDio.post(
             cloudinaryUrl,
             data: formData,
