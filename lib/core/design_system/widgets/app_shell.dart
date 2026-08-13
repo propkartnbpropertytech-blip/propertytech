@@ -1672,7 +1672,7 @@ class _CRMAppShellState extends State<CRMAppShell>
               children: [
                 _buildSidebarItem(Icons.dashboard_rounded, 'Dashboard', '/dashboard', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.home_work_rounded, 'Properties', '/properties', currentPath, isMobile, isExpanded),
-                _buildSidebarItem(Icons.assignment_rounded, 'Requirements', '/requirements', currentPath, isMobile, isExpanded),
+                _buildSidebarItem(Icons.assignment_rounded, 'Leads', '/requirements', currentPath, isMobile, isExpanded),
                 if (userRole == 'Admin' || userRole == 'Super Admin')
                   _buildSidebarItem(Icons.people_outline_rounded, 'Employees', '/users', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.folder_open_rounded, 'Library', '/library', currentPath, isMobile, isExpanded),

@@ -4279,11 +4279,18 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
                                         _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
-                                        _buildDetailRow("Specs", '${req.propertyTypeName} (${req.configurationName ?? "-"})', Icons.business_rounded),
+                                        _buildChipDetailRow(
+                                          "Specs",
+                                          Icons.business_rounded,
+                                          _requirementSpecTags(req),
+                                        ),
                                         _buildDetailRow("Budget", budget, Icons.account_balance_wallet_rounded),
-                                        _buildDetailRow("Target Areas", req.areaNames.join(', '), Icons.location_on_rounded),
-                                        _buildDetailRow("Quality", req.requirementQuality, Icons.star_rounded),
-                                        _buildDetailRow("Readiness", req.matchingReadiness, Icons.speed_rounded),
+                                        _buildChipDetailRow(
+                                          "Target Areas",
+                                          Icons.location_on_rounded,
+                                          req.areaNames,
+                                          emptyLabel: "Any Area",
+                                        ),
                                         if (furnishingName.isNotEmpty)
                                           _buildDetailRow("Furnishing", furnishingName, Icons.chair_rounded),
                                         if (facingName.isNotEmpty)
@@ -4354,11 +4361,18 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
                                         _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
-                                        _buildDetailRow("Specs", '${req.propertyTypeName} (${req.configurationName ?? "-"})', Icons.business_rounded),
+                                        _buildChipDetailRow(
+                                          "Specs",
+                                          Icons.business_rounded,
+                                          _requirementSpecTags(req),
+                                        ),
                                         _buildDetailRow("Budget", budget, Icons.account_balance_wallet_rounded),
-                                        _buildDetailRow("Target Areas", req.areaNames.join(', '), Icons.location_on_rounded),
-                                        _buildDetailRow("Quality", req.requirementQuality, Icons.star_rounded),
-                                        _buildDetailRow("Readiness", req.matchingReadiness, Icons.speed_rounded),
+                                        _buildChipDetailRow(
+                                          "Target Areas",
+                                          Icons.location_on_rounded,
+                                          req.areaNames,
+                                          emptyLabel: "Any Area",
+                                        ),
                                         if (furnishingName.isNotEmpty)
                                           _buildDetailRow("Furnishing", furnishingName, Icons.chair_rounded),
                                         if (facingName.isNotEmpty)
@@ -4425,6 +4439,94 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                 fontWeight: FontWeight.w600,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<String> _requirementSpecTags(RequirementModel req) {
+    final tags = <String>[];
+    final seen = <String>{};
+
+    void addTag(String raw) {
+      final value = raw.trim();
+      if (value.isEmpty || value == '-') return;
+      final key = value.toLowerCase();
+      if (seen.add(key)) tags.add(value);
+    }
+
+    for (final part in req.propertyTypeName.split(',')) {
+      addTag(part);
+    }
+    for (final part in (req.configurationName ?? '').split(',')) {
+      addTag(part);
+    }
+    return tags;
+  }
+
+  Widget _buildChipDetailRow(
+    String label,
+    IconData icon,
+    List<String> values, {
+    String emptyLabel = '-',
+  }) {
+    final tags = values.map((v) => v.trim()).where((v) => v.isNotEmpty).toList();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: 16, color: CRMColors.textSecondaryOf(context)),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 110,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                label,
+                style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: tags.isEmpty
+                ? Text(
+                    emptyLabel,
+                    style: CRMTypography.bodyMedium.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                : Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: tags
+                        .map(
+                          (tag) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: CRMColors.primary.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+                              border: Border.all(
+                                color: CRMColors.primary.withValues(alpha: 0.22),
+                              ),
+                            ),
+                            child: Text(
+                              tag,
+                              style: CRMTypography.captionBold.copyWith(
+                                color: CRMColors.primary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
           ),
         ],
       ),
