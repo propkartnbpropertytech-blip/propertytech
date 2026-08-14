@@ -385,6 +385,29 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     const SizedBox(height: CRMSpacing.xs),
                     Row(
                       children: [
+                        Icon(Icons.badge_outlined,
+                            size: 14, color: CRMColors.textSecondaryOf(context)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Added by: ',
+                          style: CRMTypography.caption
+                              .copyWith(color: CRMColors.textSecondaryOf(context)),
+                        ),
+                        Expanded(
+                          child: Text(
+                            p.createdByName.isNotEmpty ? p.createdByName : 'N/A',
+                            style: CRMTypography.captionBold.copyWith(
+                              color: CRMColors.textOf(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: CRMSpacing.xs),
+                    Row(
+                      children: [
                         Icon(Icons.calendar_today_outlined,
                             size: 14, color: CRMColors.textSecondaryOf(context)),
                         const SizedBox(width: 4),

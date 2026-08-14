@@ -708,20 +708,59 @@ class PropertiesService {
 
   Future<Map<String, dynamic>> restoreProperty(String id) async {
     if (ApiConstants.useSupabaseDirect) {
+      bool restored = false;
+      Object? lastError;
       try {
-        final response = await _supabase.rpc(
+        await _supabase.rpc(
           'restore_property_from_bin',
           params: {'p_property_id': id},
         );
+        restored = true;
+      } catch (e) {
+        lastError = e;
+      }
 
+      if (!restored) {
+        try {
+          final res = await _supabase.from('properties').update({
+            'deleted_at': null,
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', id).select('id');
+          if (res is List && res.isNotEmpty) restored = true;
+        } catch (e) {
+          lastError = e;
+        }
+      }
+
+      if (!restored) {
+        try {
+          final binRow = await _supabase.from('deleted_properties').select('*').eq('id', id).maybeSingle();
+          if (binRow != null) {
+            final rowMap = Map<String, dynamic>.from(binRow);
+            rowMap.remove('deleted_at');
+            await _supabase.from('properties').upsert(rowMap);
+            await _supabase.from('deleted_properties').delete().eq('id', id);
+            restored = true;
+          }
+        } catch (e) {
+          lastError = e;
+        }
+      }
+
+      if (restored) {
+        Map<String, dynamic> propertyJson = {'id': id};
+        try {
+          final fetched = await getPropertyById(id);
+          if (fetched != null) propertyJson = fetched;
+        } catch (_) {}
         return {
           'success': true,
           'message': 'Property restored successfully',
-          'data': response,
+          'data': {'property': propertyJson},
         };
-      } catch (e) {
-        throw ApiException(message: e.toString());
       }
+
+      throw ApiException(message: (lastError ?? 'Failed to restore property').toString());
     } else {
       try {
         final response = await _apiClient.patch('/properties/$id/restore', {});

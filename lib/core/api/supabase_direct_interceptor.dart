@@ -34,6 +34,102 @@ class SupabaseDirectInterceptor extends Interceptor {
     final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
 
     try {
+      // 0. Restore Endpoints (Properties & Requirements)
+      if (path.contains('/restore')) {
+        final parts = path.split('/').where((p) => p.isNotEmpty).toList();
+        final restoreIdx = parts.lastIndexOf('restore');
+        final id = restoreIdx > 0 ? parts[restoreIdx - 1] : '';
+
+        if (path.contains('/properties')) {
+          bool restored = false;
+          try {
+            await _supabase.rpc('restore_property_from_bin', params: {'p_property_id': id});
+            restored = true;
+          } catch (_) {}
+
+          if (!restored) {
+            try {
+              await _supabase.from('properties').update({
+                'deleted_at': null,
+                'updated_at': DateTime.now().toIso8601String(),
+              }).eq('id', id);
+              restored = true;
+            } catch (_) {}
+          }
+
+          if (!restored) {
+            try {
+              final binRow = await _supabase.from('deleted_properties').select('*').eq('id', id).maybeSingle();
+              if (binRow != null) {
+                final rowMap = Map<String, dynamic>.from(binRow);
+                rowMap.remove('deleted_at');
+                await _supabase.from('properties').upsert(rowMap);
+                await _supabase.from('deleted_properties').delete().eq('id', id);
+                restored = true;
+              }
+            } catch (_) {}
+          }
+
+          return handler.resolve(Response(
+            requestOptions: options,
+            data: {'success': true, 'message': 'Property restored successfully', 'data': {'id': id}},
+            statusCode: 200,
+          ));
+        }
+
+        if (path.contains('/requirements')) {
+          bool restored = false;
+          try {
+            await _supabase.rpc('restore_requirement_from_bin', params: {'p_requirement_id': id});
+            restored = true;
+          } catch (_) {}
+
+          if (!restored) {
+            try {
+              await _supabase.from('requirements').update({
+                'deleted_at': null,
+                'updated_at': DateTime.now().toIso8601String(),
+              }).eq('id', id);
+              restored = true;
+            } catch (_) {}
+          }
+
+          if (!restored) {
+            try {
+              final check = await _supabase.from('requirements').select('id, status').eq('id', id).maybeSingle();
+              if (check != null) {
+                final newStatus = check['status'] == 'Not Interested' ? 'Interested' : check['status'];
+                await _supabase.from('requirements').update({
+                  'deleted_at': null,
+                  'status': newStatus,
+                  'updated_at': DateTime.now().toIso8601String(),
+                }).eq('id', id);
+                restored = true;
+              }
+            } catch (_) {}
+          }
+
+          if (!restored) {
+            try {
+              final binRow = await _supabase.from('deleted_requirements').select('*').eq('id', id).maybeSingle();
+              if (binRow != null) {
+                final rowMap = Map<String, dynamic>.from(binRow);
+                rowMap.remove('deleted_at');
+                await _supabase.from('requirements').upsert(rowMap);
+                await _supabase.from('deleted_requirements').delete().eq('id', id);
+                restored = true;
+              }
+            } catch (_) {}
+          }
+
+          return handler.resolve(Response(
+            requestOptions: options,
+            data: {'success': true, 'message': 'Requirement restored successfully', 'data': {'id': id}},
+            statusCode: 200,
+          ));
+        }
+      }
+
       // 1. App Config Endpoint
       if (path.startsWith('/config')) {
         final data = await _supabase.from('app_config').select('*').limit(1).maybeSingle();

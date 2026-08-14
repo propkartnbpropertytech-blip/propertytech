@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:persistent_bottom_nav_bar_v2/persistent_bottom_nav_bar_v2.dart';
+import '../../security/role_guard.dart';
 import '../../../../features/auth/bloc/auth_bloc.dart';
 import '../../theme/theme_manager.dart';
 import '../tokens/app_colors.dart';
@@ -691,7 +692,16 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   void _handleLogout() {
+    try {
+      Scaffold.of(context).closeDrawer();
+    } catch (_) {}
+    RoleGuard.currentUser = null;
     context.read<AuthBloc>().add(LogoutRequested());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.go('/get-started');
+      }
+    });
   }
 
   @override
@@ -1276,8 +1286,11 @@ class _CRMAppShellState extends State<CRMAppShell>
       label: Text('$_unreadNotificationsCount'),
       isLabelVisible: _unreadNotificationsCount > 0,
       backgroundColor: CRMColors.primaryOf(context),
+      offset: const Offset(-2, 2),
       child: IconButton(
         tooltip: 'Notifications',
+        padding: const EdgeInsets.all(6),
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         icon: AnimatedScale(
           scale: _unreadNotificationsCount > 0 ? 1.05 : 1.0,
           duration: CRMMotion.fast,
@@ -1288,6 +1301,7 @@ class _CRMAppShellState extends State<CRMAppShell>
             color: _unreadNotificationsCount > 0
                 ? CRMColors.primaryOf(context)
                 : CRMColors.textSecondaryOf(context),
+            size: 22,
           ),
         ),
         onPressed: () {
@@ -1740,11 +1754,31 @@ class _CRMAppShellState extends State<CRMAppShell>
                       ),
                     ),
                   ),
-                  GestureDetector(
+                  InkWell(
                     onTap: _handleLogout,
-                    child: Padding(
-                      padding: const EdgeInsets.all(4.0),
-                      child: Icon(Icons.logout_rounded, color: CRMColors.danger, size: 18),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Tooltip(
+                      message: 'Logout',
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
+                            if (isMobile) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                'Logout',
+                                style: TextStyle(
+                                  color: CRMColors.danger,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ],

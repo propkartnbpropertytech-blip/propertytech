@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/storage/local_repositories.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
@@ -31,7 +32,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
   bool _isLoading = true;
   String _selectedTab = 'Properties'; // 'Properties' or 'Requirements'
+  String _propertiesSubTab = 'Rent'; // 'Rent' or 'Re-sale'
   String _requirementsSubTab = 'Bin'; // 'Bin' or 'Not Interested'
+  String _requirementsListingSubTab = 'Rent'; // 'Rent' or 'Re-sale'
   int _autoDeleteDays = 30; // 15, 30, 60
 
   List<PropertyModel> _binProperties = [];
@@ -42,6 +45,40 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   int _requirementsPerPage = 15;
   int _currentPropertiesPage = 1;
   int _currentRequirementsPage = 1;
+
+  bool _isRentProperty(PropertyModel p) {
+    final typeName = p.listingTypeName.toLowerCase();
+    if (typeName.contains('re-sale') || typeName.contains('resale')) return false;
+    if (typeName.contains('rent')) return true;
+    final lookupName = LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase() ?? '';
+    if (lookupName.contains('re-sale') || lookupName.contains('resale')) return false;
+    if (lookupName.contains('rent')) return true;
+    return p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
+  }
+
+  List<PropertyModel> get _visibleBinProperties {
+    if (_propertiesSubTab == 'Rent') {
+      return _binProperties.where(_isRentProperty).toList();
+    }
+    return _binProperties.where((p) => !_isRentProperty(p)).toList();
+  }
+
+  bool _isRentRequirement(RequirementModel r) {
+    final typeName = (r.listingTypeName ?? '').toLowerCase();
+    if (typeName.contains('re-sale') || typeName.contains('resale')) return false;
+    if (typeName.contains('rent')) return true;
+    final lookupName = LookupLocalRepository.getLookupNameSync(r.listingTypeId ?? '')?.toLowerCase() ?? '';
+    if (lookupName.contains('re-sale') || lookupName.contains('resale')) return false;
+    if (lookupName.contains('rent')) return true;
+    return r.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
+  }
+
+  List<RequirementModel> get _visibleBinRequirements {
+    if (_requirementsListingSubTab == 'Rent') {
+      return _binRequirements.where(_isRentRequirement).toList();
+    }
+    return _binRequirements.where((r) => !_isRentRequirement(r)).toList();
+  }
 
   @override
   void initState() {
@@ -413,7 +450,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
               Text('Recycle Bin', style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context))),
               const SizedBox(height: 4),
               Text(
-                _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Requirements',
+                _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Leads',
                 style: CRMTypography.pageTitle.copyWith(
                   color: CRMColors.textOf(context),
                   fontWeight: FontWeight.bold,
@@ -442,7 +479,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                   ),
                   const SizedBox(width: CRMSpacing.s),
                   ChoiceChip(
-                    label: const Text('Requirements'),
+                    label: const Text('Leads'),
                     selected: _selectedTab == 'Requirements',
                     selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
                     labelStyle: TextStyle(
@@ -481,7 +518,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                       runSpacing: CRMSpacing.s,
                       children: [
                         Text(
-                          _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Requirements',
+                          _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Leads',
                           style: CRMTypography.pageTitle.copyWith(
                             color: CRMColors.textOf(context),
                             fontWeight: FontWeight.bold,
@@ -506,7 +543,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                           },
                         ),
                         ChoiceChip(
-                          label: const Text('Requirements'),
+                          label: const Text('Leads'),
                           selected: _selectedTab == 'Requirements',
                           selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
                           labelStyle: TextStyle(
@@ -540,9 +577,53 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             pageHeader,
-            if (_selectedTab == 'Requirements') ...[
-              const SizedBox(height: CRMSpacing.m),
+            const SizedBox(height: CRMSpacing.m),
+            if (_selectedTab == 'Properties') ...[
               Row(
+                children: [
+                  ChoiceChip(
+                    label: const Text('Rent'),
+                    selected: _propertiesSubTab == 'Rent',
+                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                    labelStyle: TextStyle(
+                      color: _propertiesSubTab == 'Rent' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                      fontWeight: _propertiesSubTab == 'Rent' ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 13,
+                    ),
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() {
+                          _propertiesSubTab = 'Rent';
+                          _currentPropertiesPage = 1;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(width: CRMSpacing.s),
+                  ChoiceChip(
+                    label: const Text('Re-sale'),
+                    selected: _propertiesSubTab == 'Re-sale',
+                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                    labelStyle: TextStyle(
+                      color: _propertiesSubTab == 'Re-sale' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                      fontWeight: _propertiesSubTab == 'Re-sale' ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 13,
+                    ),
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() {
+                          _propertiesSubTab = 'Re-sale';
+                          _currentPropertiesPage = 1;
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ] else ...[
+              Wrap(
+                spacing: CRMSpacing.s,
+                runSpacing: CRMSpacing.s,
                 children: [
                   ChoiceChip(
                     label: const Text('Bin'),
@@ -563,7 +644,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                       }
                     },
                   ),
-                  const SizedBox(width: CRMSpacing.s),
                   ChoiceChip(
                     label: const Text('Not Interested'),
                     selected: _requirementsSubTab == 'Not Interested',
@@ -583,6 +663,43 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                       }
                     },
                   ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Rent'),
+                    selected: _requirementsListingSubTab == 'Rent',
+                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                    labelStyle: TextStyle(
+                      color: _requirementsListingSubTab == 'Rent' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                      fontWeight: _requirementsListingSubTab == 'Rent' ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 13,
+                    ),
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() {
+                          _requirementsListingSubTab = 'Rent';
+                          _currentRequirementsPage = 1;
+                        });
+                      }
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Text('Re-sale'),
+                    selected: _requirementsListingSubTab == 'Re-sale',
+                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                    labelStyle: TextStyle(
+                      color: _requirementsListingSubTab == 'Re-sale' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                      fontWeight: _requirementsListingSubTab == 'Re-sale' ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 13,
+                    ),
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() {
+                          _requirementsListingSubTab = 'Re-sale';
+                          _currentRequirementsPage = 1;
+                        });
+                      }
+                    },
+                  ),
                 ],
               ),
             ],
@@ -591,8 +708,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
               child: _isLoading
                   ? const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
                   : _selectedTab == 'Properties'
-                      ? _binProperties.isEmpty
-                          ? _buildEmptyState('Properties deleted from active listings will appear here.')
+                      ? _visibleBinProperties.isEmpty
+                          ? _buildEmptyState('No deleted ${_propertiesSubTab.toLowerCase()} properties found in bin.')
                           : Builder(
                               builder: (context) {
                                 final authState = context.read<AuthBloc>().state;
@@ -600,11 +717,12 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                 final isUserAdminOrSuperAdmin = currentUser != null &&
                                     (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
 
-                                final totalItems = _binProperties.length;
+                                final targetProperties = _visibleBinProperties;
+                                final totalItems = targetProperties.length;
                                 final totalPages = (totalItems / _propertiesPerPage).ceil().clamp(1, double.infinity).toInt();
                                 final startIndex = (_currentPropertiesPage - 1) * _propertiesPerPage;
                                 final endIndex = (startIndex + _propertiesPerPage).clamp(0, totalItems);
-                                final paginatedProperties = _binProperties.sublist(startIndex, endIndex);
+                                final paginatedProperties = targetProperties.sublist(startIndex, endIndex);
 
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -669,10 +787,10 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                 );
                               },
                             )
-                      : _binRequirements.isEmpty
+                      : _visibleBinRequirements.isEmpty
                           ? _buildEmptyState(_requirementsSubTab == 'Bin'
-                              ? 'Requirements deleted from active pipeline will appear here.'
-                              : 'Requirements marked as "Not Interested" will appear here.')
+                              ? 'No deleted ${_requirementsListingSubTab.toLowerCase()} leads found.'
+                              : 'No ${_requirementsListingSubTab.toLowerCase()} leads marked as "Not Interested".')
                           : Builder(
                               builder: (context) {
                                 final authState = context.read<AuthBloc>().state;
@@ -684,11 +802,12 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                     (currentUser.role?.toLowerCase() == 'admin' ||
                                         currentUser.role?.toLowerCase() == 'super admin');
 
-                                final totalItems = _binRequirements.length;
+                                final targetRequirements = _visibleBinRequirements;
+                                final totalItems = targetRequirements.length;
                                 final totalPages = (totalItems / _requirementsPerPage).ceil().clamp(1, double.infinity).toInt();
                                 final startIndex = (_currentRequirementsPage - 1) * _requirementsPerPage;
                                 final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalItems);
-                                final paginatedRequirements = _binRequirements.sublist(startIndex, endIndex);
+                                final paginatedRequirements = targetRequirements.sublist(startIndex, endIndex);
 
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
