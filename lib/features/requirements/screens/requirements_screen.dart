@@ -242,6 +242,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _changeStatus(RequirementModel req, String newStatus) {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    if (_isLeadTransferredAway(req, currentUser)) return;
     if (newStatus == req.status) return;
     if (!_isValidStatusTransition(req.status, newStatus)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -493,7 +496,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CRMPageHeader(
-          eyebrow: 'Demand desk',
+          eyebrow: '',
           title: 'Leads Tracker',
           benefit:
               'Capture buyer demand and run listing matches that convert faster',
@@ -1251,9 +1254,149 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       return r.createdBy == currentUser.id || r.adminId == currentUser.adminId;
     }
     if (currentUser.role == 'Sales') {
-      return r.createdBy == currentUser.id;
+      if (_isLeadTransferredAway(r, currentUser)) return false;
+      return r.createdBy == currentUser.id || r.assignedTo == currentUser.id;
     }
     return false;
+  }
+
+  bool _isLeadTransferredAway(RequirementModel r, UserModel? currentUser) {
+    if (currentUser == null || currentUser.role != 'Sales') return false;
+    final assigned = r.assignedTo;
+    if (assigned == null || assigned.isEmpty) return false;
+    return r.createdBy == currentUser.id && assigned != currentUser.id;
+  }
+
+  bool _salesCanViewRequirement(RequirementModel r, UserModel currentUser) {
+    final isCreator = r.createdBy == currentUser.id;
+    final isAssignee = r.assignedTo != null &&
+        r.assignedTo!.isNotEmpty &&
+        r.assignedTo == currentUser.id;
+    return isCreator || isAssignee;
+  }
+
+  Widget _buildSalesAssignToLabel(RequirementModel req, UserModel? currentUser) {
+    final assignee = req.assigneeName?.trim() ?? '';
+    final creator = req.creatorName?.trim() ?? '';
+    final isReceivedTransfer = currentUser != null &&
+        req.assignedTo != null &&
+        req.assignedTo!.isNotEmpty &&
+        req.assignedTo == currentUser.id &&
+        req.createdBy != null &&
+        req.createdBy != currentUser.id;
+
+    if (_isLeadTransferredAway(req, currentUser)) {
+      return Text(
+        assignee.isNotEmpty ? 'Transferred to $assignee' : 'Transferred to another salesperson',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: CRMTypography.captionBold.copyWith(
+          color: CRMColors.warning,
+        ),
+      );
+    }
+
+    if (isReceivedTransfer) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            assignee.isNotEmpty ? assignee : (currentUser.fullName),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: CRMTypography.bodyMedium.copyWith(
+              color: CRMColors.textOf(context),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (creator.isNotEmpty)
+            Text(
+              'From $creator',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: CRMTypography.caption.copyWith(
+                color: CRMColors.warning,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+        ],
+      );
+    }
+
+    return Text(
+      assignee.isNotEmpty ? assignee : 'Unassigned',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: CRMTypography.bodyMedium.copyWith(
+        color: CRMColors.textOf(context),
+      ),
+    );
+  }
+
+  Widget _buildStatusControl(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
+    if (_isLeadTransferredAway(req, currentUser)) {
+      return Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? CRMSpacing.s : CRMSpacing.s,
+          vertical: compact ? CRMSpacing.xxs : CRMSpacing.xxs,
+        ),
+        decoration: BoxDecoration(
+          color: CRMColors.warning.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+          border: Border.all(color: CRMColors.warning.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          'Leads Transfer',
+          style: CRMTypography.captionBold.copyWith(
+            color: CRMColors.warning,
+            fontSize: compact ? 11 : 12,
+          ),
+        ),
+      );
+    }
+
+    final statusColor = compact ? _getStatusColor(req.status) : CRMColors.primary;
+    return PopupMenuButton<String>(
+      tooltip: 'Change Status',
+      onSelected: (String newStatus) => _changeStatus(req, newStatus),
+      itemBuilder: (BuildContext context) => const [
+        PopupMenuItem<String>(value: 'Not Started', child: Text('Not Started')),
+        PopupMenuItem<String>(value: 'Follow-up', child: Text('Follow-up')),
+        PopupMenuItem<String>(value: 'Interested', child: Text('Interested')),
+        PopupMenuItem<String>(value: 'Site Visit', child: Text('Site Visit Sche.')),
+        PopupMenuItem<String>(value: 'Site Visit Done', child: Text('Site Visit Done')),
+        PopupMenuItem<String>(value: 'Negotiation', child: Text('Negotiation')),
+        PopupMenuItem<String>(value: 'Won', child: Text('Won')),
+        PopupMenuItem<String>(value: 'Bin', child: Text('Bin')),
+        PopupMenuItem<String>(value: 'Not Interested', child: Text('Not Interested')),
+      ],
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xxs),
+          decoration: BoxDecoration(
+            color: statusColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+            border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                displayStatusLabel(req.status),
+                style: CRMTypography.captionBold.copyWith(
+                  color: statusColor,
+                  fontSize: compact ? 11 : 12,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(Icons.arrow_drop_down_rounded, size: 16, color: statusColor),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildRequirementsTable() {
@@ -1277,15 +1420,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           final query = _searchController.text.trim().toLowerCase();
           requirements = state.requirements.where((r) {
             if (currentUser != null && currentUser.role == 'Sales') {
-              final isCreator = r.createdBy == currentUser.id || r.creatorName == currentUser.fullName;
-              final isAssignee = r.assignedTo == currentUser.id || r.assigneeName == currentUser.fullName;
-              final isAssignedToOther = r.assignedTo != null && r.assignedTo!.isNotEmpty && r.assignedTo != r.createdBy;
-
-              if (isCreator) {
-                if (isAssignedToOther) {
-                  return false;
-                }
-              } else if (!isAssignee) {
+              if (!_salesCanViewRequirement(r, currentUser)) {
                 return false;
               }
             }
@@ -1366,15 +1501,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   emptyTitle: 'No Requirements Found',
                   emptyDescription: 'Try adjusting filters or create a new requirement pipeline.',
                   dataRowMinHeight: 56.0,
-                  dataRowMaxHeight: 64.0,
+                  dataRowMaxHeight: 72.0,
                   columnSpacing: 10.0,
                   horizontalMargin: 12.0,
                   columns: [
                     const DataColumn(label: Text('Client')),
-                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')) ...[
+                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                       const DataColumn(label: Text('Added By')),
-                      const DataColumn(label: Text('Assign to')),
-                    ],
+                    const DataColumn(label: Text('Assign to')),
                     const DataColumn(label: Text('Specs / Config')),
                     const DataColumn(label: Text('Budget Range')),
                     const DataColumn(label: Text('Target Area(s)')),
@@ -1436,17 +1570,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             ),
                           ),
                         ),
-                        if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')) ...[
+                        if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                           DataCell(
                             Text(
                               _getSalesmanName(req, currentUser),
                               style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ),
-                          DataCell(
-                            _buildAssignToDropdown(req),
-                          ),
-                        ],
+                        DataCell(
+                          currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')
+                              ? _buildAssignToDropdown(req)
+                              : _buildSalesAssignToLabel(req, currentUser),
+                        ),
                         DataCell(_buildSpecsConfigCell(req)),
                         DataCell(
                           Text(
@@ -1456,51 +1591,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         ),
                         DataCell(_buildTargetAreasCell(req)),
                         DataCell(
-                          PopupMenuButton<String>(
-                            tooltip: 'Change Status',
-                            onSelected: (String newStatus) => _changeStatus(req, newStatus),
-                            itemBuilder: (BuildContext context) => const [
-                              PopupMenuItem<String>(value: 'Not Started', child: Text('Not Started')),
-                              PopupMenuItem<String>(value: 'Follow-up', child: Text('Follow-up')),
-                              PopupMenuItem<String>(value: 'Interested', child: Text('Interested')),
-                              PopupMenuItem<String>(value: 'Site Visit', child: Text('Site Visit Sche.')),
-                              PopupMenuItem<String>(value: 'Site Visit Done', child: Text('Site Visit Done')),
-                              PopupMenuItem<String>(value: 'Negotiation', child: Text('Negotiation')),
-                              PopupMenuItem<String>(value: 'Won', child: Text('Won')),
-                              PopupMenuItem<String>(value: 'Bin', child: Text('Bin')),
-                              PopupMenuItem<String>(value: 'Not Interested', child: Text('Not Interested')),
-                            ],
-                            child: MouseRegion(
-                              cursor: SystemMouseCursors.click,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xxs),
-                                decoration: BoxDecoration(
-                                  color: CRMColors.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                                  border: Border.all(
-                                    color: CRMColors.primary.withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      displayStatusLabel(req.status),
-                                      style: CRMTypography.captionBold.copyWith(
-                                        color: CRMColors.primary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Icon(
-                                      Icons.arrow_drop_down_rounded,
-                                      size: 16,
-                                      color: CRMColors.primary,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
+                          _buildStatusControl(req, currentUser),
                         ),
 
                         DataCell(
@@ -1540,6 +1631,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   ],
                                 ),
                               ),
+                              if (!_isLeadTransferredAway(req, currentUser))
                               const PopupMenuItem(
                                 value: 'add_another',
                                 child: Row(
@@ -1896,49 +1988,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           ),
                           const SizedBox(width: 8),
                           // Status dropdown back on the top right!
-                          PopupMenuButton<String>(
-                            tooltip: 'Change Status',
-                            onSelected: (String newStatus) => _changeStatus(req, newStatus),
-                            itemBuilder: (BuildContext context) => const [
-                              PopupMenuItem<String>(value: 'Not Started', child: Text('Not Started')),
-                              PopupMenuItem<String>(value: 'Follow-up', child: Text('Follow-up')),
-                              PopupMenuItem<String>(value: 'Interested', child: Text('Interested')),
-                              PopupMenuItem<String>(value: 'Site Visit', child: Text('Site Visit Sche.')),
-                              PopupMenuItem<String>(value: 'Site Visit Done', child: Text('Site Visit Done')),
-                              PopupMenuItem<String>(value: 'Negotiation', child: Text('Negotiation')),
-                              PopupMenuItem<String>(value: 'Won', child: Text('Won')),
-                              PopupMenuItem<String>(value: 'Bin', child: Text('Bin')),
-                              PopupMenuItem<String>(value: 'Not Interested', child: Text('Not Interested')),
-                            ],
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xxs),
-                              decoration: BoxDecoration(
-                                color: _getStatusColor(req.status).withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                                border: Border.all(
-                                  color: _getStatusColor(req.status).withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    displayStatusLabel(req.status),
-                                    style: CRMTypography.captionBold.copyWith(
-                                      color: _getStatusColor(req.status),
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Icon(
-                                    Icons.arrow_drop_down_rounded,
-                                    size: 16,
-                                    color: _getStatusColor(req.status),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                          _buildStatusControl(req, currentUser, compact: true),
                         ],
                       ),
                       const SizedBox(height: CRMSpacing.m),
@@ -2013,18 +2063,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   else
                                     Row(
                                       children: [
-                                        Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textMuted),
+                                        Icon(
+                                          _isLeadTransferredAway(req, currentUser)
+                                              ? Icons.swap_horiz_rounded
+                                              : Icons.person_outline_rounded,
+                                          size: 12,
+                                          color: _isLeadTransferredAway(req, currentUser)
+                                              ? CRMColors.warning
+                                              : CRMColors.textMuted,
+                                        ),
                                         const SizedBox(width: 4),
                                         Expanded(
-                                          child: Text(
-                                            req.assigneeName?.isNotEmpty == true ? req.assigneeName! : 'Unassigned',
-                                            style: CRMTypography.captionBold.copyWith(
-                                              color: CRMColors.textOf(context),
-                                              fontSize: 11,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
+                                          child: _buildSalesAssignToLabel(req, currentUser),
                                         ),
                                       ],
                                     ),
@@ -2079,13 +2129,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         tooltip: 'Matches',
                       ),
                       const SizedBox(width: 8),
-                      _buildActionButton(
-                        icon: Icons.add_circle_outline_rounded,
-                        color: CRMColors.primary,
-                        onPressed: () => _showAddAnotherRequirementDialog(req),
-                        tooltip: 'Add Another Requirement',
-                      ),
-                      const SizedBox(width: 8),
+                      if (!_isLeadTransferredAway(req, currentUser))
+                        _buildActionButton(
+                          icon: Icons.add_circle_outline_rounded,
+                          color: CRMColors.primary,
+                          onPressed: () => _showAddAnotherRequirementDialog(req),
+                          tooltip: 'Add Another Requirement',
+                        ),
+                      if (!_isLeadTransferredAway(req, currentUser))
+                        const SizedBox(width: 8),
                       _buildActionButton(
                         icon: Icons.share_rounded,
                         color: CRMColors.info,
@@ -2903,15 +2955,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         if (state is RequirementsLoaded) {
           requirements = state.requirements.where((r) {
             if (currentUser != null && currentUser.role == 'Sales') {
-              final isCreator = r.createdBy == currentUser.id || r.creatorName == currentUser.fullName;
-              final isAssignee = r.assignedTo == currentUser.id || r.assigneeName == currentUser.fullName;
-              final isAssignedToOther = r.assignedTo != null && r.assignedTo!.isNotEmpty && r.assignedTo != r.createdBy;
-
-              if (isCreator) {
-                if (isAssignedToOther) {
-                  return false;
-                }
-              } else if (!isAssignee) {
+              if (!_salesCanViewRequirement(r, currentUser)) {
                 return false;
               }
             }
@@ -2987,7 +3031,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   emptyTitle: 'No Won Requirements',
                   emptyDescription: 'Requirements marked as "Won" will appear here.',
                   dataRowMinHeight: 56.0,
-                  dataRowMaxHeight: 64.0,
+                  dataRowMaxHeight: 72.0,
                   columnSpacing: 10.0,
                   horizontalMargin: 12.0,
                   columns: [
@@ -3051,51 +3095,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         ),
                         DataCell(_buildTargetAreasCell(req)),
                         DataCell(
-                          PopupMenuButton<String>(
-                            tooltip: 'Change Status',
-                            onSelected: (String newStatus) => _changeStatus(req, newStatus),
-                            itemBuilder: (BuildContext context) => const [
-                              PopupMenuItem<String>(value: 'Not Started', child: Text('Not Started')),
-                              PopupMenuItem<String>(value: 'Follow-up', child: Text('Follow-up')),
-                              PopupMenuItem<String>(value: 'Interested', child: Text('Interested')),
-                              PopupMenuItem<String>(value: 'Site Visit', child: Text('Site Visit Sche.')),
-                              PopupMenuItem<String>(value: 'Site Visit Done', child: Text('Site Visit Done')),
-                              PopupMenuItem<String>(value: 'Negotiation', child: Text('Negotiation')),
-                              PopupMenuItem<String>(value: 'Won', child: Text('Won')),
-                              PopupMenuItem<String>(value: 'Bin', child: Text('Bin')),
-                              PopupMenuItem<String>(value: 'Not Interested', child: Text('Not Interested')),
-                            ],
-                            child: MouseRegion(
-                              cursor: SystemMouseCursors.click,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xxs),
-                                decoration: BoxDecoration(
-                                  color: CRMColors.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                                  border: Border.all(
-                                    color: CRMColors.primary.withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      displayStatusLabel(req.status),
-                                      style: CRMTypography.captionBold.copyWith(
-                                        color: CRMColors.primary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Icon(
-                                      Icons.arrow_drop_down_rounded,
-                                      size: 16,
-                                      color: CRMColors.primary,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
+                          _buildStatusControl(req, currentUser),
                         ),
 
                         DataCell(
@@ -4279,11 +4279,18 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
                                         _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
-                                        _buildDetailRow("Specs", '${req.propertyTypeName} (${req.configurationName ?? "-"})', Icons.business_rounded),
+                                        _buildChipDetailRow(
+                                          "Specs",
+                                          Icons.business_rounded,
+                                          _requirementSpecTags(req),
+                                        ),
                                         _buildDetailRow("Budget", budget, Icons.account_balance_wallet_rounded),
-                                        _buildDetailRow("Target Areas", req.areaNames.join(', '), Icons.location_on_rounded),
-                                        _buildDetailRow("Quality", req.requirementQuality, Icons.star_rounded),
-                                        _buildDetailRow("Readiness", req.matchingReadiness, Icons.speed_rounded),
+                                        _buildChipDetailRow(
+                                          "Target Areas",
+                                          Icons.location_on_rounded,
+                                          req.areaNames,
+                                          emptyLabel: "Any Area",
+                                        ),
                                         if (furnishingName.isNotEmpty)
                                           _buildDetailRow("Furnishing", furnishingName, Icons.chair_rounded),
                                         if (facingName.isNotEmpty)
@@ -4354,11 +4361,18 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
                                         _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
-                                        _buildDetailRow("Specs", '${req.propertyTypeName} (${req.configurationName ?? "-"})', Icons.business_rounded),
+                                        _buildChipDetailRow(
+                                          "Specs",
+                                          Icons.business_rounded,
+                                          _requirementSpecTags(req),
+                                        ),
                                         _buildDetailRow("Budget", budget, Icons.account_balance_wallet_rounded),
-                                        _buildDetailRow("Target Areas", req.areaNames.join(', '), Icons.location_on_rounded),
-                                        _buildDetailRow("Quality", req.requirementQuality, Icons.star_rounded),
-                                        _buildDetailRow("Readiness", req.matchingReadiness, Icons.speed_rounded),
+                                        _buildChipDetailRow(
+                                          "Target Areas",
+                                          Icons.location_on_rounded,
+                                          req.areaNames,
+                                          emptyLabel: "Any Area",
+                                        ),
                                         if (furnishingName.isNotEmpty)
                                           _buildDetailRow("Furnishing", furnishingName, Icons.chair_rounded),
                                         if (facingName.isNotEmpty)
@@ -4425,6 +4439,94 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                 fontWeight: FontWeight.w600,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<String> _requirementSpecTags(RequirementModel req) {
+    final tags = <String>[];
+    final seen = <String>{};
+
+    void addTag(String raw) {
+      final value = raw.trim();
+      if (value.isEmpty || value == '-') return;
+      final key = value.toLowerCase();
+      if (seen.add(key)) tags.add(value);
+    }
+
+    for (final part in req.propertyTypeName.split(',')) {
+      addTag(part);
+    }
+    for (final part in (req.configurationName ?? '').split(',')) {
+      addTag(part);
+    }
+    return tags;
+  }
+
+  Widget _buildChipDetailRow(
+    String label,
+    IconData icon,
+    List<String> values, {
+    String emptyLabel = '-',
+  }) {
+    final tags = values.map((v) => v.trim()).where((v) => v.isNotEmpty).toList();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: 16, color: CRMColors.textSecondaryOf(context)),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 110,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                label,
+                style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: tags.isEmpty
+                ? Text(
+                    emptyLabel,
+                    style: CRMTypography.bodyMedium.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                : Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: tags
+                        .map(
+                          (tag) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: CRMColors.primary.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+                              border: Border.all(
+                                color: CRMColors.primary.withValues(alpha: 0.22),
+                              ),
+                            ),
+                            child: Text(
+                              tag,
+                              style: CRMTypography.captionBold.copyWith(
+                                color: CRMColors.primary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
           ),
         ],
       ),

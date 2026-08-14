@@ -71,6 +71,38 @@ class PropertiesService {
     }
   }
 
+  Future<List<String>> getDistinctPropertyTitles() async {
+    if (ApiConstants.useSupabaseDirect) {
+      try {
+        final response = await _supabase
+            .from('properties')
+            .select('title')
+            .isFilter('deleted_at', null)
+            .not('title', 'is', null);
+        final unique = <String, String>{};
+        for (final row in response as List) {
+          final title = (row['title'] ?? '').toString().trim();
+          if (title.isEmpty) continue;
+          unique.putIfAbsent(title.toLowerCase(), () => title);
+        }
+        return unique.values.toList();
+      } catch (e) {
+        throw ApiException(message: e.toString());
+      }
+    }
+    final result = await getProperties();
+    final data = result['data'] as Map<String, dynamic>? ?? {};
+    final list = data['properties'] as List? ?? [];
+    final unique = <String, String>{};
+    for (final item in list) {
+      if (item is! Map) continue;
+      final title = (item['title'] ?? '').toString().trim();
+      if (title.isEmpty) continue;
+      unique.putIfAbsent(title.toLowerCase(), () => title);
+    }
+    return unique.values.toList();
+  }
+
   Future<Map<String, dynamic>> getProperties({
     String? search,
     String? categoryId,
@@ -329,7 +361,9 @@ class PropertiesService {
         cleanProperty['property_code'] = propertyCode;
         cleanProperty['created_by'] = currentUserId;
         cleanProperty['organization_id'] = orgId;
-        cleanProperty['admin_id'] = adminId;
+        // Admin / Super Admin have no parent admin_id. Stamp themselves so Sales
+        // on the Properties page can see these listings with the rest of the team.
+        cleanProperty['admin_id'] = adminId ?? currentUserId;
         cleanProperty['is_verified'] = false;
 
         // Insert Property

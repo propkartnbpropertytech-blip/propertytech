@@ -19,6 +19,7 @@ import 'dart:async';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../features/properties/services/properties_service.dart';
 import '../../../features/properties/models/property_model.dart';
+import '../../navigation/mobile_system_back_handler.dart';
 
 class CRMAppShell extends StatefulWidget {
   final Widget child;
@@ -49,17 +50,10 @@ class _CRMAppShellState extends State<CRMAppShell>
     super.initState();
     _entryController = AnimationController(
       vsync: this,
-      duration: CRMMotion.entrySettle,
-      value: CRMAppShell._entrySettledThisSession ? 1.0 : 0.0,
+      duration: Duration.zero,
+      value: 1.0,
     );
-    if (!CRMAppShell._entrySettledThisSession) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _entryController.forward().whenComplete(() {
-          CRMAppShell._entrySettledThisSession = true;
-        });
-      });
-    }
+    CRMAppShell._entrySettledThisSession = true;
 
     _tabController = PersistentTabController(initialIndex: 0);
     _tabController.addListener(() {
@@ -731,7 +725,22 @@ class _CRMAppShellState extends State<CRMAppShell>
       curve: CRMMotion.emphasized,
     );
 
-    return Stack(
+    return MobileSystemBackHandler(
+      onBeforeBack: () async {
+        if (_searchOverlayEntry != null || _isMobileSearchActive) {
+          _hideSearchOverlay();
+          if (_isMobileSearchActive && mounted) {
+            setState(() => _isMobileSearchActive = false);
+          }
+          return true;
+        }
+        if (_notificationsPanelOpen) {
+          setState(() => _notificationsPanelOpen = false);
+          return true;
+        }
+        return false;
+      },
+      child: Stack(
           children: [
             FadeTransition(
               opacity: entryCurved,
@@ -935,6 +944,7 @@ class _CRMAppShellState extends State<CRMAppShell>
           },
         ),
       ],
+    ),
     );
   }
 
@@ -1628,8 +1638,6 @@ class _CRMAppShellState extends State<CRMAppShell>
       userRole = userState.user.role;
       userFullName = userState.user.fullName;
       userProfilePhoto = userState.user.profilePhoto;
-    } else {
-      return const SizedBox.shrink();
     }
 
     final isExpanded = isMobile || (sidebarWidth == null ? _isSidebarExpanded : sidebarWidth > 200.0);
@@ -1664,7 +1672,7 @@ class _CRMAppShellState extends State<CRMAppShell>
               children: [
                 _buildSidebarItem(Icons.dashboard_rounded, 'Dashboard', '/dashboard', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.home_work_rounded, 'Properties', '/properties', currentPath, isMobile, isExpanded),
-                _buildSidebarItem(Icons.assignment_rounded, 'Requirements', '/requirements', currentPath, isMobile, isExpanded),
+                _buildSidebarItem(Icons.assignment_rounded, 'Leads', '/requirements', currentPath, isMobile, isExpanded),
                 if (userRole == 'Admin' || userRole == 'Super Admin')
                   _buildSidebarItem(Icons.people_outline_rounded, 'Employees', '/users', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.folder_open_rounded, 'Library', '/library', currentPath, isMobile, isExpanded),

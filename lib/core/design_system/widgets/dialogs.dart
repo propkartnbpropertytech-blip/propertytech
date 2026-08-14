@@ -252,4 +252,62 @@ class CRMDialogs {
       },
     );
   }
+
+  static Future<bool?> showExitAppDialog(BuildContext context) async {
+    return showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Exit',
+      barrierColor: CRMColors.overlayOf(context),
+      transitionDuration: CRMMotion.dialog,
+      pageBuilder: (ctx, anim, _) => _glassDialog(
+        ctx: ctx,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Exit PropKart?',
+              style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(ctx)),
+            ),
+            const SizedBox(height: CRMSpacing.s),
+            Text(
+              'Are you sure you want to exit?',
+              style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(ctx)),
+            ),
+            const SizedBox(height: CRMSpacing.l),
+            Row(
+              children: [
+                Expanded(
+                  child: CRMButton(
+                    label: 'Cancel',
+                    variant: CRMButtonVariant.outline,
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                  ),
+                ),
+                const SizedBox(width: CRMSpacing.s),
+                Expanded(
+                  child: CRMButton(
+                    label: 'Exit',
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      transitionBuilder: (ctx, anim, _, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: CRMMotion.easeOut),
+          child: ScaleTransition(
+            scale: Tween(begin: 0.96, end: 1.0).animate(
+              CurvedAnimation(parent: anim, curve: CRMMotion.easeOut),
+            ),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
 }

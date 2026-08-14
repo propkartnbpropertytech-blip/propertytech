@@ -44,6 +44,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   String? _areaSelectedCityId;
   bool _areaIsActive = true;
   bool _isFetchingPincode = false;
+  bool _isSavingArea = false;
+  bool _areaFormIsModal = false;
 
   // Search filters
   String _citySearchQuery = '';
@@ -335,6 +337,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
 
     final bool isMobile = MediaQuery.of(context).size.width < 600;
     if (isMobile) {
+      _areaFormIsModal = true;
       showModalBottomSheet(
         context: context,
         backgroundColor: Colors.transparent,
@@ -356,8 +359,11 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
             ),
           );
         },
-      );
+      ).whenComplete(() {
+        _areaFormIsModal = false;
+      });
     } else {
+      _areaFormIsModal = false;
       setState(() {
         _isAreaFormOpen = true;
       });
@@ -365,18 +371,21 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   }
 
   void _closeAreaForm() {
+    final shouldPopModal = _areaFormIsModal;
     setState(() {
       _isAreaFormOpen = false;
       _editingArea = null;
       _areaNameController.clear();
       _areaPincodeController.clear();
+      _isSavingArea = false;
     });
-    if (Navigator.of(context).canPop()) {
+    if (shouldPopModal && Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
   }
 
   Future<void> _saveArea() async {
+    if (_isSavingArea) return;
     if (!_areaFormKey.currentState!.validate()) return;
     if (_areaSelectedCityId == null) {
       _showSnackBar('Please select an associated city.', isError: true);
@@ -398,22 +407,40 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() => _isSavingArea = true);
     try {
       if (_editingArea == null) {
-        // Create new
-        await _propertiesService.createArea(_areaSelectedCityId!, name, pincode);
+        final response = await _propertiesService.createArea(_areaSelectedCityId!, name, pincode);
+        final data = response['data'] as Map<String, dynamic>? ?? {};
+        final areaJson = data['area'] as Map<String, dynamic>? ?? {};
+        if (areaJson['id'] != null) {
+          final created = AreaLookup.fromJson(areaJson);
+          setState(() {
+            _areas = [..._areas, created];
+          });
+        }
         _showSnackBar('Area created successfully!');
       } else {
-        // Edit existing
-        await _propertiesService.updateArea(_editingArea!.id, _areaSelectedCityId!, name, pincode);
+        final editingId = _editingArea!.id;
+        await _propertiesService.updateArea(editingId, _areaSelectedCityId!, name, pincode);
+        setState(() {
+          _areas = _areas
+              .map((a) => a.id == editingId
+                  ? AreaLookup(
+                      id: a.id,
+                      name: name,
+                      cityId: _areaSelectedCityId!,
+                      pincode: pincode,
+                    )
+                  : a)
+              .toList();
+        });
         _showSnackBar('Area updated successfully!');
       }
       _closeAreaForm();
-      await _loadData();
     } catch (e) {
+      if (mounted) setState(() => _isSavingArea = false);
       _showSnackBar('Operation failed: $e', isError: true);
-      setState(() => _isLoading = false);
     }
   }
 
@@ -426,14 +453,15 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
 
     if (confirm != true) return;
 
-    setState(() => _isLoading = true);
     try {
       await _propertiesService.deleteArea(area.id);
+      if (!mounted) return;
+      setState(() {
+        _areas = _areas.where((a) => a.id != area.id).toList();
+      });
       _showSnackBar('Area configuration deleted.');
-      await _loadData();
     } catch (e) {
       _showSnackBar('Failed to delete area: $e', isError: true);
-      setState(() => _isLoading = false);
     }
   }
 
@@ -1313,8 +1341,14 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                     backgroundColor: CRMColors.primary,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
                   ),
-                  onPressed: _saveArea,
-                  child: Text('Save Configuration', style: CRMTypography.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
+                  onPressed: _isSavingArea ? null : _saveArea,
+                  child: _isSavingArea
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text('Save Configuration', style: CRMTypography.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),

@@ -109,10 +109,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       if (isAuth) {
         final user = await _authRepository.getProfile();
         RoleGuard.currentUser = user;
-        try {
-          await SyncManager().connectAfterAuth();
-        } catch (_) {}
         emit(Authenticated(user: user));
+        unawaited(SyncManager().connectAfterAuth());
       } else {
         RoleGuard.currentUser = null;
         emit(Unauthenticated());

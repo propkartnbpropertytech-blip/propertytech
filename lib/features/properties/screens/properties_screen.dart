@@ -222,6 +222,34 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                             ),
                           ),
                   ),
+                  if (p.videos.isNotEmpty)
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.white24, width: 0.5),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.play_circle_fill_rounded, color: Colors.redAccent, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'Video',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   Positioned(
                     top: 12,
                     left: 12,
