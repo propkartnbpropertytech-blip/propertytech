@@ -102,6 +102,7 @@ class AppRouter {
           tokenHash: state.uri.queryParameters['token_hash'],
           type: state.uri.queryParameters['type'],
           code: state.uri.queryParameters['code'],
+          token: state.uri.queryParameters['token'],
         ),
       ),
       ShellRoute(
@@ -283,6 +284,7 @@ class AppRouter {
           tokenHash: uri.queryParameters['token_hash'],
           type: uri.queryParameters['type'],
           code: uri.queryParameters['code'],
+          token: uri.queryParameters['token'],
         );
       }
       return Scaffold(

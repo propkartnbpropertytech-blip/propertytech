@@ -13,6 +13,12 @@ void main() {
       expect(RoleGuard.canManageLookups('Telecaller'), isFalse);
     });
 
+    test('Super Admin, Admin and Sales can manage city/area lookups', () {
+      expect(RoleGuard.canManageLookups('Super Admin'), isTrue);
+      expect(RoleGuard.canManageLookups('Admin'), isTrue);
+      expect(RoleGuard.canManageLookups('Sales'), isTrue);
+    });
+
     test('Telecaller cannot create or manage any employees', () {
       expect(
         RoleGuard.validateUserMutation(

@@ -353,11 +353,11 @@ class LookupItem {
   LookupItem({required this.id, required this.name, this.categoryId, this.state, this.country});
   factory LookupItem.fromJson(Map<String, dynamic> json) {
     return LookupItem(
-      id: json['id'] as String,
-      name: (json['name'] ?? json['city_name'] ?? json['area_name'] ?? '') as String,
-      categoryId: json['category_id'] as String?,
-      state: json['state'] as String?,
-      country: json['country'] as String?,
+      id: (json['id'] ?? '').toString(),
+      name: (json['name'] ?? json['city_name'] ?? json['area_name'] ?? '').toString(),
+      categoryId: json['category_id']?.toString(),
+      state: json['state']?.toString(),
+      country: json['country']?.toString(),
     );
   }
 }
@@ -369,10 +369,10 @@ class AreaLookup extends LookupItem {
       : super(id: id, name: name);
   factory AreaLookup.fromJson(Map<String, dynamic> json) {
     return AreaLookup(
-      id: json['id'] as String,
-      name: json['area_name'] as String,
-      cityId: json['city_id'] as String,
-      pincode: json['pincode'] as String,
+      id: (json['id'] ?? '').toString(),
+      name: (json['area_name'] ?? json['name'] ?? '').toString(),
+      cityId: (json['city_id'] ?? '').toString(),
+      pincode: (json['pincode'] ?? '').toString(),
     );
   }
 }
@@ -415,7 +415,15 @@ class PropertyMetadataModel {
     }
 
     return PropertyMetadataModel(
-      cities: parseList(meta['cities'], (j) => LookupItem(id: j['id'], name: j['city_name'])),
+      cities: parseList(
+        meta['cities'],
+        (j) => LookupItem(
+          id: (j['id'] ?? '').toString(),
+          name: (j['city_name'] ?? j['name'] ?? '').toString(),
+          state: j['state']?.toString(),
+          country: j['country']?.toString(),
+        ),
+      ),
       areas: parseList(meta['areas'], AreaLookup.fromJson),
       categories: parseList(meta['categories'], LookupItem.fromJson),
       types: parseList(meta['types'], LookupItem.fromJson),
