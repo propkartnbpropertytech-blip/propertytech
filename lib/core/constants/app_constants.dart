@@ -1,6 +1,6 @@
 class AppConstants {
   // API Config
-  static const String baseUrl = 'http://200.234.36.120:5001/api/v1';
+  static const String baseUrl = 'https://api-propkart.nbpropertytech.com/api/v1';
   static const Duration connectTimeout = Duration(seconds: 15);
   static const Duration receiveTimeout = Duration(seconds: 15);
 

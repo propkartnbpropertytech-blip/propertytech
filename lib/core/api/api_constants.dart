@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 class ApiConstants {
-  static const String primaryBaseUrl = "http://200.234.36.120:5001/api/v1";
-  static const String backupBaseUrl = "http://200.234.36.120:5001/api/v1";
+  static const String primaryBaseUrl = "https://api-propkart.nbpropertytech.com/api/v1";
+  static const String backupBaseUrl = "https://api-propkart.nbpropertytech.com/api/v1";
 
   /// Toggle this to true to connect Flutter directly to Supabase.
   /// Set to false to fall back to the custom Node.js Express backend.
