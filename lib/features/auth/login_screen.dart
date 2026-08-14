@@ -114,7 +114,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Enter your email address below, and we will send a password reset request to your administrator.',
+                      'Enter your email address below. We will email you a confirmation and send the reset request to your administrator.',
                       style: CRMTypography.subheadline.copyWith(color: CRMColors.textSecondaryOf(context)),
                     ),
                     const SizedBox(height: 18),
@@ -180,11 +180,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                     children: [
                                       Icon(Icons.check_circle_outline_rounded, color: CRMColors.primaryOf(context), size: 28),
                                       const SizedBox(width: 10),
-                                      Text('Request Sent', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                                      Text('Email Sent', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
                                     ],
                                   ),
                                   content: Text(
-                                    response.data['message'] ?? 'Password reset request has been created successfully.',
+                                    response.data['message'] ??
+                                        'A password reset link has been sent to your email. Please check your inbox and spam folder.',
                                     style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
                                   ),
                                   actions: [
