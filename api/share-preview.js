@@ -1,11 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const http = require('https');
+const https = require('https');
+const http = require('http');
 
-// Helper to fetch data via Node.js https module without external dependencies
+// Helper to fetch data via Node.js http/https module without external dependencies
 function fetchUrl(url) {
   return new Promise((resolve, reject) => {
-    http.get(url, (res) => {
+    const client = url.startsWith('https') ? https : http;
+    client.get(url, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -36,7 +38,7 @@ module.exports = async (req, res) => {
 
   // 1. Fetch live share session details from backend API
   try {
-    const apiRes = await fetchUrl(`https://prop-kart-backend.vercel.app/api/v1/share-sessions/public/${sessionId}`);
+    const apiRes = await fetchUrl(`http://200.234.36.120:5001/api/v1/share-sessions/public/${sessionId}`);
     
     if (apiRes && apiRes.success && apiRes.data) {
       const { agent, properties } = apiRes.data;

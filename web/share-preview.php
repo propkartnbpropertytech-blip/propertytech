@@ -14,7 +14,7 @@ if ($propertyId) {
 
 if (!empty($sessionId)) {
     // Fetch live session details from backend API
-    $apiUrl = 'https://prop-kart-backend.vercel.app/api/v1/share-sessions/public/' . $sessionId;
+    $apiUrl = 'http://200.234.36.120:5001/api/v1/share-sessions/public/' . $sessionId;
     
     // Set timeout to avoid blocking page load
     $opts = [
