@@ -59,6 +59,16 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   Future<void> _bootstrapRecovery() async {
+    final customToken = widget.token;
+    if (customToken != null && customToken.isNotEmpty) {
+      setState(() {
+        _sessionLoaded = true;
+        _needsManualConfirm = false;
+        _isVerifyingLink = false;
+      });
+      return;
+    }
+
     // Supabase redirected here with an explicit error (expired / denied / used link).
     final errorCode = widget.errorCode;
     final errorDescription = widget.errorDescription;
@@ -84,13 +94,6 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         });
       }
     });
-
-    // Custom app reset link: ?token=... (password_reset_requests.token_hash)
-    final customToken = widget.token;
-    if (customToken != null && customToken.isNotEmpty) {
-      setState(() => _sessionLoaded = true);
-      return;
-    }
 
     // PKCE: ?code=... from Supabase verify redirect
     final code = widget.code;
@@ -207,8 +210,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     });
 
     try {
-      final newPassword = _passwordController.text;
       final customToken = widget.token;
+      final newPassword = _passwordController.text;
 
       if (customToken != null && customToken.isNotEmpty) {
         await Supabase.instance.client.rpc(
