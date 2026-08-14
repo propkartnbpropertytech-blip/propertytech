@@ -1325,7 +1325,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     : Container(
                                         color: _atmosphere.withValues(alpha: 0.12),
                                         child: Icon(
-                                          Icons.apartment_rounded,
+                                          (fullProperty != null && fullProperty.videos.isNotEmpty)
+                                              ? Icons.play_circle_outline_rounded
+                                              : Icons.apartment_rounded,
                                           color: _atmosphere,
                                           size: 32,
                                         ),
@@ -1333,6 +1335,27 @@ class _DashboardScreenState extends State<DashboardScreen>
                               ),
                             ),
                           ),
+                          if (hasImage && fullProperty != null && fullProperty.videos.isNotEmpty)
+                            Positioned(
+                              right: 6,
+                              bottom: 6,
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.6),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white30,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.play_arrow_rounded,
+                                  color: Colors.redAccent,
+                                  size: 14,
+                                ),
+                              ),
+                            ),
                           if (hasStatus)
                             Positioned(
                               top: 6,

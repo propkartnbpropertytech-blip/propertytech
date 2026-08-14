@@ -496,7 +496,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CRMPageHeader(
-          eyebrow: 'Demand desk',
+          eyebrow: '',
           title: 'Leads Tracker',
           benefit:
               'Capture buyer demand and run listing matches that convert faster',
