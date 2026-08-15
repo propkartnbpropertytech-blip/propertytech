@@ -139,7 +139,7 @@ class SupabaseDirectInterceptor extends Interceptor {
           'android_link': 'comingsoon',
           'ios_link': 'comingsoon',
           'min_version': '1.1.1',
-          'max_version': '1.1.1',
+          'max_version': '1.1.2',
           'latest_terms_version': 1,
           'latest_privacy_version': 1,
           'enable_ai': true,
