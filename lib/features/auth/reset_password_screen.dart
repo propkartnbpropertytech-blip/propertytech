@@ -15,6 +15,7 @@ class ResetPasswordScreen extends StatefulWidget {
   final String? tokenHash;
   final String? type;
   final String? code;
+  final String? token;
 
   const ResetPasswordScreen({
     super.key,
@@ -23,6 +24,7 @@ class ResetPasswordScreen extends StatefulWidget {
     this.tokenHash,
     this.type,
     this.code,
+    this.token,
   });
 
   @override
@@ -57,6 +59,16 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   Future<void> _bootstrapRecovery() async {
+    final customToken = widget.token;
+    if (customToken != null && customToken.isNotEmpty) {
+      setState(() {
+        _sessionLoaded = true;
+        _needsManualConfirm = false;
+        _isVerifyingLink = false;
+      });
+      return;
+    }
+
     // Supabase redirected here with an explicit error (expired / denied / used link).
     final errorCode = widget.errorCode;
     final errorDescription = widget.errorDescription;
@@ -198,17 +210,28 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     });
 
     try {
-      final session = Supabase.instance.client.auth.currentSession;
-      if (session == null) {
-        throw Exception('No active recovery session found. Please try requesting a reset link again.');
-      }
-
+      final customToken = widget.token;
       final newPassword = _passwordController.text;
 
-      await Supabase.instance.client.rpc(
-        'complete_password_reset',
-        params: {'p_new_password': newPassword},
-      );
+      if (customToken != null && customToken.isNotEmpty) {
+        await Supabase.instance.client.rpc(
+          'complete_password_reset_with_token',
+          params: {
+            'p_token': customToken,
+            'p_new_password': newPassword,
+          },
+        );
+      } else {
+        final session = Supabase.instance.client.auth.currentSession;
+        if (session == null) {
+          throw Exception('No active recovery session found. Please try requesting a reset link again.');
+        }
+
+        await Supabase.instance.client.rpc(
+          'complete_password_reset',
+          params: {'p_new_password': newPassword},
+        );
+      }
 
       if (!mounted) return;
 
