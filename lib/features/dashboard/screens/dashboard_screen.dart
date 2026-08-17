@@ -395,7 +395,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       siteVisitTitle = 'All Site Visits Done';
       requirementsTitle = 'All Requirements';
       wonTitle = 'All Won';
-    } else if (role == 'Admin') {
+    } else if (role == 'Admin' || role == 'Telecaller') {
       availableTitle = 'Available Inventory';
       siteVisitTitle = 'Site visits done';
       requirementsTitle = 'Leads';

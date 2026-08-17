@@ -47,6 +47,10 @@ class DashboardRepository {
         localReqs = localReqs.where((r) =>
           r.createdBy == currentUser.id || r.adminId == currentUser.id
         ).toList();
+      } else if (role == 'Telecaller') {
+        localReqs = localReqs.where((r) =>
+          r.createdBy == currentUser.id || r.adminId == currentUser.adminId
+        ).toList();
       } else if (role != 'Super Admin') {
         localReqs = localReqs.where((r) =>
           r.createdBy == currentUser.id

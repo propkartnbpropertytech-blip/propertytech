@@ -193,6 +193,10 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
           parsedList = parsedList.where((r) =>
             r.createdBy == currentUserId || r.adminId == currentUserId
           ).toList();
+        } else if (role == 'Telecaller') {
+          parsedList = parsedList.where((r) =>
+            r.createdBy == currentUserId || r.adminId == currentUser?.adminId
+          ).toList();
         } else if (role != 'Super Admin') {
           parsedList = parsedList.where((r) =>
             r.createdBy == currentUserId
@@ -378,7 +382,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     bool isAdmin = false;
     if (authState is Authenticated) {
       final role = authState.user.role.toLowerCase();
-      isAdmin = role == 'admin' || role == 'super admin';
+      isAdmin = role == 'admin' || role == 'super admin' || role == 'telecaller';
     }
 
     final bool hasData = _selectedTab == 'Properties' 
@@ -715,7 +719,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                 final authState = context.read<AuthBloc>().state;
                                 final currentUser = authState is Authenticated ? authState.user : null;
                                 final isUserAdminOrSuperAdmin = currentUser != null &&
-                                    (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
+                                    (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
 
                                 final targetProperties = _visibleBinProperties;
                                 final totalItems = targetProperties.length;
@@ -800,7 +804,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                 }
                                 final isUserAdminOrSuperAdmin = currentUser != null &&
                                     (currentUser.role?.toLowerCase() == 'admin' ||
-                                        currentUser.role?.toLowerCase() == 'super admin');
+                                        currentUser.role?.toLowerCase() == 'super admin' ||
+                                        currentUser.role?.toLowerCase() == 'telecaller');
 
                                 final targetRequirements = _visibleBinRequirements;
                                 final totalItems = targetRequirements.length;
