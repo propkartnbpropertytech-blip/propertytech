@@ -48,7 +48,9 @@ module.exports = async (req, res) => {
         const p = properties.find(prop => prop.id === propertyId);
         if (p) {
           const config = p.configuration_name || `${p.bedrooms || '-'} BHK`;
-          const area = p.area_name || '';
+          const rawArea = p.area_name || p.areaName || p.locality || p.location || p.sub_location || p.society || p.city_name || '';
+          const area = (rawArea && rawArea.toUpperCase() !== 'N/A') ? rawArea : '';
+          const titleArea = area ? ` in ${area}` : '';
           const city = p.city_name || '';
           const priceVal = p.price ? parseFloat(p.price) : null;
           
@@ -63,8 +65,8 @@ module.exports = async (req, res) => {
             }
           }
           
-          seoTitle = `${config} in ${area} | ${priceStr} - PropKart`;
-          seoDescription = p.description || `Check out this premium ${config} in ${area} shared by ${agentName} via PropKart.`;
+          seoTitle = `${config}${titleArea} | ${priceStr} - PropKart`;
+          seoDescription = p.description || `Check out this premium ${config}${titleArea} shared by ${agentName} via PropKart.`;
           
           if (p.images && p.images.length > 0) {
             seoImage = p.images[0];
