@@ -697,11 +697,9 @@ class _CRMAppShellState extends State<CRMAppShell>
     } catch (_) {}
     RoleGuard.currentUser = null;
     context.read<AuthBloc>().add(LogoutRequested());
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.go('/get-started');
-      }
-    });
+    if (mounted) {
+      context.go('/get-started');
+    }
   }
 
   @override
@@ -1754,32 +1752,13 @@ class _CRMAppShellState extends State<CRMAppShell>
                       ),
                     ),
                   ),
-                  InkWell(
-                    onTap: _handleLogout,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Tooltip(
-                      message: 'Logout',
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
-                            if (isMobile) ...[
-                              const SizedBox(width: 6),
-                              Text(
-                                'Logout',
-                                style: TextStyle(
-                                  color: CRMColors.danger,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
+                  IconButton(
+                    tooltip: 'Logout',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
+                    onPressed: _handleLogout,
                   ),
                 ],
               ],
