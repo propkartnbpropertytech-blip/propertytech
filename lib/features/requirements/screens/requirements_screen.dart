@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../../core/theme/theme_manager.dart';
@@ -10,7 +11,9 @@ import '../models/requirement_model.dart';
 import '../repository/requirements_repository.dart';
 import 'add_edit_requirement_screen.dart';
 import '../../properties/repository/properties_repository.dart';
+import '../../properties/services/properties_service.dart';
 import '../../properties/models/property_model.dart';
+import '../../../core/storage/local_repositories.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
@@ -215,9 +218,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             CRMButton(
               label: "Delete",
               variant: CRMButtonVariant.danger,
-              onPressed: () {
-                context.read<RequirementsBloc>().add(DeleteRequirementEvent(req.id));
-                Navigator.pop(dialogContext);
+              onPressed: () async {
+                if (req.status == 'Won' || req.status == 'Closed') {
+                  await _revertWonPropertiesToAvailable(req);
+                }
+                if (dialogContext.mounted) {
+                  context.read<RequirementsBloc>().add(DeleteRequirementEvent(req.id));
+                  Navigator.pop(dialogContext);
+                }
               },
             ),
           ],
@@ -241,11 +249,50 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return true;
   }
 
-  void _changeStatus(RequirementModel req, String newStatus) {
+  Future<void> _revertWonPropertiesToAvailable(RequirementModel req) async {
+    try {
+      final propertiesRepository = PropertiesRepository();
+      final propertiesService = PropertiesService();
+      final properties = await propertiesRepository.getProperties();
+
+      const availableStatusId = '09521e45-e731-4517-8129-1866f0991ee8';
+
+      for (final p in properties) {
+        final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
+        final isRentedOrSold = currentStatus.contains('rented') || currentStatus.contains('sold');
+
+        if (isRentedOrSold) {
+          final clientName = await PropertyDealClientStore.getClientName(p.id, property: p);
+          if (clientName != null &&
+              clientName.trim().toLowerCase() == req.clientName.trim().toLowerCase()) {
+            try {
+              await propertiesService.updateProperty(p.id, {
+                'property_status_id': availableStatusId,
+              });
+              await PropertyDealClientStore.removeClientName(p.id);
+            } catch (e) {
+              debugPrint("Error reverting property status to available: $e");
+            }
+          }
+        }
+      }
+
+      RepositoryCoordinator().refreshProperties();
+    } catch (e) {
+      debugPrint("Error in _revertWonPropertiesToAvailable: $e");
+    }
+  }
+
+  void _changeStatus(RequirementModel req, String newStatus) async {
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
     if (_isLeadTransferredAway(req, currentUser)) return;
     if (newStatus == req.status) return;
+
+    if (req.status == 'Won' && newStatus != 'Won') {
+      await _revertWonPropertiesToAvailable(req);
+    }
+
     if (!_isValidStatusTransition(req.status, newStatus)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -282,36 +329,49 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         ),
       );
     } else if (newStatus == 'Won') {
-      final isRent = getListingTypeLabel(req).toLowerCase().contains('rent');
-      final actionWord = isRent ? 'Rented out' : 'Sold out';
       showDialog(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          backgroundColor: CRMColors.cardBg,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
-          title: Text("Confirm Win", style: CRMTypography.sectionTitle.copyWith(color: CRMColors.text)),
-          content: Text(
-            "Are you sure this requirement is $actionWord?",
-            style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
-          ),
-          actions: [
-            CRMButton(
-              label: "Cancel",
-              variant: CRMButtonVariant.outline,
-              onPressed: () => Navigator.pop(dialogContext),
-            ),
-            const SizedBox(width: CRMSpacing.xs),
-            CRMButton(
-              label: "Yes",
-              variant: CRMButtonVariant.primary,
-              onPressed: () {
-                context.read<RequirementsBloc>().add(
-                  UpdateRequirementEvent(req.copyWith(status: newStatus)),
-                );
-                Navigator.pop(dialogContext);
-              },
-            ),
-          ],
+        builder: (dialogContext) => RequirementWinPropertySelectionDialog(
+          requirement: req,
+          onConfirmed: (List<PropertyModel> selectedProperties) async {
+            context.read<RequirementsBloc>().add(
+              UpdateRequirementEvent(req.copyWith(status: 'Won')),
+            );
+
+            final propertiesService = PropertiesService();
+            for (final p in selectedProperties) {
+              await PropertyDealClientStore.setClientName(p.id, req.clientName);
+
+              final listingType = p.listingTypeName.toLowerCase();
+              final isRent = listingType.contains('rent') ||
+                  (LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase().contains('rent') ?? false) ||
+                  p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
+
+              final targetStatusId = isRent
+                  ? '7c1d9611-8cad-4058-a9fa-3d68b8adb6f6' // Rented Out
+                  : '33fa8cf3-910d-4f0b-9142-8862974311ab'; // Sold Out
+
+              try {
+                await propertiesService.updateProperty(p.id, {
+                  'property_status_id': targetStatusId,
+                });
+              } catch (e) {
+                debugPrint("Error updating property status on win: $e");
+              }
+            }
+
+            RepositoryCoordinator().refreshProperties();
+            _triggerFetch();
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Requirement marked as Won and property status updated!'),
+                  backgroundColor: CRMColors.success,
+                ),
+              );
+            }
+          },
         ),
       );
     } else {
@@ -4566,5 +4626,454 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
         ),
       ),
     );
+  }
+}
+
+class RequirementWinPropertySelectionDialog extends StatefulWidget {
+  final RequirementModel requirement;
+  final Function(List<PropertyModel> selectedProperties) onConfirmed;
+
+  const RequirementWinPropertySelectionDialog({
+    super.key,
+    required this.requirement,
+    required this.onConfirmed,
+  });
+
+  @override
+  State<RequirementWinPropertySelectionDialog> createState() =>
+      _RequirementWinPropertySelectionDialogState();
+}
+
+class _RequirementWinPropertySelectionDialogState
+    extends State<RequirementWinPropertySelectionDialog> {
+  final PropertiesRepository _propertiesRepository = PropertiesRepository();
+  bool _isLoading = true;
+  List<PropertyModel> _allProperties = [];
+  List<PropertyModel> _filteredProperties = [];
+  final Set<String> _selectedPropertyIds = {};
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProperties();
+    _searchController.addListener(_filterProperties);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
+    final statusName = p.propertyStatusName.toLowerCase();
+    final statusActive = statusName == 'available' || statusName.contains('available') || statusName.isEmpty;
+    if (!statusActive) return false;
+
+    final reqListing = (req.listingTypeName ?? '').toLowerCase();
+    final propListing = (p.listingTypeName).toLowerCase();
+    bool listingTypeMatch = true;
+    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
+      final isReqRent = reqListing.contains('rent');
+      final isPropRent = propListing.contains('rent');
+      listingTypeMatch = (isReqRent == isPropRent);
+    } else if (req.listingTypeId != null && req.listingTypeId!.isNotEmpty && p.listingTypeId.isNotEmpty) {
+      listingTypeMatch = (p.listingTypeId == req.listingTypeId);
+    }
+    if (!listingTypeMatch) return false;
+
+    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
+      if (p.categoryId != req.categoryId) return false;
+    }
+
+    if (req.propertyTypeIds.isNotEmpty) {
+      bool typeMatch = req.propertyTypeIds.contains(p.propertyTypeId);
+      if (!typeMatch && req.propertyTypeName.isNotEmpty && p.propertyTypeName.isNotEmpty) {
+        final pTypeName = p.propertyTypeName.toLowerCase();
+        typeMatch = req.propertyTypeName.toLowerCase().split(',').any((t) {
+          final trimmed = t.trim();
+          return trimmed.isNotEmpty && (pTypeName.contains(trimmed) || trimmed.contains(pTypeName));
+        });
+      }
+      if (!typeMatch) return false;
+    } else if (req.propertyTypeId.isNotEmpty && p.propertyTypeId.isNotEmpty) {
+      if (p.propertyTypeId != req.propertyTypeId) {
+        final pTypeName = p.propertyTypeName.toLowerCase();
+        final reqTypeName = req.propertyTypeName.toLowerCase();
+        if (!reqTypeName.contains(pTypeName) && !pTypeName.contains(reqTypeName)) return false;
+      }
+    }
+
+    if (req.configurationIds.isNotEmpty) {
+      bool configMatch = p.configurationId != null && req.configurationIds.contains(p.configurationId);
+      if (!configMatch && req.configurationName != null && req.configurationName!.isNotEmpty && p.configurationName != null && p.configurationName!.isNotEmpty) {
+        final pConfigName = p.configurationName!.toLowerCase();
+        configMatch = req.configurationName!.toLowerCase().split(',').any((c) {
+          final trimmed = c.trim();
+          return trimmed.isNotEmpty && (pConfigName.contains(trimmed) || trimmed.contains(pConfigName));
+        });
+      }
+      if (!configMatch) return false;
+    } else if (req.configurationId != null && req.configurationId!.isNotEmpty) {
+      if (p.configurationId != null && p.configurationId!.isNotEmpty && p.configurationId != req.configurationId) {
+        final pConfigName = (p.configurationName ?? '').toLowerCase();
+        final reqConfigName = (req.configurationName ?? '').toLowerCase();
+        if (pConfigName.isNotEmpty && reqConfigName.isNotEmpty) {
+          if (!reqConfigName.contains(pConfigName) && !pConfigName.contains(reqConfigName)) {
+            return false;
+          }
+        }
+      }
+    }
+
+    if (req.areaIds.isNotEmpty) {
+      bool areaMatch = req.areaIds.contains(p.areaId);
+      if (!areaMatch && req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
+        final pArea = p.areaName.trim().toLowerCase();
+        areaMatch = req.areaNames.any((aName) {
+          final trimmed = aName.trim().toLowerCase();
+          return trimmed.isNotEmpty && (trimmed == pArea || pArea.contains(trimmed) || trimmed.contains(pArea));
+        });
+      }
+      if (!areaMatch) return false;
+    }
+
+    if (req.maxBudget > 0) {
+      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
+      final maxB = req.maxBudget;
+      if (p.price < minB || p.price > maxB) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  Future<void> _loadProperties() async {
+    try {
+      final properties = await _propertiesRepository.getProperties();
+      final req = widget.requirement;
+
+      final matches = properties.where((p) => _isRequirementPropertyMatch(p, req)).toList();
+
+      setState(() {
+        _allProperties = matches;
+        _filteredProperties = matches;
+        if (matches.isNotEmpty) {
+          _selectedPropertyIds.add(matches.first.id);
+        }
+        _isLoading = false;
+      });
+    } catch (_) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _filterProperties() {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      setState(() => _filteredProperties = _allProperties);
+      return;
+    }
+
+    setState(() {
+      _filteredProperties = _allProperties.where((p) {
+        final code = p.propertyCode.toLowerCase();
+        final title = (p.title ?? '').toLowerCase();
+        final owner = p.ownerName.toLowerCase();
+        final area = p.areaName.toLowerCase();
+        return code.contains(query) || title.contains(query) || owner.contains(query) || area.contains(query);
+      }).toList();
+    });
+  }
+
+  void _showConfirmWinDialog() {
+    final selectedProps = _allProperties.where((p) => _selectedPropertyIds.contains(p.id)).toList();
+    if (selectedProps.isEmpty) return;
+
+    final hasRent = selectedProps.any((p) =>
+        p.listingTypeName.toLowerCase().contains('rent') ||
+        (LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase().contains('rent') ?? false) ||
+        p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802');
+
+    final hasResale = selectedProps.any((p) =>
+        !p.listingTypeName.toLowerCase().contains('rent') &&
+        !(LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase().contains('rent') ?? false) &&
+        p.listingTypeId != '1c1ccfc1-d318-4b66-9a43-c551532d1802');
+
+    String actionWord;
+    if (hasRent && hasResale) {
+      actionWord = "Rented out / Sold out";
+    } else if (hasRent) {
+      actionWord = "Rented out";
+    } else {
+      actionWord = "Sold out";
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: CRMColors.cardBgOf(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+        title: Text("Confirm Win", style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+        content: Text(
+          "Are you sure this requirement is $actionWord?",
+          style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+        ),
+        actions: [
+          CRMButton(
+            label: "Cancel",
+            variant: CRMButtonVariant.outline,
+            onPressed: () => Navigator.pop(dialogContext),
+          ),
+          const SizedBox(width: CRMSpacing.xs),
+          CRMButton(
+            label: "Yes",
+            variant: CRMButtonVariant.primary,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              Navigator.pop(context);
+              widget.onConfirmed(selectedProps);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobile = screenWidth < 600;
+
+    return Dialog(
+      backgroundColor: CRMColors.cardBgOf(context),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.l)),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 16 : 40,
+        vertical: isMobile ? 24 : 40,
+      ),
+      child: Container(
+        width: isMobile ? double.infinity : 680,
+        height: 600,
+        padding: const EdgeInsets.all(CRMSpacing.l),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Select Deal Property",
+                        style: CRMTypography.sectionTitle.copyWith(
+                          color: CRMColors.textOf(context),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "Select property deal matches for ${widget.requirement.clientName}",
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: "Search property code, title, owner, area...",
+                prefixIcon: const Icon(Icons.search_rounded),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                filled: true,
+                fillColor: CRMColors.backgroundOf(context),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                  borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                ),
+              ),
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filteredProperties.isEmpty
+                      ? Center(
+                          child: Text(
+                            "No matching properties found in client's budget range and specs.",
+                            style: CRMTypography.body.copyWith(
+                              color: CRMColors.textSecondaryOf(context),
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: _filteredProperties.length,
+                          separatorBuilder: (context, index) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final p = _filteredProperties[index];
+                            final isChecked = _selectedPropertyIds.contains(p.id);
+                            final isRent = p.listingTypeName.toLowerCase().contains('rent') ||
+                                (LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase().contains('rent') ?? false) ||
+                                p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
+
+                            return CheckboxListTile(
+                              value: isChecked,
+                              activeColor: CRMColors.primaryOf(context),
+                              onChanged: (bool? val) {
+                                setState(() {
+                                  if (val == true) {
+                                    _selectedPropertyIds.add(p.id);
+                                  } else {
+                                    _selectedPropertyIds.remove(p.id);
+                                  }
+                                });
+                              },
+                              title: Row(
+                                children: [
+                                  Text(
+                                    p.propertyCode,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      p.title.isNotEmpty ? p.title : "Property",
+                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: (isRent ? CRMColors.success : CRMColors.primaryOf(context))
+                                          .withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      isRent ? "Rent" : "Re-sale",
+                                      style: TextStyle(
+                                        color: isRent ? CRMColors.success : CRMColors.primaryOf(context),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  "${p.ownerName} • ${p.areaName} • ₹${BudgetFormatter.format(p.price)}",
+                                  style: TextStyle(
+                                    color: CRMColors.textSecondaryOf(context),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                CRMButton(
+                  label: "Cancel",
+                  variant: CRMButtonVariant.outline,
+                  onPressed: () => Navigator.pop(context),
+                ),
+                const SizedBox(width: CRMSpacing.s),
+                CRMButton(
+                  label: "Done (${_selectedPropertyIds.length})",
+                  variant: CRMButtonVariant.primary,
+                  onPressed: _selectedPropertyIds.isNotEmpty ? _showConfirmWinDialog : null,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PropertyDealClientStore {
+  static const String _prefix = 'deal_client_name_';
+
+  static Future<void> setClientName(String propertyId, String clientName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('$_prefix$propertyId', clientName);
+    } catch (_) {}
+  }
+
+  static Future<String?> getClientName(String propertyId, {PropertyModel? property}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedName = prefs.getString('$_prefix$propertyId');
+      if (savedName != null && savedName.isNotEmpty) {
+        return savedName;
+      }
+
+      if (property != null) {
+        final requirements = await RequirementsRepository().getRequirements();
+        final wonReqs = requirements.where((r) =>
+          r.status.toLowerCase() == 'won' || r.status.toLowerCase() == 'closed'
+        ).toList();
+
+        for (final req in wonReqs) {
+          if (_isRequirementPropertyMatch(property, req)) {
+            await setClientName(propertyId, req.clientName);
+            return req.clientName;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> removeClientName(String propertyId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('$_prefix$propertyId');
+    } catch (_) {}
+  }
+
+  static bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
+    final reqListing = (req.listingTypeName ?? '').toLowerCase();
+    final propListing = (p.listingTypeName).toLowerCase();
+    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
+      final isReqRent = reqListing.contains('rent');
+      final isPropRent = propListing.contains('rent');
+      if (isReqRent != isPropRent) return false;
+    }
+
+    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
+      if (p.categoryId != req.categoryId) return false;
+    }
+
+    if (req.maxBudget > 0) {
+      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
+      final maxB = req.maxBudget;
+      if (p.price < minB || p.price > maxB) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }

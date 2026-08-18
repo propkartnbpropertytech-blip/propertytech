@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -29,6 +30,8 @@ import 'add_edit_property_screen.dart';
 import '../../../core/utils/currency.dart';
 import '../../../core/utils/budget_formatter.dart';
 
+import '../../requirements/models/requirement_model.dart';
+import '../../requirements/repository/requirements_repository.dart';
 import '../../../core/theme/theme_manager.dart';
 
 class PropertiesScreen extends StatefulWidget {
@@ -950,6 +953,107 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                             PopupMenuButton<String>(
                               tooltip: 'Change Status',
                               onSelected: (String statusName) async {
+                                if (statusName == 'Available') {
+                                  final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
+                                  final isCurrentlyRentedOrSold = currentStatus.contains('rented') || currentStatus.contains('sold');
+
+                                  if (isCurrentlyRentedOrSold) {
+                                    final clientName = await PropertyDealClientStore.getClientName(p.id, property: p);
+                                    final bool hasClient = clientName != null && clientName.trim().isNotEmpty;
+
+                                    final bool? confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (dialogContext) => AlertDialog(
+                                        backgroundColor: CRMColors.cardBgOf(context),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+                                        ),
+                                        title: Text(
+                                          "Confirm Status Change",
+                                          style: CRMTypography.sectionTitle.copyWith(
+                                            color: CRMColors.textOf(context),
+                                          ),
+                                        ),
+                                         content: Text.rich(
+                                           TextSpan(
+                                             style: CRMTypography.body.copyWith(
+                                               color: CRMColors.textSecondaryOf(context),
+                                               height: 1.5,
+                                             ),
+                                             children: hasClient
+                                                 ? [
+                                                     const TextSpan(text: "This property is currently assigned to client "),
+                                                     TextSpan(
+                                                       text: "'$clientName'",
+                                                       style: TextStyle(
+                                                         color: CRMColors.primaryOf(context),
+                                                         fontWeight: FontWeight.bold,
+                                                       ),
+                                                     ),
+                                                     TextSpan(
+                                                       text: " (${p.propertyStatusName}).\n\n",
+                                                       style: TextStyle(
+                                                         color: CRMColors.textOf(context),
+                                                         fontWeight: FontWeight.w600,
+                                                       ),
+                                                     ),
+                                                     const TextSpan(
+                                                       text: "Are you sure you want to change its status to ",
+                                                     ),
+                                                     TextSpan(
+                                                       text: "Available",
+                                                       style: const TextStyle(
+                                                         color: CRMColors.success,
+                                                         fontWeight: FontWeight.bold,
+                                                       ),
+                                                     ),
+                                                     const TextSpan(text: "?"),
+                                                   ]
+                                                 : [
+                                                     const TextSpan(
+                                                       text: "Are you sure you want to change the status of this property from ",
+                                                     ),
+                                                     TextSpan(
+                                                       text: p.propertyStatusName ?? 'Rented Out',
+                                                       style: TextStyle(
+                                                         color: CRMColors.textOf(context),
+                                                         fontWeight: FontWeight.bold,
+                                                       ),
+                                                     ),
+                                                     const TextSpan(text: " to "),
+                                                     TextSpan(
+                                                       text: "Available",
+                                                       style: const TextStyle(
+                                                         color: CRMColors.success,
+                                                         fontWeight: FontWeight.bold,
+                                                       ),
+                                                     ),
+                                                     const TextSpan(text: "?"),
+                                                   ],
+                                           ),
+                                         ),
+                                        actions: [
+                                          CRMButton(
+                                            label: "Cancel",
+                                            variant: CRMButtonVariant.outline,
+                                            onPressed: () => Navigator.pop(dialogContext, false),
+                                          ),
+                                          const SizedBox(width: CRMSpacing.xs),
+                                          CRMButton(
+                                            label: "Yes",
+                                            variant: CRMButtonVariant.primary,
+                                            onPressed: () => Navigator.pop(dialogContext, true),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+
+                                    if (confirm != true) return;
+
+                                    await PropertyDealClientStore.removeClientName(p.id);
+                                  }
+                                }
+
                                 if (statusName == 'To Be Available') {
                                   final DateTime? pickedDate =
                                       await showDatePicker(
@@ -3591,5 +3695,72 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
         ),
       ],
     );
+  }
+}
+
+class PropertyDealClientStore {
+  static const String _prefix = 'deal_client_name_';
+
+  static Future<void> setClientName(String propertyId, String clientName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('$_prefix$propertyId', clientName);
+    } catch (_) {}
+  }
+
+  static Future<String?> getClientName(String propertyId, {PropertyModel? property}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedName = prefs.getString('$_prefix$propertyId');
+      if (savedName != null && savedName.isNotEmpty) {
+        return savedName;
+      }
+
+      if (property != null) {
+        final requirements = await RequirementsRepository().getRequirements();
+        final wonReqs = requirements.where((r) =>
+          r.status.toLowerCase() == 'won' || r.status.toLowerCase() == 'closed'
+        ).toList();
+
+        for (final req in wonReqs) {
+          if (_isRequirementPropertyMatch(property, req)) {
+            await setClientName(propertyId, req.clientName);
+            return req.clientName;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> removeClientName(String propertyId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('$_prefix$propertyId');
+    } catch (_) {}
+  }
+
+  static bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
+    final reqListing = (req.listingTypeName ?? '').toLowerCase();
+    final propListing = (p.listingTypeName).toLowerCase();
+    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
+      final isReqRent = reqListing.contains('rent');
+      final isPropRent = propListing.contains('rent');
+      if (isReqRent != isPropRent) return false;
+    }
+
+    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
+      if (p.categoryId != req.categoryId) return false;
+    }
+
+    if (req.maxBudget > 0) {
+      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
+      final maxB = req.maxBudget;
+      if (p.price < minB || p.price > maxB) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }

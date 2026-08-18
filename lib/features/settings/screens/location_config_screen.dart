@@ -78,8 +78,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       final data = response['data'] as Map<String, dynamic>? ?? {};
       final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
       setState(() {
-        _cities = meta.cities;
-        _areas = meta.areas;
+        _cities = meta.cities..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
         _isLoading = false;
       });
     } catch (e) {
@@ -475,7 +475,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       if (_citySearchQuery.isEmpty) return true;
       return c.name.toLowerCase().contains(_citySearchQuery.toLowerCase()) ||
           (c.state ?? '').toLowerCase().contains(_citySearchQuery.toLowerCase());
-    }).toList();
+    }).toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     final bool isMobile = MediaQuery.of(context).size.width < 600;
 
@@ -882,7 +882,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       return a.name.toLowerCase().contains(_areaSearchQuery.toLowerCase()) ||
           a.pincode.contains(_areaSearchQuery) ||
           city.toLowerCase().contains(_areaSearchQuery.toLowerCase());
-    }).toList();
+    }).toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     final bool isMobile = MediaQuery.of(context).size.width < 600;
 
