@@ -159,13 +159,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) async {
     RoleGuard.currentUser = null;
+    emit(Unauthenticated());
     try {
       await _authRepository.logout();
     } catch (_) {}
     try {
       await SessionCleanup.clearLocalSession(clearToken: true);
     } catch (_) {}
-    emit(Unauthenticated());
   }
 
   Future<void> _onSessionExpired(

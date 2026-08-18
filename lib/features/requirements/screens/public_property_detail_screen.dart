@@ -75,11 +75,20 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
           // Dynamic SEO Update
           final propModel = PropertyModel.fromJson(prop);
           final config = propModel.configurationName ?? '${propModel.bedrooms > 0 ? propModel.bedrooms : "-"} BHK';
-          final area = propModel.areaName;
+          String area = propModel.areaName;
+          if (area == 'N/A' || area.trim().isEmpty) {
+            if (propModel.landmark != null && propModel.landmark!.trim().isNotEmpty && propModel.landmark != 'N/A') {
+              area = propModel.landmark!.trim();
+            } else if (propModel.address.trim().isNotEmpty && propModel.address != 'N/A') {
+              area = propModel.address.trim();
+            } else if (propModel.cityName != 'N/A' && propModel.cityName.trim().isNotEmpty) {
+              area = propModel.cityName.trim();
+            }
+          }
           final priceStr = propModel.price > 0
               ? CRMCurrencyFormatter.formatWords(propModel.price).replaceAll('₹', '')
               : 'Price on Request';
-          final title = '$config in $area | $priceStr - PropKart';
+          final title = (area.isNotEmpty && area != 'N/A') ? '$config in $area | $priceStr - PropKart' : '$config | $priceStr - PropKart';
           final description = propModel.description ?? 'Check out this property shortlist shared on PropKart.';
           final firstImage = propModel.images.isNotEmpty ? propModel.images.first : null;
 
@@ -208,7 +217,16 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
         ? '${CRMCurrencyFormatter.format(priceVal)} (${CRMCurrencyFormatter.formatWords(priceVal).replaceAll('₹', '')})'
         : 'Price N/A';
     final config = propModel.configurationName ?? '${propModel.bedrooms > 0 ? propModel.bedrooms : "-"} BHK';
-    final areaName = propModel.areaName;
+    String areaName = propModel.areaName;
+    if (areaName == 'N/A' || areaName.trim().isEmpty) {
+      if (propModel.landmark != null && propModel.landmark!.trim().isNotEmpty && propModel.landmark != 'N/A') {
+        areaName = propModel.landmark!.trim();
+      } else if (propModel.address.trim().isNotEmpty && propModel.address != 'N/A') {
+        areaName = propModel.address.trim();
+      } else if (propModel.cityName != 'N/A' && propModel.cityName.trim().isNotEmpty) {
+        areaName = propModel.cityName.trim();
+      }
+    }
     final List<String> images = propModel.images;
     final amenities = propModel.amenities;
     final society = p['society'] ?? '';
@@ -524,10 +542,12 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
         availableDisplay = DateFormat('dd-MM-yyyy').format(propModel.createdAt);
       }
 
+      final subtitleText = (areaName.isNotEmpty && areaName != 'N/A') ? "$config in $areaName" : config;
+
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (p['title'] != null && p['title'].toString().isNotEmpty && p['title'].toString().toLowerCase() != "$config in $areaName".toLowerCase()) ...[
+          if (p['title'] != null && p['title'].toString().isNotEmpty && p['title'].toString().toLowerCase() != subtitleText.toLowerCase()) ...[
             Text(
               p['title'].toString(),
               style: CRMTypography.headline.copyWith(
@@ -538,7 +558,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
             ),
             const SizedBox(height: CRMSpacing.xxs),
             Text(
-              "$config in $areaName",
+              subtitleText,
               style: CRMTypography.bodyMedium.copyWith(
                 color: CRMColors.textSecondaryOf(context),
                 fontSize: 16,
@@ -546,7 +566,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
             ),
           ] else ...[
             Text(
-              "$config in $areaName",
+              subtitleText,
               style: CRMTypography.headline.copyWith(
                 color: CRMColors.textOf(context),
                 fontSize: 24,

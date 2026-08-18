@@ -48,8 +48,8 @@ module.exports = async (req, res) => {
         const p = properties.find(prop => prop.id === propertyId);
         if (p) {
           const config = p.configuration_name || `${p.bedrooms || '-'} BHK`;
-          const area = p.area_name || '';
-          const city = p.city_name || '';
+          const area = p.area_name || p.areaName || (p.area && typeof p.area === 'object' ? p.area.area_name || p.area.name : (p.area || p.landmark || p.address || p.city_name || p.cityName || ''));
+          const city = p.city_name || p.cityName || (p.city && typeof p.city === 'object' ? p.city.city_name || p.city.name : '') || '';
           const priceVal = p.price ? parseFloat(p.price) : null;
           
           let priceStr = 'Price on Request';

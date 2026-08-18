@@ -12,13 +12,19 @@ class PropertySharePdf {
   static String displayTitle(PropertyModel p) {
     final bhk = p.configurationName ?? '${p.bedrooms} BHK';
     final price = 'Rs ${BudgetFormatter.format(p.price)}';
-    return '$bhk in ${p.areaName} - $price (${p.propertyCode})';
+    final area = (p.areaName.isNotEmpty && p.areaName != 'N/A')
+        ? p.areaName
+        : ((p.landmark != null && p.landmark!.isNotEmpty && p.landmark != 'N/A')
+            ? p.landmark!
+            : ((p.address.isNotEmpty && p.address != 'N/A')
+                ? p.address
+                : (p.cityName.isNotEmpty && p.cityName != 'N/A' ? p.cityName : '')));
+    final locationStr = area.isNotEmpty ? ' in $area' : '';
+    return '$bhk$locationStr - $price (${p.propertyCode})';
   }
 
   static String fileName(PropertyModel p) {
-    final bhk = p.configurationName ?? '${p.bedrooms} BHK';
-    final price = 'Rs ${BudgetFormatter.format(p.price)}';
-    final raw = '$bhk in ${p.areaName} - $price (${p.propertyCode})';
+    final raw = displayTitle(p);
     final safe = raw.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
     return '$safe.pdf';
   }

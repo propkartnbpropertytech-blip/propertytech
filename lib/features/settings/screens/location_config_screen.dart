@@ -10,6 +10,7 @@ import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../properties/models/property_model.dart';
 import '../../properties/services/properties_service.dart';
+import '../../../core/storage/local_repositories.dart';
 
 class LocationConfigScreen extends StatefulWidget {
   const LocationConfigScreen({super.key});
@@ -455,6 +456,9 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
 
     try {
       await _propertiesService.deleteArea(area.id);
+      try {
+        await LookupLocalRepository().deleteSingleLookup(area.id);
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _areas = _areas.where((a) => a.id != area.id).toList();

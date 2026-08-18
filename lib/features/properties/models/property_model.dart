@@ -135,13 +135,50 @@ class PropertyModel {
     final config = json['configuration'] != null ? Map<String, dynamic>.from(json['configuration'] as Map) : null;
     final listing = json['listing_type'] != null ? Map<String, dynamic>.from(json['listing_type'] as Map) : null;
     final status = json['property_status'] != null ? Map<String, dynamic>.from(json['property_status'] as Map) : null;
-    final city = json['city'] != null ? Map<String, dynamic>.from(json['city'] as Map) : null;
-    final area = json['area'] != null ? Map<String, dynamic>.from(json['area'] as Map) : null;
+    final area = json['area'] != null && json['area'] is Map ? Map<String, dynamic>.from(json['area'] as Map) : null;
     final furnishing = json['furnishing_type'] != null ? Map<String, dynamic>.from(json['furnishing_type'] as Map) : null;
     final facing = json['facing_type'] != null ? Map<String, dynamic>.from(json['facing_type'] as Map) : null;
     final ownership = json['ownership_type'] != null ? Map<String, dynamic>.from(json['ownership_type'] as Map) : null;
     final brokerage = json['brokerage_type'] != null ? Map<String, dynamic>.from(json['brokerage_type'] as Map) : null;
     final creator = json['creator'] != null ? Map<String, dynamic>.from(json['creator'] as Map) : null;
+
+    String parsedCityName = 'N/A';
+    if (json['city_name'] != null && json['city_name'].toString().trim().isNotEmpty && json['city_name'].toString().trim() != 'N/A') {
+      parsedCityName = json['city_name'].toString().trim();
+    } else if (json['cityName'] != null && json['cityName'].toString().trim().isNotEmpty && json['cityName'].toString().trim() != 'N/A') {
+      parsedCityName = json['cityName'].toString().trim();
+    } else if (json['city'] != null) {
+      if (json['city'] is Map) {
+        final cMap = json['city'] as Map;
+        final cName = (cMap['city_name'] ?? cMap['name'])?.toString().trim();
+        if (cName != null && cName.isNotEmpty && cName != 'N/A') {
+          parsedCityName = cName;
+        }
+      } else if (json['city'] is String && json['city'].toString().trim().isNotEmpty && json['city'].toString().trim() != 'N/A') {
+        parsedCityName = json['city'].toString().trim();
+      }
+    }
+
+    String parsedAreaName = 'N/A';
+    if (json['area_name'] != null && json['area_name'].toString().trim().isNotEmpty && json['area_name'].toString().trim() != 'N/A') {
+      parsedAreaName = json['area_name'].toString().trim();
+    } else if (json['areaName'] != null && json['areaName'].toString().trim().isNotEmpty && json['areaName'].toString().trim() != 'N/A') {
+      parsedAreaName = json['areaName'].toString().trim();
+    } else if (json['area'] != null) {
+      if (json['area'] is Map) {
+        final aMap = json['area'] as Map;
+        final aName = (aMap['area_name'] ?? aMap['name'])?.toString().trim();
+        if (aName != null && aName.isNotEmpty && aName != 'N/A') {
+          parsedAreaName = aName;
+        }
+      } else if (json['area'] is String && json['area'].toString().trim().isNotEmpty && json['area'].toString().trim() != 'N/A') {
+        parsedAreaName = json['area'].toString().trim();
+      }
+    } else if (json['landmark'] != null && json['landmark'].toString().trim().isNotEmpty && json['landmark'].toString().trim() != 'N/A') {
+      parsedAreaName = json['landmark'].toString().trim();
+    } else if (json['address'] != null && json['address'].toString().trim().isNotEmpty && json['address'].toString().trim() != 'N/A') {
+      parsedAreaName = json['address'].toString().trim();
+    }
 
     final List<String> imageList = [];
     final jsonPropertyImages = json['property_images'];
@@ -207,9 +244,9 @@ class PropertyModel {
       propertyStatusId: json['property_status_id'] as String? ?? '',
       propertyStatusName: status != null ? status['name'] as String? ?? 'N/A' : 'N/A',
       cityId: json['city_id'] as String? ?? '',
-      cityName: city != null ? city['city_name'] as String? ?? 'N/A' : 'N/A',
+      cityName: parsedCityName,
       areaId: json['area_id'] as String? ?? '',
-      areaName: area != null ? area['area_name'] as String? ?? 'N/A' : 'N/A',
+      areaName: parsedAreaName,
       pincode: area != null ? area['pincode'] as String? ?? 'N/A' : 'N/A',
       address: json['address'] as String? ?? '',
       landmark: json['landmark'] as String?,

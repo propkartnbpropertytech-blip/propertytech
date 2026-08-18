@@ -48,10 +48,10 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
   bool _isRentProperty(PropertyModel p) {
     final typeName = p.listingTypeName.toLowerCase();
-    if (typeName.contains('re-sale') || typeName.contains('resale')) return false;
+    if (typeName.contains('re-sale') || typeName.contains('resale') || typeName.contains('sell') || typeName.contains('sale')) return false;
     if (typeName.contains('rent')) return true;
     final lookupName = LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase() ?? '';
-    if (lookupName.contains('re-sale') || lookupName.contains('resale')) return false;
+    if (lookupName.contains('re-sale') || lookupName.contains('resale') || lookupName.contains('sell') || lookupName.contains('sale')) return false;
     if (lookupName.contains('rent')) return true;
     return p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
   }
@@ -65,10 +65,10 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
   bool _isRentRequirement(RequirementModel r) {
     final typeName = (r.listingTypeName ?? '').toLowerCase();
-    if (typeName.contains('re-sale') || typeName.contains('resale')) return false;
+    if (typeName.contains('re-sale') || typeName.contains('resale') || typeName.contains('sell') || typeName.contains('sale')) return false;
     if (typeName.contains('rent')) return true;
     final lookupName = LookupLocalRepository.getLookupNameSync(r.listingTypeId ?? '')?.toLowerCase() ?? '';
-    if (lookupName.contains('re-sale') || lookupName.contains('resale')) return false;
+    if (lookupName.contains('re-sale') || lookupName.contains('resale') || lookupName.contains('sell') || lookupName.contains('sale')) return false;
     if (lookupName.contains('rent')) return true;
     return r.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
   }
@@ -121,29 +121,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       final data = res['data'] as Map<String, dynamic>? ?? {};
       final list = data['properties'] as List? ?? [];
 
-      final authState = context.read<AuthBloc>().state;
-      auth_model.UserModel? currentUser;
-      if (authState is Authenticated) {
-        currentUser = authState.user;
-      }
-
       List<PropertyModel> parsedList = list.map((p) => PropertyModel.fromJson(p)).toList();
-
-      if (currentUser != null) {
-        final role = currentUser.role;
-        final currentUserId = currentUser.id;
-        final currentUserAdminId = currentUser.adminId;
-
-        if (role == 'Admin') {
-          parsedList = parsedList.where((p) =>
-            p.createdBy == currentUserId || p.adminId == currentUserId
-          ).toList();
-        } else if (role != 'Super Admin') {
-          parsedList = parsedList.where((p) =>
-            p.createdBy == currentUserId || (currentUserAdminId != null && p.adminId == currentUserAdminId)
-          ).toList();
-        }
-      }
 
       setState(() {
         _binProperties = parsedList;
@@ -720,6 +698,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                 final currentUser = authState is Authenticated ? authState.user : null;
                                 final isUserAdminOrSuperAdmin = currentUser != null &&
                                     (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
+                                final canPermanentlyDelete = currentUser != null &&
+                                    (currentUser.role?.toLowerCase() == 'admin' || currentUser.role?.toLowerCase() == 'super admin');
 
                                 final targetProperties = _visibleBinProperties;
                                 final totalItems = targetProperties.length;
@@ -766,7 +746,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                                     tooltip: 'Restore Property',
                                                     onPressed: () => _restoreProperty(p.id),
                                                   ),
-                                                  if (isUserAdminOrSuperAdmin) ...[
+                                                  if (canPermanentlyDelete) ...[
                                                     const SizedBox(width: 8),
                                                     IconButton(
                                                       icon: Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 20),

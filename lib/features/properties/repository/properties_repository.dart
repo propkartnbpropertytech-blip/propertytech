@@ -436,21 +436,6 @@ class PropertiesRepository {
   }
 
   Future<PropertyModel> softDeleteProperty(String id) async {
-    // Load property details to get media links before deletion
-    final property = await getPropertyById(id);
-    if (property != null) {
-      for (final imgUrl in property.images) {
-        if (imgUrl.contains('cloudinary.com')) {
-          await CloudinaryUploader.delete(url: imgUrl, resourceType: 'image');
-        }
-      }
-      for (final vidUrl in property.videos) {
-        if (vidUrl.contains('cloudinary.com')) {
-          await CloudinaryUploader.delete(url: vidUrl, resourceType: 'video');
-        }
-      }
-    }
-
     try {
       final response = await _propertiesService.softDeleteProperty(id);
       final data = response['data'] as Map<String, dynamic>? ?? {};

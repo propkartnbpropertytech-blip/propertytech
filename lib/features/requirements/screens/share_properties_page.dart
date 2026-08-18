@@ -361,8 +361,34 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
         ? '${CRMCurrencyFormatter.format(priceVal)} (${CRMCurrencyFormatter.formatWords(priceVal).replaceAll('₹', '')})'
         : 'Price N/A';
     final config = prop.configurationName ?? '${prop.bedrooms > 0 ? prop.bedrooms : "-"} BHK';
-    final area = prop.areaName;
-    final title = '$config in $area';
+    String displayArea = prop.areaName;
+    if (displayArea == 'N/A' || displayArea.trim().isEmpty) {
+      final rawArea = p['area_name']?.toString().trim() ?? p['areaName']?.toString().trim() ?? '';
+      final rawLandmark = p['landmark']?.toString().trim() ?? prop.landmark?.trim() ?? '';
+      final rawAddress = p['address']?.toString().trim() ?? prop.address.trim();
+      final rawCity = p['city_name']?.toString().trim() ?? p['cityName']?.toString().trim() ?? prop.cityName.trim();
+
+      if (rawArea.isNotEmpty && rawArea != 'N/A') {
+        displayArea = rawArea;
+      } else if (rawLandmark.isNotEmpty && rawLandmark != 'N/A') {
+        displayArea = rawLandmark;
+      } else if (rawAddress.isNotEmpty && rawAddress != 'N/A') {
+        displayArea = rawAddress;
+      } else if (rawCity.isNotEmpty && rawCity != 'N/A') {
+        displayArea = rawCity;
+      } else {
+        displayArea = '';
+      }
+    }
+    final rawTitle = p['title']?.toString().trim() ?? p['name']?.toString().trim() ?? prop.title.trim();
+    final String title;
+    if (rawTitle.isNotEmpty && rawTitle != 'N/A') {
+      title = rawTitle;
+    } else if (displayArea.isNotEmpty && displayArea != 'N/A') {
+      title = '$config in $displayArea';
+    } else {
+      title = config;
+    }
     final imageUrls = prop.images;
     final hasImage = imageUrls.isNotEmpty;
     final areaSqft = prop.superBuiltupArea != null ? '${prop.superBuiltupArea!.toStringAsFixed(0)} sqft' : '';

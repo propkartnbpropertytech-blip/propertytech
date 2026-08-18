@@ -693,15 +693,12 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   void _handleLogout() {
     try {
-      Scaffold.of(context).closeDrawer();
+      if (Scaffold.of(context).isDrawerOpen) {
+        Navigator.of(context).pop();
+      }
     } catch (_) {}
     RoleGuard.currentUser = null;
     context.read<AuthBloc>().add(LogoutRequested());
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.go('/get-started');
-      }
-    });
   }
 
   @override
@@ -1643,7 +1640,6 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   Widget _buildSidebarContent(String currentPath, AuthState userState, {bool isMobile = false, double? sidebarWidth}) {
-    String userEmail = '';
     String userRole = '';
     String userFullName = '';
     String? userProfilePhoto;
@@ -1701,89 +1697,112 @@ class _CRMAppShellState extends State<CRMAppShell>
               vertical: CRMSpacing.m,
               horizontal: isExpanded ? CRMSpacing.m : CRMSpacing.xs,
             ),
-            child: Row(
-              mainAxisAlignment: isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    final currentRoute = GoRouterState.of(context).uri.toString();
-                    if (currentRoute != '/profile') {
-                      context.go('/profile');
-                    }
-                  },
-                  child: CircleAvatar(
-                    backgroundColor: CRMColors.primary.withValues(alpha: 0.18),
-                    backgroundImage: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
-                        ? ResizeImage(
-                            NetworkImage(userProfilePhoto!),
-                            width: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
-                            height: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
-                          )
-                        : null,
-                    child: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
-                        ? null
-                        : Icon(Icons.person_outline_rounded, color: CRMColors.primary),
-                  ),
-                ),
-                if (isExpanded) ...[
-                  const SizedBox(width: CRMSpacing.m),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        final currentRoute = GoRouterState.of(context).uri.toString();
-                        if (currentRoute != '/profile') {
-                          context.go('/profile');
-                        }
-                      },
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            displayFullName,
-                            style: CRMTypography.captionBold.copyWith(color: CRMColors.sidebarText),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                          Text(
-                            displayRole,
-                            style: CRMTypography.caption.copyWith(color: CRMColors.sidebarTextSecondary, fontSize: 10),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: _handleLogout,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Tooltip(
-                      message: 'Logout',
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
-                            if (isMobile) ...[
-                              const SizedBox(width: 6),
-                              Text(
-                                'Logout',
-                                style: TextStyle(
-                                  color: CRMColors.danger,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ],
+            child: isExpanded
+                ? Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          final currentRoute = GoRouterState.of(context).uri.toString();
+                          if (currentRoute != '/profile') {
+                            context.go('/profile');
+                          }
+                        },
+                        child: CircleAvatar(
+                          backgroundColor: CRMColors.primary.withValues(alpha: 0.18),
+                          backgroundImage: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
+                              ? ResizeImage(
+                                  NetworkImage(userProfilePhoto!),
+                                  width: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                                  height: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                                )
+                              : null,
+                          child: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
+                              ? null
+                              : Icon(Icons.person_outline_rounded, color: CRMColors.primary),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: CRMSpacing.m),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            final currentRoute = GoRouterState.of(context).uri.toString();
+                            if (currentRoute != '/profile') {
+                              context.go('/profile');
+                            }
+                          },
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                displayFullName,
+                                style: CRMTypography.captionBold.copyWith(color: CRMColors.sidebarText),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                              Text(
+                                displayRole,
+                                style: CRMTypography.caption.copyWith(color: CRMColors.sidebarTextSecondary, fontSize: 10),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Material(
+                        color: Colors.transparent,
+                        child: Tooltip(
+                          message: 'Logout',
+                          child: IconButton(
+                            icon: const Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
+                            onPressed: _handleLogout,
+                            splashRadius: 20,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            padding: const EdgeInsets.all(8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          final currentRoute = GoRouterState.of(context).uri.toString();
+                          if (currentRoute != '/profile') {
+                            context.go('/profile');
+                          }
+                        },
+                        child: CircleAvatar(
+                          backgroundColor: CRMColors.primary.withValues(alpha: 0.18),
+                          backgroundImage: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
+                              ? ResizeImage(
+                                  NetworkImage(userProfilePhoto!),
+                                  width: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                                  height: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                                )
+                              : null,
+                          child: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
+                              ? null
+                              : Icon(Icons.person_outline_rounded, color: CRMColors.primary),
+                        ),
+                      ),
+                      const SizedBox(height: CRMSpacing.s),
+                      Material(
+                        color: Colors.transparent,
+                        child: Tooltip(
+                          message: 'Logout',
+                          child: IconButton(
+                            icon: const Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
+                            onPressed: _handleLogout,
+                            splashRadius: 20,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            padding: const EdgeInsets.all(8),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ],
-            ),
           ),
         ],
       ),

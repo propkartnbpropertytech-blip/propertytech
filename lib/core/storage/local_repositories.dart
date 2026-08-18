@@ -625,6 +625,18 @@ class LookupLocalRepository {
     });
   }
 
+  Future<void> deleteSingleLookup(String id) async {
+    if (kIsWeb) {
+      inMemory.remove(id);
+      await _saveAllToPrefs();
+      return;
+    }
+
+    await _isar.writeTxn(() async {
+      await _isar.lookupItemLocals.filter().idEqualTo(id).deleteAll();
+    });
+  }
+
   Future<int> getLookupsCount() async {
     if (kIsWeb) {
       return inMemory.length;

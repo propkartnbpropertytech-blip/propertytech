@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/api/api_client.dart';
@@ -747,6 +748,13 @@ class PropertiesService {
         }
       }
 
+      if (!restored) {
+        try {
+          final activeRow = await _supabase.from('properties').select('id').eq('id', id).maybeSingle();
+          if (activeRow != null) restored = true;
+        } catch (_) {}
+      }
+
       if (restored) {
         Map<String, dynamic> propertyJson = {'id': id};
         try {
@@ -924,22 +932,35 @@ class PropertiesService {
     }
   }
 
+  Future<void> _unlinkAreaReferences(String areaId) async {
+    try { await _supabase.from('properties').update({'area_id': null}).eq('area_id', areaId); } catch (_) {}
+    try { await _supabase.from('requirements').update({'area_id': null}).eq('area_id', areaId); } catch (_) {}
+    try { await _supabase.from('requirement_areas').delete().eq('area_id', areaId); } catch (_) {}
+    try { await _supabase.from('builders').update({'area_id': null}).eq('area_id', areaId); } catch (_) {}
+    try { await _supabase.from('clients').update({'area_id': null}).eq('area_id', areaId); } catch (_) {}
+    try { await _supabase.from('deleted_properties').update({'area_id': null}).eq('area_id', areaId); } catch (_) {}
+  }
+
   Future<void> deleteArea(String id) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
+    try {
+      if (ApiConstants.useSupabaseDirect) {
+        await _unlinkAreaReferences(id);
         final deleted = await _supabase.from('areas').delete().eq('id', id).select();
         if (deleted.isEmpty) {
           throw ApiException(message: 'Area could not be deleted.');
         }
-      } catch (e) {
-        if (e is ApiException) rethrow;
-        throw ApiException(message: e.toString());
+        return;
       }
-      return;
-    }
-    try {
       await _apiClient.delete('/properties/areas/$id');
     } on DioException catch (e) {
+      final errStr = (e.response?.data != null ? jsonEncode(e.response?.data) : e.message ?? '').toLowerCase();
+      if (errStr.contains('foreign key') || errStr.contains('requirements_area_id_fkey') || errStr.contains('violates')) {
+        try {
+          await _unlinkAreaReferences(id);
+          await _supabase.from('areas').delete().eq('id', id);
+          return;
+        } catch (_) {}
+      }
       throw ApiException.fromDioException(e);
     } catch (e) {
       throw ApiException(message: e.toString());

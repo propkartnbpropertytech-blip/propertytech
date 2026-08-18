@@ -431,7 +431,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onPressed: () {
                     RoleGuard.currentUser = null;
                     context.read<AuthBloc>().add(LogoutRequested());
-                    context.go('/get-started');
                   },
                 ),
               ],
