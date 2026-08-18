@@ -159,6 +159,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) async {
     RoleGuard.currentUser = null;
+    // Emit first so the router does not bounce /get-started back to /dashboard
+    // while network sign-out is still in flight.
     emit(Unauthenticated());
     try {
       await _authRepository.logout();

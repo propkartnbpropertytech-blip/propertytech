@@ -48,7 +48,9 @@ module.exports = async (req, res) => {
         const p = properties.find(prop => prop.id === propertyId);
         if (p) {
           const config = p.configuration_name || `${p.bedrooms || '-'} BHK`;
-          const area = p.area_name || p.areaName || (p.area && typeof p.area === 'object' ? p.area.area_name || p.area.name : (p.area || p.landmark || p.address || p.city_name || p.cityName || ''));
+          const rawArea = p.area_name || p.areaName || (p.area && typeof p.area === 'object' ? p.area.area_name || p.area.name : (p.area || p.landmark || p.address || p.city_name || p.cityName || ''));
+          const area = (rawArea && String(rawArea).toUpperCase() !== 'N/A') ? rawArea : '';
+          const titleArea = area ? ` in ${area}` : '';
           const city = p.city_name || p.cityName || (p.city && typeof p.city === 'object' ? p.city.city_name || p.city.name : '') || '';
           const priceVal = p.price ? parseFloat(p.price) : null;
           
@@ -63,8 +65,8 @@ module.exports = async (req, res) => {
             }
           }
           
-          seoTitle = `${config} in ${area} | ${priceStr} - PropKart`;
-          seoDescription = p.description || `Check out this premium ${config} in ${area} shared by ${agentName} via PropKart.`;
+          seoTitle = `${config}${titleArea} | ${priceStr} - PropKart`;
+          seoDescription = p.description || `Check out this premium ${config}${titleArea} shared by ${agentName} via PropKart.`;
           
           if (p.images && p.images.length > 0) {
             seoImage = p.images[0];

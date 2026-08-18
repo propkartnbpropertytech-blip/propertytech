@@ -699,6 +699,9 @@ class _CRMAppShellState extends State<CRMAppShell>
     } catch (_) {}
     RoleGuard.currentUser = null;
     context.read<AuthBloc>().add(LogoutRequested());
+    if (mounted) {
+      context.go('/get-started');
+    }
   }
 
   @override
@@ -1697,111 +1700,70 @@ class _CRMAppShellState extends State<CRMAppShell>
               vertical: CRMSpacing.m,
               horizontal: isExpanded ? CRMSpacing.m : CRMSpacing.xs,
             ),
-            child: isExpanded
-                ? Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () {
-                          final currentRoute = GoRouterState.of(context).uri.toString();
-                          if (currentRoute != '/profile') {
-                            context.go('/profile');
-                          }
-                        },
-                        child: CircleAvatar(
-                          backgroundColor: CRMColors.primary.withValues(alpha: 0.18),
-                          backgroundImage: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
-                              ? ResizeImage(
-                                  NetworkImage(userProfilePhoto!),
-                                  width: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
-                                  height: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
-                                )
-                              : null,
-                          child: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
-                              ? null
-                              : Icon(Icons.person_outline_rounded, color: CRMColors.primary),
-                        ),
-                      ),
-                      const SizedBox(width: CRMSpacing.m),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            final currentRoute = GoRouterState.of(context).uri.toString();
-                            if (currentRoute != '/profile') {
-                              context.go('/profile');
-                            }
-                          },
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                displayFullName,
-                                style: CRMTypography.captionBold.copyWith(color: CRMColors.sidebarText),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                              Text(
-                                displayRole,
-                                style: CRMTypography.caption.copyWith(color: CRMColors.sidebarTextSecondary, fontSize: 10),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                            ],
+            child: Row(
+              mainAxisAlignment: isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    final currentRoute = GoRouterState.of(context).uri.toString();
+                    if (currentRoute != '/profile') {
+                      context.go('/profile');
+                    }
+                  },
+                  child: CircleAvatar(
+                    backgroundColor: CRMColors.primary.withValues(alpha: 0.18),
+                    backgroundImage: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
+                        ? ResizeImage(
+                            NetworkImage(userProfilePhoto!),
+                            width: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                            height: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                          )
+                        : null,
+                    child: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
+                        ? null
+                        : Icon(Icons.person_outline_rounded, color: CRMColors.primary),
+                  ),
+                ),
+                if (isExpanded) ...[
+                  const SizedBox(width: CRMSpacing.m),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        final currentRoute = GoRouterState.of(context).uri.toString();
+                        if (currentRoute != '/profile') {
+                          context.go('/profile');
+                        }
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayFullName,
+                            style: CRMTypography.captionBold.copyWith(color: CRMColors.sidebarText),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
-                        ),
-                      ),
-                      Material(
-                        color: Colors.transparent,
-                        child: Tooltip(
-                          message: 'Logout',
-                          child: IconButton(
-                            icon: const Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
-                            onPressed: _handleLogout,
-                            splashRadius: 20,
-                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                            padding: const EdgeInsets.all(8),
+                          Text(
+                            displayRole,
+                            style: CRMTypography.caption.copyWith(color: CRMColors.sidebarTextSecondary, fontSize: 10),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  )
-                : Column(
-                    children: [
-                      GestureDetector(
-                        onTap: () {
-                          final currentRoute = GoRouterState.of(context).uri.toString();
-                          if (currentRoute != '/profile') {
-                            context.go('/profile');
-                          }
-                        },
-                        child: CircleAvatar(
-                          backgroundColor: CRMColors.primary.withValues(alpha: 0.18),
-                          backgroundImage: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
-                              ? ResizeImage(
-                                  NetworkImage(userProfilePhoto!),
-                                  width: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
-                                  height: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
-                                )
-                              : null,
-                          child: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
-                              ? null
-                              : Icon(Icons.person_outline_rounded, color: CRMColors.primary),
-                        ),
-                      ),
-                      const SizedBox(height: CRMSpacing.s),
-                      Material(
-                        color: Colors.transparent,
-                        child: Tooltip(
-                          message: 'Logout',
-                          child: IconButton(
-                            icon: const Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
-                            onPressed: _handleLogout,
-                            splashRadius: 20,
-                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                            padding: const EdgeInsets.all(8),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Logout',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
+                    onPressed: _handleLogout,
+                  ),
+                ],
+              ],
+            ),
                   ),
           ),
         ],

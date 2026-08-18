@@ -116,6 +116,47 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
     }
   }
 
+  String _shareLocationLabel(PropertyModel prop, Map<String, dynamic> raw) {
+    final nestedArea = raw['area'];
+    final nestedCity = raw['city'];
+    final candidates = <String>[
+      prop.areaName,
+      if (nestedArea is Map) ...[
+        '${nestedArea['area_name'] ?? ''}',
+        '${nestedArea['name'] ?? ''}',
+        '${nestedArea['locality'] ?? ''}',
+        '${nestedArea['location'] ?? ''}',
+      ],
+      '${raw['area_name'] ?? ''}',
+      '${raw['areaName'] ?? ''}',
+      '${raw['locality'] ?? ''}',
+      '${raw['location'] ?? ''}',
+      '${raw['sub_location'] ?? ''}',
+      '${raw['sub_locality'] ?? ''}',
+      '${raw['society'] ?? ''}',
+      if (nestedArea is String) nestedArea,
+      prop.cityName,
+      if (nestedCity is Map) ...[
+        '${nestedCity['city_name'] ?? ''}',
+        '${nestedCity['name'] ?? ''}',
+      ],
+      '${raw['city_name'] ?? ''}',
+      '${raw['cityName'] ?? ''}',
+      if (nestedCity is String) nestedCity,
+      prop.landmark ?? '',
+      '${raw['landmark'] ?? ''}',
+      prop.address,
+      '${raw['address'] ?? ''}',
+    ];
+    for (final candidate in candidates) {
+      final value = candidate.trim();
+      if (value.isEmpty || value.toUpperCase() == 'N/A') continue;
+      if (RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(value)) continue;
+      return value;
+    }
+    return '';
+  }
+
   bool _isRentProperty(Map<String, dynamic> p) {
     try {
       final prop = PropertyModel.fromJson(p);
@@ -361,34 +402,8 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
         ? '${CRMCurrencyFormatter.format(priceVal)} (${CRMCurrencyFormatter.formatWords(priceVal).replaceAll('₹', '')})'
         : 'Price N/A';
     final config = prop.configurationName ?? '${prop.bedrooms > 0 ? prop.bedrooms : "-"} BHK';
-    String displayArea = prop.areaName;
-    if (displayArea == 'N/A' || displayArea.trim().isEmpty) {
-      final rawArea = p['area_name']?.toString().trim() ?? p['areaName']?.toString().trim() ?? '';
-      final rawLandmark = p['landmark']?.toString().trim() ?? prop.landmark?.trim() ?? '';
-      final rawAddress = p['address']?.toString().trim() ?? prop.address.trim();
-      final rawCity = p['city_name']?.toString().trim() ?? p['cityName']?.toString().trim() ?? prop.cityName.trim();
-
-      if (rawArea.isNotEmpty && rawArea != 'N/A') {
-        displayArea = rawArea;
-      } else if (rawLandmark.isNotEmpty && rawLandmark != 'N/A') {
-        displayArea = rawLandmark;
-      } else if (rawAddress.isNotEmpty && rawAddress != 'N/A') {
-        displayArea = rawAddress;
-      } else if (rawCity.isNotEmpty && rawCity != 'N/A') {
-        displayArea = rawCity;
-      } else {
-        displayArea = '';
-      }
-    }
-    final rawTitle = p['title']?.toString().trim() ?? p['name']?.toString().trim() ?? prop.title.trim();
-    final String title;
-    if (rawTitle.isNotEmpty && rawTitle != 'N/A') {
-      title = rawTitle;
-    } else if (displayArea.isNotEmpty && displayArea != 'N/A') {
-      title = '$config in $displayArea';
-    } else {
-      title = config;
-    }
+    final area = _shareLocationLabel(prop, p);
+    final title = (area.isNotEmpty && area.toUpperCase() != 'N/A') ? '$config in $area' : config;
     final imageUrls = prop.images;
     final hasImage = imageUrls.isNotEmpty;
     final areaSqft = prop.superBuiltupArea != null ? '${prop.superBuiltupArea!.toStringAsFixed(0)} sqft' : '';

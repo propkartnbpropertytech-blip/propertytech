@@ -20,7 +20,10 @@ class RoleGuard {
   static bool canViewAuditLogs(String? role) => isSuperAdmin(role);
 
   /// Settings mutations that affect org lookups (cities/areas).
-  static bool canManageLookups(String? role) => isSuperAdmin(role);
+  static bool canManageLookups(String? role) {
+    final r = (role ?? '').toLowerCase();
+    return r == 'super admin' || r == 'admin' || r == 'sales';
+  }
 
   /// Only Super Admin may assign/create/update/delete Admin accounts.
   static bool canAssignAdminRole(String? callerRole) => isSuperAdmin(callerRole);
