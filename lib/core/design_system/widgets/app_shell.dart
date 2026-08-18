@@ -1764,7 +1764,6 @@ class _CRMAppShellState extends State<CRMAppShell>
                 ],
               ],
             ),
-                  ),
           ),
         ],
       ),
