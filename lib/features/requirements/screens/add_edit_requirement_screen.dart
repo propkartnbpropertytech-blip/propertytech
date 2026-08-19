@@ -599,6 +599,14 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     final minBudget = budgetVal * 0.8;
     final maxBudget = budgetVal * 1.2;
 
+    final userRole = (currentUser?.role ?? '').toLowerCase();
+    final bool isAdminOrTelecaller = userRole == 'admin' || userRole == 'super admin' || userRole == 'telecaller';
+
+    final String? defaultAssignedTo = widget.requirement?.assignedTo ??
+        (!isAdminOrTelecaller && currentUser != null ? currentUser.id : null);
+    final String? defaultAssigneeName = widget.requirement?.assigneeName ??
+        (!isAdminOrTelecaller && currentUser != null ? currentUser.fullName : null);
+
     final req = RequirementModel(
       id: widget.requirement?.id ?? '',
       clientName: _nameController.text.trim(),
@@ -627,6 +635,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       adminId: widget.requirement?.adminId ?? (currentUser?.role == 'Admin' ? currentUser?.id : currentUser?.adminId),
       creatorName: widget.requirement?.creatorName ?? currentUser?.fullName,
       createdBy: widget.requirement?.createdBy ?? currentUser?.id,
+      assignedTo: defaultAssignedTo,
+      assigneeName: defaultAssigneeName,
     );
 
     _isSaved = true;

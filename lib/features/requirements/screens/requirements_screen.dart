@@ -1154,10 +1154,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
         if (state is UsersLoaded) {
-          final salesmen = state.users
-              .where((u) => u.roleName.toLowerCase() == 'sales')
-              .toList();
-          final currentAssignedTo = req.assignedTo?.isEmpty == true ? null : req.assignedTo;
+          String? currentAssignedTo;
+          if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
+            currentAssignedTo = req.assignedTo;
+          } else if (req.assignedTo == null && req.createdBy != null && req.createdBy!.isNotEmpty) {
+            final creatorUser = state.users.firstWhereOrNull((u) => u.id == req.createdBy);
+            if (creatorUser != null) {
+              final role = creatorUser.roleName.toLowerCase();
+              final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
+              if (!isCreatorAdminOrTelecaller) {
+                currentAssignedTo = req.createdBy;
+              }
+            } else if (req.creatorName != null && req.creatorName!.isNotEmpty) {
+              final creatorMatch = state.users.firstWhereOrNull((u) => u.fullName.toLowerCase() == req.creatorName!.toLowerCase());
+              if (creatorMatch != null) {
+                final role = creatorMatch.roleName.toLowerCase();
+                final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
+                if (!isCreatorAdminOrTelecaller) {
+                  currentAssignedTo = creatorMatch.id;
+                }
+              }
+            }
+          }
+
+          final salesmen = state.users.where((u) {
+            final role = u.roleName.toLowerCase();
+            final isSales = role.contains('sales') || role.contains('executive') || role.contains('telecaller') || role == 'employee';
+            final isAssigned = currentAssignedTo != null && u.id == currentAssignedTo;
+            return isSales || isAssigned;
+          }).toList();
+
           final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
           final dropdownValue = hasValue ? currentAssignedTo : null;
           return DropdownButton<String?>(
@@ -1189,7 +1215,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               }),
             ],
             onChanged: (String? newSalesmanId) {
-              print("Assigned to status is updated.");
               String? newSalesmanName;
               if (newSalesmanId != null) {
                 final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
@@ -1231,10 +1256,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
         if (state is UsersLoaded) {
-          final salesmen = state.users
-              .where((u) => u.roleName.toLowerCase() == 'sales')
-              .toList();
-          final currentAssignedTo = req.assignedTo?.isEmpty == true ? null : req.assignedTo;
+          String? currentAssignedTo;
+          if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
+            currentAssignedTo = req.assignedTo;
+          } else if (req.assignedTo == null && req.createdBy != null && req.createdBy!.isNotEmpty) {
+            final creatorUser = state.users.firstWhereOrNull((u) => u.id == req.createdBy);
+            if (creatorUser != null) {
+              final role = creatorUser.roleName.toLowerCase();
+              final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
+              if (!isCreatorAdminOrTelecaller) {
+                currentAssignedTo = req.createdBy;
+              }
+            } else if (req.creatorName != null && req.creatorName!.isNotEmpty) {
+              final creatorMatch = state.users.firstWhereOrNull((u) => u.fullName.toLowerCase() == req.creatorName!.toLowerCase());
+              if (creatorMatch != null) {
+                final role = creatorMatch.roleName.toLowerCase();
+                final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
+                if (!isCreatorAdminOrTelecaller) {
+                  currentAssignedTo = creatorMatch.id;
+                }
+              }
+            }
+          }
+
+          final salesmen = state.users.where((u) {
+            final role = u.roleName.toLowerCase();
+            final isSales = role.contains('sales') || role.contains('executive') || role.contains('telecaller') || role == 'employee';
+            final isAssigned = currentAssignedTo != null && u.id == currentAssignedTo;
+            return isSales || isAssigned;
+          }).toList();
+
           final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
           final dropdownValue = hasValue ? currentAssignedTo : null;
           return DropdownButtonHideUnderline(
@@ -1301,7 +1352,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         return const SizedBox(
           width: 14,
           height: 14,
-          child: CircularProgressIndicator(strokeWidth: 1.5),
+          child: CircularProgressIndicator(strokeWidth: 2),
         );
       },
     );
@@ -1387,8 +1438,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       );
     }
 
+    final String effectiveName = assignee.isNotEmpty
+        ? assignee
+        : (creator.isNotEmpty ? creator : 'Unassigned');
+
     return Text(
-      assignee.isNotEmpty ? assignee : 'Unassigned',
+      effectiveName,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: CRMTypography.bodyMedium.copyWith(
@@ -3101,6 +3156,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     const DataColumn(label: Text('Client')),
                     if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                       const DataColumn(label: Text('Added By')),
+                    const DataColumn(label: Text('Assign to')),
                     const DataColumn(label: Text('Specs / Config')),
                     const DataColumn(label: Text('Budget Range')),
                     const DataColumn(label: Text('Target Area(s)')),
@@ -3149,6 +3205,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ),
+                        DataCell(
+                          currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')
+                              ? _buildAssignToDropdown(req)
+                              : _buildSalesAssignToLabel(req, currentUser),
+                        ),
                         DataCell(_buildSpecsConfigCell(req)),
                         DataCell(
                           Text(
