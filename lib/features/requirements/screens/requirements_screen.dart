@@ -338,6 +338,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               UpdateRequirementEvent(req.copyWith(status: 'Won')),
             );
 
+            final selectedIds = selectedProperties.map((p) => p.id).toList();
+            await PropertyDealClientStore.setWonRequirementProperties(req.id, selectedIds);
+
             final propertiesService = PropertiesService();
             for (final p in selectedProperties) {
               await PropertyDealClientStore.setClientName(p.id, req.clientName);
@@ -3558,15 +3561,19 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
   final PropertiesRepository _propertiesRepository = PropertiesRepository();
   bool _isLoading = true;
   List<PropertyModel> _matchedProperties = [];
-  bool _includePhotos = false;
+  bool _includePhotos = true;
 
   Future<void> _shareProperty(PropertyModel p) async {
     final BHK = p.configurationName ?? "${p.bedrooms} BHK";
     final size = p.superBuiltupArea != null ? "${p.superBuiltupArea} sq ft" : "${p.plotArea ?? '-'} sq ft";
     final price = '₹${BudgetFormatter.format(p.price)}';
     
-    final message = "Dear Customer,\n\n"
-        "We found a property matching your requirements.\n\n"
+    final isWonReq = widget.requirement.status.toLowerCase() == 'won' || widget.requirement.status.toLowerCase() == 'closed';
+    final headerMsg = isWonReq
+        ? "Dear ${widget.requirement.clientName},\n\nHere are the details of the property selected for your finalized deal:\n\n"
+        : "Dear Customer,\n\nWe found a property matching your requirements.\n\n";
+
+    final message = "$headerMsg"
         "Reference ID: ${p.propertyCode}\n\n"
         "📍 Location: ${p.areaName}\n\n"
         "🏠 Configuration: $BHK\n\n"
@@ -3641,7 +3648,22 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
     _loadAndFilterMatches();
   }
 
-  bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
+  Future<bool> _isRequirementPropertyMatchAsync(PropertyModel p, RequirementModel req) async {
+    final isWonReq = req.status.toLowerCase() == 'won' || req.status.toLowerCase() == 'closed';
+
+    if (isWonReq) {
+      final wonPropertyIds = await PropertyDealClientStore.getWonPropertyIds(req.id);
+      if (wonPropertyIds.isNotEmpty) {
+        return wonPropertyIds.contains(p.id);
+      }
+
+      final clientName = await PropertyDealClientStore.getClientName(p.id, property: p);
+      if (clientName != null && clientName.trim().toLowerCase() == req.clientName.trim().toLowerCase()) {
+        return true;
+      }
+      return false;
+    }
+
     final statusName = p.propertyStatusName.toLowerCase();
     final statusActive = statusName == 'available' || statusName.contains('available') || statusName.isEmpty;
     if (!statusActive) return false;
@@ -3730,7 +3752,12 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
       final properties = await _propertiesRepository.getProperties();
       final req = widget.requirement;
 
-      final matches = properties.where((p) => _isRequirementPropertyMatch(p, req)).toList();
+      final List<PropertyModel> matches = [];
+      for (final p in properties) {
+        if (await _isRequirementPropertyMatchAsync(p, req)) {
+          matches.add(p);
+        }
+      }
 
       setState(() {
         _matchedProperties = matches;
@@ -3745,6 +3772,8 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
 
   @override
   Widget build(BuildContext context) {
+    final isWonReq = widget.requirement.status.toLowerCase() == 'won' || widget.requirement.status.toLowerCase() == 'closed';
+
     return Container(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.85,
@@ -3769,39 +3798,55 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Matching System Listings", style: CRMTypography.sectionTitle),
+              Text(isWonReq ? "Selected Deal Property" : "Matching System Listings", style: CRMTypography.sectionTitle),
               IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(context)),
             ],
           ),
           const SizedBox(height: CRMSpacing.xs),
           Text(
-            "Showing properties that match criteria: ${widget.requirement.configurationName ?? '-'} ${widget.requirement.propertyTypeName} in ${widget.requirement.areaNames.isNotEmpty ? widget.requirement.areaNames.join(', ') : 'Any Area'}",
+            isWonReq
+                ? "Property selected and finalized for client deal: ${widget.requirement.clientName}"
+                : "Showing properties that match criteria: ${widget.requirement.configurationName ?? '-'} ${widget.requirement.propertyTypeName} in ${widget.requirement.areaNames.isNotEmpty ? widget.requirement.areaNames.join(', ') : 'Any Area'}",
             style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: CRMSpacing.s),
-          Row(
-            children: [
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: Checkbox(
-                  value: _includePhotos,
-                  onChanged: (val) {
-                    setState(() {
-                      _includePhotos = val ?? false;
-                    });
-                  },
-                  activeColor: CRMColors.primary,
-                ),
+          if (isWonReq)
+            Container(
+              margin: const EdgeInsets.only(bottom: CRMSpacing.s, top: CRMSpacing.xs),
+              padding: const EdgeInsets.all(CRMSpacing.m),
+              decoration: BoxDecoration(
+                color: CRMColors.success.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                border: Border.all(color: CRMColors.success.withValues(alpha: 0.3)),
               ),
-              const SizedBox(width: 8),
-              Text(
-                "Include Property Photos in WhatsApp Share",
-                style: CRMTypography.body.copyWith(fontSize: 13),
+              child: Row(
+                children: [
+                  const Icon(Icons.emoji_events_rounded, color: CRMColors.success, size: 24),
+                  const SizedBox(width: CRMSpacing.m),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Finalized Property for ${widget.requirement.clientName}',
+                          style: CRMTypography.bodyMedium.copyWith(color: CRMColors.success, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'This is the property selected and assigned when winning this client deal.',
+                          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
+          Text(
+            "Include Property Photos and Videos",
+            style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
           ),
           const Divider(height: CRMSpacing.m),
 
@@ -3844,7 +3889,46 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                       title: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(p.title, style: CRMTypography.bodyMedium),
+                          Expanded(
+                            child: Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              children: [
+                                Text(p.title, style: CRMTypography.bodyMedium),
+                                if (isWonReq) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: CRMColors.success.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: CRMColors.success.withValues(alpha: 0.4)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.check_circle_rounded, size: 12, color: CRMColors.success),
+                                        const SizedBox(width: 4),
+                                        Text('Won Deal Property', style: CRMTypography.caption.copyWith(color: CRMColors.success, fontWeight: FontWeight.bold, fontSize: 10)),
+                                      ],
+                                    ),
+                                  ),
+                                  if (p.propertyStatusName.toLowerCase() == 'available')
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: CRMColors.info.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: CRMColors.info.withValues(alpha: 0.4)),
+                                      ),
+                                      child: Text(
+                                        'Available',
+                                        style: CRMTypography.caption.copyWith(color: CRMColors.info, fontWeight: FontWeight.bold, fontSize: 10),
+                                      ),
+                                    ),
+                                ],
+                              ],
+                            ),
+                          ),
                           Text(
                             '₹${BudgetFormatter.format(p.price)}',
                             style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary),
@@ -3854,6 +3938,33 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (isWonReq && p.propertyStatusName.toLowerCase() == 'available')
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4, bottom: 4),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.info.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: CRMColors.info.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.info_outline_rounded, size: 14, color: CRMColors.info),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'This property is currently Available',
+                                      style: CRMTypography.caption.copyWith(
+                                        color: CRMColors.info,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           const SizedBox(height: 4),
                           Row(
                             children: [
@@ -5013,67 +5124,73 @@ class _RequirementWinPropertySelectionDialogState
 
 class PropertyDealClientStore {
   static const String _prefix = 'deal_client_name_';
+  static const String _reqPrefix = 'won_req_properties_';
+  static final Map<String, String> _memoryCache = {};
+  static final Map<String, List<String>> _reqMemoryCache = {};
 
   static Future<void> setClientName(String propertyId, String clientName) async {
+    _memoryCache[propertyId] = clientName;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('$_prefix$propertyId', clientName);
     } catch (_) {}
   }
 
+  static Future<void> setWonRequirementProperties(String requirementId, List<String> propertyIds) async {
+    _reqMemoryCache[requirementId] = propertyIds;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('$_reqPrefix$requirementId', propertyIds);
+    } catch (_) {}
+  }
+
+  static Future<List<String>> getWonPropertyIds(String requirementId) async {
+    if (_reqMemoryCache.containsKey(requirementId)) {
+      return _reqMemoryCache[requirementId]!;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList('$_reqPrefix$requirementId');
+      if (list != null) {
+        _reqMemoryCache[requirementId] = list;
+        return list;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static String? getMemoryClientName(String propertyId) {
+    return _memoryCache[propertyId];
+  }
+
   static Future<String?> getClientName(String propertyId, {PropertyModel? property}) async {
+    if (_memoryCache.containsKey(propertyId)) {
+      return _memoryCache[propertyId];
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final savedName = prefs.getString('$_prefix$propertyId');
       if (savedName != null && savedName.isNotEmpty) {
+        _memoryCache[propertyId] = savedName;
         return savedName;
-      }
-
-      if (property != null) {
-        final requirements = await RequirementsRepository().getRequirements();
-        final wonReqs = requirements.where((r) =>
-          r.status.toLowerCase() == 'won' || r.status.toLowerCase() == 'closed'
-        ).toList();
-
-        for (final req in wonReqs) {
-          if (_isRequirementPropertyMatch(property, req)) {
-            await setClientName(propertyId, req.clientName);
-            return req.clientName;
-          }
-        }
       }
     } catch (_) {}
     return null;
   }
 
   static Future<void> removeClientName(String propertyId) async {
+    _memoryCache.remove(propertyId);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('$_prefix$propertyId');
     } catch (_) {}
   }
 
-  static bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
-    final reqListing = (req.listingTypeName ?? '').toLowerCase();
-    final propListing = (p.listingTypeName).toLowerCase();
-    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
-      final isReqRent = reqListing.contains('rent');
-      final isPropRent = propListing.contains('rent');
-      if (isReqRent != isPropRent) return false;
-    }
-
-    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
-      if (p.categoryId != req.categoryId) return false;
-    }
-
-    if (req.maxBudget > 0) {
-      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
-      final maxB = req.maxBudget;
-      if (p.price < minB || p.price > maxB) {
-        return false;
-      }
-    }
-
-    return true;
+  static Future<void> removeWonRequirementProperties(String requirementId) async {
+    _reqMemoryCache.remove(requirementId);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('$_reqPrefix$requirementId');
+    } catch (_) {}
   }
 }

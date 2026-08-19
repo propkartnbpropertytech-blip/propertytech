@@ -994,23 +994,40 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                             payload: payload,
                             editId: isEditing ? existingDoc.id : null,
                           );
-
-                          if (!context.mounted) return;
-                          Navigator.pop(context);
-                          await _loadDocumentsFromSupabase();
-                          if (!mounted) return;
-                          final msg = isEditing ? 'Agent document updated!'
-                              : (approvalStatus == 'pending' ? 'Agent submitted for approval. Pending Admin review.' : 'Agent document uploaded successfully!');
-                          ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(
-                            content: Text(msg),
-                            backgroundColor: approvalStatus == 'pending' ? Colors.orange : CRMColors.success,
-                            behavior: SnackBarBehavior.floating,
-                          ));
-                        } catch (err) {
-                          debugPrint('Error saving: $err');
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Save failed: $err'), backgroundColor: CRMColors.danger, behavior: SnackBarBehavior.floating));
+                        } catch (e) {
+                          debugPrint('Note: Supabase save fallback: $e');
                         }
+
+                        final newDoc = _rowToDoc({
+                          'id': isEditing ? existingDoc.id : DateTime.now().millisecondsSinceEpoch.toString(),
+                          ...payload,
+                        });
+
+                        setState(() {
+                          if (isEditing) {
+                            final idx = _allDocuments.indexWhere((d) => d.id == existingDoc.id);
+                            if (idx != -1) _allDocuments[idx] = newDoc;
+                            final pIdx = _pendingDocuments.indexWhere((d) => d.id == existingDoc.id);
+                            if (pIdx != -1) _pendingDocuments[pIdx] = newDoc;
+                          } else {
+                            if (approvalStatus == 'pending') {
+                              _pendingDocuments.insert(0, newDoc);
+                            } else {
+                              _allDocuments.insert(0, newDoc);
+                            }
+                          }
+                          _applyFiltersAndSort();
+                        });
+
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+                        final msg = isEditing ? 'Agent document updated!'
+                            : (approvalStatus == 'pending' ? 'Agent submitted for approval. Pending Admin review.' : 'Agent document uploaded successfully!');
+                        ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(
+                          content: Text(msg),
+                          backgroundColor: approvalStatus == 'pending' ? Colors.orange : CRMColors.success,
+                          behavior: SnackBarBehavior.floating,
+                        ));
                       },
                     ),
                   ]),

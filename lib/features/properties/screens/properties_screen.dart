@@ -3700,67 +3700,73 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
 
 class PropertyDealClientStore {
   static const String _prefix = 'deal_client_name_';
+  static const String _reqPrefix = 'won_req_properties_';
+  static final Map<String, String> _memoryCache = {};
+  static final Map<String, List<String>> _reqMemoryCache = {};
 
   static Future<void> setClientName(String propertyId, String clientName) async {
+    _memoryCache[propertyId] = clientName;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('$_prefix$propertyId', clientName);
     } catch (_) {}
   }
 
+  static Future<void> setWonRequirementProperties(String requirementId, List<String> propertyIds) async {
+    _reqMemoryCache[requirementId] = propertyIds;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('$_reqPrefix$requirementId', propertyIds);
+    } catch (_) {}
+  }
+
+  static Future<List<String>> getWonPropertyIds(String requirementId) async {
+    if (_reqMemoryCache.containsKey(requirementId)) {
+      return _reqMemoryCache[requirementId]!;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList('$_reqPrefix$requirementId');
+      if (list != null) {
+        _reqMemoryCache[requirementId] = list;
+        return list;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static String? getMemoryClientName(String propertyId) {
+    return _memoryCache[propertyId];
+  }
+
   static Future<String?> getClientName(String propertyId, {PropertyModel? property}) async {
+    if (_memoryCache.containsKey(propertyId)) {
+      return _memoryCache[propertyId];
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final savedName = prefs.getString('$_prefix$propertyId');
       if (savedName != null && savedName.isNotEmpty) {
+        _memoryCache[propertyId] = savedName;
         return savedName;
-      }
-
-      if (property != null) {
-        final requirements = await RequirementsRepository().getRequirements();
-        final wonReqs = requirements.where((r) =>
-          r.status.toLowerCase() == 'won' || r.status.toLowerCase() == 'closed'
-        ).toList();
-
-        for (final req in wonReqs) {
-          if (_isRequirementPropertyMatch(property, req)) {
-            await setClientName(propertyId, req.clientName);
-            return req.clientName;
-          }
-        }
       }
     } catch (_) {}
     return null;
   }
 
   static Future<void> removeClientName(String propertyId) async {
+    _memoryCache.remove(propertyId);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('$_prefix$propertyId');
     } catch (_) {}
   }
 
-  static bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
-    final reqListing = (req.listingTypeName ?? '').toLowerCase();
-    final propListing = (p.listingTypeName).toLowerCase();
-    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
-      final isReqRent = reqListing.contains('rent');
-      final isPropRent = propListing.contains('rent');
-      if (isReqRent != isPropRent) return false;
-    }
-
-    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
-      if (p.categoryId != req.categoryId) return false;
-    }
-
-    if (req.maxBudget > 0) {
-      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
-      final maxB = req.maxBudget;
-      if (p.price < minB || p.price > maxB) {
-        return false;
-      }
-    }
-
-    return true;
+  static Future<void> removeWonRequirementProperties(String requirementId) async {
+    _reqMemoryCache.remove(requirementId);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('$_reqPrefix$requirementId');
+    } catch (_) {}
   }
 }
