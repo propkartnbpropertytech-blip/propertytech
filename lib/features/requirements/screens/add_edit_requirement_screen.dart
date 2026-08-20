@@ -1402,9 +1402,19 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: CRMTypography.caption),
-          Text(value.isNotEmpty ? value : "None", style: CRMTypography.caption.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value.isNotEmpty ? value : "None",
+              style: CRMTypography.caption.copyWith(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.right,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );

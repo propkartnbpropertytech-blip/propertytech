@@ -2089,7 +2089,7 @@ class CustomBottomNavBar extends StatelessWidget {
                       index: 3,
                       iconOutline: Icons.assignment_outlined,
                       iconFilled: Icons.assignment_rounded,
-                      label: 'Requirements',
+                      label: 'Leads',
                     ),
                     _buildNavItem(
                       context: context,

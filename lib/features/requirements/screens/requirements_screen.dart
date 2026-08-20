@@ -250,6 +250,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   void _showMatchesDrawer(RequirementModel req) {
     showModalBottomSheet(
       context: context,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) {
@@ -2430,23 +2431,210 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  void _showFollowupMessageDialog(BuildContext context, String clientName, String message) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: CRMColors.cardBgOf(context),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+          title: Row(
+            children: [
+              Icon(Icons.chat_bubble_outline_rounded, color: CRMColors.primary, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Follow-up Agenda ($clientName)",
+                  style: CRMTypography.sectionTitle.copyWith(
+                    color: CRMColors.textOf(context),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Container(
+            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 300),
+            padding: const EdgeInsets.all(CRMSpacing.m),
+            decoration: BoxDecoration(
+              color: CRMColors.backgroundOf(context),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+              border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
+            ),
+            child: SingleChildScrollView(
+              child: Text(
+                message,
+                style: CRMTypography.bodyMedium.copyWith(
+                  color: CRMColors.textOf(context),
+                  fontSize: 16,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            CRMButton(
+              label: "Close",
+              variant: CRMButtonVariant.primary,
+              onPressed: () => Navigator.pop(dialogContext),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileFollowupCard(DashboardFollowup f, List<RequirementLocal> localReqs) {
+    final parsed = DateTime.tryParse(f.followupDate);
+    final displayDate = parsed != null
+        ? DateFormat('dd/MM/yyyy  hh:mm a').format(parsed)
+        : f.followupDate;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(
+          color: CRMColors.borderOf(context).withValues(alpha: 0.6),
+          width: 1.0,
+        ),
+        boxShadow: CRMShadows.small,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        onTap: () {
+          final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
+          if (reqLocal != null) {
+            _showRequirementDetailDrawer(reqLocal.toModel());
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Associated requirement details not found.')),
+            );
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(CRMSpacing.m),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      f.clientName,
+                      style: CRMTypography.sectionTitle.copyWith(
+                        color: CRMColors.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: CRMColors.textSecondaryOf(context),
+                    size: 20,
+                  ),
+                ],
+              ),
+              const SizedBox(height: CRMSpacing.s),
+              const Divider(height: 1, thickness: 0.5),
+              const SizedBox(height: CRMSpacing.s),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.phone_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
+                      const SizedBox(width: 4),
+                      Text(
+                        f.mobile,
+                        style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.access_time_rounded, size: 14, color: CRMColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        displayDate,
+                        style: CRMTypography.bodyMedium.copyWith(
+                          color: CRMColors.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              if (f.notes != null && f.notes!.trim().isNotEmpty) ...[
+                const SizedBox(height: CRMSpacing.s),
+                GestureDetector(
+                  onTap: () => _showFollowupMessageDialog(context, f.clientName, f.notes!),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(CRMSpacing.s),
+                    decoration: BoxDecoration(
+                      color: CRMColors.backgroundOf(context),
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.notes_rounded, size: 14, color: CRMColors.textSecondaryOf(context)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            f.notes!,
+                            style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFollowupsView() {
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
     final dateStr = _reqFollowupDateFilter != null
         ? DateFormat('dd/MM/yyyy').format(_reqFollowupDateFilter!)
         : 'All Dates';
 
-    return CRMCard(
-      title: 'Follow-ups Management',
-      subtitle: 'Scheduled client communications and appointments',
-      headerAction: Row(
+    final dateFilterWidget = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: CRMColors.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: CRMColors.primary.withValues(alpha: 0.3)),
+      ),
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Icon(Icons.calendar_today_rounded, color: CRMColors.primary, size: 14),
+          const SizedBox(width: 6),
           Text(
             dateStr,
             style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
           ),
           IconButton(
-            icon: Icon(Icons.calendar_today_rounded, color: CRMColors.primary, size: 18),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            icon: Icon(Icons.edit_calendar_rounded, color: CRMColors.primary, size: 16),
             onPressed: () async {
               final picked = await showDatePicker(
                 context: context,
@@ -2464,7 +2652,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           ),
           if (_reqFollowupDateFilter != null)
             IconButton(
-              icon: Icon(Icons.clear_rounded, color: CRMColors.textMuted, size: 18),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              icon: Icon(Icons.clear_rounded, color: CRMColors.textMutedOf(context), size: 16),
               onPressed: () {
                 setState(() {
                   _reqFollowupDateFilter = null;
@@ -2474,135 +2664,165 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ),
         ],
       ),
-      child: FutureBuilder<List<dynamic>>(
-        future: Future.wait([
-          DashboardRepository().getDashboardData(),
-          RepositoryCoordinator().requirementLocal.getRequirements(),
-        ]),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Padding(
-              padding: EdgeInsets.all(32),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+    );
 
-          final dashboardData = snapshot.data?[0] as DashboardData?;
-          final localReqs = snapshot.data?[1] as List<RequirementLocal>? ?? [];
+    return CRMCard(
+      title: 'Follow-ups Management',
+      subtitle: 'Scheduled client communications and appointments',
+      headerAction: isMobile ? null : dateFilterWidget,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (isMobile) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: dateFilterWidget,
+            ),
+            const SizedBox(height: CRMSpacing.m),
+          ],
+          FutureBuilder<List<dynamic>>(
+            future: Future.wait([
+              DashboardRepository().getDashboardData(),
+              RepositoryCoordinator().requirementLocal.getRequirements(),
+            ]),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snapshot.hasError) {
+                return Center(child: Text('Error: ${snapshot.error}'));
+              }
 
-          final followups = dashboardData?.followups ?? [];
-          final filtered = followups.where((f) {
-            // Filter by date
-            if (_reqFollowupDateFilter != null) {
-              final parsed = DateTime.tryParse(f.followupDate);
-              if (parsed == null) return false;
-              final matchesDate = parsed.year == _reqFollowupDateFilter!.year &&
-                  parsed.month == _reqFollowupDateFilter!.month &&
-                  parsed.day == _reqFollowupDateFilter!.day;
-              if (!matchesDate) return false;
-            }
+              final dashboardData = snapshot.data?[0] as DashboardData?;
+              final localReqs = snapshot.data?[1] as List<RequirementLocal>? ?? [];
 
-            // Filter by Rent/Re-Sale listing type tab
-            final req = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
-            if (req == null) return false;
+              final followups = dashboardData?.followups ?? [];
+              final filtered = followups.where((f) {
+                // Filter by date
+                if (_reqFollowupDateFilter != null) {
+                  final parsed = DateTime.tryParse(f.followupDate);
+                  if (parsed == null) return false;
+                  final matchesDate = parsed.year == _reqFollowupDateFilter!.year &&
+                      parsed.month == _reqFollowupDateFilter!.month &&
+                      parsed.day == _reqFollowupDateFilter!.day;
+                  if (!matchesDate) return false;
+                }
 
-            final isRentTab = _activeListingTab == 'Rent';
-            final reqIsRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
-            return isRentTab == reqIsRent;
-          }).toList();
+                // Filter by Rent/Re-Sale listing type tab
+                final req = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
+                if (req == null) return false;
 
-          final totalCount = filtered.length;
-          final totalPages = (totalCount / _followupsPerPage).ceil();
-          final currentPage = _currentFollowupPage.clamp(1, totalPages > 0 ? totalPages : 1);
+                final isRentTab = _activeListingTab == 'Rent';
+                final reqIsRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
+                return isRentTab == reqIsRent;
+              }).toList();
 
-          final startIndex = (currentPage - 1) * _followupsPerPage;
-          final endIndex = (startIndex + _followupsPerPage).clamp(0, totalCount);
+              final totalCount = filtered.length;
+              final totalPages = (totalCount / _followupsPerPage).ceil();
+              final currentPage = _currentFollowupPage.clamp(1, totalPages > 0 ? totalPages : 1);
 
-          final pageItems = (startIndex < totalCount)
-              ? filtered.sublist(startIndex, endIndex)
-              : <DashboardFollowup>[];
+              final startIndex = (currentPage - 1) * _followupsPerPage;
+              final endIndex = (startIndex + _followupsPerPage).clamp(0, totalCount);
 
-          if (pageItems.isEmpty && currentPage > 1) {
-            // Safe fall-back if page boundaries changed
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                setState(() {
-                  _currentFollowupPage = 1;
+              final pageItems = (startIndex < totalCount)
+                  ? filtered.sublist(startIndex, endIndex)
+                  : <DashboardFollowup>[];
+
+              if (pageItems.isEmpty && currentPage > 1) {
+                // Safe fall-back if page boundaries changed
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() {
+                      _currentFollowupPage = 1;
+                    });
+                  }
                 });
               }
-            });
-          }
 
-          if (filtered.isEmpty) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 32),
-              child: Center(
-                child: Text(
-                  _reqFollowupDateFilter != null ? 'No follow-ups for $dateStr.' : 'No follow-ups found.',
-                  style: TextStyle(color: CRMColors.textSecondaryOf(context)),
-                ),
-              ),
-            );
-          }
+              if (filtered.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Center(
+                    child: Text(
+                      _reqFollowupDateFilter != null ? 'No follow-ups for $dateStr.' : 'No follow-ups found.',
+                      style: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                    ),
+                  ),
+                );
+              }
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              CRMDataTable(
-                showDecoration: false,
-                columns: const [
-                  DataColumn(label: Text('Client Name')),
-                  DataColumn(label: Text('Mobile')),
-                  DataColumn(label: Text('Scheduled Date')),
-                  DataColumn(label: Text('Remarks / Agenda')),
-                ],
-                rows: pageItems.map((f) {
-                  return DataRow(
-                    cells: [
-                      DataCell(
-                        GestureDetector(
-                          onTap: () {
-                            final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
-                            if (reqLocal != null) {
-                              _showRequirementDetailDrawer(reqLocal.toModel());
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Associated requirement details not found.')),
-                              );
-                            }
-                          },
-                          child: Text(
-                            f.clientName,
-                            style: CRMTypography.bodyMedium.copyWith(
-                              color: CRMColors.primary,
-                              fontWeight: FontWeight.bold,
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (isMobile)
+                    Column(
+                      children: pageItems.map((f) => _buildMobileFollowupCard(f, localReqs)).toList(),
+                    )
+                  else
+                    CRMDataTable(
+                      showDecoration: false,
+                      columns: const [
+                        DataColumn(label: Text('Client Name')),
+                        DataColumn(label: Text('Mobile')),
+                        DataColumn(label: Text('Scheduled Date')),
+                        DataColumn(label: Text('Remarks / Agenda')),
+                      ],
+                      rows: pageItems.map((f) {
+                        return DataRow(
+                          cells: [
+                            DataCell(
+                              GestureDetector(
+                                onTap: () {
+                                  final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
+                                  if (reqLocal != null) {
+                                    _showRequirementDetailDrawer(reqLocal.toModel());
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Associated requirement details not found.')),
+                                    );
+                                  }
+                                },
+                                child: Text(
+                                  f.clientName,
+                                  style: CRMTypography.bodyMedium.copyWith(
+                                    color: CRMColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      ),
-                      DataCell(Text(f.mobile)),
-                      DataCell(Builder(
-                        builder: (_) {
-                          final parsed = DateTime.tryParse(f.followupDate);
-                          final displayDate = parsed != null
-                              ? DateFormat('dd/MM/yyyy hh:mm a').format(parsed)
-                              : f.followupDate;
-                          return Text(displayDate, style: TextStyle(color: CRMColors.primary, fontWeight: FontWeight.w600));
-                        },
-                      )),
-                      DataCell(Text(f.notes ?? '-')),
-                    ],
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: CRMSpacing.m),
-              _buildFollowupsPagination(totalCount, totalPages, currentPage),
-            ],
-          );
-        },
+                            DataCell(Text(f.mobile)),
+                            DataCell(Builder(
+                              builder: (_) {
+                                final parsed = DateTime.tryParse(f.followupDate);
+                                final displayDate = parsed != null
+                                    ? DateFormat('dd/MM/yyyy hh:mm a').format(parsed)
+                                    : f.followupDate;
+                                return Text(displayDate, style: TextStyle(color: CRMColors.primary, fontWeight: FontWeight.w600));
+                              },
+                            )),
+                            DataCell(
+                              GestureDetector(
+                                onTap: f.notes != null && f.notes!.trim().isNotEmpty
+                                    ? () => _showFollowupMessageDialog(context, f.clientName, f.notes!)
+                                    : null,
+                                child: Text(f.notes ?? '-'),
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  const SizedBox(height: CRMSpacing.m),
+                  _buildFollowupsPagination(totalCount, totalPages, currentPage),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }

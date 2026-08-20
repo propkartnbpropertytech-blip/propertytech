@@ -121,7 +121,7 @@ class PropertiesRepository {
 
       final writeStart = DateTime.now();
       final localEntities = freshList.map((p) => p.toLocal()).toList();
-      await _coordinator.propertyLocal.saveProperties(localEntities);
+      await _coordinator.propertyLocal.saveProperties(localEntities, clearExisting: true);
       final isarWriteMs = DateTime.now().difference(writeStart).inMilliseconds;
 
       final totalMs = DateTime.now().difference(start).inMilliseconds;

@@ -327,10 +327,10 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     emit(PropertiesLoading());
     try {
       await _repository.softDeleteProperty(event.id);
-      add(LoadPropertiesEvent(activeTab: event.activeTab));
+      add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: true));
     } catch (e) {
       emit(PropertiesError(e.toString()));
-      add(LoadPropertiesEvent(activeTab: event.activeTab));
+      add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: true));
     }
   }
 
