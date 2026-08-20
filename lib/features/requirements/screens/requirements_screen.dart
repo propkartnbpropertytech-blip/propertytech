@@ -1163,6 +1163,25 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return true;
   }
 
+  static Future<bool> _isRequirementPropertyMatchAsync(PropertyModel p, RequirementModel req) async {
+    final isWonReq = req.status.toLowerCase() == 'won' || req.status.toLowerCase() == 'closed';
+
+    if (isWonReq) {
+      final wonPropertyIds = await PropertyDealClientStore.getWonPropertyIds(req.id);
+      if (wonPropertyIds.isNotEmpty) {
+        return wonPropertyIds.contains(p.id);
+      }
+
+      final clientName = await PropertyDealClientStore.getClientName(p.id, property: p);
+      if (clientName != null && clientName.trim().toLowerCase() == req.clientName.trim().toLowerCase()) {
+        return true;
+      }
+      return false;
+    }
+
+    return _isRequirementPropertyMatch(p, req);
+  }
+
   Widget _buildAssignToDropdown(RequirementModel req) {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
@@ -2605,7 +2624,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             Future<void> loadMatches() async {
               try {
                 final properties = await PropertiesRepository().getProperties();
-                final matches = properties.where((p) => _isRequirementPropertyMatch(p, req)).toList();
+                final List<PropertyModel> matches = [];
+                for (final p in properties) {
+                  if (await _isRequirementPropertyMatchAsync(p, req)) {
+                    matches.add(p);
+                  }
+                }
 
                 setDialogState(() {
                   matchedProps = matches;
@@ -3662,7 +3686,7 @@ class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> 
 
     int count = 0;
     for (final p in props) {
-      if (_RequirementsScreenState._isRequirementPropertyMatch(p, widget.requirement)) {
+      if (await _RequirementsScreenState._isRequirementPropertyMatchAsync(p, widget.requirement)) {
         count++;
       }
     }
@@ -3848,102 +3872,7 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
   }
 
   Future<bool> _isRequirementPropertyMatchAsync(PropertyModel p, RequirementModel req) async {
-    final isWonReq = req.status.toLowerCase() == 'won' || req.status.toLowerCase() == 'closed';
-
-    if (isWonReq) {
-      final wonPropertyIds = await PropertyDealClientStore.getWonPropertyIds(req.id);
-      if (wonPropertyIds.isNotEmpty) {
-        return wonPropertyIds.contains(p.id);
-      }
-
-      final clientName = await PropertyDealClientStore.getClientName(p.id, property: p);
-      if (clientName != null && clientName.trim().toLowerCase() == req.clientName.trim().toLowerCase()) {
-        return true;
-      }
-      return false;
-    }
-
-    final statusName = p.propertyStatusName.toLowerCase();
-    final statusActive = statusName == 'available' || statusName.contains('available') || statusName.isEmpty;
-    if (!statusActive) return false;
-
-    final reqListing = (req.listingTypeName ?? '').toLowerCase();
-    final propListing = (p.listingTypeName).toLowerCase();
-    bool listingTypeMatch = true;
-    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
-      final isReqRent = reqListing.contains('rent');
-      final isPropRent = propListing.contains('rent');
-      listingTypeMatch = (isReqRent == isPropRent);
-    } else if (req.listingTypeId != null && req.listingTypeId!.isNotEmpty && p.listingTypeId.isNotEmpty) {
-      listingTypeMatch = (p.listingTypeId == req.listingTypeId);
-    }
-    if (!listingTypeMatch) return false;
-
-    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
-      if (p.categoryId != req.categoryId) return false;
-    }
-
-    if (req.propertyTypeIds.isNotEmpty) {
-      bool typeMatch = req.propertyTypeIds.contains(p.propertyTypeId);
-      if (!typeMatch && req.propertyTypeName.isNotEmpty && p.propertyTypeName.isNotEmpty) {
-        final pTypeName = p.propertyTypeName.toLowerCase();
-        typeMatch = req.propertyTypeName.toLowerCase().split(',').any((t) {
-          final trimmed = t.trim();
-          return trimmed.isNotEmpty && (pTypeName.contains(trimmed) || trimmed.contains(pTypeName));
-        });
-      }
-      if (!typeMatch) return false;
-    } else if (req.propertyTypeId.isNotEmpty && p.propertyTypeId.isNotEmpty) {
-      if (p.propertyTypeId != req.propertyTypeId) {
-        final pTypeName = p.propertyTypeName.toLowerCase();
-        final reqTypeName = req.propertyTypeName.toLowerCase();
-        if (!reqTypeName.contains(pTypeName) && !pTypeName.contains(reqTypeName)) return false;
-      }
-    }
-
-    if (req.configurationIds.isNotEmpty) {
-      bool configMatch = p.configurationId != null && req.configurationIds.contains(p.configurationId);
-      if (!configMatch && req.configurationName != null && req.configurationName!.isNotEmpty && p.configurationName != null && p.configurationName!.isNotEmpty) {
-        final pConfigName = p.configurationName!.toLowerCase();
-        configMatch = req.configurationName!.toLowerCase().split(',').any((c) {
-          final trimmed = c.trim();
-          return trimmed.isNotEmpty && (pConfigName.contains(trimmed) || trimmed.contains(pConfigName));
-        });
-      }
-      if (!configMatch) return false;
-    } else if (req.configurationId != null && req.configurationId!.isNotEmpty) {
-      if (p.configurationId != null && p.configurationId!.isNotEmpty && p.configurationId != req.configurationId) {
-        final pConfigName = (p.configurationName ?? '').toLowerCase();
-        final reqConfigName = (req.configurationName ?? '').toLowerCase();
-        if (pConfigName.isNotEmpty && reqConfigName.isNotEmpty) {
-          if (!reqConfigName.contains(pConfigName) && !pConfigName.contains(reqConfigName)) {
-            return false;
-          }
-        }
-      }
-    }
-
-    if (req.areaIds.isNotEmpty) {
-      bool areaMatch = req.areaIds.contains(p.areaId);
-      if (!areaMatch && req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
-        final pArea = p.areaName.trim().toLowerCase();
-        areaMatch = req.areaNames.any((aName) {
-          final trimmed = aName.trim().toLowerCase();
-          return trimmed.isNotEmpty && (trimmed == pArea || pArea.contains(trimmed) || trimmed.contains(pArea));
-        });
-      }
-      if (!areaMatch) return false;
-    }
-
-    if (req.maxBudget > 0) {
-      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
-      final maxB = req.maxBudget;
-      if (p.price < minB || p.price > maxB) {
-        return false;
-      }
-    }
-
-    return true;
+    return _RequirementsScreenState._isRequirementPropertyMatchAsync(p, req);
   }
 
   Future<void> _loadAndFilterMatches() async {
