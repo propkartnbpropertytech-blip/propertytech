@@ -3,6 +3,7 @@ import '../../../core/storage/local_repositories.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
+import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/buttons.dart';
@@ -686,230 +687,602 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
               ),
             ],
             const SizedBox(height: CRMSpacing.l),
-            CRMCard(
-              child: _isLoading
-                  ? const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
-                  : _selectedTab == 'Properties'
-                      ? _visibleBinProperties.isEmpty
-                          ? _buildEmptyState('No deleted ${_propertiesSubTab.toLowerCase()} properties found in bin.')
-                          : Builder(
-                              builder: (context) {
-                                final authState = context.read<AuthBloc>().state;
-                                final currentUser = authState is Authenticated ? authState.user : null;
-                                final isUserAdminOrSuperAdmin = currentUser != null &&
-                                    (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
-                                final canPermanentlyDelete = currentUser != null &&
-                                    (currentUser.role?.toLowerCase() == 'admin' || currentUser.role?.toLowerCase() == 'super admin');
+            Builder(
+              builder: (context) {
+                final mainContent = _isLoading
+                    ? const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+                    : _selectedTab == 'Properties'
+                        ? _visibleBinProperties.isEmpty
+                            ? _buildEmptyState('No deleted ${_propertiesSubTab.toLowerCase()} properties found in bin.')
+                            : Builder(
+                                builder: (context) {
+                                  final authState = context.read<AuthBloc>().state;
+                                  final currentUser = authState is Authenticated ? authState.user : null;
+                                  final isUserAdminOrSuperAdmin = currentUser != null &&
+                                      (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
+                                  final canPermanentlyDelete = currentUser != null &&
+                                      (currentUser.role?.toLowerCase() == 'admin' || currentUser.role?.toLowerCase() == 'super admin');
 
-                                final targetProperties = _visibleBinProperties;
-                                final totalItems = targetProperties.length;
-                                final totalPages = (totalItems / _propertiesPerPage).ceil().clamp(1, double.infinity).toInt();
-                                final startIndex = (_currentPropertiesPage - 1) * _propertiesPerPage;
-                                final endIndex = (startIndex + _propertiesPerPage).clamp(0, totalItems);
-                                final paginatedProperties = targetProperties.sublist(startIndex, endIndex);
+                                  final targetProperties = _visibleBinProperties;
+                                  final totalItems = targetProperties.length;
+                                  final totalPages = (totalItems / _propertiesPerPage).ceil().clamp(1, double.infinity).toInt();
+                                  final startIndex = (_currentPropertiesPage - 1) * _propertiesPerPage;
+                                  final endIndex = (startIndex + _propertiesPerPage).clamp(0, totalItems);
+                                  final paginatedProperties = targetProperties.sublist(startIndex, endIndex);
 
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    CRMDataTable(
-                                      showDecoration: false,
-                                      isLoading: false,
-                                      showCheckboxColumn: false,
-                                      dataRowMinHeight: 56.0,
-                                      dataRowMaxHeight: 64.0,
-                                      columns: [
-                                        const DataColumn(label: Text('Code')),
-                                        if (isUserAdminOrSuperAdmin)
-                                          const DataColumn(label: Text('Listed By')),
-                                        const DataColumn(label: Text('Property Name')),
-                                        const DataColumn(label: Text('Owner')),
-                                        const DataColumn(label: Text('Area')),
-                                        const DataColumn(label: Text('Price')),
-                                        const DataColumn(label: Text('Actions')),
-                                      ],
-                                      rows: paginatedProperties.map((p) {
-                                        return DataRow(
-                                          cells: [
-                                            DataCell(Text(p.propertyCode, style: const TextStyle(fontWeight: FontWeight.bold))),
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (isMobile)
+                                        Column(
+                                          children: paginatedProperties.map((p) => _buildMobilePropertyCard(p, isUserAdminOrSuperAdmin, canPermanentlyDelete)).toList(),
+                                        )
+                                      else
+                                        CRMDataTable(
+                                          showDecoration: false,
+                                          isLoading: false,
+                                          showCheckboxColumn: false,
+                                          dataRowMinHeight: 56.0,
+                                          dataRowMaxHeight: 64.0,
+                                          columnSpacing: 16.0,
+                                          columns: [
+                                            const DataColumn(label: Text('Code')),
                                             if (isUserAdminOrSuperAdmin)
-                                              DataCell(Text(p.createdByName)),
-                                            DataCell(Text(p.title)),
-                                            DataCell(Text(p.ownerName)),
-                                            DataCell(Text(p.areaName)),
-                                            DataCell(Text(CRMCurrencyFormatter.formatShort(p.price), style: const TextStyle(fontWeight: FontWeight.w600))),
-                                            DataCell(
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  IconButton(
-                                                    icon: Icon(Icons.restore_rounded, color: CRMColors.success, size: 20),
-                                                    tooltip: 'Restore Property',
-                                                    onPressed: () => _restoreProperty(p.id),
-                                                  ),
-                                                  if (canPermanentlyDelete) ...[
-                                                    const SizedBox(width: 8),
-                                                    IconButton(
-                                                      icon: Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 20),
-                                                      tooltip: 'Permanently Delete',
-                                                      onPressed: () => _permanentDeleteProperty(p.id),
-                                                    ),
-                                                  ],
-                                                ],
-                                              ),
-                                            ),
+                                              const DataColumn(label: Text('Listed By')),
+                                            const DataColumn(label: Text('Property Name')),
+                                            const DataColumn(label: Text('Owner')),
+                                            const DataColumn(label: Text('Area')),
+                                            const DataColumn(label: Text('Price')),
+                                            const DataColumn(label: Text('Actions')),
                                           ],
-                                        );
-                                      }).toList(),
-                                    ),
-                                    const SizedBox(height: CRMSpacing.m),
-                                    _buildPropertiesPagination(
-                                      totalItems,
-                                      totalPages,
-                                      _currentPropertiesPage,
-                                    ),
-                                  ],
-                                );
-                              },
-                            )
-                      : _visibleBinRequirements.isEmpty
-                          ? _buildEmptyState(_requirementsSubTab == 'Bin'
-                              ? 'No deleted ${_requirementsListingSubTab.toLowerCase()} leads found.'
-                              : 'No ${_requirementsListingSubTab.toLowerCase()} leads marked as "Not Interested".')
-                          : Builder(
-                              builder: (context) {
-                                final authState = context.read<AuthBloc>().state;
-                                auth_model.UserModel? currentUser;
-                                if (authState is Authenticated) {
-                                  currentUser = authState.user;
-                                }
-                                final isUserAdminOrSuperAdmin = currentUser != null &&
-                                    (currentUser.role?.toLowerCase() == 'admin' ||
-                                        currentUser.role?.toLowerCase() == 'super admin' ||
-                                        currentUser.role?.toLowerCase() == 'telecaller');
-
-                                final targetRequirements = _visibleBinRequirements;
-                                final totalItems = targetRequirements.length;
-                                final totalPages = (totalItems / _requirementsPerPage).ceil().clamp(1, double.infinity).toInt();
-                                final startIndex = (_currentRequirementsPage - 1) * _requirementsPerPage;
-                                final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalItems);
-                                final paginatedRequirements = targetRequirements.sublist(startIndex, endIndex);
-
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    CRMDataTable(
-                                      showDecoration: false,
-                                      isLoading: false,
-                                      showCheckboxColumn: false,
-                                      dataRowMinHeight: 56.0,
-                                      dataRowMaxHeight: 64.0,
-                                      columns: [
-                                        const DataColumn(label: Text('Client Name')),
-                                        const DataColumn(label: Text('Specs / Config')),
-                                        const DataColumn(label: Text('Budget Range')),
-                                        const DataColumn(label: Text('Target Area(s)')),
-                                        if (isUserAdminOrSuperAdmin)
-                                          const DataColumn(label: Text('Salesperson')),
-                                        const DataColumn(label: Text('Actions')),
-                                      ],
-                                      rows: paginatedRequirements.map((r) {
-                                        final budgetRange = '${CRMCurrencyFormatter.formatShort(r.minBudget)} - ${CRMCurrencyFormatter.formatShort(r.maxBudget)}';
-                                        return DataRow(
-                                          cells: [
-                                            DataCell(
-                                              Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Text(r.clientName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                                  Text(r.clientMobile, style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11)),
-                                                ],
-                                              ),
-                                            ),
-                                            DataCell(Text('${r.propertyTypeName} (${r.configurationName ?? "-"})')),
-                                            DataCell(Text(budgetRange, style: const TextStyle(fontWeight: FontWeight.w600))),
-                                            DataCell(
-                                              SizedBox(
-                                                width: 160,
-                                                child: Tooltip(
-                                                  message: r.areaNames.join(', '),
-                                                  child: Text(
-                                                    r.areaNames.join(', '),
-                                                    maxLines: 2,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 13),
+                                          rows: paginatedProperties.map((p) {
+                                            return DataRow(
+                                              cells: [
+                                                DataCell(SizedBox(width: 90, child: Text(p.propertyCode, style: const TextStyle(fontWeight: FontWeight.bold)))),
+                                                if (isUserAdminOrSuperAdmin)
+                                                  DataCell(SizedBox(width: 120, child: Text(p.createdByName, maxLines: 1, overflow: TextOverflow.ellipsis))),
+                                                DataCell(
+                                                  SizedBox(
+                                                    width: 180,
+                                                    child: _buildCustomTooltip(
+                                                      message: 'Property Title: ${p.title}\nOwner: ${p.ownerName}\nArea: ${p.areaName}',
+                                                      isRent: _isRentProperty(p),
+                                                      child: Text(p.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                            ),
+                                                DataCell(SizedBox(width: 120, child: Text(p.ownerName, maxLines: 1, overflow: TextOverflow.ellipsis))),
+                                                DataCell(
+                                                  SizedBox(
+                                                    width: 130,
+                                                    child: _buildCustomTooltip(
+                                                      message: 'Area: ${p.areaName}',
+                                                      isRent: _isRentProperty(p),
+                                                      child: Text(p.areaName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                                    ),
+                                                  ),
+                                                ),
+                                                DataCell(SizedBox(width: 90, child: Text(CRMCurrencyFormatter.formatShort(p.price), style: const TextStyle(fontWeight: FontWeight.w600)))),
+                                                DataCell(
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      IconButton(
+                                                        icon: Icon(Icons.restore_rounded, color: CRMColors.success, size: 20),
+                                                        tooltip: 'Restore Property',
+                                                        onPressed: () => _restoreProperty(p.id),
+                                                      ),
+                                                      if (canPermanentlyDelete) ...[
+                                                        const SizedBox(width: 4),
+                                                        IconButton(
+                                                          icon: Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 20),
+                                                          tooltip: 'Permanently Delete',
+                                                          onPressed: () => _permanentDeleteProperty(p.id),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          }).toList(),
+                                        ),
+                                      const SizedBox(height: CRMSpacing.m),
+                                      _buildPropertiesPagination(
+                                        totalItems,
+                                        totalPages,
+                                        _currentPropertiesPage,
+                                      ),
+                                    ],
+                                  );
+                                },
+                              )
+                        : _visibleBinRequirements.isEmpty
+                            ? _buildEmptyState(_requirementsSubTab == 'Bin'
+                                ? 'No deleted ${_requirementsListingSubTab.toLowerCase()} leads found.'
+                                : 'No ${_requirementsListingSubTab.toLowerCase()} leads marked as "Not Interested".')
+                            : Builder(
+                                builder: (context) {
+                                  final authState = context.read<AuthBloc>().state;
+                                  auth_model.UserModel? currentUser;
+                                  if (authState is Authenticated) {
+                                    currentUser = authState.user;
+                                  }
+                                  final isUserAdminOrSuperAdmin = currentUser != null &&
+                                      (currentUser.role?.toLowerCase() == 'admin' ||
+                                          currentUser.role?.toLowerCase() == 'super admin' ||
+                                          currentUser.role?.toLowerCase() == 'telecaller');
+
+                                  final targetRequirements = _visibleBinRequirements;
+                                  final totalItems = targetRequirements.length;
+                                  final totalPages = (totalItems / _requirementsPerPage).ceil().clamp(1, double.infinity).toInt();
+                                  final startIndex = (_currentRequirementsPage - 1) * _requirementsPerPage;
+                                  final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalItems);
+                                  final paginatedRequirements = targetRequirements.sublist(startIndex, endIndex);
+
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (isMobile)
+                                        Column(
+                                          children: paginatedRequirements.map((r) => _buildMobileRequirementCard(r, isUserAdminOrSuperAdmin)).toList(),
+                                        )
+                                      else
+                                        CRMDataTable(
+                                          showDecoration: false,
+                                          isLoading: false,
+                                          showCheckboxColumn: false,
+                                          dataRowMinHeight: 56.0,
+                                          dataRowMaxHeight: 64.0,
+                                          columnSpacing: 16.0,
+                                          columns: [
+                                            const DataColumn(label: Text('Client Name')),
+                                            const DataColumn(label: Text('Specs / Config')),
+                                            const DataColumn(label: Text('Budget Range')),
+                                            const DataColumn(label: Text('Target Area(s)')),
                                             if (isUserAdminOrSuperAdmin)
-                                              DataCell(
-                                                Builder(
-                                                  builder: (context) {
-                                                    final salespersonName = r.creatorName ?? r.assigneeName ?? 'N/A';
-                                                    final mobile = r.creatorMobile ?? '';
-                                                    final email = r.creatorEmail ?? '';
-                                                    return Column(
+                                              const DataColumn(label: Text('Salesperson')),
+                                            const DataColumn(label: Text('Actions')),
+                                          ],
+                                          rows: paginatedRequirements.map((r) {
+                                            final budgetRange = '${CRMCurrencyFormatter.formatShort(r.minBudget)} - ${CRMCurrencyFormatter.formatShort(r.maxBudget)}';
+                                            return DataRow(
+                                              cells: [
+                                                DataCell(
+                                                  SizedBox(
+                                                    width: 130,
+                                                    child: Column(
                                                       crossAxisAlignment: CrossAxisAlignment.start,
                                                       mainAxisAlignment: MainAxisAlignment.center,
                                                       children: [
-                                                        Text(salespersonName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                                        if (email.isNotEmpty || mobile.isNotEmpty)
-                                                          Text('${email.isNotEmpty ? email : "No email"} • ${mobile.isNotEmpty ? mobile : "No mobile"}',
-                                                              style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11))
-                                                        else
-                                                          Text('No contact details',
-                                                              style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11)),
+                                                        Text(r.clientName, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                                        Text(r.clientMobile, style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
                                                       ],
-                                                    );
-                                                  }
-                                                )
-                                              ),
-                                            DataCell(
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  IconButton(
-                                                    icon: Icon(Icons.restore_rounded, color: CRMColors.success, size: 20),
-                                                    tooltip: _requirementsSubTab == 'Bin' ? 'Restore Requirement' : 'Make Active / Restore',
-                                                    onPressed: () => _restoreRequirement(r),
+                                                    ),
                                                   ),
-                                                  if (_requirementsSubTab == 'Bin' && isUserAdminOrSuperAdmin) ...[
-                                                    const SizedBox(width: 8),
-                                                    IconButton(
-                                                      icon: Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 20),
-                                                      tooltip: 'Permanently Delete',
-                                                      onPressed: () => _permanentDeleteRequirement(r.id),
+                                                ),
+                                                DataCell(
+                                                  SizedBox(
+                                                    width: 220,
+                                                    child: _buildCustomTooltip(
+                                                      message: 'Property Type(s): ${r.propertyTypeName}\nConfiguration(s): ${r.configurationName ?? "-"}\nListing Type: ${r.listingTypeName ?? "Rent"}',
+                                                      isRent: _isRentRequirement(r),
+                                                      child: Text(
+                                                        '${r.propertyTypeName} (${r.configurationName ?? "-"})',
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: CRMTypography.body.copyWith(fontSize: 13),
+                                                      ),
                                                     ),
-                                                  ]
-                                                  else if (_requirementsSubTab != 'Bin') ...[
-                                                    const SizedBox(width: 8),
-                                                    IconButton(
-                                                      icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 20),
-                                                      tooltip: 'Move to Recycle Bin',
-                                                      onPressed: () => _deleteRequirement(r),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  SizedBox(
+                                                    width: 110,
+                                                    child: Text(budgetRange, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  SizedBox(
+                                                    width: 140,
+                                                    child: _buildCustomTooltip(
+                                                      message: 'Target Area(s):\n${r.areaNames.isNotEmpty ? r.areaNames.join(", ") : "Any Area"}',
+                                                      isRent: _isRentRequirement(r),
+                                                      child: Text(
+                                                        r.areaNames.isNotEmpty ? r.areaNames.join(', ') : 'Any Area',
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 13),
+                                                      ),
                                                     ),
-                                                  ],
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      }).toList(),
-                                    ),
-                                    const SizedBox(height: CRMSpacing.m),
-                                    _buildRequirementsPagination(
-                                      totalItems,
-                                      totalPages,
-                                      _currentRequirementsPage,
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
+                                                  ),
+                                                ),
+                                                if (isUserAdminOrSuperAdmin)
+                                                  DataCell(
+                                                    Builder(
+                                                      builder: (context) {
+                                                        final salespersonName = r.creatorName ?? r.assigneeName ?? 'N/A';
+                                                        final mobile = r.creatorMobile ?? '';
+                                                        final email = r.creatorEmail ?? '';
+                                                        final tooltipMsg = 'Salesperson: $salespersonName${mobile.isNotEmpty ? "\nMobile: $mobile" : ""}${email.isNotEmpty ? "\nEmail: $email" : ""}';
+                                                        return SizedBox(
+                                                          width: 130,
+                                                          child: _buildCustomTooltip(
+                                                            message: tooltipMsg,
+                                                            isRent: _isRentRequirement(r),
+                                                            child: Column(
+                                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                                              mainAxisAlignment: MainAxisAlignment.center,
+                                                              children: [
+                                                                Text(salespersonName, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                                                if (email.isNotEmpty || mobile.isNotEmpty)
+                                                                  Text(
+                                                                    mobile.isNotEmpty ? mobile : email,
+                                                                    style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11),
+                                                                    maxLines: 1,
+                                                                    overflow: TextOverflow.ellipsis,
+                                                                  )
+                                                                else
+                                                                  Text('No contact details',
+                                                                      style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11)),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        );
+                                                      }
+                                                    )
+                                                  ),
+                                                DataCell(
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      IconButton(
+                                                        icon: Icon(Icons.restore_rounded, color: CRMColors.success, size: 20),
+                                                        tooltip: _requirementsSubTab == 'Bin' ? 'Restore Requirement' : 'Make Active / Restore',
+                                                        onPressed: () => _restoreRequirement(r),
+                                                      ),
+                                                      if (_requirementsSubTab == 'Bin' && isUserAdminOrSuperAdmin) ...[
+                                                        const SizedBox(width: 4),
+                                                        IconButton(
+                                                          icon: Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 20),
+                                                          tooltip: 'Permanently Delete',
+                                                          onPressed: () => _permanentDeleteRequirement(r.id),
+                                                        ),
+                                                      ]
+                                                      else if (_requirementsSubTab != 'Bin') ...[
+                                                        const SizedBox(width: 4),
+                                                        IconButton(
+                                                          icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 20),
+                                                          tooltip: 'Move to Recycle Bin',
+                                                          onPressed: () => _deleteRequirement(r),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          }).toList(),
+                                        ),
+                                      const SizedBox(height: CRMSpacing.m),
+                                      _buildRequirementsPagination(
+                                        totalItems,
+                                        totalPages,
+                                        _currentRequirementsPage,
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+
+                if (isMobile) {
+                  return mainContent;
+                }
+
+                return CRMCard(child: mainContent);
+              },
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCustomTooltip({
+    required String message,
+    required Widget child,
+    bool isRent = true,
+    double maxWidth = 320.0,
+  }) {
+    return Tooltip(
+      richMessage: WidgetSpan(
+        child: Container(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: Text(
+            message,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12.5,
+              height: 1.4,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        color: CRMColors.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: (isRent ? CRMColors.info : CRMColors.primary).withValues(alpha: 0.35),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildMobilePropertyCard(
+    PropertyModel p,
+    bool isUserAdminOrSuperAdmin,
+    bool canPermanentlyDelete,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+      padding: const EdgeInsets.all(CRMSpacing.m),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(
+          color: CRMColors.borderOf(context).withValues(alpha: 0.6),
+          width: 1.0,
+        ),
+        boxShadow: CRMShadows.small,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: CRMColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: CRMColors.primary.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  p.propertyCode,
+                  style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
+                ),
+              ),
+              Text(
+                CRMCurrencyFormatter.formatShort(p.price),
+                style: CRMTypography.sectionTitle.copyWith(
+                  color: CRMColors.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.s),
+          Text(
+            p.title.isNotEmpty ? p.title : 'Property (${p.propertyCode})',
+            style: CRMTypography.bodyMedium.copyWith(
+              fontWeight: FontWeight.bold,
+              color: CRMColors.textOf(context),
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: CRMSpacing.s),
+          const Divider(height: 1, thickness: 0.5),
+          const SizedBox(height: CRMSpacing.s),
+          if (p.areaName.isNotEmpty) ...[
+            Row(
+              children: [
+                Icon(Icons.location_on_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    p.areaName,
+                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+          ],
+          if (p.ownerName.isNotEmpty) ...[
+            Row(
+              children: [
+                Icon(Icons.person_outline, size: 14, color: CRMColors.textSecondaryOf(context)),
+                const SizedBox(width: 4),
+                Text(
+                  'Owner: ${p.ownerName}',
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+          ],
+          if (isUserAdminOrSuperAdmin && p.createdByName.isNotEmpty) ...[
+            Row(
+              children: [
+                Icon(Icons.badge_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
+                const SizedBox(width: 4),
+                Text(
+                  'Listed By: ${p.createdByName}',
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+          ],
+          const SizedBox(height: CRMSpacing.s),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.restore_rounded, color: CRMColors.success, size: 22),
+                tooltip: 'Restore Property',
+                onPressed: () => _restoreProperty(p.id),
+              ),
+              if (canPermanentlyDelete) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 22),
+                  tooltip: 'Permanently Delete',
+                  onPressed: () => _permanentDeleteProperty(p.id),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileRequirementCard(
+    RequirementModel r,
+    bool isUserAdminOrSuperAdmin,
+  ) {
+    final budgetRange = '${CRMCurrencyFormatter.formatShort(r.minBudget)} - ${CRMCurrencyFormatter.formatShort(r.maxBudget)}';
+    final configText = '${r.propertyTypeName} (${r.configurationName ?? "-"})';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+      padding: const EdgeInsets.all(CRMSpacing.m),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(
+          color: CRMColors.borderOf(context).withValues(alpha: 0.6),
+          width: 1.0,
+        ),
+        boxShadow: CRMShadows.small,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  r.clientName,
+                  style: CRMTypography.sectionTitle.copyWith(
+                    color: CRMColors.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (r.clientMobile.isNotEmpty)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.phone_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
+                    const SizedBox(width: 4),
+                    Text(
+                      r.clientMobile,
+                      style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.xs),
+          Text(
+            configText,
+            style: CRMTypography.bodyMedium.copyWith(
+              color: CRMColors.textOf(context),
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: CRMSpacing.s),
+          const Divider(height: 1, thickness: 0.5),
+          const SizedBox(height: CRMSpacing.s),
+          Row(
+            children: [
+              Icon(Icons.payments_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
+              const SizedBox(width: 4),
+              Text(
+                'Budget: $budgetRange',
+                style: CRMTypography.caption.copyWith(
+                  color: CRMColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          if (r.areaNames.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.location_on_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Areas: ${r.areaNames.join(", ")}',
+                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (isUserAdminOrSuperAdmin) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.person_outline, size: 14, color: CRMColors.textSecondaryOf(context)),
+                const SizedBox(width: 4),
+                Text(
+                  'Salesperson: ${r.creatorName ?? r.assigneeName ?? "N/A"}',
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: CRMSpacing.s),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.restore_rounded, color: CRMColors.success, size: 22),
+                tooltip: _requirementsSubTab == 'Bin' ? 'Restore Requirement' : 'Make Active',
+                onPressed: () => _restoreRequirement(r),
+              ),
+              if (_requirementsSubTab == 'Bin' && isUserAdminOrSuperAdmin) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 22),
+                  tooltip: 'Permanently Delete',
+                  onPressed: () => _permanentDeleteRequirement(r.id),
+                ),
+              ] else if (_requirementsSubTab != 'Bin') ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 22),
+                  tooltip: 'Move to Recycle Bin',
+                  onPressed: () => _deleteRequirement(r),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }

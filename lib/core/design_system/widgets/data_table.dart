@@ -79,6 +79,7 @@ class CRMDataTable extends StatelessWidget {
           if (columnSpacing == null && colCount > 1) {
             if (availableWidth > baseContentWidth) {
               spacing = (availableWidth - baseContentWidth) / (colCount - 1);
+              if (spacing > 20.0) spacing = 20.0;
               if (spacing < 8.0) spacing = 8.0;
             } else {
               spacing = 8.0;
