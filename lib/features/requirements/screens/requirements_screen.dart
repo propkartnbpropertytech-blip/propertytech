@@ -76,6 +76,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   int _currentFollowupPage = 1;
   int _followupsPerPage = 10;
   final PropertiesRepository _propertiesRepository = PropertiesRepository();
+  List<PropertyModel>? _propertiesForMatches;
   PropertyMetadataModel? _metadata;
   bool _isLoadingMetadata = true;
   bool _hasAutoOpenedAdd = false;
@@ -107,7 +108,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     super.dispose();
   }
 
+  Future<void> _loadPropertiesForMatches() async {
+    try {
+      final properties = await _propertiesRepository.getProperties();
+      if (mounted) {
+        setState(() {
+          _propertiesForMatches = properties;
+        });
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadMetadata() async {
+    _loadPropertiesForMatches();
     try {
       final meta = await _propertiesRepository.getPropertyMetadata();
       if (!mounted) return;
@@ -1059,7 +1072,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
+  static bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
     // 1. Status Match
     final statusName = p.propertyStatusName.toLowerCase();
     final statusActive = statusName == 'available' || statusName.contains('available') || statusName.isEmpty;
@@ -1713,12 +1726,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         ),
 
                         DataCell(
-                          CRMButton(
-                            label: "Run Matches",
-                            prefixIcon: Icons.bolt_rounded,
-                            height: 32,
-                            padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s),
+                          _RunMatchesButtonWithBadge(
+                            requirement: req,
                             onPressed: () => _showMatchesDrawer(req),
+                            properties: _propertiesForMatches,
                           ),
                         ),
                         DataCell(
@@ -2240,11 +2251,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.s),
                   child: Row(
                     children: [
-                      _buildActionButton(
-                        icon: Icons.bolt_rounded,
-                        color: CRMColors.warning,
+                      _RunMatchesButtonWithBadge(
+                        requirement: req,
                         onPressed: () => _showMatchesDrawer(req),
-                        tooltip: 'Matches',
+                        properties: _propertiesForMatches,
+                        isMobileIconOnly: true,
                       ),
                       const SizedBox(width: 8),
                       if (!_isLeadTransferredAway(req, currentUser))
@@ -3223,12 +3234,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         ),
 
                         DataCell(
-                          CRMButton(
-                            label: "Run Matches",
-                            prefixIcon: Icons.bolt_rounded,
-                            height: 32,
-                            padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s),
+                          _RunMatchesButtonWithBadge(
+                            requirement: req,
                             onPressed: () => _showMatchesDrawer(req),
+                            properties: _propertiesForMatches,
                           ),
                         ),
                         DataCell(
@@ -3605,6 +3614,135 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _RunMatchesButtonWithBadge extends StatefulWidget {
+  final RequirementModel requirement;
+  final VoidCallback onPressed;
+  final List<PropertyModel>? properties;
+  final bool isMobileIconOnly;
+
+  const _RunMatchesButtonWithBadge({
+    required this.requirement,
+    required this.onPressed,
+    this.properties,
+    this.isMobileIconOnly = false,
+  });
+
+  @override
+  State<_RunMatchesButtonWithBadge> createState() => _RunMatchesButtonWithBadgeState();
+}
+
+class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> {
+  int? _matchCount;
+
+  @override
+  void initState() {
+    super.initState();
+    _computeCount();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RunMatchesButtonWithBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.requirement != widget.requirement || oldWidget.properties != widget.properties) {
+      _computeCount();
+    }
+  }
+
+  Future<void> _computeCount() async {
+    List<PropertyModel> props = widget.properties ?? [];
+    if (props.isEmpty) {
+      try {
+        props = await PropertiesRepository().getProperties();
+      } catch (_) {}
+    }
+
+    int count = 0;
+    for (final p in props) {
+      if (_RequirementsScreenState._isRequirementPropertyMatch(p, widget.requirement)) {
+        count++;
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _matchCount = count;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget button;
+    if (widget.isMobileIconOnly) {
+      button = Tooltip(
+        message: 'Matches',
+        child: IconButton(
+          icon: const Icon(Icons.bolt_rounded, color: CRMColors.warning, size: 16),
+          constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+          style: IconButton.styleFrom(
+            backgroundColor: CRMColors.warning.withValues(alpha: 0.1),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: EdgeInsets.zero,
+          ),
+          onPressed: widget.onPressed,
+        ),
+      );
+    } else {
+      button = CRMButton(
+        label: "Run Matches",
+        prefixIcon: Icons.bolt_rounded,
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s),
+        onPressed: widget.onPressed,
+      );
+    }
+
+    if (_matchCount == null) {
+      return button;
+    }
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        button,
+        Positioned(
+          top: widget.isMobileIconOnly ? -4 : -6,
+          right: widget.isMobileIconOnly ? -4 : -6,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+            constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
+            decoration: BoxDecoration(
+              color: _matchCount! > 0 ? const Color(0xFFEF4444) : const Color(0xFF6B7280),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white, width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                '$_matchCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  height: 1.1,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
