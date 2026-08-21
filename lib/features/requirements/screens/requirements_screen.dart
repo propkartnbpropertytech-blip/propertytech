@@ -1,3 +1,4 @@
+import 'dart:async';
 import '../../../core/services/notification_center.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
@@ -83,10 +84,35 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   bool _isLoadingMetadata = true;
   bool _hasAutoOpenedAdd = false;
   bool _isMobileFiltersExpanded = false;
+  late Future<List<dynamic>> _followupsFuture;
+  StreamSubscription? _requirementsStreamSub;
+  StreamSubscription? _dashboardStreamSub;
+
+  void _refreshFollowupsFuture() {
+    _followupsFuture = Future.wait([
+      DashboardRepository().getDashboardData(),
+      RepositoryCoordinator().requirementLocal.getRequirements(),
+    ]);
+  }
 
   @override
   void initState() {
     super.initState();
+    _refreshFollowupsFuture();
+    _requirementsStreamSub = RepositoryCoordinator().requirementsStream.listen((_) {
+      if (mounted) {
+        setState(() {
+          _refreshFollowupsFuture();
+        });
+      }
+    });
+    _dashboardStreamSub = RepositoryCoordinator().dashboardStream.listen((_) {
+      if (mounted) {
+        setState(() {
+          _refreshFollowupsFuture();
+        });
+      }
+    });
     // Metadata load triggers the first fetch once listing types are available.
     // Avoid a duplicate empty fetch before metadata arrives.
     _loadMetadata();
@@ -105,6 +131,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   @override
   void dispose() {
+    _requirementsStreamSub?.cancel();
+    _dashboardStreamSub?.cancel();
     _searchController.dispose();
     _wonSearchController.dispose();
     super.dispose();
@@ -141,6 +169,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _triggerFetch() {
+    _refreshFollowupsFuture();
     String? listingTypeId;
     if (_metadata != null && _metadata!.listingTypes.isNotEmpty) {
       try {
@@ -2539,6 +2568,68 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  void _openFollowupStepper(RequirementModel req, String status) {
+    if (req.status == 'Re-Followup') {
+      return;
+    }
+
+    final bool isReFollowup = status == 'Re-Followup' ||
+        req.status == 'Follow-up' ||
+        req.status == 'Re-Followup' ||
+        req.nextFollowupDate != null;
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Re-Followup',
+      barrierColor: Colors.black.withValues(alpha: 0.12),
+      transitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (dialogContext, anim1, anim2) {
+        return RequirementStepperDialog(
+          requirement: req,
+          initialStep: 1,
+          updateStatusOnSave: true,
+          onSaved: () {
+            if (isReFollowup) {
+              NotificationCenter.addNotification(
+                title: 'Re-Followup Scheduled',
+                message: 'Re-Followup scheduled for ${req.clientName}. Notification reminder active.',
+                type: 'refollowup',
+              );
+            }
+            _triggerFetch();
+          },
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.0, -0.06),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          child: FadeTransition(
+            opacity: anim1,
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFollowupStatusActionCell(DashboardFollowup f, RequirementModel? reqModel) {
+    if (reqModel == null) {
+      return const SizedBox.shrink();
+    }
+
+    return _FollowupActionButton(
+      followup: f,
+      reqModel: reqModel,
+      onSelect: (req, status) {
+        _openFollowupStepper(req, status);
+      },
+    );
+  }
+
   Widget _buildMobileFollowupCard(DashboardFollowup f, List<RequirementLocal> localReqs) {
     final parsed = DateTime.tryParse(f.followupDate);
     final displayDate = parsed != null
@@ -2720,6 +2811,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               if (picked != null) {
                 setState(() {
                   _reqFollowupDateFilter = picked;
+                  _refreshFollowupsFuture();
                 });
               }
             },
@@ -2745,12 +2837,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             const SizedBox(height: CRMSpacing.m),
           ],
           FutureBuilder<List<dynamic>>(
-            future: Future.wait([
-              DashboardRepository().getDashboardData(),
-              RepositoryCoordinator().requirementLocal.getRequirements(),
-            ]),
+            future: _followupsFuture,
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                 return const Padding(
                   padding: EdgeInsets.all(32),
                   child: Center(child: CircularProgressIndicator()),
@@ -2768,11 +2857,28 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final now = DateTime.now();
               final todayDate = DateTime(now.year, now.month, now.day);
 
+              // Deduplicate followups by requirementId keeping only the latest scheduled entry per lead
+              final Map<String, DashboardFollowup> latestReqFollowupsMap = {};
+              for (final f in followups) {
+                final reqIdStr = f.requirementId ?? '';
+                final key = reqIdStr.isNotEmpty ? reqIdStr : f.id;
+                final existing = latestReqFollowupsMap[key];
+                if (existing == null) {
+                  latestReqFollowupsMap[key] = f;
+                } else {
+                  final dtExisting = DateTime.tryParse(existing.followupDate) ?? DateTime(1970);
+                  final dtCurrent = DateTime.tryParse(f.followupDate) ?? DateTime(1970);
+                  if (dtCurrent.isAfter(dtExisting)) {
+                    latestReqFollowupsMap[key] = f;
+                  }
+                }
+              }
+
               final List<DashboardFollowup> todayFollowups = [];
               final List<DashboardFollowup> dueFollowups = [];
               final List<DashboardFollowup> futureFollowups = [];
 
-              for (final f in followups) {
+              for (final f in latestReqFollowupsMap.values) {
                 final req = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
                 if (req == null) continue;
 
@@ -3197,32 +3303,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             ),
                             // 5. Actions
                             DataCell(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: Icon(Icons.visibility_outlined, color: CRMColors.primary, size: 20),
-                                    tooltip: 'View Lead Details',
-                                    onPressed: () {
-                                      if (reqModel != null) {
-                                        _showRequirementDetailDrawer(reqModel);
-                                      } else {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Associated requirement details not found.')),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                  if (f.notes != null && f.notes!.trim().isNotEmpty) ...[
-                                    const SizedBox(width: 4),
-                                    IconButton(
-                                      icon: Icon(Icons.zoom_in_rounded, color: CRMColors.textSecondaryOf(context), size: 20),
-                                      tooltip: 'Zoom Note / Message',
-                                      onPressed: () => _showFollowupMessageDialog(context, f.clientName, f.notes!),
-                                    ),
-                                  ],
-                                ],
-                              ),
+                              _buildFollowupStatusActionCell(f, reqModel),
                             ),
                           ],
                         );
@@ -4088,9 +4169,14 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
               widget.requirement.nextFollowupDate != null;
           final String targetStatus = hasPreviousFollowup ? 'Re-Followup' : 'Follow-up';
 
-          await requirementsRepository.updateRequirement(
-            widget.requirement.copyWith(status: targetStatus),
+          final updatedReq = widget.requirement.copyWith(
+            status: targetStatus,
+            nextFollowupDate: scheduledDateTime.toIso8601String(),
+            remarks: remarks,
           );
+          await requirementsRepository.updateRequirement(updatedReq);
+          RepositoryCoordinator().refreshDashboard();
+          RepositoryCoordinator().refreshRequirements();
         }
       }
 
@@ -4268,7 +4354,11 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
                                 CRMButton(
                                   label: _isSavingFollowup
                                       ? 'Saving...'
-                                      : (widget.isSiteVisit ? 'Save Site Visit' : 'Save Followup'),
+                                      : (widget.isSiteVisit
+    ? 'Save Site Visit'
+    : ((widget.requirement.status == 'Follow-up' || widget.requirement.status == 'Re-Followup' || widget.requirement.nextFollowupDate != null)
+        ? 'Save Re-Followup'
+        : 'Save Followup')),
                                   onPressed: _isSavingFollowup ? null : _saveFollowup,
                                 ),
                               ],
@@ -5969,5 +6059,113 @@ class PropertyDealClientStore {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('$_reqPrefix$requirementId');
     } catch (_) {}
+  }
+}
+
+class _FollowupActionButton extends StatelessWidget {
+  final DashboardFollowup followup;
+  final RequirementModel reqModel;
+  final Function(RequirementModel, String) onSelect;
+
+  const _FollowupActionButton({
+    super.key,
+    required this.followup,
+    required this.reqModel,
+    required this.onSelect,
+  });
+
+  void _showMenuAt(BuildContext context, Offset globalPos) {
+    final RenderBox? overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromLTWH(globalPos.dx - 60, globalPos.dy - 46, 130, 40),
+      Offset.zero & overlay.size,
+    );
+
+    showMenu<String>(
+      context: context,
+      position: position,
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      items: [
+        PopupMenuItem<String>(
+          value: 'Re-Followup',
+          height: 38,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.update_rounded,
+                size: 16,
+                color: CRMColors.warning,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Re-Followup',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: CRMColors.textOf(context),
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ).then((val) {
+      if (val != null) {
+        onSelect(reqModel, val);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String statusStr = (reqModel.status == 'Re-Followup') ? 'Re-Followup' : 'Follow-up';
+    final bool isRe = statusStr == 'Re-Followup';
+
+    final Color badgeBg = isRe ? CRMColors.warning.withValues(alpha: 0.15) : CRMColors.info.withValues(alpha: 0.15);
+    final Color badgeColor = isRe ? CRMColors.warning : CRMColors.info;
+    final Color borderColor = isRe ? CRMColors.warning.withValues(alpha: 0.4) : CRMColors.info.withValues(alpha: 0.4);
+
+    if (isRe) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: badgeBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: borderColor),
+        ),
+        child: Text(
+          statusStr,
+          style: CRMTypography.captionBold.copyWith(color: badgeColor, fontSize: 12),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (details) => _showMenuAt(context, details.globalPosition),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: badgeBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              statusStr,
+              style: CRMTypography.captionBold.copyWith(color: badgeColor, fontSize: 12),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.arrow_drop_down_rounded, size: 18, color: badgeColor),
+          ],
+        ),
+      ),
+    );
   }
 }

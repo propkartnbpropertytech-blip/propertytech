@@ -128,6 +128,25 @@ class DashboardRepository {
       return false;
     }
 
+    bool isFollowupAllowedItem(String? reqId, String? clientName) {
+      if (!isAllowedItem(reqId, clientName)) return false;
+      if (reqId != null && reqId.isNotEmpty) {
+        final match = localReqs.where((r) => r.id == reqId).firstOrNull;
+        if (match != null) {
+          final s = match.status ?? '';
+          return s == 'Follow-up' || s == 'Re-Followup';
+        }
+      }
+      if (clientName != null && clientName.isNotEmpty) {
+        final match = localReqs.where((r) => r.clientName.toLowerCase() == clientName.toLowerCase()).firstOrNull;
+        if (match != null) {
+          final s = match.status ?? '';
+          return s == 'Follow-up' || s == 'Re-Followup';
+        }
+      }
+      return true;
+    }
+
     if (cachedData != null) {
       final updatedSummary = DashboardSummary(
         totalProperties: cachedData.summary.totalProperties,
@@ -156,7 +175,7 @@ class DashboardRepository {
       );
 
       final filteredFollowups = cachedData.followups.where((f) =>
-        isAllowedItem(f.requirementId, f.requirementCustomerName)
+        isFollowupAllowedItem(f.requirementId, f.requirementCustomerName)
       ).toList();
 
       final filteredSiteVisits = cachedData.siteVisits.where((sv) =>
