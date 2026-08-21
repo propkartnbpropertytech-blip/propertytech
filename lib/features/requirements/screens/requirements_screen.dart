@@ -162,10 +162,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     String? configId;
     String? propTypeId;
     if (_activeMainTab != 'My Won') {
-      if (isPropertyTypeFilter) {
-        propTypeId = _selectedConfigIds.isNotEmpty ? _selectedConfigIds.first : null;
-      } else {
-        configId = _selectedConfigIds.isNotEmpty ? _selectedConfigIds.first : null;
+      if (_selectedConfigIds.length == 1) {
+        if (isPropertyTypeFilter) {
+          propTypeId = _selectedConfigIds.first;
+        } else {
+          configId = _selectedConfigIds.first;
+        }
       }
     }
 
@@ -1580,7 +1582,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             final matchesCategory = _selectedCategoryId == null || r.categoryId == _selectedCategoryId;
             final matchesSpec = _selectedConfigIds.isEmpty ||
                 _selectedConfigIds.contains(r.configurationId) ||
-                _selectedConfigIds.contains(r.propertyTypeId);
+                _selectedConfigIds.contains(r.propertyTypeId) ||
+                r.configurationIds.any((id) => _selectedConfigIds.contains(id)) ||
+                r.propertyTypeIds.any((id) => _selectedConfigIds.contains(id));
             
             // Map legacy status strings to new pipeline statuses for backward compatibility
             String mappedStatus = r.status;
@@ -1702,6 +1706,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Added: ${DateFormat('dd/MM/yyyy').format(req.createdAt)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
                                 ),
                                 if (req.nextFollowupDate != null) ...[
                                   const SizedBox(height: 2),
@@ -2764,52 +2775,211 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   else
                     CRMDataTable(
                       showDecoration: false,
+                      dataRowMinHeight: 60.0,
+                      dataRowMaxHeight: 72.0,
+                      columnSpacing: 16.0,
                       columns: const [
-                        DataColumn(label: Text('Client Name')),
-                        DataColumn(label: Text('Mobile')),
+                        DataColumn(label: Text('Client Details')),
+                        DataColumn(label: Text('Requirement / Config')),
                         DataColumn(label: Text('Scheduled Date')),
                         DataColumn(label: Text('Remarks / Agenda')),
+                        DataColumn(label: Text('Actions')),
                       ],
                       rows: pageItems.map((f) {
+                        final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
+                        final reqModel = reqLocal?.toModel();
+
+                        final parsedDate = DateTime.tryParse(f.followupDate);
+                        final displayDate = parsedDate != null
+                            ? DateFormat('dd/MM/yyyy hh:mm a').format(parsedDate)
+                            : f.followupDate;
+
+                        final configText = reqModel != null
+                            ? '${reqModel.propertyTypeName} (${reqModel.configurationName ?? "-"})'
+                            : 'N/A';
+                        final budgetText = reqModel != null
+                            ? '${BudgetFormatter.format(reqModel.minBudget)} - ${BudgetFormatter.format(reqModel.maxBudget)}'
+                            : '';
+                        final areasText = reqModel != null && reqModel.areaNames.isNotEmpty
+                            ? reqModel.areaNames.join(', ')
+                            : 'Any Area';
+
+                        final tooltipMsg = reqModel != null
+                            ? 'Client: ${f.clientName}\nRequirement: $configText\nBudget: $budgetText\nAreas: $areasText'
+                            : 'Client: ${f.clientName}\nMobile: ${f.mobile}';
+
                         return DataRow(
                           cells: [
+                            // 1. Client Details
                             DataCell(
-                              GestureDetector(
-                                onTap: () {
-                                  final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
-                                  if (reqLocal != null) {
-                                    _showRequirementDetailDrawer(reqLocal.toModel());
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Associated requirement details not found.')),
-                                    );
-                                  }
-                                },
-                                child: Text(
-                                  f.clientName,
-                                  style: CRMTypography.bodyMedium.copyWith(
-                                    color: CRMColors.primary,
-                                    fontWeight: FontWeight.bold,
+                              SizedBox(
+                                width: 150,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () {
+                                        if (reqModel != null) {
+                                          _showRequirementDetailDrawer(reqModel);
+                                        } else {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Associated requirement details not found.')),
+                                          );
+                                        }
+                                      },
+                                      child: Text(
+                                        f.clientName,
+                                        style: CRMTypography.bodyMedium.copyWith(
+                                          color: CRMColors.primary,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.phone_outlined, size: 12, color: CRMColors.textMutedOf(context)),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          f.mobile,
+                                          style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            // 2. Requirement / Config
+                            DataCell(
+                              SizedBox(
+                                width: 170,
+                                child: _buildCustomTooltip(
+                                  message: tooltipMsg,
+                                  isRent: reqModel?.listingTypeName?.toLowerCase().contains('rent') ?? true,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        configText,
+                                        style: CRMTypography.body.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (budgetText.isNotEmpty)
+                                        Text(
+                                          budgetText,
+                                          style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                    ],
                                   ),
                                 ),
                               ),
                             ),
-                            DataCell(Text(f.mobile)),
-                            DataCell(Builder(
-                              builder: (_) {
-                                final parsed = DateTime.tryParse(f.followupDate);
-                                final displayDate = parsed != null
-                                    ? DateFormat('dd/MM/yyyy hh:mm a').format(parsed)
-                                    : f.followupDate;
-                                return Text(displayDate, style: TextStyle(color: CRMColors.primary, fontWeight: FontWeight.w600));
-                              },
-                            )),
+                            // 3. Scheduled Date
                             DataCell(
-                              GestureDetector(
-                                onTap: f.notes != null && f.notes!.trim().isNotEmpty
-                                    ? () => _showFollowupMessageDialog(context, f.clientName, f.notes!)
-                                    : null,
-                                child: Text(f.notes ?? '-'),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.primary.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: CRMColors.primary.withValues(alpha: 0.2)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.access_time_rounded, size: 13, color: CRMColors.primary),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      displayDate,
+                                      style: TextStyle(
+                                        color: CRMColors.primary,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            // 4. Remarks / Agenda
+                            DataCell(
+                              SizedBox(
+                                width: 300,
+                                child: GestureDetector(
+                                  onTap: f.notes != null && f.notes!.trim().isNotEmpty
+                                      ? () => _showFollowupMessageDialog(context, f.clientName, f.notes!)
+                                      : null,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: CRMColors.backgroundOf(context),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: CRMColors.borderOf(context).withValues(alpha: 0.5),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.notes_rounded, size: 14, color: CRMColors.primary),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            f.notes != null && f.notes!.trim().isNotEmpty ? f.notes! : 'No remarks noted',
+                                            style: TextStyle(
+                                              color: f.notes != null && f.notes!.trim().isNotEmpty
+                                                  ? CRMColors.textOf(context)
+                                                  : CRMColors.textMutedOf(context),
+                                              fontSize: 12,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (f.notes != null && f.notes!.trim().isNotEmpty)
+                                          Icon(Icons.open_in_full_rounded, size: 12, color: CRMColors.textMutedOf(context)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // 5. Actions
+                            DataCell(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: Icon(Icons.visibility_outlined, color: CRMColors.primary, size: 20),
+                                    tooltip: 'View Lead Details',
+                                    onPressed: () {
+                                      if (reqModel != null) {
+                                        _showRequirementDetailDrawer(reqModel);
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Associated requirement details not found.')),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  if (f.notes != null && f.notes!.trim().isNotEmpty) ...[
+                                    const SizedBox(width: 4),
+                                    IconButton(
+                                      icon: Icon(Icons.zoom_in_rounded, color: CRMColors.textSecondaryOf(context), size: 20),
+                                      tooltip: 'Zoom Note / Message',
+                                      onPressed: () => _showFollowupMessageDialog(context, f.clientName, f.notes!),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           ],
@@ -3342,7 +3512,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             final matchesPropertyType = _wonPropertyTypeId == null || r.propertyTypeId == _wonPropertyTypeId;
 
             // Configuration filter
-            final matchesConfig = _wonConfigurationIds.isEmpty || _wonConfigurationIds.contains(r.configurationId);
+            final matchesConfig = _wonConfigurationIds.isEmpty ||
+                _wonConfigurationIds.contains(r.configurationId) ||
+                r.configurationIds.any((id) => _wonConfigurationIds.contains(id));
 
             // Search query filter
             bool matchesSearch = true;
@@ -3448,6 +3620,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Added: ${DateFormat('dd/MM/yyyy').format(req.createdAt)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
                                 ),
                               ],
                             ),
@@ -4797,6 +4976,7 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         ),
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
+                                        _buildDetailRow("Date", DateFormat('dd/MM/yyyy').format(req.createdAt), Icons.calendar_today_rounded),
                                         _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
                                         _buildChipDetailRow(
                                           "Specs",
@@ -4879,6 +5059,7 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         ),
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
+                                        _buildDetailRow("Date", DateFormat('dd/MM/yyyy').format(req.createdAt), Icons.calendar_today_rounded),
                                         _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
                                         _buildChipDetailRow(
                                           "Specs",
