@@ -1,0 +1,112 @@
+import '../../features/auth/models/user_model.dart';
+
+/// Client-side RBAC helpers. Server must still enforce every mutation.
+class RoleGuard {
+  static UserModel? currentUser;
+  static bool isSuperAdmin(String? role) =>
+      (role ?? '').toLowerCase() == 'super admin';
+
+  static bool isAdmin(String? role) {
+    final r = (role ?? '').toLowerCase();
+    return r == 'admin' || r == 'super admin' || r == 'telecaller';
+  }
+
+  static bool canManageEmployees(String? role) {
+    final r = (role ?? '').toLowerCase();
+    return r == 'admin' || r == 'super admin';
+  }
+
+  /// Audit logs — Super Admin only (defense-in-depth).
+  static bool canViewAuditLogs(String? role) => isSuperAdmin(role);
+
+  /// Settings mutations that affect org lookups (cities/areas).
+  static bool canManageLookups(String? role) {
+    final r = (role ?? '').toLowerCase();
+    return r == 'super admin' || r == 'admin' || r == 'sales';
+  }
+
+  /// Only Super Admin may assign/create/update/delete Admin accounts.
+  static bool canAssignAdminRole(String? callerRole) => isSuperAdmin(callerRole);
+
+  /// Safe internal redirect allowlist (blocks privilege jump via `?from=`).
+  static const allowedPostLoginPaths = <String>{
+    '/dashboard',
+    '/properties',
+    '/requirements',
+    '/clients',
+    '/owners',
+    '/builders',
+    '/profile',
+    '/bin',
+    '/settings',
+    '/settings/audit-logs',
+    '/users',
+  };
+
+  static String? sanitizeRedirectPath(String? raw, {String? role}) {
+    if (raw == null || raw.isEmpty) return null;
+    String path;
+    try {
+      path = Uri.decodeComponent(raw);
+    } catch (_) {
+      return null;
+    }
+    // Reject absolute / scheme-relative URLs
+    if (path.contains('://') || path.startsWith('//')) return null;
+    if (!path.startsWith('/')) return null;
+
+    final pathOnly = path.split('?').first.split('#').first;
+    final allowed = allowedPostLoginPaths.any(
+      (p) => pathOnly == p || pathOnly.startsWith('$p/'),
+    );
+    if (!allowed) return null;
+
+    if (pathOnly.startsWith('/users') && !canManageEmployees(role)) {
+      return '/dashboard';
+    }
+    if (pathOnly.startsWith('/settings/audit-logs') && !canViewAuditLogs(role)) {
+      return '/dashboard';
+    }
+    return path;
+  }
+
+  /// Returns an error message if [callerRole] cannot create/update a user
+  /// with [targetRoleName]; null if allowed.
+  static String? validateUserMutation({
+    required String? callerRole,
+    required String? targetRoleName,
+    required bool isDelete,
+  }) {
+    if (!canManageEmployees(callerRole)) {
+      return 'You do not have permission to manage employees.';
+    }
+
+    final target = (targetRoleName ?? '').toLowerCase();
+    if (target == 'super admin') {
+      return 'Super Admin accounts cannot be created or modified from the app.';
+    }
+
+    final caller = (callerRole ?? '').toLowerCase();
+    if (caller == 'super admin') {
+      if (target != 'admin') {
+        return 'Super Admin can only manage Admin users.';
+      }
+    } else if (caller == 'admin') {
+      if (target != 'sales' && target != 'telecaller') {
+        return 'Admins can only manage Sales and Telecaller users.';
+      }
+    } else {
+      return 'You do not have permission to manage employees.';
+    }
+
+    return null;
+  }
+
+  static String? roleNameForId(String? roleId, Iterable<({String id, String name})> roles) {
+    if (roleId == null) return null;
+    for (final r in roles) {
+      if (r.id == roleId) return r.name;
+    }
+    return null;
+  }
+}

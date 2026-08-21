@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- Anti-Clickjacking Frame Buster -->
+  <style id="anti-clickjack-style">
+    html { display: none !important; }
+  </style>
+  <script type="text/javascript">
+    if (self === top) {
+      var style = document.getElementById('anti-clickjack-style');
+      if (style && style.parentNode) {
+        style.parentNode.removeChild(style);
+      }
+    } else {
+      top.location = self.location;
+    }
+  </script>
+
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="PropKart is the future of property management. Find your dream home, manage property listings, and connect with top agents and builders effortlessly.">
+  
+  <!-- Search Engine Optimization & Crawling -->
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#1e1e1e">
+  <link rel="canonical" href="https://propkart.nbpropertytech.com/" />
+
+  <!-- Search Engine Console Verifications (Replace values with your verification codes) -->
+  <meta name="google-site-verification" content="YOUR_GOOGLE_VERIFICATION_CODE_HERE" />
+  <meta name="msvalidate.01" content="YOUR_BING_VERIFICATION_CODE_HERE" />
+  <meta name="yandex-verification" content="YOUR_YANDEX_VERIFICATION_CODE_HERE" />
+  <meta name="baidu-site-verification" content="YOUR_BAIDU_VERIFICATION_CODE_HERE" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="PropKart - Premium Property Management Software & CRM">
+  <meta property="og:description" content="PropKart is the future of property management. Find your dream home, manage property listings, and connect with top agents and builders effortlessly.">
+  <meta property="og:image" content="https://propkart.nbpropertytech.com/assets/logo.png">
+  <meta property="og:url" content="https://propkart.nbpropertytech.com/">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="PropKart - Premium Property Management Software & CRM">
+  <meta name="twitter:description" content="PropKart is the future of property management. Find your dream home, manage property listings, and connect with top agents and builders effortlessly.">
+  <meta name="twitter:image" content="https://propkart.nbpropertytech.com/assets/logo.png">
+
+  <!-- Schema.org Organization Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "RealEstateAgent",
+    "name": "PropKart",
+    "url": "https://propkart.nbpropertytech.com",
+    "logo": "https://propkart.nbpropertytech.com/assets/logo.png",
+    "image": "https://propkart.nbpropertytech.com/assets/images/propbg.jpg",
+    "description": "PropKart is the future of property management. Find your dream home, manage property listings, and connect with top agents and builders effortlessly.",
+    "sameAs": [
+      "https://www.facebook.com/propkart",
+      "https://twitter.com/propkart",
+      "https://www.linkedin.com/company/propkart"
+    ]
+  }
+  </script>
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="propkart">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>PropKart - Premium Property Management Software & CRM</title>
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-T7VTBN65');</script>
+  <!-- End Google Tag Manager -->
+
+  <!-- Microsoft Clarity Tracking Code -->
+  <script type="text/javascript">
+      (function(c,l,a,r,i,t,y){
+          c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+          t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+          y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+      })(window, document, "clarity", "script", "xxjzhszh2b");
+  </script>
+
+  <!-- Accessibility & Lighthouse Viewport Fix -->
+  <script type="text/javascript">
+    const observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+        mutation.addedNodes.forEach(function(node) {
+          if (node.nodeName === 'META' && node.getAttribute('name') === 'viewport') {
+            const content = node.getAttribute('content');
+            if (content && (content.includes('user-scalable=no') || content.includes('maximum-scale=1.0'))) {
+              node.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes');
+            }
+          }
+        });
+      });
+    });
+    observer.observe(document.head, { childList: true });
+
+    window.addEventListener('load', function() {
+      const viewports = document.querySelectorAll('meta[name="viewport"]');
+      viewports.forEach(function(node) {
+        const content = node.getAttribute('content');
+        if (content && (content.includes('user-scalable=no') || content.includes('maximum-scale=1.0'))) {
+          node.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes');
+        }
+      });
+    });
+  </script>
+
+  <!-- Fast LCP/FCP Inline Loading Indicator Style -->
+  <style>
+    .loading-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background-color: #121212;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      z-index: 99999;
+      opacity: 1;
+      transition: opacity 0.3s ease;
+    }
+    .loader {
+      border: 4px solid #1a1a1a;
+      border-top: 4px solid #25D366; /* Brand Green */
+      border-radius: 50%;
+      width: 48px;
+      height: 48px;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 16px;
+    }
+    .loading-text {
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Pre-rendering Loader Shell (Instant FCP/LCP Visual Response) -->
+  <div id="loading-indicator" class="loading-container">
+    <div class="loader"></div>
+    <div class="loading-text">Loading PropKart...</div>
+  </div>
+
+  <script type="text/javascript">
+    // Hide the loader instantly once Flutter starts rendering the canvas/view
+    const appObserver = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+        mutation.addedNodes.forEach(function(node) {
+          if (node.nodeName === 'FLUTTER-VIEW' || node.nodeName === 'FLT-GLASS-PANE') {
+            const loader = document.getElementById('loading-indicator');
+            if (loader) {
+              loader.style.opacity = '0';
+              setTimeout(() => loader.remove(), 300);
+            }
+            appObserver.disconnect();
+          }
+        });
+      });
+    });
+    appObserver.observe(document.body, { childList: true });
+  </script>
+  <!-- Google Tag Manager (noscript) -->
+  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T7VTBN65"
+  height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+  <!-- End Google Tag Manager (noscript) -->
+
+  <!-- Web Vitals -> GA4 (via dataLayer) -->
+  <script type="module">
+    import {onCLS, onINP, onLCP, onFCP, onTTFB} from 'https://unpkg.com/web-vitals@4?module';
+
+    function sendToDataLayer(metric) {
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({
+        event: 'web_vitals',
+        metric_name: metric.name,
+        metric_value: Math.round(metric.name === 'CLS' ? metric.value * 1000 : metric.value),
+        metric_id: metric.id,
+        metric_rating: metric.rating
+      });
+    }
+
+    onCLS(sendToDataLayer);
+    onINP(sendToDataLayer);
+    onLCP(sendToDataLayer);
+    onFCP(sendToDataLayer);
+    onTTFB(sendToDataLayer);
+  </script>
+
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
