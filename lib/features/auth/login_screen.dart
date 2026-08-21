@@ -1,3 +1,4 @@
+import '../../core/services/notification_center.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -166,6 +167,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               final response = await DioClient.dio.post(
                                 '/auth/forgot-password',
                                 data: {'email': email},
+                              );
+                              await NotificationCenter.addNotification(
+                                title: 'Forgot Password Request',
+                                message: 'Password reset requested for email: $email',
+                                type: 'forgot_password',
                               );
                               Navigator.pop(dialogContext);
                               

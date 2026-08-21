@@ -1,3 +1,4 @@
+import '../../../core/services/notification_center.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -71,6 +72,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
   String _activeMainTab = "Requirements"; // "Requirements" or "Follow-ups"
   DateTime? _reqFollowupDateFilter = DateTime.now();
+  String _selectedFollowupSubTab = "Today"; // "Today", "Due", "Future"
   int _currentPage = 1;
   int _requirementsPerPage = 10;
   int _currentFollowupPage = 1;
@@ -319,7 +321,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       return;
     }
 
-    if (newStatus == 'Follow-up') {
+    if (newStatus == 'Follow-up' || newStatus == 'Re-Followup') {
+      final bool isReFollowup = newStatus == 'Re-Followup' ||
+          req.status == 'Follow-up' ||
+          req.status == 'Re-Followup' ||
+          req.nextFollowupDate != null;
+
       showDialog(
         context: context,
         builder: (dialogContext) => RequirementStepperDialog(
@@ -327,6 +334,33 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           initialStep: 1,
           updateStatusOnSave: true,
           onSaved: () {
+            if (isReFollowup) {
+              NotificationCenter.addNotification(
+                title: 'Re-Followup Scheduled',
+                message: 'Re-Followup scheduled for ${req.clientName}. Notification reminder active.',
+                type: 'refollowup',
+              );
+            }
+            if (isReFollowup && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '🔔 Re-Followup Scheduled! Notification reminder active for ${req.clientName}.',
+                        ),
+                      ),
+                    ],
+                  ),
+                  backgroundColor: CRMColors.warning,
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            }
             _triggerFetch();
           },
         ),
@@ -394,6 +428,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         ),
       );
     } else {
+      NotificationCenter.removeNotificationsForClient(req.clientName);
       context.read<RequirementsBloc>().add(
         UpdateRequirementEvent(req.copyWith(status: newStatus)),
       );
@@ -1513,17 +1548,25 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return PopupMenuButton<String>(
       tooltip: 'Change Status',
       onSelected: (String newStatus) => _changeStatus(req, newStatus),
-      itemBuilder: (BuildContext context) => const [
-        PopupMenuItem<String>(value: 'Not Started', child: Text('Not Started')),
-        PopupMenuItem<String>(value: 'Follow-up', child: Text('Follow-up')),
-        PopupMenuItem<String>(value: 'Interested', child: Text('Interested')),
+      itemBuilder: (BuildContext context) {
+        final bool hasPreviousFollowup = req.status == 'Follow-up' ||
+            req.status == 'Re-Followup' ||
+            req.nextFollowupDate != null;
+        final String followupLabel = hasPreviousFollowup ? 'Re-Followup' : 'Follow-up';
+        final String followupValue = hasPreviousFollowup ? 'Re-Followup' : 'Follow-up';
+
+        return [
+          const PopupMenuItem<String>(value: 'Not Started', child: Text('Not Started')),
+          PopupMenuItem<String>(value: followupValue, child: Text(followupLabel)),
+          const PopupMenuItem<String>(value: 'Interested', child: Text('Interested')),
         PopupMenuItem<String>(value: 'Site Visit', child: Text('Site Visit Sche.')),
         PopupMenuItem<String>(value: 'Site Visit Done', child: Text('Site Visit Done')),
         PopupMenuItem<String>(value: 'Negotiation', child: Text('Negotiation')),
         PopupMenuItem<String>(value: 'Won', child: Text('Won')),
         PopupMenuItem<String>(value: 'Bin', child: Text('Bin')),
         PopupMenuItem<String>(value: 'Not Interested', child: Text('Not Interested')),
-      ],
+        ];
+      },
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Container(
@@ -2502,6 +2545,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         ? DateFormat('dd/MM/yyyy  hh:mm a').format(parsed)
         : f.followupDate;
 
+    final authState = context.watch<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final isHighRole = currentUser != null &&
+        (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
+    final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
+
     return Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.m),
       decoration: BoxDecoration(
@@ -2516,7 +2565,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(CRMBorderRadius.card),
         onTap: () {
-          final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
           if (reqLocal != null) {
             _showRequirementDetailDrawer(reqLocal.toModel());
           } else {
@@ -2552,6 +2600,22 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   ),
                 ],
               ),
+              if (isHighRole) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.person_outline_rounded, size: 13, color: CRMColors.textSecondaryOf(context)),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Added by: ${f.creatorName ?? (reqLocal != null ? _getSalesmanName(reqLocal.toModel(), currentUser) : "N/A")}',
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: CRMSpacing.s),
               const Divider(height: 1, thickness: 0.5),
               const SizedBox(height: CRMSpacing.s),
@@ -2661,18 +2725,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             },
             tooltip: 'Filter by Date',
           ),
-          if (_reqFollowupDateFilter != null)
-            IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              icon: Icon(Icons.clear_rounded, color: CRMColors.textMutedOf(context), size: 16),
-              onPressed: () {
-                setState(() {
-                  _reqFollowupDateFilter = null;
-                });
-              },
-              tooltip: 'Show All Dates',
-            ),
+
         ],
       ),
     );
@@ -2711,25 +2764,80 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final localReqs = snapshot.data?[1] as List<RequirementLocal>? ?? [];
 
               final followups = dashboardData?.followups ?? [];
-              final filtered = followups.where((f) {
-                // Filter by date
-                if (_reqFollowupDateFilter != null) {
-                  final parsed = DateTime.tryParse(f.followupDate);
-                  if (parsed == null) return false;
-                  final matchesDate = parsed.year == _reqFollowupDateFilter!.year &&
-                      parsed.month == _reqFollowupDateFilter!.month &&
-                      parsed.day == _reqFollowupDateFilter!.day;
-                  if (!matchesDate) return false;
-                }
 
-                // Filter by Rent/Re-Sale listing type tab
+              final now = DateTime.now();
+              final todayDate = DateTime(now.year, now.month, now.day);
+
+              final List<DashboardFollowup> todayFollowups = [];
+              final List<DashboardFollowup> dueFollowups = [];
+              final List<DashboardFollowup> futureFollowups = [];
+
+              for (final f in followups) {
                 final req = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
-                if (req == null) return false;
+                if (req == null) continue;
+
+                final reqStatus = req.status ?? '';
+                if (reqStatus != 'Follow-up' && reqStatus != 'Re-Followup') continue;
 
                 final isRentTab = _activeListingTab == 'Rent';
                 final reqIsRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
-                return isRentTab == reqIsRent;
-              }).toList();
+                if (isRentTab != reqIsRent) continue;
+
+                final parsed = DateTime.tryParse(f.followupDate);
+                if (parsed == null) continue;
+                final fDate = DateTime(parsed.year, parsed.month, parsed.day);
+
+                if (fDate.isBefore(todayDate)) {
+                  dueFollowups.add(f);
+                } else if (fDate.isAfter(todayDate)) {
+                  futureFollowups.add(f);
+                } else {
+                  todayFollowups.add(f);
+                }
+              }
+
+              List<DashboardFollowup> selectedList;
+              if (_selectedFollowupSubTab == 'Due') {
+                selectedList = dueFollowups;
+              } else if (_selectedFollowupSubTab == 'Future') {
+                selectedList = futureFollowups;
+                if (_reqFollowupDateFilter != null) {
+                  final filterDay = DateTime(
+                    _reqFollowupDateFilter!.year,
+                    _reqFollowupDateFilter!.month,
+                    _reqFollowupDateFilter!.day,
+                  );
+                  if (filterDay != todayDate) {
+                    selectedList = futureFollowups.where((f) {
+                      final parsed = DateTime.tryParse(f.followupDate);
+                      if (parsed == null) return false;
+                      return parsed.year == _reqFollowupDateFilter!.year &&
+                          parsed.month == _reqFollowupDateFilter!.month &&
+                          parsed.day == _reqFollowupDateFilter!.day;
+                    }).toList();
+                  }
+                }
+              } else {
+                selectedList = todayFollowups;
+                if (_reqFollowupDateFilter != null) {
+                  final filterDay = DateTime(
+                    _reqFollowupDateFilter!.year,
+                    _reqFollowupDateFilter!.month,
+                    _reqFollowupDateFilter!.day,
+                  );
+                  if (filterDay != todayDate) {
+                    selectedList = todayFollowups.where((f) {
+                      final parsed = DateTime.tryParse(f.followupDate);
+                      if (parsed == null) return false;
+                      return parsed.year == _reqFollowupDateFilter!.year &&
+                          parsed.month == _reqFollowupDateFilter!.month &&
+                          parsed.day == _reqFollowupDateFilter!.day;
+                    }).toList();
+                  }
+                }
+              }
+
+              final filtered = selectedList;
 
               final totalCount = filtered.length;
               final totalPages = (totalCount / _followupsPerPage).ceil();
@@ -2737,6 +2845,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
               final startIndex = (currentPage - 1) * _followupsPerPage;
               final endIndex = (startIndex + _followupsPerPage).clamp(0, totalCount);
+
+              final authState = context.watch<AuthBloc>().state;
+              final currentUser = authState is Authenticated ? authState.user : null;
+              final isHighRole = currentUser != null &&
+                  (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
 
               final pageItems = (startIndex < totalCount)
                   ? filtered.sublist(startIndex, endIndex)
@@ -2753,13 +2866,58 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 });
               }
 
-              if (filtered.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: Text(
-                      _reqFollowupDateFilter != null ? 'No follow-ups for $dateStr.' : 'No follow-ups found.',
-                      style: TextStyle(color: CRMColors.textSecondaryOf(context)),
+              Widget buildSubTabPill(String label, String tabKey, int count, IconData icon) {
+                final bool isSelected = _selectedFollowupSubTab == tabKey;
+                final Color activeColor = tabKey == 'Due'
+                    ? CRMColors.danger
+                    : (tabKey == 'Future' ? CRMColors.info : CRMColors.primary);
+
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedFollowupSubTab = tabKey;
+                      _currentFollowupPage = 1;
+                    });
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected ? activeColor.withValues(alpha: 0.12) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected ? activeColor : CRMColors.borderOf(context).withValues(alpha: 0.5),
+                        width: isSelected ? 1.5 : 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 16, color: isSelected ? activeColor : CRMColors.textSecondaryOf(context)),
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: CRMTypography.bodyMedium.copyWith(
+                            color: isSelected ? activeColor : CRMColors.textSecondaryOf(context),
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isSelected ? activeColor : activeColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: CRMTypography.captionBold.copyWith(
+                              color: isSelected ? Colors.white : activeColor,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -2768,7 +2926,59 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (isMobile)
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        buildSubTabPill("Today's Follow-ups", "Today", todayFollowups.length, Icons.today_rounded),
+                        const SizedBox(width: CRMSpacing.s),
+                        buildSubTabPill("Due Follow-ups", "Due", dueFollowups.length, Icons.warning_amber_rounded),
+                        const SizedBox(width: CRMSpacing.s),
+                        buildSubTabPill("Future Follow-ups", "Future", futureFollowups.length, Icons.next_plan_rounded),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: CRMSpacing.m),
+
+                  if (_selectedFollowupSubTab == 'Due' && dueFollowups.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(CRMSpacing.m),
+                      decoration: BoxDecoration(
+                        color: CRMColors.danger.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                        border: Border.all(color: CRMColors.danger.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.notifications_active_rounded, color: CRMColors.danger, size: 22),
+                          const SizedBox(width: CRMSpacing.s),
+                          Expanded(
+                            child: Text(
+                              '⚠️ Overdue Follow-up Reminder: You have ${dueFollowups.length} overdue follow-up(s)! Please contact these clients immediately to take action.',
+                              style: CRMTypography.captionBold.copyWith(color: CRMColors.danger, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: CRMSpacing.m),
+                  ],
+
+                  if (filtered.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 32),
+                      child: Center(
+                        child: Text(
+                          _selectedFollowupSubTab == 'Due'
+                              ? 'No overdue follow-ups found.'
+                              : (_selectedFollowupSubTab == 'Future'
+                                  ? 'No future follow-ups scheduled.'
+                                  : (_reqFollowupDateFilter != null ? 'No follow-ups for $dateStr.' : 'No follow-ups for today.')),
+                          style: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                        ),
+                      ),
+                    )
+                  else if (isMobile)
                     Column(
                       children: pageItems.map((f) => _buildMobileFollowupCard(f, localReqs)).toList(),
                     )
@@ -2778,12 +2988,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       dataRowMinHeight: 60.0,
                       dataRowMaxHeight: 72.0,
                       columnSpacing: 16.0,
-                      columns: const [
-                        DataColumn(label: Text('Client Details')),
-                        DataColumn(label: Text('Requirement / Config')),
-                        DataColumn(label: Text('Scheduled Date')),
-                        DataColumn(label: Text('Remarks / Agenda')),
-                        DataColumn(label: Text('Actions')),
+                      columns: [
+                        const DataColumn(label: Text('Client Details')),
+                        if (isHighRole) const DataColumn(label: Text('Added by')),
+                        const DataColumn(label: Text('Requirement / Config')),
+                        const DataColumn(label: Text('Scheduled Date')),
+                        const DataColumn(label: Text('Remarks / Agenda')),
+                        const DataColumn(label: Text('Actions')),
                       ],
                       rows: pageItems.map((f) {
                         final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
@@ -2856,6 +3067,37 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 ),
                               ),
                             ),
+                            if (isHighRole)
+                              DataCell(
+                                SizedBox(
+                                  width: 140,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.person_outline_rounded, size: 14, color: CRMColors.primary),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              f.creatorName ??
+                                                  (reqModel != null ? _getSalesmanName(reqModel, currentUser) : 'N/A'),
+                                              style: CRMTypography.bodyMedium.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                                color: CRMColors.textOf(context),
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             // 2. Requirement / Config
                             DataCell(
                               SizedBox(
@@ -3841,8 +4083,13 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
 
         if (widget.updateStatusOnSave) {
           final RequirementsRepository requirementsRepository = RequirementsRepository();
+          final bool hasPreviousFollowup = widget.requirement.status == 'Follow-up' ||
+              widget.requirement.status == 'Re-Followup' ||
+              widget.requirement.nextFollowupDate != null;
+          final String targetStatus = hasPreviousFollowup ? 'Re-Followup' : 'Follow-up';
+
           await requirementsRepository.updateRequirement(
-            widget.requirement.copyWith(status: 'Follow-up'),
+            widget.requirement.copyWith(status: targetStatus),
           );
         }
       }
@@ -4439,7 +4686,7 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                                       ],
                                     ),
                                   ),
-                                  if (p.propertyStatusName.toLowerCase() == 'available')
+                                  if (!isWonReq && p.propertyStatusName.toLowerCase() == 'available')
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
@@ -4465,7 +4712,7 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (isWonReq && p.propertyStatusName.toLowerCase() == 'available')
+                          if (!isWonReq && p.propertyStatusName.toLowerCase() == 'available')
                             Padding(
                               padding: const EdgeInsets.only(top: 4, bottom: 4),
                               child: Container(
@@ -4617,6 +4864,7 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
 String displayStatusLabel(String status) {
   if (status == 'Live' || status == 'Active') return 'Interested';
   if (status == 'Dead' || status == 'Suspended') return 'Not Interested';
+  if (status == 'Re-Followup') return 'Re-Followup';
   return status;
 }
 

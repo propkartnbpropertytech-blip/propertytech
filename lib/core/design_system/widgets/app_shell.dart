@@ -1,3 +1,5 @@
+import '../../../core/services/notification_center.dart';
+import '../../../features/dashboard/repository/dashboard_repository.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -74,12 +76,23 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    _notifCenterSub = NotificationCenter.stream.listen((newNotif) {
+      if (mounted) {
+        setState(() {
+          _notifications.insert(0, newNotif);
+          _unreadNotificationsCount = _notifications.where((n) => n['is_read'] == false).length;
+        });
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      await NotificationCenter.init();
       _fetchNotifications();
       _notificationsTimer?.cancel();
-      _notificationsTimer = Timer.periodic(const Duration(seconds: 45), (_) {
-        if (mounted) _fetchNotifications();
+    _notifCenterSub?.cancel();
+      _notificationsTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
+        if (mounted) await _fetchNotifications();
       });
     });
   }
@@ -109,6 +122,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   int _notificationsPage = 1;
   int _totalNotificationPages = 1;
   Timer? _notificationsTimer;
+  StreamSubscription<Map<String, dynamic>>? _notifCenterSub;
 
   int _getTabRouteIndex(String location) {
     if (location.startsWith('/dashboard')) return 0;
@@ -239,9 +253,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   Future<void> _fetchNotifications({bool loadMore = false}) async {
-    if (_isLoadingNotifications) return;
-    if (loadMore && _notificationsPage >= _totalNotificationPages) return;
-
+    if (!mounted) return;
     setState(() {
       _isLoadingNotifications = true;
       if (!loadMore) {
@@ -251,40 +263,69 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
     });
 
+    await NotificationCenter.init();
+    await _checkOverdueFollowupsForBell();
+
+    List<dynamic> apiList = [];
+    int apiTotalPages = 1;
     try {
       final response = await DioClient.dio.get(
         '/notifications',
         queryParameters: {'page': _notificationsPage, 'limit': 5},
       );
-      final list = response.data['data']['notifications'] as List? ?? [];
+      apiList = response.data['data']['notifications'] as List? ?? [];
       final pagination = response.data['data']['pagination'] ?? {};
-      
+      apiTotalPages = pagination['totalPages'] ?? 1;
+    } catch (_) {}
+
+    final authState = context.read<AuthBloc>().state;
+    String? role;
+    if (authState is Authenticated) {
+      role = authState.user.role;
+    }
+    final isAdminOrSuperAdmin = role == 'Admin' || role == 'Super Admin';
+
+    final combined = [...NotificationCenter.localNotifications, ...apiList];
+    final uniqueNotifs = <dynamic>[];
+    final seenIds = <String>{};
+    for (final n in combined) {
+      final id = n['id']?.toString() ?? '';
+      final type = n['type']?.toString().toLowerCase() ?? '';
+
+      if (!isAdminOrSuperAdmin && (type == 'forgot_password' || type == 'password_reset')) {
+        continue;
+      }
+
+      if (id.isNotEmpty && !seenIds.contains(id) && !NotificationCenter.deletedIds.contains(id)) {
+        seenIds.add(id);
+        uniqueNotifs.add(n);
+      }
+    }
+
+    if (mounted) {
       setState(() {
-        if (loadMore) {
-          _notifications.addAll(list);
-        } else {
-          _notifications = list;
-        }
-        _totalNotificationPages = pagination['totalPages'] ?? 1;
-        _unreadNotificationsCount = pagination['totalItems'] ?? 0; // estimate unread count as total for now, or fetch unread count separately
-        // Let's count actual unread items in our list for the badge to be precise
+        _notifications = uniqueNotifs;
+        _totalNotificationPages = apiTotalPages;
         _unreadNotificationsCount = _notifications.where((n) => n['is_read'] == false).length;
         _isLoadingNotifications = false;
       });
-    } catch (_) {
-      setState(() => _isLoadingNotifications = false);
     }
   }
 
   Future<void> _markNotificationRead(String id) async {
     try {
-      await DioClient.dio.patch('/notifications/$id/read');
+      if (id.startsWith('local_')) {
+        await NotificationCenter.markAsRead(id);
+      } else {
+        await DioClient.dio.patch('/notifications/$id/read');
+      }
       _fetchNotifications();
     } catch (_) {}
   }
 
   Future<void> _markAllNotificationsRead() async {
     try {
+      await NotificationCenter.markAllAsRead();
       await DioClient.dio.patch('/notifications/read-all');
       _fetchNotifications();
     } catch (_) {}
@@ -292,7 +333,19 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   Future<void> _deleteNotification(String id) async {
     try {
-      await DioClient.dio.delete('/notifications/$id');
+      dynamic notif;
+      try {
+        notif = _notifications.firstWhere((n) => n['id']?.toString() == id);
+      } catch (_) {}
+      final title = notif?['title']?.toString();
+      final message = notif?['message']?.toString();
+
+      if (id.startsWith('local_')) {
+        await NotificationCenter.deleteNotification(id, title: title, message: message);
+      } else {
+        await NotificationCenter.deleteNotification(id, title: title, message: message);
+        await DioClient.dio.delete('/notifications/$id');
+      }
       _fetchNotifications();
     } catch (_) {}
   }
@@ -1279,6 +1332,102 @@ class _CRMAppShellState extends State<CRMAppShell>
       padding: EdgeInsets.fromLTRB(horizontalPad, 8, horizontalPad, 6),
       child: RepaintBoundary(child: bar),
     );
+  }
+
+  Future<void> _checkOverdueFollowupsForBell() async {
+    try {
+      final dashboardData = await DashboardRepository().getDashboardData();
+      final followups = dashboardData.followups;
+      final localReqs = await RepositoryCoordinator().requirementLocal.getRequirements();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final authState = context.read<AuthBloc>().state;
+      String? role;
+      String? currentUserId;
+      String? currentUserName;
+      if (authState is Authenticated) {
+        role = authState.user.role;
+        currentUserId = authState.user.id;
+        currentUserName = authState.user.fullName;
+      }
+      final isHighRole = role == 'Admin' || role == 'Super Admin' || role == 'Telecaller';
+
+      int activeDueCount = 0;
+      for (final f in followups) {
+        final parsed = DateTime.tryParse(f.followupDate);
+        if (parsed == null) continue;
+        final fDate = DateTime(parsed.year, parsed.month, parsed.day);
+
+        dynamic req;
+        try {
+          req = localReqs.firstWhere((r) => r.id == f.requirementId);
+        } catch (_) {}
+        if (req != null) {
+          final status = req.status ?? '';
+          if (status != 'Follow-up' && status != 'Re-Followup') {
+            await NotificationCenter.removeNotificationsForClient(f.clientName);
+            continue;
+          }
+        }
+
+        if (!isHighRole) {
+          String salesPerson = f.creatorName ?? '';
+          if (salesPerson.isEmpty && req != null) {
+            try {
+              salesPerson = (req.assignedToName ?? req.addedByName ?? req.creatorName ?? '').toString();
+            } catch (_) {}
+          }
+          
+          bool isMine = false;
+          if (salesPerson.isNotEmpty && currentUserName != null && currentUserName.isNotEmpty) {
+            if (salesPerson.trim().toLowerCase() == currentUserName.trim().toLowerCase()) {
+              isMine = true;
+            }
+          }
+          if (!isMine && req != null) {
+            try {
+              if (req.adminId == currentUserId || req.assignedToId == currentUserId) {
+                isMine = true;
+              }
+            } catch (_) {}
+          }
+
+          if (!isMine) {
+            continue;
+          }
+        }
+
+        if (fDate.isBefore(today)) {
+          activeDueCount++;
+          if (activeDueCount <= 4) {
+            final clientName = f.clientName;
+
+            // For Admin, Super Admin & Telecaller: send notification only ONCE PER DAY per client!
+            if (isHighRole && NotificationCenter.hasNotificationToday(clientName)) {
+              continue;
+            }
+
+            String salesPerson = f.creatorName ?? '';
+            if (salesPerson.isEmpty && req != null) {
+              try {
+                salesPerson = (req.assignedToName ?? req.addedByName ?? req.creatorName ?? '').toString();
+              } catch (_) {}
+            }
+            if (salesPerson.isEmpty) salesPerson = 'Sales Team';
+
+            final message = isHighRole
+                ? 'Follow-up for $clientName (Sales Person: $salesPerson) is overdue! Please take action.'
+                : 'Follow-up for $clientName is overdue! Please take action immediately.';
+
+            NotificationCenter.addNotification(
+              title: 'Overdue Follow-up Alert',
+              message: message,
+              type: 'due_followup',
+            );
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   Widget _buildNotificationButton(BuildContext context) {
