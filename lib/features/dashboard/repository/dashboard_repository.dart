@@ -96,6 +96,29 @@ class DashboardRepository {
       }
     }
 
+    final allLocalProps = await _coordinator.propertyLocal.getProperties();
+    List<RecentProperty> allRecentPropsFromLocal = [];
+    if (allLocalProps.isNotEmpty) {
+      final sortedProps = List.of(allLocalProps);
+      sortedProps.sort((a, b) {
+        final dtA = DateTime.tryParse(a.createdAt?.toString() ?? '') ?? DateTime(1970);
+        final dtB = DateTime.tryParse(b.createdAt?.toString() ?? '') ?? DateTime(1970);
+        return dtB.compareTo(dtA);
+      });
+      allRecentPropsFromLocal = sortedProps.map((p) => RecentProperty(
+        id: p.id,
+        code: p.propertyCode ?? '',
+        title: p.title ?? '',
+        area: p.areaId ?? '',
+        price: p.price ?? 0.0,
+        status: p.propertyStatusName ?? 'N/A',
+        areaName: p.areaName ?? 'N/A',
+        listingType: p.listingTypeName ?? 'Sale',
+        createdBy: p.createdByName ?? 'System',
+        createdAt: p.createdAt?.toString() ?? '',
+      )).toList();
+    }
+
     final allowedReqIds = localReqs.map((r) => r.id).toSet();
     final allowedClientNames = localReqs.map((r) => r.clientName.toLowerCase()).toSet();
 
@@ -143,7 +166,7 @@ class DashboardRepository {
       return DashboardData(
         summary: updatedSummary,
         activity: cachedData.activity,
-        recentProperties: cachedData.recentProperties,
+        recentProperties: allRecentPropsFromLocal.isNotEmpty ? allRecentPropsFromLocal : cachedData.recentProperties,
         checklist: cachedData.checklist,
         followups: filteredFollowups,
         siteVisits: filteredSiteVisits,
@@ -192,7 +215,7 @@ class DashboardRepository {
     return DashboardData(
       summary: updatedSummary,
       activity: model.activity,
-      recentProperties: model.recentProperties,
+      recentProperties: allRecentPropsFromLocal.isNotEmpty ? allRecentPropsFromLocal : model.recentProperties,
       checklist: model.checklist,
       followups: filteredFollowups,
       siteVisits: filteredSiteVisits,

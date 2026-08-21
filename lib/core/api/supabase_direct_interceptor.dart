@@ -297,7 +297,7 @@ class SupabaseDirectInterceptor extends Interceptor {
             area:areas(area_name),
             listing_type:listing_types(name),
             creator:users!created_by(full_name)
-          ''').order('created_at', ascending: false).limit(5),
+          ''').order('created_at', ascending: false).limit(50),
           label: 'recentProperties',
         );
         final recentProperties = recentPropertiesData.map((p) => {
