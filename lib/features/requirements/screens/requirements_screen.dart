@@ -71,7 +71,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   set _activeListingTab(String value) {
     ThemeManager().setRentMode(value == 'Rent');
   }
-  String _activeMainTab = "Requirements"; // "Requirements" or "Follow-ups"
+  String _activeMainTab = "Leads"; // "Leads", "Requirements", or "Follow-ups"
   DateTime? _reqFollowupDateFilter = DateTime.now();
   String _selectedFollowupSubTab = "Today"; // "Today", "Due", "Future"
   int _currentPage = 1;
@@ -558,7 +558,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _buildMainViewTabButton('Requirements'),
+                      _buildMainViewTabButton('Leads'),
                       const SizedBox(width: 4),
                       _buildMainViewTabButton('Follow-ups'),
                       const SizedBox(width: 4),
@@ -569,7 +569,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ),
               const SizedBox(height: CRMSpacing.l),
 
-              if (_activeMainTab == 'Requirements') ...[
+              if (_activeMainTab == 'Leads') ...[
                 // Filters & Search Card
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -640,7 +640,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       children: [
         CRMPageHeader(
           eyebrow: '',
-          title: 'Leads Tracker',
+          title: 'Requirements',
           benefit:
               'Capture buyer demand and run listing matches that convert faster',
           trailing: CRMButton(
@@ -2490,7 +2490,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _activeMainTab = label;
         });
         // My Won needs an unfiltered status fetch so Won rows are present.
-        if (label == 'My Won' || label == 'Requirements') {
+        if (label == 'My Won' || label == 'Leads' || label == 'Requirements') {
           _triggerFetch();
         }
       },

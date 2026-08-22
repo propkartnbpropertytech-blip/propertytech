@@ -399,7 +399,7 @@ class AppRouter {
       );
     } else if (location.startsWith('/requirements')) {
       SeoHelper.updateTags(
-        title: 'Leads Tracker | PropKart CRM',
+        title: 'Requirements | PropKart CRM',
         description: 'Review client listing requests and buy/rent matchmaking preferences.',
         noIndex: true,
       );
