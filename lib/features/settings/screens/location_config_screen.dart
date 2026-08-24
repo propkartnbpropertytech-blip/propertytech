@@ -53,6 +53,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   // Search filters
   String _citySearchQuery = '';
   String _areaSearchQuery = '';
+  final _areaSearchController = TextEditingController();
 
   @override
   void initState() {
@@ -70,6 +71,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
     _cityCountryController.dispose();
     _areaNameController.dispose();
     _areaPincodeController.dispose();
+    _areaSearchController.dispose();
     super.dispose();
   }
 
@@ -978,6 +980,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
 
           // Search bar
           TextField(
+            controller: _areaSearchController,
             style: TextStyle(color: CRMColors.textOf(context)),
             decoration: InputDecoration(
               hintText: 'Search areas, pincodes, or cities...',
@@ -1206,25 +1209,70 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
             runSpacing: 8,
             children: _pincodeAreaSuggestions.map((areaName) {
               final isSelected = _areaNameController.text.trim().toLowerCase() == areaName.toLowerCase();
+
+              // Check if this suggested area is ALREADY saved in the system list below
+              AreaLookup? existingArea;
+              for (final a in _areas) {
+                if (a.name.trim().toLowerCase() == areaName.trim().toLowerCase() &&
+                    (pincode.isEmpty || a.pincode == pincode)) {
+                  existingArea = a;
+                  break;
+                }
+              }
+              final isAlreadySaved = existingArea != null;
+
               return ChoiceChip(
-                label: Text(areaName),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(areaName),
+                    if (isAlreadySaved) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.check_circle_rounded, size: 13, color: CRMColors.success),
+                    ],
+                  ],
+                ),
                 selected: isSelected,
-                selectedColor: CRMColors.primary.withOpacity(0.25),
+                selectedColor: isAlreadySaved
+                    ? CRMColors.success.withValues(alpha: 0.2)
+                    : CRMColors.primary.withValues(alpha: 0.25),
                 backgroundColor: CRMColors.cardBgOf(context),
                 labelStyle: TextStyle(
-                  color: isSelected ? CRMColors.primary : CRMColors.textOf(context),
+                  color: isSelected
+                      ? (isAlreadySaved ? CRMColors.success : CRMColors.primary)
+                      : CRMColors.textOf(context),
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   fontSize: 12,
                 ),
                 side: BorderSide(
-                  color: isSelected ? CRMColors.primary : CRMColors.borderOf(context),
+                  color: isSelected
+                      ? (isAlreadySaved ? CRMColors.success : CRMColors.primary)
+                      : (isAlreadySaved
+                          ? CRMColors.success.withValues(alpha: 0.5)
+                          : CRMColors.borderOf(context)),
                   width: isSelected ? 1.5 : 1.0,
                 ),
                 onSelected: (selected) {
                   if (selected) {
                     setState(() {
                       _areaNameController.text = areaName;
+
+                      if (isAlreadySaved) {
+                        // Filter the areas list below to show the existing saved area mapping
+                        _areaSearchQuery = areaName;
+                        _areaSearchController.text = areaName;
+                      } else {
+                        // Reset filter so admin can review and save new area
+                        _areaSearchQuery = '';
+                        _areaSearchController.text = '';
+                      }
                     });
+
+                    if (isAlreadySaved) {
+                      _showSnackBar('"$areaName" is already saved in the system list below.');
+                    } else {
+                      _showSnackBar('"$areaName" selected. Click "Save Configuration" to save it.');
+                    }
                   }
                 },
               );

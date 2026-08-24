@@ -2568,7 +2568,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  void _openFollowupStepper(RequirementModel req, String status) {
+  void _openFollowupStepper(RequirementModel req, String status, {int initialStep = 1}) {
     final bool isReFollowup = status == 'Re-Followup' ||
         req.status == 'Follow-up' ||
         req.status == 'Re-Followup' ||
@@ -2583,7 +2583,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       pageBuilder: (dialogContext, anim1, anim2) {
         return RequirementStepperDialog(
           requirement: req,
-          initialStep: 1,
+          initialStep: initialStep,
           updateStatusOnSave: true,
           onSaved: () {
             if (isReFollowup) {
@@ -2615,6 +2615,22 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   Widget _buildFollowupStatusActionCell(DashboardFollowup f, RequirementModel? reqModel) {
     if (reqModel == null) {
       return const SizedBox.shrink();
+    }
+
+    if (_selectedFollowupSubTab == 'AllClients') {
+      return OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          side: BorderSide(color: CRMColors.primary.withValues(alpha: 0.5)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        ),
+        icon: Icon(Icons.history_rounded, size: 16, color: CRMColors.primary),
+        label: Text(
+          'History',
+          style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
+        ),
+        onPressed: () => _openFollowupStepper(reqModel, reqModel.status ?? 'Re-Followup', initialStep: 2),
+      );
     }
 
     return _FollowupActionButton(
@@ -2880,6 +2896,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final List<DashboardFollowup> todayFollowups = [];
               final List<DashboardFollowup> dueFollowups = [];
               final List<DashboardFollowup> futureFollowups = [];
+              final List<DashboardFollowup> allClientsFollowups = [];
 
               for (final f in latestReqFollowupsMap.values) {
                 final req = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
@@ -2891,6 +2908,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 final isRentTab = _activeListingTab == 'Rent';
                 final reqIsRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
                 if (isRentTab != reqIsRent) continue;
+
+                allClientsFollowups.add(f);
 
                 final parsed = DateTime.tryParse(f.followupDate)?.toLocal();
                 if (parsed == null) continue;
@@ -2926,6 +2945,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     }).toList();
                   }
                 }
+              } else if (_selectedFollowupSubTab == 'AllClients') {
+                selectedList = allClientsFollowups;
               } else {
                 selectedList = todayFollowups;
                 if (_reqFollowupDateFilter != null) {
@@ -2979,7 +3000,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 final bool isSelected = _selectedFollowupSubTab == tabKey;
                 final Color activeColor = tabKey == 'Due'
                     ? CRMColors.danger
-                    : (tabKey == 'Future' ? CRMColors.info : CRMColors.primary);
+                    : (tabKey == 'Future'
+                        ? CRMColors.info
+                        : (tabKey == 'AllClients' ? CRMColors.secondary : CRMColors.primary));
 
                 return GestureDetector(
                   onTap: () {
@@ -3044,6 +3067,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         buildSubTabPill("Due Follow-ups", "Due", dueFollowups.length, Icons.warning_amber_rounded),
                         const SizedBox(width: CRMSpacing.s),
                         buildSubTabPill("Future Follow-ups", "Future", futureFollowups.length, Icons.next_plan_rounded),
+                        const SizedBox(width: CRMSpacing.s),
+                        buildSubTabPill("All clients follow ups", "AllClients", allClientsFollowups.length, Icons.people_alt_rounded),
                       ],
                     ),
                   ),
@@ -3101,8 +3126,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         const DataColumn(label: Text('Client Details')),
                         if (isHighRole) const DataColumn(label: Text('Added by')),
                         const DataColumn(label: Text('Requirement / Config')),
-                        const DataColumn(label: Text('Scheduled Date')),
-                        const DataColumn(label: Text('Remarks / Agenda')),
+                        if (_selectedFollowupSubTab != 'AllClients') const DataColumn(label: Text('Scheduled Date')),
+                        if (_selectedFollowupSubTab != 'AllClients') const DataColumn(label: Text('Remarks / Agenda')),
                         const DataColumn(label: Text('Actions')),
                       ],
                       rows: pageItems.map((f) {
@@ -3141,7 +3166,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                     GestureDetector(
                                       onTap: () {
                                         if (reqModel != null) {
-                                          _showRequirementDetailDrawer(reqModel);
+                                          if (_selectedFollowupSubTab == 'AllClients') {
+                                            _openFollowupStepper(reqModel, reqModel.status ?? 'Re-Followup', initialStep: 2);
+                                          } else {
+                                            _showRequirementDetailDrawer(reqModel);
+                                          }
                                         } else {
                                           ScaffoldMessenger.of(context).showSnackBar(
                                             const SnackBar(content: Text('Associated requirement details not found.')),
@@ -3237,73 +3266,75 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               ),
                             ),
                             // 3. Scheduled Date
-                            DataCell(
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: CRMColors.primary.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: CRMColors.primary.withValues(alpha: 0.2)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.access_time_rounded, size: 13, color: CRMColors.primary),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      displayDate,
-                                      style: TextStyle(
-                                        color: CRMColors.primary,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
+                            if (_selectedFollowupSubTab != 'AllClients')
+                              DataCell(
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.primary.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: CRMColors.primary.withValues(alpha: 0.2)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.access_time_rounded, size: 13, color: CRMColors.primary),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        displayDate,
+                                        style: TextStyle(
+                                          color: CRMColors.primary,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
                             // 4. Remarks / Agenda
-                            DataCell(
-                              SizedBox(
-                                width: 300,
-                                child: GestureDetector(
-                                  onTap: f.notes != null && f.notes!.trim().isNotEmpty
-                                      ? () => _showFollowupMessageDialog(context, f.clientName, f.notes!)
-                                      : null,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: CRMColors.backgroundOf(context),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: CRMColors.borderOf(context).withValues(alpha: 0.5),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.notes_rounded, size: 14, color: CRMColors.primary),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            f.notes != null && f.notes!.trim().isNotEmpty ? f.notes! : 'No remarks noted',
-                                            style: TextStyle(
-                                              color: f.notes != null && f.notes!.trim().isNotEmpty
-                                                  ? CRMColors.textOf(context)
-                                                  : CRMColors.textMutedOf(context),
-                                              fontSize: 12,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
+                            if (_selectedFollowupSubTab != 'AllClients')
+                              DataCell(
+                                SizedBox(
+                                  width: 300,
+                                  child: GestureDetector(
+                                    onTap: f.notes != null && f.notes!.trim().isNotEmpty
+                                        ? () => _showFollowupMessageDialog(context, f.clientName, f.notes!)
+                                        : null,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: CRMColors.backgroundOf(context),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: CRMColors.borderOf(context).withValues(alpha: 0.5),
                                         ),
-                                        if (f.notes != null && f.notes!.trim().isNotEmpty)
-                                          Icon(Icons.open_in_full_rounded, size: 12, color: CRMColors.textMutedOf(context)),
-                                      ],
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.notes_rounded, size: 14, color: CRMColors.primary),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              f.notes != null && f.notes!.trim().isNotEmpty ? f.notes! : 'No remarks noted',
+                                              style: TextStyle(
+                                                color: f.notes != null && f.notes!.trim().isNotEmpty
+                                                    ? CRMColors.textOf(context)
+                                                    : CRMColors.textMutedOf(context),
+                                                fontSize: 12,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          if (f.notes != null && f.notes!.trim().isNotEmpty)
+                                            Icon(Icons.open_in_full_rounded, size: 12, color: CRMColors.textMutedOf(context)),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
                             // 5. Actions
                             DataCell(
                               _buildFollowupStatusActionCell(f, reqModel),
