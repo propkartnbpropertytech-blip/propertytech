@@ -2853,7 +2853,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final now = DateTime.now();
               final todayDate = DateTime(now.year, now.month, now.day);
 
-              // Deduplicate followups by requirementId keeping only the latest scheduled entry per lead
+              // Deduplicate followups by requirementId keeping only the active pending entry per lead
               final Map<String, DashboardFollowup> latestReqFollowupsMap = {};
               for (final f in followups) {
                 final reqIdStr = f.requirementId ?? '';
@@ -2862,10 +2862,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 if (existing == null) {
                   latestReqFollowupsMap[key] = f;
                 } else {
-                  final dtExisting = DateTime.tryParse(existing.followupDate) ?? DateTime(1970);
-                  final dtCurrent = DateTime.tryParse(f.followupDate) ?? DateTime(1970);
-                  if (dtCurrent.isAfter(dtExisting)) {
+                  final bool fIsPending = f.status == 'Pending' || f.status == 'Follow-up' || f.status == 'Re-Followup';
+                  final bool existingIsPending = existing.status == 'Pending' || existing.status == 'Follow-up' || existing.status == 'Re-Followup';
+
+                  if (fIsPending && !existingIsPending) {
                     latestReqFollowupsMap[key] = f;
+                  } else if (fIsPending == existingIsPending) {
+                    final dtExisting = DateTime.tryParse(existing.followupDate)?.toLocal() ?? DateTime(1970);
+                    final dtCurrent = DateTime.tryParse(f.followupDate)?.toLocal() ?? DateTime(1970);
+                    if (dtCurrent.isAfter(dtExisting)) {
+                      latestReqFollowupsMap[key] = f;
+                    }
                   }
                 }
               }
@@ -2885,7 +2892,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 final reqIsRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
                 if (isRentTab != reqIsRent) continue;
 
-                final parsed = DateTime.tryParse(f.followupDate);
+                final parsed = DateTime.tryParse(f.followupDate)?.toLocal();
                 if (parsed == null) continue;
                 final fDate = DateTime(parsed.year, parsed.month, parsed.day);
 
@@ -4206,6 +4213,201 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
     }
   }
 
+  DateTime? _parseFollowupDateTime(dynamic raw) {
+    if (raw == null) return null;
+    String str = raw.toString().trim();
+    if (str.isEmpty) return null;
+
+    if (!str.contains('Z') && !str.contains('+') && str.contains('T')) {
+      str += 'Z';
+    } else if (!str.contains('Z') && !str.contains('+') && str.contains(' ')) {
+      str = str.replaceFirst(' ', 'T') + 'Z';
+    }
+
+    final parsed = DateTime.tryParse(str);
+    if (parsed == null) return null;
+    return parsed.isUtc ? parsed.toLocal() : parsed;
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchClientPastFollowups() async {
+    final List<Map<String, dynamic>> result = [];
+    try {
+      final response = await DioClient.dio.get('/followups', queryParameters: {
+        'requirement_id': widget.requirement.id,
+        'mobile': widget.requirement.clientMobile,
+      });
+
+      if (response.statusCode == 200 && response.data != null) {
+        final followupsData = response.data['data']?['followups'] as List?;
+        if (followupsData != null) {
+          for (final item in followupsData) {
+            result.add(Map<String, dynamic>.from(item as Map));
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error fetching past followups API: $e');
+    }
+
+    // Combine with local requirement remarks if fallback is needed
+    if (result.isEmpty && widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) {
+      result.add({
+        'followup_date': widget.requirement.nextFollowupDate ?? DateTime.now().toIso8601String(),
+        'notes': widget.requirement.remarks,
+        'status': widget.requirement.status,
+        'creator_name': 'Sales Executive',
+      });
+    }
+
+    // Sort newest first
+    result.sort((a, b) {
+      final dateA = _parseFollowupDateTime(a['followup_date'] ?? a['created_at']) ?? DateTime(1970);
+      final dateB = _parseFollowupDateTime(b['followup_date'] ?? b['created_at']) ?? DateTime(1970);
+      return dateB.compareTo(dateA);
+    });
+
+    return result;
+  }
+
+  Widget _buildPastFollowupsList() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _fetchClientPastFollowups(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Failed to load past follow-ups: ${snapshot.error}',
+              style: TextStyle(color: CRMColors.danger),
+            ),
+          );
+        }
+
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+              border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.3)),
+            ),
+            child: Text(
+              'No past follow-ups recorded yet for ${widget.requirement.clientName}.',
+              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+
+        return Container(
+          constraints: const BoxConstraints(maxHeight: 260),
+          margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+          decoration: BoxDecoration(
+            color: CRMColors.primary.withOpacity(0.02),
+            borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+            border: Border.all(color: CRMColors.primary.withOpacity(0.2), width: 1.2),
+          ),
+          child: ListView.separated(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(CRMSpacing.s),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: CRMSpacing.xs),
+            itemBuilder: (context, index) {
+              final f = items[index];
+              final parsedDate = _parseFollowupDateTime(f['followup_date'] ?? f['created_at']);
+              final formattedDate = parsedDate != null
+                  ? DateFormat('dd/MM/yyyy hh:mm a').format(parsedDate)
+                  : 'Date N/A';
+
+              final remarks = f['notes'] ?? f['remarks'] ?? 'No remarks recorded';
+              final creatorName = f['creator_name'] ?? f['creator']?['full_name'] ?? 'Sales Executive';
+              
+              // Follow-up is Pending if scheduled date/time is in the FUTURE (after current time)
+              // Follow-up automatically becomes Completed once scheduled date/time HAS PASSED
+              final now = DateTime.now();
+              final bool isPending = parsedDate != null && parsedDate.isAfter(now);
+              final status = isPending ? 'Pending' : 'Completed';
+
+              return Container(
+                padding: const EdgeInsets.all(CRMSpacing.s),
+                decoration: BoxDecoration(
+                  color: CRMColors.cardBgOf(context),
+                  borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                  border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.event_note_rounded, size: 16, color: CRMColors.primary),
+                            const SizedBox(width: 6),
+                            Text(
+                              formattedDate,
+                              style: CRMTypography.captionBold.copyWith(
+                                color: CRMColors.primary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: (status == 'Pending' || status == 'Follow-up')
+                                ? CRMColors.warning.withOpacity(0.15)
+                                : CRMColors.success.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            status,
+                            style: CRMTypography.captionBold.copyWith(
+                              color: (status == 'Pending' || status == 'Follow-up')
+                                  ? CRMColors.warning
+                                  : CRMColors.success,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      remarks,
+                      style: CRMTypography.body.copyWith(color: CRMColors.textOf(context), fontSize: 13),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textSecondaryOf(context)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Logged by: $creatorName',
+                          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 700;
@@ -4273,12 +4475,24 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Client: ${widget.requirement.clientName} (${widget.requirement.clientMobile})',
-                              style: CRMTypography.bodyMedium.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: CRMColors.primary,
-                              ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Client: ${widget.requirement.clientName} (${widget.requirement.clientMobile})',
+                                    style: CRMTypography.bodyMedium.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: CRMColors.primary,
+                                    ),
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  icon: const Icon(Icons.history_rounded, size: 16),
+                                  label: const Text('Past Follow-ups'),
+                                  onPressed: () => setState(() => _currentStep = 2),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: CRMSpacing.m),
                             // Date & Time pickers row
@@ -4358,16 +4572,38 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
                                   label: _isSavingFollowup
                                       ? 'Saving...'
                                       : (widget.isSiteVisit
-    ? 'Save Site Visit'
-    : ((widget.requirement.status == 'Follow-up' || widget.requirement.status == 'Re-Followup' || widget.requirement.nextFollowupDate != null)
-        ? 'Save Re-Followup'
-        : 'Save Followup')),
+                                          ? 'Save Site Visit'
+                                          : ((widget.requirement.status == 'Follow-up' || widget.requirement.status == 'Re-Followup' || widget.requirement.nextFollowupDate != null)
+                                              ? 'Save Re-Followup'
+                                              : 'Save Followup')),
                                   onPressed: _isSavingFollowup ? null : _saveFollowup,
                                 ),
                               ],
                             ),
                           ],
                         ),
+                      ),
+                    ),
+                  ),
+                  Step(
+                    title: const Text('Past Follow-ups'),
+                    isActive: _currentStep == 2,
+                    state: _currentStep == 2 ? StepState.editing : StepState.indexed,
+                    content: SizedBox(
+                      height: 450,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Client: ${widget.requirement.clientName} (${widget.requirement.clientMobile})',
+                            style: CRMTypography.bodyMedium.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: CRMColors.primary,
+                            ),
+                          ),
+                          const SizedBox(height: CRMSpacing.m),
+                          Expanded(child: _buildPastFollowupsList()),
+                        ],
                       ),
                     ),
                   ),

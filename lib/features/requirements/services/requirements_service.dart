@@ -125,7 +125,7 @@ class RequirementsService {
             requirement_areas(area:areas(id, area_name, pincode)),
             creator:users!created_by(id, full_name),
             assignee:users!assigned_to(id, full_name),
-            followups(followup_date, status),
+            followups(id, followup_date, notes, status, created_at, created_by, creator:users!created_by(full_name)),
             site_visits(id, status, visit_date),
             share_sessions(id, view_count, status)
         ''');
@@ -299,7 +299,7 @@ class RequirementsService {
                 requirement_areas(area:areas(id, area_name, pincode)),
                 creator:users!created_by(id, full_name),
                 assignee:users!assigned_to(id, full_name),
-                followups(followup_date, status),
+                followups(id, followup_date, notes, status, created_at, created_by, creator:users!created_by(full_name)),
                 site_visits(id, status, visit_date),
                 share_sessions(id, view_count, status)
             ''')
@@ -405,7 +405,7 @@ class RequirementsService {
                 requirement_areas(area:areas(id, area_name, pincode)),
                 creator:users!created_by(id, full_name),
                 assignee:users!assigned_to(id, full_name),
-                followups(followup_date, status),
+                followups(id, followup_date, notes, status, created_at, created_by, creator:users!created_by(full_name)),
                 site_visits(id, status, visit_date),
                 share_sessions(id, view_count, status)
             ''')
@@ -494,7 +494,7 @@ class RequirementsService {
             requirement_areas(area:areas(id, area_name, pincode)),
             creator:users!created_by(id, full_name),
             assignee:users!assigned_to(id, full_name),
-            followups(followup_date, status),
+            followups(id, followup_date, notes, status, created_at, created_by, creator:users!created_by(full_name)),
             site_visits(id, status, visit_date),
             share_sessions(id, view_count, status)
         ''').not('deleted_at', 'is', null).order('created_at', ascending: false);
