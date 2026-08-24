@@ -334,7 +334,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
     if (_isLeadTransferredAway(req, currentUser)) return;
-    if (newStatus == req.status) return;
+    if (newStatus == req.status && newStatus != 'Re-Followup') return;
 
     if (req.status == 'Won' && newStatus != 'Won') {
       await _revertWonPropertiesToAvailable(req);
@@ -1794,7 +1794,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                       const Icon(Icons.alarm_rounded, size: 12, color: CRMColors.warning),
                                       const SizedBox(width: 4),
                                       Text(
-                                        DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!)),
+                                        DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal()),
                                         style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 11),
                                       ),
                                     ],
@@ -2206,7 +2206,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                             const Icon(Icons.alarm_rounded, size: 10, color: CRMColors.warning),
                                             const SizedBox(width: 2),
                                             Text(
-                                              DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!)),
+                                              DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal()),
                                               style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 9),
                                             ),
                                           ],
@@ -2569,10 +2569,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _openFollowupStepper(RequirementModel req, String status) {
-    if (req.status == 'Re-Followup') {
-      return;
-    }
-
     final bool isReFollowup = status == 'Re-Followup' ||
         req.status == 'Follow-up' ||
         req.status == 'Re-Followup' ||
@@ -2631,7 +2627,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildMobileFollowupCard(DashboardFollowup f, List<RequirementLocal> localReqs) {
-    final parsed = DateTime.tryParse(f.followupDate);
+    final parsed = DateTime.tryParse(f.followupDate)?.toLocal();
     final displayDate = parsed != null
         ? DateFormat('dd/MM/yyyy  hh:mm a').format(parsed)
         : f.followupDate;
@@ -3106,7 +3102,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
                         final reqModel = reqLocal?.toModel();
 
-                        final parsedDate = DateTime.tryParse(f.followupDate);
+                        final parsedDate = DateTime.tryParse(f.followupDate)?.toLocal();
                         final displayDate = parsedDate != null
                             ? DateFormat('dd/MM/yyyy hh:mm a').format(parsedDate)
                             : f.followupDate;
@@ -4113,6 +4109,13 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
   void initState() {
     super.initState();
     _currentStep = widget.initialStep;
+    if (widget.requirement.nextFollowupDate != null) {
+      final parsed = DateTime.tryParse(widget.requirement.nextFollowupDate!)?.toLocal();
+      if (parsed != null) {
+        _followupDate = parsed;
+        _followupTime = TimeOfDay(hour: parsed.hour, minute: parsed.minute);
+      }
+    }
   }
 
   @override
@@ -4171,7 +4174,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
 
           final updatedReq = widget.requirement.copyWith(
             status: targetStatus,
-            nextFollowupDate: scheduledDateTime.toIso8601String(),
+            nextFollowupDate: scheduledDateTime.toUtc().toIso8601String(),
             remarks: remarks,
           );
           await requirementsRepository.updateRequirement(updatedReq);
@@ -6130,16 +6133,30 @@ class _FollowupActionButton extends StatelessWidget {
     final Color borderColor = isRe ? CRMColors.warning.withValues(alpha: 0.4) : CRMColors.info.withValues(alpha: 0.4);
 
     if (isRe) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: badgeBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: borderColor),
-        ),
-        child: Text(
-          statusStr,
-          style: CRMTypography.captionBold.copyWith(color: badgeColor, fontSize: 12),
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => onSelect(reqModel, 'Re-Followup'),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: badgeBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  statusStr,
+                  style: CRMTypography.captionBold.copyWith(color: badgeColor, fontSize: 12),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.arrow_drop_down_rounded, size: 18, color: badgeColor),
+              ],
+            ),
+          ),
         ),
       );
     }
