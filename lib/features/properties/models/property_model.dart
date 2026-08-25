@@ -135,13 +135,51 @@ class PropertyModel {
     final config = json['configuration'] != null ? Map<String, dynamic>.from(json['configuration'] as Map) : null;
     final listing = json['listing_type'] != null ? Map<String, dynamic>.from(json['listing_type'] as Map) : null;
     final status = json['property_status'] != null ? Map<String, dynamic>.from(json['property_status'] as Map) : null;
-    final city = json['city'] != null ? Map<String, dynamic>.from(json['city'] as Map) : null;
-    final area = json['area'] != null ? Map<String, dynamic>.from(json['area'] as Map) : null;
+    final city = json['city'] != null && json['city'] is Map ? Map<String, dynamic>.from(json['city'] as Map) : null;
+    final area = json['area'] != null && json['area'] is Map ? Map<String, dynamic>.from(json['area'] as Map) : null;
     final furnishing = json['furnishing_type'] != null ? Map<String, dynamic>.from(json['furnishing_type'] as Map) : null;
     final facing = json['facing_type'] != null ? Map<String, dynamic>.from(json['facing_type'] as Map) : null;
     final ownership = json['ownership_type'] != null ? Map<String, dynamic>.from(json['ownership_type'] as Map) : null;
     final brokerage = json['brokerage_type'] != null ? Map<String, dynamic>.from(json['brokerage_type'] as Map) : null;
     final creator = json['creator'] != null ? Map<String, dynamic>.from(json['creator'] as Map) : null;
+
+    String parsedCityName = 'N/A';
+    if (json['city_name'] != null && json['city_name'].toString().trim().isNotEmpty && json['city_name'].toString().trim() != 'N/A') {
+      parsedCityName = json['city_name'].toString().trim();
+    } else if (json['cityName'] != null && json['cityName'].toString().trim().isNotEmpty && json['cityName'].toString().trim() != 'N/A') {
+      parsedCityName = json['cityName'].toString().trim();
+    } else if (json['city'] != null) {
+      if (json['city'] is Map) {
+        final cMap = json['city'] as Map;
+        final cName = (cMap['city_name'] ?? cMap['name'])?.toString().trim();
+        if (cName != null && cName.isNotEmpty && cName != 'N/A') {
+          parsedCityName = cName;
+        }
+      } else if (json['city'] is String && json['city'].toString().trim().isNotEmpty && json['city'].toString().trim() != 'N/A') {
+        parsedCityName = json['city'].toString().trim();
+      }
+    }
+
+    String parsedAreaName = 'N/A';
+    if (json['area_name'] != null && json['area_name'].toString().trim().isNotEmpty && json['area_name'].toString().trim() != 'N/A') {
+      parsedAreaName = json['area_name'].toString().trim();
+    } else if (json['areaName'] != null && json['areaName'].toString().trim().isNotEmpty && json['areaName'].toString().trim() != 'N/A') {
+      parsedAreaName = json['areaName'].toString().trim();
+    } else if (json['area'] != null) {
+      if (json['area'] is Map) {
+        final aMap = json['area'] as Map;
+        final aName = (aMap['area_name'] ?? aMap['name'])?.toString().trim();
+        if (aName != null && aName.isNotEmpty && aName != 'N/A') {
+          parsedAreaName = aName;
+        }
+      } else if (json['area'] is String && json['area'].toString().trim().isNotEmpty && json['area'].toString().trim() != 'N/A') {
+        parsedAreaName = json['area'].toString().trim();
+      }
+    } else if (json['landmark'] != null && json['landmark'].toString().trim().isNotEmpty && json['landmark'].toString().trim() != 'N/A') {
+      parsedAreaName = json['landmark'].toString().trim();
+    } else if (json['address'] != null && json['address'].toString().trim().isNotEmpty && json['address'].toString().trim() != 'N/A') {
+      parsedAreaName = json['address'].toString().trim();
+    }
 
     final List<String> imageList = [];
     final jsonPropertyImages = json['property_images'];
@@ -207,9 +245,9 @@ class PropertyModel {
       propertyStatusId: json['property_status_id'] as String? ?? '',
       propertyStatusName: status != null ? status['name'] as String? ?? 'N/A' : 'N/A',
       cityId: json['city_id'] as String? ?? '',
-      cityName: city != null ? city['city_name'] as String? ?? 'N/A' : 'N/A',
+      cityName: parsedCityName,
       areaId: json['area_id'] as String? ?? '',
-      areaName: area != null ? area['area_name'] as String? ?? 'N/A' : 'N/A',
+      areaName: _resolveAreaName(area, json),
       pincode: area != null ? area['pincode'] as String? ?? 'N/A' : 'N/A',
       address: json['address'] as String? ?? '',
       landmark: json['landmark'] as String?,
@@ -342,6 +380,22 @@ class PropertyModel {
     
     return 'Immediate';
   }
+
+  String get displayLocation {
+    if (areaName.isNotEmpty && areaName.toUpperCase() != 'N/A') {
+      return areaName;
+    }
+    if (cityName.isNotEmpty && cityName.toUpperCase() != 'N/A') {
+      return cityName;
+    }
+    if (landmark != null && landmark!.isNotEmpty && landmark!.toUpperCase() != 'N/A') {
+      return landmark!;
+    }
+    if (address.isNotEmpty && address.toUpperCase() != 'N/A') {
+      return address;
+    }
+    return '';
+  }
 }
 
 class LookupItem {
@@ -353,11 +407,11 @@ class LookupItem {
   LookupItem({required this.id, required this.name, this.categoryId, this.state, this.country});
   factory LookupItem.fromJson(Map<String, dynamic> json) {
     return LookupItem(
-      id: json['id'] as String,
-      name: (json['name'] ?? json['city_name'] ?? json['area_name'] ?? '') as String,
-      categoryId: json['category_id'] as String?,
-      state: json['state'] as String?,
-      country: json['country'] as String?,
+      id: (json['id'] ?? '').toString(),
+      name: (json['name'] ?? json['city_name'] ?? json['area_name'] ?? '').toString(),
+      categoryId: json['category_id']?.toString(),
+      state: json['state']?.toString(),
+      country: json['country']?.toString(),
     );
   }
 }
@@ -369,10 +423,10 @@ class AreaLookup extends LookupItem {
       : super(id: id, name: name);
   factory AreaLookup.fromJson(Map<String, dynamic> json) {
     return AreaLookup(
-      id: json['id'] as String,
-      name: json['area_name'] as String,
-      cityId: json['city_id'] as String,
-      pincode: json['pincode'] as String,
+      id: (json['id'] ?? '').toString(),
+      name: (json['area_name'] ?? json['name'] ?? '').toString(),
+      cityId: (json['city_id'] ?? '').toString(),
+      pincode: (json['pincode'] ?? '').toString(),
     );
   }
 }
@@ -414,9 +468,22 @@ class PropertyMetadataModel {
       return (raw as List<dynamic>).map((item) => parser(item as Map<String, dynamic>)).toList();
     }
 
+    final citiesList = parseList(
+      meta['cities'],
+      (j) => LookupItem(
+        id: (j['id'] ?? '').toString(),
+        name: (j['city_name'] ?? j['name'] ?? '').toString(),
+        state: j['state']?.toString(),
+        country: j['country']?.toString(),
+      ),
+    )..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    final areasList = parseList(meta['areas'], AreaLookup.fromJson)
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
     return PropertyMetadataModel(
-      cities: parseList(meta['cities'], (j) => LookupItem(id: j['id'], name: j['city_name'])),
-      areas: parseList(meta['areas'], AreaLookup.fromJson),
+      cities: citiesList,
+      areas: areasList,
       categories: parseList(meta['categories'], LookupItem.fromJson),
       types: parseList(meta['types'], LookupItem.fromJson),
       configurations: parseList(meta['configurations'], LookupItem.fromJson),
@@ -429,4 +496,41 @@ class PropertyMetadataModel {
       amenities: parseList(meta['amenities'], LookupItem.fromJson),
     );
   }
+}
+
+String _resolveAreaName(Map<String, dynamic>? area, Map<String, dynamic> json) {
+  final nestedCity = json['city'];
+  final candidates = <dynamic>[
+    area?['area_name'],
+    area?['name'],
+    area?['locality'],
+    area?['location'],
+    json['area_name'],
+    json['areaName'],
+    json['locality'],
+    json['location'],
+    json['sub_location'],
+    json['sub_locality'],
+    json['society'],
+    if (json['area'] is String) json['area'],
+    json['city_name'],
+    json['cityName'],
+    if (nestedCity is Map) ...[
+      nestedCity['city_name'],
+      nestedCity['name'],
+    ],
+    if (nestedCity is String) nestedCity,
+    json['landmark'],
+    json['address'],
+  ];
+  final uuidPattern = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+  for (final value in candidates) {
+    if (value == null) continue;
+    final name = value.toString().trim();
+    if (name.isEmpty || name.toUpperCase() == 'N/A' || uuidPattern.hasMatch(name)) continue;
+    return name;
+  }
+  return 'N/A';
 }

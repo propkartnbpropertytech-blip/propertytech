@@ -1,8 +1,11 @@
+import '../../../core/services/notification_center.dart';
+import '../../../features/dashboard/repository/dashboard_repository.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:persistent_bottom_nav_bar_v2/persistent_bottom_nav_bar_v2.dart';
+import '../../security/role_guard.dart';
 import '../../../../features/auth/bloc/auth_bloc.dart';
 import '../../theme/theme_manager.dart';
 import '../tokens/app_colors.dart';
@@ -73,12 +76,23 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    _notifCenterSub = NotificationCenter.stream.listen((newNotif) {
+      if (mounted) {
+        setState(() {
+          _notifications.insert(0, newNotif);
+          _unreadNotificationsCount = _notifications.where((n) => n['is_read'] == false).length;
+        });
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      await NotificationCenter.init();
       _fetchNotifications();
       _notificationsTimer?.cancel();
-      _notificationsTimer = Timer.periodic(const Duration(seconds: 45), (_) {
-        if (mounted) _fetchNotifications();
+    _notifCenterSub?.cancel();
+      _notificationsTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
+        if (mounted) await _fetchNotifications();
       });
     });
   }
@@ -108,6 +122,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   int _notificationsPage = 1;
   int _totalNotificationPages = 1;
   Timer? _notificationsTimer;
+  StreamSubscription<Map<String, dynamic>>? _notifCenterSub;
 
   int _getTabRouteIndex(String location) {
     if (location.startsWith('/dashboard')) return 0;
@@ -238,9 +253,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   Future<void> _fetchNotifications({bool loadMore = false}) async {
-    if (_isLoadingNotifications) return;
-    if (loadMore && _notificationsPage >= _totalNotificationPages) return;
-
+    if (!mounted) return;
     setState(() {
       _isLoadingNotifications = true;
       if (!loadMore) {
@@ -250,40 +263,69 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
     });
 
+    await NotificationCenter.init();
+    await _checkOverdueFollowupsForBell();
+
+    List<dynamic> apiList = [];
+    int apiTotalPages = 1;
     try {
       final response = await DioClient.dio.get(
         '/notifications',
         queryParameters: {'page': _notificationsPage, 'limit': 5},
       );
-      final list = response.data['data']['notifications'] as List? ?? [];
+      apiList = response.data['data']['notifications'] as List? ?? [];
       final pagination = response.data['data']['pagination'] ?? {};
-      
+      apiTotalPages = pagination['totalPages'] ?? 1;
+    } catch (_) {}
+
+    final authState = context.read<AuthBloc>().state;
+    String? role;
+    if (authState is Authenticated) {
+      role = authState.user.role;
+    }
+    final isAdminOrSuperAdmin = role == 'Admin' || role == 'Super Admin';
+
+    final combined = [...NotificationCenter.localNotifications, ...apiList];
+    final uniqueNotifs = <dynamic>[];
+    final seenIds = <String>{};
+    for (final n in combined) {
+      final id = n['id']?.toString() ?? '';
+      final type = n['type']?.toString().toLowerCase() ?? '';
+
+      if (!isAdminOrSuperAdmin && (type == 'forgot_password' || type == 'password_reset')) {
+        continue;
+      }
+
+      if (id.isNotEmpty && !seenIds.contains(id) && !NotificationCenter.deletedIds.contains(id)) {
+        seenIds.add(id);
+        uniqueNotifs.add(n);
+      }
+    }
+
+    if (mounted) {
       setState(() {
-        if (loadMore) {
-          _notifications.addAll(list);
-        } else {
-          _notifications = list;
-        }
-        _totalNotificationPages = pagination['totalPages'] ?? 1;
-        _unreadNotificationsCount = pagination['totalItems'] ?? 0; // estimate unread count as total for now, or fetch unread count separately
-        // Let's count actual unread items in our list for the badge to be precise
+        _notifications = uniqueNotifs;
+        _totalNotificationPages = apiTotalPages;
         _unreadNotificationsCount = _notifications.where((n) => n['is_read'] == false).length;
         _isLoadingNotifications = false;
       });
-    } catch (_) {
-      setState(() => _isLoadingNotifications = false);
     }
   }
 
   Future<void> _markNotificationRead(String id) async {
     try {
-      await DioClient.dio.patch('/notifications/$id/read');
+      if (id.startsWith('local_')) {
+        await NotificationCenter.markAsRead(id);
+      } else {
+        await DioClient.dio.patch('/notifications/$id/read');
+      }
       _fetchNotifications();
     } catch (_) {}
   }
 
   Future<void> _markAllNotificationsRead() async {
     try {
+      await NotificationCenter.markAllAsRead();
       await DioClient.dio.patch('/notifications/read-all');
       _fetchNotifications();
     } catch (_) {}
@@ -291,7 +333,19 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   Future<void> _deleteNotification(String id) async {
     try {
-      await DioClient.dio.delete('/notifications/$id');
+      dynamic notif;
+      try {
+        notif = _notifications.firstWhere((n) => n['id']?.toString() == id);
+      } catch (_) {}
+      final title = notif?['title']?.toString();
+      final message = notif?['message']?.toString();
+
+      if (id.startsWith('local_')) {
+        await NotificationCenter.deleteNotification(id, title: title, message: message);
+      } else {
+        await NotificationCenter.deleteNotification(id, title: title, message: message);
+        await DioClient.dio.delete('/notifications/$id');
+      }
       _fetchNotifications();
     } catch (_) {}
   }
@@ -691,7 +745,16 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   void _handleLogout() {
+    try {
+      if (Scaffold.of(context).isDrawerOpen) {
+        Navigator.of(context).pop();
+      }
+    } catch (_) {}
+    RoleGuard.currentUser = null;
     context.read<AuthBloc>().add(LogoutRequested());
+    if (mounted) {
+      context.go('/get-started');
+    }
   }
 
   @override
@@ -1271,13 +1334,112 @@ class _CRMAppShellState extends State<CRMAppShell>
     );
   }
 
+  Future<void> _checkOverdueFollowupsForBell() async {
+    try {
+      final dashboardData = await DashboardRepository().getDashboardData();
+      final followups = dashboardData.followups;
+      final localReqs = await RepositoryCoordinator().requirementLocal.getRequirements();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final authState = context.read<AuthBloc>().state;
+      String? role;
+      String? currentUserId;
+      String? currentUserName;
+      if (authState is Authenticated) {
+        role = authState.user.role;
+        currentUserId = authState.user.id;
+        currentUserName = authState.user.fullName;
+      }
+      final isHighRole = role == 'Admin' || role == 'Super Admin' || role == 'Telecaller';
+
+      int activeDueCount = 0;
+      for (final f in followups) {
+        final parsed = DateTime.tryParse(f.followupDate);
+        if (parsed == null) continue;
+        final fDate = DateTime(parsed.year, parsed.month, parsed.day);
+
+        dynamic req;
+        try {
+          req = localReqs.firstWhere((r) => r.id == f.requirementId);
+        } catch (_) {}
+        if (req != null) {
+          final status = req.status ?? '';
+          if (status != 'Follow-up' && status != 'Re-Followup') {
+            await NotificationCenter.removeNotificationsForClient(f.clientName);
+            continue;
+          }
+        }
+
+        if (!isHighRole) {
+          String salesPerson = f.creatorName ?? '';
+          if (salesPerson.isEmpty && req != null) {
+            try {
+              salesPerson = (req.assignedToName ?? req.addedByName ?? req.creatorName ?? '').toString();
+            } catch (_) {}
+          }
+          
+          bool isMine = false;
+          if (salesPerson.isNotEmpty && currentUserName != null && currentUserName.isNotEmpty) {
+            if (salesPerson.trim().toLowerCase() == currentUserName.trim().toLowerCase()) {
+              isMine = true;
+            }
+          }
+          if (!isMine && req != null) {
+            try {
+              if (req.adminId == currentUserId || req.assignedToId == currentUserId) {
+                isMine = true;
+              }
+            } catch (_) {}
+          }
+
+          if (!isMine) {
+            continue;
+          }
+        }
+
+        if (fDate.isBefore(today)) {
+          activeDueCount++;
+          if (activeDueCount <= 4) {
+            final clientName = f.clientName;
+
+            // For Admin, Super Admin & Telecaller: send notification only ONCE PER DAY per client!
+            if (isHighRole && NotificationCenter.hasNotificationToday(clientName)) {
+              continue;
+            }
+
+            String salesPerson = f.creatorName ?? '';
+            if (salesPerson.isEmpty && req != null) {
+              try {
+                salesPerson = (req.assignedToName ?? req.addedByName ?? req.creatorName ?? '').toString();
+              } catch (_) {}
+            }
+            if (salesPerson.isEmpty) salesPerson = 'Sales Team';
+
+            final message = isHighRole
+                ? 'Follow-up for $clientName (Sales Person: $salesPerson) is overdue! Please take action.'
+                : 'Follow-up for $clientName is overdue! Please take action immediately.';
+
+            NotificationCenter.addNotification(
+              title: 'Overdue Follow-up Alert',
+              message: message,
+              type: 'due_followup',
+            );
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   Widget _buildNotificationButton(BuildContext context) {
     return Badge(
       label: Text('$_unreadNotificationsCount'),
       isLabelVisible: _unreadNotificationsCount > 0,
       backgroundColor: CRMColors.primaryOf(context),
+      offset: const Offset(-2, 2),
       child: IconButton(
         tooltip: 'Notifications',
+        padding: const EdgeInsets.all(6),
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         icon: AnimatedScale(
           scale: _unreadNotificationsCount > 0 ? 1.05 : 1.0,
           duration: CRMMotion.fast,
@@ -1288,6 +1450,7 @@ class _CRMAppShellState extends State<CRMAppShell>
             color: _unreadNotificationsCount > 0
                 ? CRMColors.primaryOf(context)
                 : CRMColors.textSecondaryOf(context),
+            size: 22,
           ),
         ),
         onPressed: () {
@@ -1629,7 +1792,6 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   Widget _buildSidebarContent(String currentPath, AuthState userState, {bool isMobile = false, double? sidebarWidth}) {
-    String userEmail = '';
     String userRole = '';
     String userFullName = '';
     String? userProfilePhoto;
@@ -1673,8 +1835,20 @@ class _CRMAppShellState extends State<CRMAppShell>
                 _buildSidebarItem(Icons.dashboard_rounded, 'Dashboard', '/dashboard', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.home_work_rounded, 'Properties', '/properties', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.assignment_rounded, 'Leads', '/requirements', currentPath, isMobile, isExpanded),
-                if (userRole == 'Admin' || userRole == 'Super Admin')
+                if (userRole == 'Admin' || userRole == 'Super Admin') ...[
                   _buildSidebarItem(Icons.people_outline_rounded, 'Employees', '/users', currentPath, isMobile, isExpanded),
+                  _buildSidebarTreeItem(
+                    icon: Icons.campaign_rounded,
+                    label: 'Campaign',
+                    currentPath: currentPath,
+                    isMobile: isMobile,
+                    isExpanded: isExpanded,
+                    subItems: const [
+                      _SidebarSubItemData(icon: Icons.hub_rounded, label: 'Connections', route: '/campaign/connections'),
+                      _SidebarSubItemData(icon: Icons.table_chart_rounded, label: 'Leads', route: '/campaign/leads'),
+                    ],
+                  ),
+                ],
                 _buildSidebarItem(Icons.folder_open_rounded, 'Library', '/library', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.settings_rounded, 'Settings', '/settings', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.delete_sweep_rounded, 'Recycle Bin', '/bin', currentPath, isMobile, isExpanded),
@@ -1740,12 +1914,13 @@ class _CRMAppShellState extends State<CRMAppShell>
                       ),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: _handleLogout,
-                    child: Padding(
-                      padding: const EdgeInsets.all(4.0),
-                      child: Icon(Icons.logout_rounded, color: CRMColors.danger, size: 18),
-                    ),
+                  IconButton(
+                    tooltip: 'Logout',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
+                    onPressed: _handleLogout,
                   ),
                 ],
               ],
@@ -1781,6 +1956,24 @@ class _CRMAppShellState extends State<CRMAppShell>
           context.go(route);
         }
       },
+    );
+  }
+
+  Widget _buildSidebarTreeItem({
+    required IconData icon,
+    required String label,
+    required String currentPath,
+    required bool isMobile,
+    required bool isExpanded,
+    required List<_SidebarSubItemData> subItems,
+  }) {
+    return _SidebarTreeItem(
+      icon: icon,
+      label: label,
+      currentPath: currentPath,
+      isMobile: isMobile,
+      isSidebarExpanded: isExpanded,
+      subItems: subItems,
     );
   }
 }
@@ -1914,6 +2107,321 @@ class _SidebarItemState extends State<_SidebarItem> {
   }
 }
 
+class _SidebarSubItemData {
+  final IconData icon;
+  final String label;
+  final String route;
+
+  const _SidebarSubItemData({
+    required this.icon,
+    required this.label,
+    required this.route,
+  });
+}
+
+class _SidebarTreeItem extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final String currentPath;
+  final bool isMobile;
+  final bool isSidebarExpanded;
+  final List<_SidebarSubItemData> subItems;
+
+  const _SidebarTreeItem({
+    required this.icon,
+    required this.label,
+    required this.currentPath,
+    required this.isMobile,
+    required this.isSidebarExpanded,
+    required this.subItems,
+  });
+
+  @override
+  State<_SidebarTreeItem> createState() => _SidebarTreeItemState();
+}
+
+class _SidebarTreeItemState extends State<_SidebarTreeItem> {
+  bool _isHovered = false;
+  late bool _isOpen;
+
+  @override
+  void initState() {
+    super.initState();
+    _isOpen = _isAnyChildActive();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SidebarTreeItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_isAnyChildActive() && !_isOpen) {
+      _isOpen = true;
+    }
+  }
+
+  bool _isAnyChildActive() {
+    return widget.subItems.any((item) => widget.currentPath.startsWith(item.route)) ||
+        widget.currentPath.startsWith('/campaign') ||
+        widget.currentPath.startsWith('/integration');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isChildActive = _isAnyChildActive();
+    final isExpanded = widget.isSidebarExpanded || widget.isMobile;
+
+    if (!isExpanded) {
+      // In compact sidebar rail mode, show PopupMenu on click
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 4.0),
+        child: PopupMenuButton<String>(
+          tooltip: widget.label,
+          offset: const Offset(48, 0),
+          color: CRMColors.surfaceElevatedOf(context),
+          onSelected: (route) {
+            if (widget.isMobile) Navigator.pop(context);
+            if (widget.currentPath != route) {
+              context.go(route);
+            }
+          },
+          itemBuilder: (ctx) => widget.subItems.map((item) {
+            final isItemActive = widget.currentPath.startsWith(item.route);
+            return PopupMenuItem<String>(
+              value: item.route,
+              child: Row(
+                children: [
+                  Icon(item.icon, size: 18, color: isItemActive ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context)),
+                  const SizedBox(width: 10),
+                  Text(
+                    item.label,
+                    style: TextStyle(
+                      fontWeight: isItemActive ? FontWeight.bold : FontWeight.normal,
+                      color: isItemActive ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _isHovered = true),
+            onExit: (_) => setState(() => _isHovered = false),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.xs, vertical: CRMSpacing.s),
+              decoration: BoxDecoration(
+                color: isChildActive
+                    ? CRMColors.primary.withValues(alpha: 0.14)
+                    : (_isHovered ? CRMColors.primary.withValues(alpha: 0.06) : Colors.transparent),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isChildActive ? CRMColors.primary.withValues(alpha: 0.32) : Colors.transparent,
+                  width: 1,
+                ),
+              ),
+              child: Icon(
+                widget.icon,
+                color: isChildActive ? CRMColors.primary : CRMColors.sidebarTextSecondary,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MouseRegion(
+            onEnter: (_) => setState(() => _isHovered = true),
+            onExit: (_) => setState(() => _isHovered = false),
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () {
+                // Clicking Campaign parent only toggles tree - does NOT navigate
+                setState(() => _isOpen = !_isOpen);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: CRMSpacing.m,
+                  vertical: CRMSpacing.s,
+                ),
+                decoration: BoxDecoration(
+                  color: isChildActive
+                      ? CRMColors.primary.withValues(alpha: 0.10)
+                      : (_isHovered ? CRMColors.primary.withValues(alpha: 0.06) : Colors.transparent),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isChildActive
+                        ? CRMColors.primary.withValues(alpha: 0.25)
+                        : (_isHovered ? CRMColors.primary.withValues(alpha: 0.12) : Colors.transparent),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    AnimatedScale(
+                      scale: _isHovered ? 1.1 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        widget.icon,
+                        color: isChildActive ? CRMColors.primary : CRMColors.sidebarTextSecondary,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: CRMSpacing.m),
+                    Expanded(
+                      child: Text(
+                        widget.label,
+                        style: CRMTypography.bodyMedium.copyWith(
+                          color: isChildActive ? CRMColors.primary : CRMColors.sidebarText,
+                          fontWeight: isChildActive ? FontWeight.w600 : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: _isOpen ? 0.5 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: isChildActive ? CRMColors.primary : CRMColors.sidebarTextSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Sub items tree
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(left: 14.0, top: 4.0, bottom: 4.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: CRMColors.sidebarBorder.withValues(alpha: 0.6),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+                padding: const EdgeInsets.only(left: 8.0),
+                child: Column(
+                  children: widget.subItems.map((item) {
+                    final isSelected = widget.currentPath.startsWith(item.route);
+                    return _SidebarSubItemWidget(
+                      icon: item.icon,
+                      label: item.label,
+                      isSelected: isSelected,
+                      onTap: () {
+                        if (widget.isMobile) Navigator.pop(context);
+                        if (widget.currentPath != item.route) {
+                          context.go(item.route);
+                        }
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+            crossFadeState: _isOpen ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 220),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarSubItemWidget extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _SidebarSubItemWidget({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  State<_SidebarSubItemWidget> createState() => _SidebarSubItemWidgetState();
+}
+
+class _SidebarSubItemWidgetState extends State<_SidebarSubItemWidget> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: widget.isSelected
+                  ? CRMColors.primary.withValues(alpha: 0.14)
+                  : (_isHovered ? CRMColors.primary.withValues(alpha: 0.06) : Colors.transparent),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: widget.isSelected
+                    ? CRMColors.primary.withValues(alpha: 0.32)
+                    : Colors.transparent,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  widget.icon,
+                  size: 16,
+                  color: widget.isSelected ? CRMColors.primary : CRMColors.sidebarTextSecondary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: widget.isSelected ? FontWeight.w600 : FontWeight.w500,
+                      color: widget.isSelected ? CRMColors.primary : CRMColors.sidebarText,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (widget.isSelected)
+                  Container(
+                    width: 5,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: CRMColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class PubSubDivider extends PopupMenuEntry<Never> {
   const PubSubDivider({super.key});
@@ -2075,7 +2583,7 @@ class CustomBottomNavBar extends StatelessWidget {
                       index: 3,
                       iconOutline: Icons.assignment_outlined,
                       iconFilled: Icons.assignment_rounded,
-                      label: 'Requirements',
+                      label: 'Leads',
                     ),
                     _buildNavItem(
                       context: context,

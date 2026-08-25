@@ -10,6 +10,7 @@ import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../properties/models/property_model.dart';
 import '../../properties/services/properties_service.dart';
+import '../../../core/storage/local_repositories.dart';
 
 class LocationConfigScreen extends StatefulWidget {
   const LocationConfigScreen({super.key});
@@ -46,10 +47,13 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   bool _isFetchingPincode = false;
   bool _isSavingArea = false;
   bool _areaFormIsModal = false;
+  List<String> _pincodeAreaSuggestions = [];
+  bool _showAreaSuggestions = false;
 
   // Search filters
   String _citySearchQuery = '';
   String _areaSearchQuery = '';
+  final _areaSearchController = TextEditingController();
 
   @override
   void initState() {
@@ -67,6 +71,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
     _cityCountryController.dispose();
     _areaNameController.dispose();
     _areaPincodeController.dispose();
+    _areaSearchController.dispose();
     super.dispose();
   }
 
@@ -77,8 +82,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       final data = response['data'] as Map<String, dynamic>? ?? {};
       final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
       setState(() {
-        _cities = meta.cities;
-        _areas = meta.areas;
+        _cities = meta.cities..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
         _isLoading = false;
       });
     } catch (e) {
@@ -107,7 +112,11 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   }
 
   Future<void> _lookupPincode(String pincode) async {
-    setState(() => _isFetchingPincode = true);
+    setState(() {
+      _isFetchingPincode = true;
+      _pincodeAreaSuggestions.clear();
+      _showAreaSuggestions = false;
+    });
     try {
       final dio = Dio();
       final response = await dio.get('https://api.postalpincode.in/pincode/$pincode');
@@ -129,15 +138,36 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
             }
           }
           
+          final Set<String> suggestionSet = {};
+          for (final po in postOffices) {
+            final name = po['Name']?.toString().trim();
+            if (name != null && name.isNotEmpty) {
+              suggestionSet.add(name);
+            }
+          }
+          for (final a in _areas) {
+            if (a.pincode == pincode && a.name.trim().isNotEmpty) {
+              suggestionSet.add(a.name.trim());
+            }
+          }
+
+          final suggestionsList = suggestionSet.toList();
+
           if (matchedCity != null) {
             setState(() {
               _areaSelectedCityId = matchedCity!.id;
-              if (_areaNameController.text.isEmpty && postOffices.isNotEmpty) {
-                _areaNameController.text = postOffices[0]['Name']?.toString() ?? '';
+              _pincodeAreaSuggestions = suggestionsList;
+              _showAreaSuggestions = suggestionsList.isNotEmpty;
+              if (_areaNameController.text.isEmpty && suggestionsList.isNotEmpty) {
+                _areaNameController.text = suggestionsList.first;
               }
             });
-            _showSnackBar('City auto-resolved to: ${matchedCity.name}');
+            _showSnackBar('City auto-resolved to: ${matchedCity.name} (${suggestionsList.length} areas found)');
           } else if (districtName.isNotEmpty) {
+            setState(() {
+              _pincodeAreaSuggestions = suggestionsList;
+              _showAreaSuggestions = suggestionsList.isNotEmpty;
+            });
             _showCityAutoAddDialog(districtName, postOffices);
           }
         }
@@ -322,6 +352,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   void _openAreaForm([AreaLookup? area]) {
     setState(() {
       _editingArea = area;
+      _pincodeAreaSuggestions.clear();
+      _showAreaSuggestions = false;
       if (area != null) {
         _areaNameController.text = area.name;
         _areaPincodeController.text = area.pincode;
@@ -377,6 +409,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       _editingArea = null;
       _areaNameController.clear();
       _areaPincodeController.clear();
+      _pincodeAreaSuggestions.clear();
+      _showAreaSuggestions = false;
       _isSavingArea = false;
     });
     if (shouldPopModal && Navigator.of(context).canPop()) {
@@ -455,6 +489,9 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
 
     try {
       await _propertiesService.deleteArea(area.id);
+      try {
+        await LookupLocalRepository().deleteSingleLookup(area.id);
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _areas = _areas.where((a) => a.id != area.id).toList();
@@ -471,88 +508,89 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       if (_citySearchQuery.isEmpty) return true;
       return c.name.toLowerCase().contains(_citySearchQuery.toLowerCase()) ||
           (c.state ?? '').toLowerCase().contains(_citySearchQuery.toLowerCase());
-    }).toList();
+    }).toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     final bool isMobile = MediaQuery.of(context).size.width < 600;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Title and Add button
-        if (isMobile)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('City Records', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-              const SizedBox(height: CRMSpacing.xxs),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${filtered.length} active cities configured',
-                      style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Title and Add button
+          if (isMobile)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('City Records', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                const SizedBox(height: CRMSpacing.xxs),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${filtered.length} active cities configured',
+                        style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                      ),
                     ),
-                  ),
-                  CRMButton(
-                    label: 'Add New City',
-                    prefixIcon: Icons.add_rounded,
-                    onPressed: () => _openCityForm(),
-                  ),
-                ],
-              ),
-            ],
-          )
-        else
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('City Records', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-                  Text('${filtered.length} active cities configured', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-                ],
-              ),
-              CRMButton(
-                label: 'Add New City',
-                prefixIcon: Icons.add_rounded,
-                onPressed: () => _openCityForm(),
-              ),
-            ],
-          ),
-        const SizedBox(height: CRMSpacing.m),
-
-        // Inline Form Editor Panel
-        if (_isCityFormOpen) ...[
-          _buildCityFormPanel(),
+                    CRMButton(
+                      label: 'Add New City',
+                      prefixIcon: Icons.add_rounded,
+                      onPressed: () => _openCityForm(),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('City Records', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                    Text('${filtered.length} active cities configured', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                  ],
+                ),
+                CRMButton(
+                  label: 'Add New City',
+                  prefixIcon: Icons.add_rounded,
+                  onPressed: () => _openCityForm(),
+                ),
+              ],
+            ),
           const SizedBox(height: CRMSpacing.m),
-        ],
 
-        // Search bar
-        TextField(
-          style: TextStyle(color: CRMColors.textOf(context)),
-          decoration: InputDecoration(
-            hintText: 'Search cities...',
-            prefixIcon: const Icon(Icons.search_rounded),
-            filled: true,
-            fillColor: CRMColors.cardBgOf(context),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+          // Inline Form Editor Panel
+          if (_isCityFormOpen) ...[
+            _buildCityFormPanel(),
+            const SizedBox(height: CRMSpacing.m),
+          ],
+
+          // Search bar
+          TextField(
+            style: TextStyle(color: CRMColors.textOf(context)),
+            decoration: InputDecoration(
+              hintText: 'Search cities...',
+              prefixIcon: const Icon(Icons.search_rounded),
+              filled: true,
+              fillColor: CRMColors.cardBgOf(context),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+              ),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
-            ),
+            onChanged: (val) => setState(() => _citySearchQuery = val),
           ),
-          onChanged: (val) => setState(() => _citySearchQuery = val),
-        ),
-        const SizedBox(height: CRMSpacing.m),
+          const SizedBox(height: CRMSpacing.m),
 
-        // Structured List Table
-        Expanded(
-          child: Container(
+          // Structured List Table
+          Container(
             decoration: BoxDecoration(
               color: CRMColors.cardBgOf(context),
               borderRadius: BorderRadius.circular(CRMBorderRadius.m),
@@ -560,6 +598,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
             ),
             clipBehavior: Clip.antiAlias,
             child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               itemCount: filtered.length,
               separatorBuilder: (_, __) => Divider(color: CRMColors.borderOf(context).withOpacity(0.3), height: 1),
               itemBuilder: (context, index) {
@@ -703,8 +743,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
               },
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -878,88 +918,90 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       return a.name.toLowerCase().contains(_areaSearchQuery.toLowerCase()) ||
           a.pincode.contains(_areaSearchQuery) ||
           city.toLowerCase().contains(_areaSearchQuery.toLowerCase());
-    }).toList();
+    }).toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     final bool isMobile = MediaQuery.of(context).size.width < 600;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Title and Add button
-        if (isMobile)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Area Mapping & Postal Config', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-              const SizedBox(height: CRMSpacing.xxs),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${filtered.length} areas mapped to active cities',
-                      style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Title and Add button
+          if (isMobile)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Area Mapping & Postal Config', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                const SizedBox(height: CRMSpacing.xxs),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${filtered.length} areas mapped to active cities',
+                        style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                      ),
                     ),
-                  ),
-                  CRMButton(
-                    label: 'Add New Area',
-                    prefixIcon: Icons.add_rounded,
-                    onPressed: () => _openAreaForm(),
-                  ),
-                ],
-              ),
-            ],
-          )
-        else
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Area Mapping & Postal Config', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-                  Text('${filtered.length} areas mapped to active cities', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-                ],
-              ),
-              CRMButton(
-                label: 'Add New Area',
-                prefixIcon: Icons.add_rounded,
-                onPressed: () => _openAreaForm(),
-              ),
-            ],
-          ),
-        const SizedBox(height: CRMSpacing.m),
-
-        // Inline Form Editor Panel
-        if (_isAreaFormOpen) ...[
-          _buildAreaFormPanel(),
+                    CRMButton(
+                      label: 'Add New Area',
+                      prefixIcon: Icons.add_rounded,
+                      onPressed: () => _openAreaForm(),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Area Mapping & Postal Config', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                    Text('${filtered.length} areas mapped to active cities', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                  ],
+                ),
+                CRMButton(
+                  label: 'Add New Area',
+                  prefixIcon: Icons.add_rounded,
+                  onPressed: () => _openAreaForm(),
+                ),
+              ],
+            ),
           const SizedBox(height: CRMSpacing.m),
-        ],
 
-        // Search bar
-        TextField(
-          style: TextStyle(color: CRMColors.textOf(context)),
-          decoration: InputDecoration(
-            hintText: 'Search areas, pincodes, or cities...',
-            prefixIcon: const Icon(Icons.search_rounded),
-            filled: true,
-            fillColor: CRMColors.cardBgOf(context),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+          // Inline Form Editor Panel
+          if (_isAreaFormOpen) ...[
+            _buildAreaFormPanel(),
+            const SizedBox(height: CRMSpacing.m),
+          ],
+
+          // Search bar
+          TextField(
+            controller: _areaSearchController,
+            style: TextStyle(color: CRMColors.textOf(context)),
+            decoration: InputDecoration(
+              hintText: 'Search areas, pincodes, or cities...',
+              prefixIcon: const Icon(Icons.search_rounded),
+              filled: true,
+              fillColor: CRMColors.cardBgOf(context),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+              ),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
-            ),
+            onChanged: (val) => setState(() => _areaSearchQuery = val),
           ),
-          onChanged: (val) => setState(() => _areaSearchQuery = val),
-        ),
-        const SizedBox(height: CRMSpacing.m),
+          const SizedBox(height: CRMSpacing.m),
 
-        // Structured List Table
-        Expanded(
-          child: Container(
+          // Structured List Table
+          Container(
             decoration: BoxDecoration(
               color: CRMColors.cardBgOf(context),
               borderRadius: BorderRadius.circular(CRMBorderRadius.m),
@@ -967,6 +1009,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
             ),
             clipBehavior: Clip.antiAlias,
             child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               itemCount: filtered.length,
               separatorBuilder: (_, __) => Divider(color: CRMColors.borderOf(context).withOpacity(0.3), height: 1),
               itemBuilder: (context, index) {
@@ -1111,8 +1155,131 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPincodeAreaSuggestions() {
+    if (!_showAreaSuggestions || _pincodeAreaSuggestions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final pincode = _areaPincodeController.text.trim();
+
+    return Container(
+      margin: const EdgeInsets.only(top: CRMSpacing.s, bottom: CRMSpacing.m),
+      padding: const EdgeInsets.all(CRMSpacing.m),
+      decoration: BoxDecoration(
+        color: CRMColors.primary.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(
+          color: CRMColors.primary.withOpacity(0.25),
+          width: 1.2,
         ),
-      ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.location_on_rounded, size: 16, color: CRMColors.primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Areas found for Pincode $pincode (${_pincodeAreaSuggestions.length}):',
+                    style: CRMTypography.captionBold.copyWith(
+                      color: CRMColors.primary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              InkWell(
+                onTap: () => setState(() => _showAreaSuggestions = false),
+                child: Icon(Icons.close_rounded, size: 16, color: CRMColors.textSecondaryOf(context)),
+              ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.s),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _pincodeAreaSuggestions.map((areaName) {
+              final isSelected = _areaNameController.text.trim().toLowerCase() == areaName.toLowerCase();
+
+              // Check if this suggested area is ALREADY saved in the system list below
+              AreaLookup? existingArea;
+              for (final a in _areas) {
+                if (a.name.trim().toLowerCase() == areaName.trim().toLowerCase() &&
+                    (pincode.isEmpty || a.pincode == pincode)) {
+                  existingArea = a;
+                  break;
+                }
+              }
+              final isAlreadySaved = existingArea != null;
+
+              return ChoiceChip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(areaName),
+                    if (isAlreadySaved) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.check_circle_rounded, size: 13, color: CRMColors.success),
+                    ],
+                  ],
+                ),
+                selected: isSelected,
+                selectedColor: isAlreadySaved
+                    ? CRMColors.success.withValues(alpha: 0.2)
+                    : CRMColors.primary.withValues(alpha: 0.25),
+                backgroundColor: CRMColors.cardBgOf(context),
+                labelStyle: TextStyle(
+                  color: isSelected
+                      ? (isAlreadySaved ? CRMColors.success : CRMColors.primary)
+                      : CRMColors.textOf(context),
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 12,
+                ),
+                side: BorderSide(
+                  color: isSelected
+                      ? (isAlreadySaved ? CRMColors.success : CRMColors.primary)
+                      : (isAlreadySaved
+                          ? CRMColors.success.withValues(alpha: 0.5)
+                          : CRMColors.borderOf(context)),
+                  width: isSelected ? 1.5 : 1.0,
+                ),
+                onSelected: (selected) {
+                  if (selected) {
+                    setState(() {
+                      _areaNameController.text = areaName;
+
+                      if (isAlreadySaved) {
+                        // Filter the areas list below to show the existing saved area mapping
+                        _areaSearchQuery = areaName;
+                        _areaSearchController.text = areaName;
+                      } else {
+                        // Reset filter so admin can review and save new area
+                        _areaSearchQuery = '';
+                        _areaSearchController.text = '';
+                      }
+                    });
+
+                    if (isAlreadySaved) {
+                      _showSnackBar('"$areaName" is already saved in the system list below.');
+                    } else {
+                      _showSnackBar('"$areaName" selected. Click "Save Configuration" to save it.');
+                    }
+                  }
+                },
+              );
+            }).toList(),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1178,6 +1345,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                         return null;
                       },
                     ),
+                    _buildPincodeAreaSuggestions(),
                     const SizedBox(height: CRMSpacing.s),
                     DropdownButtonFormField<String>(
                       value: _areaSelectedCityId,
@@ -1290,6 +1458,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                         ),
                       ],
                     ),
+                    _buildPincodeAreaSuggestions(),
                     const SizedBox(height: CRMSpacing.s),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,

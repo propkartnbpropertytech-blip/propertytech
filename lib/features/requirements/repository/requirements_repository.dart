@@ -44,6 +44,11 @@ class RequirementsRepository {
         requirements = requirements.where((r) =>
           r.createdBy == currentUser.id || r.adminId == currentUser.id
         ).toList();
+      } else if (role == 'Telecaller') {
+        // Telecaller: same leads rights as their supervisor Admin
+        requirements = requirements.where((r) =>
+          r.createdBy == currentUser.id || r.adminId == currentUser.adminId
+        ).toList();
       } else if (role != 'Super Admin') {
         // Sales: own leads (including ones transferred away) plus leads assigned to them.
         requirements = requirements.where((r) {

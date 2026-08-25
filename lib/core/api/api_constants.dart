@@ -1,12 +1,12 @@
 import 'package:flutter/foundation.dart';
 
 class ApiConstants {
-  static const String primaryBaseUrl = "https://prop-kart-backend.vercel.app/api/v1";
-  static const String backupBaseUrl = "https://prop-kart-backend.vercel.app/api/v1";
+  static const String primaryBaseUrl = "https://api-propkart.nbpropertytech.com/api/v1";
+  static const String backupBaseUrl = "https://api-propkart.nbpropertytech.com/api/v1";
 
   /// Toggle this to true to connect Flutter directly to Supabase.
   /// Set to false to fall back to the custom Node.js Express backend.
-  static const bool useSupabaseDirect = true;
+  static const bool useSupabaseDirect = false;
 
   /// Connect directly to backend subdomain for cross-site cookie authentication.
   static String get baseUrl => primaryBaseUrl;
@@ -16,12 +16,12 @@ class ApiConstants {
   /// Anon key is public-by-design for Supabase; security depends on RLS.
   static const supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://oomylxpyeqntphbarqbz.supabase.co',
+    defaultValue: 'http://200.234.36.120:8000',
   );
   static const supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
     defaultValue:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vbXlseHB5ZXFudHBoYmFycWJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU3NDkzMzQsImV4cCI6MjEwMTMyNTMzNH0.xxxe4If9NHdkJgsH4D5xxltejDXIZ5B9txEyhcTqeUc',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg2Njk5NTkyLCJleHAiOjE5NDQzNzk1OTJ9.g4VezDunjdcYVOiPt_xgNUUzohQsIc5UsnqMJ26AdTA',
   );
 
   static const String cloudinaryCloudName = "jdvya1gl";

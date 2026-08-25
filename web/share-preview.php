@@ -14,7 +14,7 @@ if ($propertyId) {
 
 if (!empty($sessionId)) {
     // Fetch live session details from backend API
-    $apiUrl = 'https://prop-kart-backend.vercel.app/api/v1/share-sessions/public/' . $sessionId;
+    $apiUrl = 'http://200.234.36.120:5001/api/v1/share-sessions/public/' . $sessionId;
     
     // Set timeout to avoid blocking page load
     $opts = [
@@ -46,7 +46,9 @@ if (!empty($sessionId)) {
                 
                 if ($p) {
                     $config = isset($p['configuration_name']) ? $p['configuration_name'] : ((isset($p['bedrooms']) ? $p['bedrooms'] : '-') . ' BHK');
-                    $area = isset($p['area_name']) ? $p['area_name'] : '';
+                    $rawArea = isset($p['area_name']) && !empty($p['area_name']) ? $p['area_name'] : (isset($p['areaName']) && !empty($p['areaName']) ? $p['areaName'] : (isset($p['locality']) && !empty($p['locality']) ? $p['locality'] : (isset($p['location']) && !empty($p['location']) ? $p['location'] : (isset($p['city_name']) ? $p['city_name'] : ''))));
+                    $area = (strtoupper(trim($rawArea)) !== 'N/A') ? trim($rawArea) : '';
+                    $titleArea = !empty($area) ? (' in ' . $area) : '';
                     $city = isset($p['city_name']) ? $p['city_name'] : '';
                     $priceVal = isset($p['price']) ? floatval($p['price']) : null;
                     
@@ -61,8 +63,8 @@ if (!empty($sessionId)) {
                         }
                     }
                     
-                    $seoTitle = $config . ' in ' . $area . ' | ' . $priceStr . ' - PropKart';
-                    $seoDescription = isset($p['description']) ? $p['description'] : ('Check out this premium ' . $config . ' in ' . $area . ' shared by ' . $agentName . ' via PropKart.');
+                    $seoTitle = $config . $titleArea . ' | ' . $priceStr . ' - PropKart';
+                    $seoDescription = isset($p['description']) ? $p['description'] : ('Check out this premium ' . $config . $titleArea . ' shared by ' . $agentName . ' via PropKart.');
                     
                     if (isset($p['images']) && is_array($p['images']) && !empty($p['images'])) {
                         $seoImage = $p['images'][0];

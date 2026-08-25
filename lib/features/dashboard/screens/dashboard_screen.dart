@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:math' as math;
+import '../../../core/storage/repository_coordinator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -58,6 +60,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   static const int _followupsPerPage = 5;
   DateTime _selectedFollowupDate = DateTime.now();
   String _activeFollowupSection = 'Follow-ups'; // 'Follow-ups' or 'Schedule'
+  String _dashboardFollowupSubTab = 'Today'; // 'Today', 'Due', or 'Future'
 
   int _notePage = 1;
   static const int _notesPerPage = 5;
@@ -69,6 +72,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   late AnimationController _nameShimmerController;
   static bool _greetingPlayedThisSession = false;
   final Map<String, Future<PropertyModel?>> _propertyDetailFutures = {};
+  StreamSubscription? _dashboardSub;
 
   bool get _isRent => _activeTab == 'Rental';
   Color get _atmosphere => CRMColors.atmosphereAccent(_isRent);
@@ -95,10 +99,16 @@ class _DashboardScreenState extends State<DashboardScreen>
       _nameShimmerController.value = 1.0;
     }
     context.read<DashboardBloc>().add(LoadDashboard());
+    _dashboardSub = RepositoryCoordinator().dashboardStream.listen((_) {
+      if (mounted) {
+        context.read<DashboardBloc>().add(LoadDashboard());
+      }
+    });
   }
 
   @override
   void dispose() {
+    _dashboardSub?.cancel();
     _nameShimmerController.dispose();
     _propertyDetailFutures.clear();
     super.dispose();
@@ -395,7 +405,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       siteVisitTitle = 'All Site Visits Done';
       requirementsTitle = 'All Requirements';
       wonTitle = 'All Won';
-    } else if (role == 'Admin') {
+    } else if (role == 'Admin' || role == 'Telecaller') {
       availableTitle = 'Available Inventory';
       siteVisitTitle = 'Site visits done';
       requirementsTitle = 'Leads';
@@ -458,7 +468,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         ? 2
         : CRMBreakpoints.kpiColumns(context, desktop: 4);
     final double childAspectRatio = isDesktop
-        ? 2.4
+        ? 2.0
         : CRMBreakpoints.kpiAspectRatio(context);
 
     return AnimatedContainer(
@@ -1891,28 +1901,111 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Widget _buildDashboardSubTabPill(String label, String tabKey, int count, IconData icon, Color color) {
+    final bool isSelected = _dashboardFollowupSubTab == tabKey;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _dashboardFollowupSubTab = tabKey;
+          _followupPage = 1;
+        });
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? color : CRMColors.borderOf(context).withValues(alpha: 0.5),
+            width: isSelected ? 1.5 : 1.0,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: isSelected ? color : CRMColors.textSecondaryOf(context)),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? color : CRMColors.textSecondaryOf(context),
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: isSelected ? color : color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  color: isSelected ? Colors.white : color,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildFollowups(List<DashboardFollowup> followups, List<DashboardSiteVisit> siteVisits) {
-    // 1. Filter followups by _selectedFollowupDate (default today) and status
-    final filteredFollowups = followups.where((f) {
-      final statusLower = f.status.toLowerCase();
-      if (statusLower == 'completed' || statusLower == 'resolved' || statusLower == 'closed' || statusLower == 'done') {
-        return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final Map<String, DashboardFollowup> latestDashFollowupsMap = {};
+    for (final f in followups) {
+      final reqIdStr = f.requirementId ?? '';
+      final key = reqIdStr.isNotEmpty ? reqIdStr : f.id;
+      final existing = latestDashFollowupsMap[key];
+      if (existing == null) {
+        latestDashFollowupsMap[key] = f;
+      } else {
+        final dtExisting = DateTime.tryParse(existing.followupDate) ?? DateTime(1970);
+        final dtCurrent = DateTime.tryParse(f.followupDate) ?? DateTime(1970);
+        if (dtCurrent.isAfter(dtExisting)) {
+          latestDashFollowupsMap[key] = f;
+        }
       }
-      final parsed = DateTime.tryParse(f.followupDate);
-      if (parsed == null) return false;
-      return parsed.year == _selectedFollowupDate.year &&
-          parsed.month == _selectedFollowupDate.month &&
-          parsed.day == _selectedFollowupDate.day;
+    }
+
+    final activeFollowups = latestDashFollowupsMap.values.where((f) {
+      final statusLower = f.status.toLowerCase();
+      return statusLower != 'completed' &&
+             statusLower != 'resolved' &&
+             statusLower != 'closed' &&
+             statusLower != 'done';
     }).toList();
 
-    // 2. Sort followups: latest scheduled/created followups on top
-    filteredFollowups.sort((a, b) {
-      final dateA = DateTime.tryParse(a.followupDate) ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final dateB = DateTime.tryParse(b.followupDate) ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return dateB.compareTo(dateA); // Latest on top
-    });
+    final todayFollowups = <DashboardFollowup>[];
+    final dueFollowups = <DashboardFollowup>[];
+    final futureFollowups = <DashboardFollowup>[];
 
-    // Filter site visits by _selectedFollowupDate and status
+    for (final f in activeFollowups) {
+      final parsed = DateTime.tryParse(f.followupDate);
+      if (parsed == null) continue;
+      final fDate = DateTime(parsed.year, parsed.month, parsed.day);
+      if (fDate.isBefore(today)) {
+        dueFollowups.add(f);
+      } else if (fDate.isAtSameMomentAs(today)) {
+        todayFollowups.add(f);
+      } else {
+        futureFollowups.add(f);
+      }
+    }
+
+    todayFollowups.sort((a, b) => (DateTime.tryParse(b.followupDate) ?? DateTime(0)).compareTo(DateTime.tryParse(a.followupDate) ?? DateTime(0)));
+    dueFollowups.sort((a, b) => (DateTime.tryParse(b.followupDate) ?? DateTime(0)).compareTo(DateTime.tryParse(a.followupDate) ?? DateTime(0)));
+    futureFollowups.sort((a, b) => (DateTime.tryParse(b.followupDate) ?? DateTime(0)).compareTo(DateTime.tryParse(a.followupDate) ?? DateTime(0)));
+
     final filteredSiteVisits = siteVisits.where((sv) {
       final statusLower = sv.status.toLowerCase();
       if (statusLower == 'completed' || statusLower == 'resolved' || statusLower == 'closed' || statusLower == 'done') {
@@ -1925,7 +2018,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           parsed.day == _selectedFollowupDate.day;
     }).toList();
 
-    // Sort site visits: latest scheduled site visits on top
     filteredSiteVisits.sort((a, b) {
       final dateA = DateTime.tryParse(a.visitDate) ?? DateTime.fromMillisecondsSinceEpoch(0);
       final dateB = DateTime.tryParse(b.visitDate) ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -1934,8 +2026,16 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     final isSiteVisitsTab = _activeFollowupSection == 'Site Visits';
 
-    // 3. Pagination calculation
-    final totalCount = isSiteVisitsTab ? filteredSiteVisits.length : filteredFollowups.length;
+    List<DashboardFollowup> targetFollowups;
+    if (_dashboardFollowupSubTab == 'Due') {
+      targetFollowups = dueFollowups;
+    } else if (_dashboardFollowupSubTab == 'Future') {
+      targetFollowups = futureFollowups;
+    } else {
+      targetFollowups = todayFollowups;
+    }
+
+    final totalCount = isSiteVisitsTab ? filteredSiteVisits.length : targetFollowups.length;
     final totalPages = (totalCount / _followupsPerPage).ceil();
     final currentPage = _followupPage.clamp(1, totalPages > 0 ? totalPages : 1);
 
@@ -1945,7 +2045,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final pageItems = (startIndex < totalCount)
         ? (isSiteVisitsTab
             ? filteredSiteVisits.sublist(startIndex, endIndex)
-            : filteredFollowups.sublist(startIndex, endIndex))
+            : targetFollowups.sublist(startIndex, endIndex))
         : [];
 
     final dateStr = DateFormat('dd/MM/yyyy').format(_selectedFollowupDate);
@@ -1990,8 +2090,23 @@ class _DashboardScreenState extends State<DashboardScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildBigFollowupTabSwitcher(filteredFollowups.length, filteredSiteVisits.length),
+            _buildBigFollowupTabSwitcher(activeFollowups.length, filteredSiteVisits.length),
             const SizedBox(height: CRMSpacing.m),
+            if (!isSiteVisitsTab) ...[
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildDashboardSubTabPill("Today's Follow-ups", "Today", todayFollowups.length, Icons.today_rounded, CRMColors.success),
+                    const SizedBox(width: CRMSpacing.s),
+                    _buildDashboardSubTabPill("Due Follow-ups", "Due", dueFollowups.length, Icons.warning_amber_rounded, CRMColors.warning),
+                    const SizedBox(width: CRMSpacing.s),
+                    _buildDashboardSubTabPill("Future Follow-ups", "Future", futureFollowups.length, Icons.next_plan_rounded, CRMColors.info),
+                  ],
+                ),
+              ),
+              const SizedBox(height: CRMSpacing.m),
+            ],
             if (isMobile) ...[
               Align(
                 alignment: Alignment.centerRight,
@@ -2004,7 +2119,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 20),
                           child: Text(
-                            isSiteVisitsTab ? 'No scheduled site visits for $dateStr.' : 'No follow-ups for $dateStr.',
+                            isSiteVisitsTab
+                                ? 'No scheduled site visits for $dateStr.'
+                                : 'No ${_dashboardFollowupSubTab.toLowerCase()} follow-ups available.',
                             style: TextStyle(color: CRMColors.textSecondaryOf(context)),
                           ),
                         ),

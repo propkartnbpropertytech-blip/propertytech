@@ -2263,9 +2263,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         Text('Land Details', style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context))),
         const SizedBox(height: CRMSpacing.s),
         if (isMobile) ...[
-          _buildCustomTextField(label: 'Plot Length (Ft)', key: 'plot_length', isNumeric: true, isRequired: isLand),
+          _buildCustomTextField(label: 'Plot Length (Ft)', key: 'plot_length', isNumeric: true, isRequired: false),
           const SizedBox(height: CRMSpacing.m),
-          _buildCustomTextField(label: 'Plot Width (Ft)', key: 'plot_width', isNumeric: true, isRequired: isLand),
+          _buildCustomTextField(label: 'Plot Width (Ft)', key: 'plot_width', isNumeric: true, isRequired: false),
           const SizedBox(height: CRMSpacing.m),
           _buildCustomTextField(label: 'Frontage (Ft)', key: 'frontage', isNumeric: true, isRequired: false),
           const SizedBox(height: CRMSpacing.m),
@@ -2281,9 +2281,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         ] else ...[
           Row(
             children: [
-              Expanded(child: _buildCustomTextField(label: 'Plot Length (Ft)', key: 'plot_length', isNumeric: true, isRequired: isLand)),
+              Expanded(child: _buildCustomTextField(label: 'Plot Length (Ft)', key: 'plot_length', isNumeric: true, isRequired: false)),
               const SizedBox(width: CRMSpacing.s),
-              Expanded(child: _buildCustomTextField(label: 'Plot Width (Ft)', key: 'plot_width', isNumeric: true, isRequired: isLand)),
+              Expanded(child: _buildCustomTextField(label: 'Plot Width (Ft)', key: 'plot_width', isNumeric: true, isRequired: false)),
             ],
           ),
           const SizedBox(height: CRMSpacing.m),

@@ -116,6 +116,47 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
     }
   }
 
+  String _shareLocationLabel(PropertyModel prop, Map<String, dynamic> raw) {
+    final nestedArea = raw['area'];
+    final nestedCity = raw['city'];
+    final candidates = <String>[
+      prop.areaName,
+      if (nestedArea is Map) ...[
+        '${nestedArea['area_name'] ?? ''}',
+        '${nestedArea['name'] ?? ''}',
+        '${nestedArea['locality'] ?? ''}',
+        '${nestedArea['location'] ?? ''}',
+      ],
+      '${raw['area_name'] ?? ''}',
+      '${raw['areaName'] ?? ''}',
+      '${raw['locality'] ?? ''}',
+      '${raw['location'] ?? ''}',
+      '${raw['sub_location'] ?? ''}',
+      '${raw['sub_locality'] ?? ''}',
+      '${raw['society'] ?? ''}',
+      if (nestedArea is String) nestedArea,
+      prop.cityName,
+      if (nestedCity is Map) ...[
+        '${nestedCity['city_name'] ?? ''}',
+        '${nestedCity['name'] ?? ''}',
+      ],
+      '${raw['city_name'] ?? ''}',
+      '${raw['cityName'] ?? ''}',
+      if (nestedCity is String) nestedCity,
+      prop.landmark ?? '',
+      '${raw['landmark'] ?? ''}',
+      prop.address,
+      '${raw['address'] ?? ''}',
+    ];
+    for (final candidate in candidates) {
+      final value = candidate.trim();
+      if (value.isEmpty || value.toUpperCase() == 'N/A') continue;
+      if (RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(value)) continue;
+      return value;
+    }
+    return '';
+  }
+
   bool _isRentProperty(Map<String, dynamic> p) {
     try {
       final prop = PropertyModel.fromJson(p);
@@ -361,8 +402,8 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
         ? '${CRMCurrencyFormatter.format(priceVal)} (${CRMCurrencyFormatter.formatWords(priceVal).replaceAll('₹', '')})'
         : 'Price N/A';
     final config = prop.configurationName ?? '${prop.bedrooms > 0 ? prop.bedrooms : "-"} BHK';
-    final area = prop.areaName;
-    final title = '$config in $area';
+    final area = _shareLocationLabel(prop, p);
+    final title = (area.isNotEmpty && area.toUpperCase() != 'N/A') ? '$config in $area' : config;
     final imageUrls = prop.images;
     final hasImage = imageUrls.isNotEmpty;
     final areaSqft = prop.superBuiltupArea != null ? '${prop.superBuiltupArea!.toStringAsFixed(0)} sqft' : '';

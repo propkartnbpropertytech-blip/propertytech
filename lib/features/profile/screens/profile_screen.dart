@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:go_router/go_router.dart';
+import '../../../core/security/role_guard.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -409,12 +411,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Page Header Title
-            const CRMPageHeader(
-              eyebrow: 'Account',
-              title: 'My Profile',
-              benefit:
-                  'Keep your credentials, role, and photo current so teammates always reach the right you',
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Expanded(
+                  child: CRMPageHeader(
+                    eyebrow: 'Account',
+                    title: 'My Profile',
+                    benefit:
+                        'Keep your credentials, role, and photo current so teammates always reach the right you',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                CRMButton(
+                  label: 'Logout',
+                  prefixIcon: Icons.logout_rounded,
+                  variant: CRMButtonVariant.danger,
+                  onPressed: () {
+                    RoleGuard.currentUser = null;
+                    context.read<AuthBloc>().add(LogoutRequested());
+                  },
+                ),
+              ],
             ),
             const SizedBox(height: CRMSpacing.l),
 

@@ -1,11 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const http = require('https');
+const https = require('https');
+const http = require('http');
 
-// Helper to fetch data via Node.js https module without external dependencies
+// Helper to fetch data via Node.js http/https module without external dependencies
 function fetchUrl(url) {
   return new Promise((resolve, reject) => {
-    http.get(url, (res) => {
+    const client = url.startsWith('https') ? https : http;
+    client.get(url, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -36,7 +38,7 @@ module.exports = async (req, res) => {
 
   // 1. Fetch live share session details from backend API
   try {
-    const apiRes = await fetchUrl(`https://prop-kart-backend.vercel.app/api/v1/share-sessions/public/${sessionId}`);
+    const apiRes = await fetchUrl(`http://200.234.36.120:5001/api/v1/share-sessions/public/${sessionId}`);
     
     if (apiRes && apiRes.success && apiRes.data) {
       const { agent, properties } = apiRes.data;
@@ -46,8 +48,10 @@ module.exports = async (req, res) => {
         const p = properties.find(prop => prop.id === propertyId);
         if (p) {
           const config = p.configuration_name || `${p.bedrooms || '-'} BHK`;
-          const area = p.area_name || '';
-          const city = p.city_name || '';
+          const rawArea = p.area_name || p.areaName || (p.area && typeof p.area === 'object' ? p.area.area_name || p.area.name : (p.area || p.landmark || p.address || p.city_name || p.cityName || ''));
+          const area = (rawArea && String(rawArea).toUpperCase() !== 'N/A') ? rawArea : '';
+          const titleArea = area ? ` in ${area}` : '';
+          const city = p.city_name || p.cityName || (p.city && typeof p.city === 'object' ? p.city.city_name || p.city.name : '') || '';
           const priceVal = p.price ? parseFloat(p.price) : null;
           
           let priceStr = 'Price on Request';
@@ -61,8 +65,8 @@ module.exports = async (req, res) => {
             }
           }
           
-          seoTitle = `${config} in ${area} | ${priceStr} - PropKart`;
-          seoDescription = p.description || `Check out this premium ${config} in ${area} shared by ${agentName} via PropKart.`;
+          seoTitle = `${config}${titleArea} | ${priceStr} - PropKart`;
+          seoDescription = p.description || `Check out this premium ${config}${titleArea} shared by ${agentName} via PropKart.`;
           
           if (p.images && p.images.length > 0) {
             seoImage = p.images[0];

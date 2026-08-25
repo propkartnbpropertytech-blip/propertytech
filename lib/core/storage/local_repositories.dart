@@ -213,8 +213,11 @@ class PropertyLocalRepository {
     }
   }
 
-  Future<void> saveProperties(List<PropertyLocal> properties) async {
+  Future<void> saveProperties(List<PropertyLocal> properties, {bool clearExisting = false}) async {
     if (kIsWeb) {
+      if (clearExisting) {
+        inMemory.clear();
+      }
       for (final p in properties) {
         inMemory[p.id] = p;
       }
@@ -223,6 +226,9 @@ class PropertyLocalRepository {
     }
 
     await _isar.writeTxn(() async {
+      if (clearExisting) {
+        await _isar.propertyLocals.clear();
+      }
       await _isar.propertyLocals.putAll(properties);
     });
   }
@@ -622,6 +628,18 @@ class LookupLocalRepository {
 
     await _isar.writeTxn(() async {
       await _isar.lookupItemLocals.put(item);
+    });
+  }
+
+  Future<void> deleteSingleLookup(String id) async {
+    if (kIsWeb) {
+      inMemory.remove(id);
+      await _saveAllToPrefs();
+      return;
+    }
+
+    await _isar.writeTxn(() async {
+      await _isar.lookupItemLocals.filter().idEqualTo(id).deleteAll();
     });
   }
 

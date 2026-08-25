@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/api/api_client.dart';
@@ -708,20 +709,66 @@ class PropertiesService {
 
   Future<Map<String, dynamic>> restoreProperty(String id) async {
     if (ApiConstants.useSupabaseDirect) {
+      bool restored = false;
+      Object? lastError;
       try {
-        final response = await _supabase.rpc(
+        await _supabase.rpc(
           'restore_property_from_bin',
           params: {'p_property_id': id},
         );
+        restored = true;
+      } catch (e) {
+        lastError = e;
+      }
 
+      if (!restored) {
+        try {
+          final res = await _supabase.from('properties').update({
+            'deleted_at': null,
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', id).select('id');
+          if (res is List && res.isNotEmpty) restored = true;
+        } catch (e) {
+          lastError = e;
+        }
+      }
+
+      if (!restored) {
+        try {
+          final binRow = await _supabase.from('deleted_properties').select('*').eq('id', id).maybeSingle();
+          if (binRow != null) {
+            final rowMap = Map<String, dynamic>.from(binRow);
+            rowMap.remove('deleted_at');
+            await _supabase.from('properties').upsert(rowMap);
+            await _supabase.from('deleted_properties').delete().eq('id', id);
+            restored = true;
+          }
+        } catch (e) {
+          lastError = e;
+        }
+      }
+
+      if (!restored) {
+        try {
+          final activeRow = await _supabase.from('properties').select('id').eq('id', id).maybeSingle();
+          if (activeRow != null) restored = true;
+        } catch (_) {}
+      }
+
+      if (restored) {
+        Map<String, dynamic> propertyJson = {'id': id};
+        try {
+          final fetched = await getPropertyById(id);
+          if (fetched != null) propertyJson = fetched;
+        } catch (_) {}
         return {
           'success': true,
           'message': 'Property restored successfully',
-          'data': response,
+          'data': {'property': propertyJson},
         };
-      } catch (e) {
-        throw ApiException(message: e.toString());
       }
+
+      throw ApiException(message: (lastError ?? 'Failed to restore property').toString());
     } else {
       try {
         final response = await _apiClient.patch('/properties/$id/restore', {});
@@ -869,10 +916,35 @@ class PropertiesService {
     }
   }
 
+  Future<void> _unlinkAreaReferences(String areaId) async {
+    try { await _supabase.from('properties').update({'area_id': null}).eq('area_id', areaId); } catch (_) {}
+    try { await _supabase.from('requirements').update({'area_id': null}).eq('area_id', areaId); } catch (_) {}
+    try { await _supabase.from('requirement_areas').delete().eq('area_id', areaId); } catch (_) {}
+    try { await _supabase.from('builders').update({'area_id': null}).eq('area_id', areaId); } catch (_) {}
+    try { await _supabase.from('clients').update({'area_id': null}).eq('area_id', areaId); } catch (_) {}
+    try { await _supabase.from('deleted_properties').update({'area_id': null}).eq('area_id', areaId); } catch (_) {}
+  }
+
   Future<void> deleteArea(String id) async {
     try {
+      if (ApiConstants.useSupabaseDirect) {
+        await _unlinkAreaReferences(id);
+        final deleted = await _supabase.from('areas').delete().eq('id', id).select();
+        if (deleted.isEmpty) {
+          throw ApiException(message: 'Area could not be deleted.');
+        }
+        return;
+      }
       await _apiClient.delete('/properties/areas/$id');
     } on DioException catch (e) {
+      final errStr = (e.response?.data != null ? jsonEncode(e.response?.data) : e.message ?? '').toLowerCase();
+      if (errStr.contains('foreign key') || errStr.contains('requirements_area_id_fkey') || errStr.contains('violates')) {
+        try {
+          await _unlinkAreaReferences(id);
+          await _supabase.from('areas').delete().eq('id', id);
+          return;
+        } catch (_) {}
+      }
       throw ApiException.fromDioException(e);
     } catch (e) {
       throw ApiException(message: e.toString());
