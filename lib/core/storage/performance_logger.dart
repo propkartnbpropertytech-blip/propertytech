@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../utils/app_logger.dart';
+
 class PerformanceLogger {
   static final PerformanceLogger _instance = PerformanceLogger._internal();
   factory PerformanceLogger() => _instance;
@@ -42,8 +44,15 @@ class PerformanceLogger {
       _inMemoryLogs.removeAt(0);
     }
 
-    // Print structured telemetry to developer console
-    print("⏱️ [TELEMETRY] $operation | IsarRead: ${isarReadMs}ms | Network: ${networkMs}ms | Parse: ${jsonParseMs}ms | IsarWrite: ${isarWriteMs}ms | Total: ${totalMs}ms");
+    // Print structured telemetry to developer console via AppLogger
+    AppLogger.telemetry(
+      operation,
+      isarReadMs: isarReadMs,
+      networkMs: networkMs,
+      jsonParseMs: jsonParseMs,
+      isarWriteMs: isarWriteMs,
+      totalMs: totalMs,
+    );
 
     // Write to persistent local log file
     try {

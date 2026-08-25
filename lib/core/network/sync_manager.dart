@@ -23,6 +23,7 @@ import 'package:propkart/features/owners/services/owners_service.dart';
 import 'package:propkart/core/storage/model_mappers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:propkart/features/properties/repository/properties_repository.dart';
+import '../utils/app_logger.dart';
 
 enum SyncState {
   disconnected,
@@ -71,7 +72,7 @@ class SyncManager {
         final response = await ApiClient().get('/sync/status');
         serverVersion = response.data['schemaVersion'] ?? 0;
       } catch (e) {
-        print("⚠️ [SYNC ENGINE] Failed to fetch sync status: $e");
+        AppLogger.w("Failed to fetch sync status: $e");
         final lookupCount = await _coordinator.lookupLocal.getLookupsCount();
         if (lookupCount == 0) {
           rethrow;
@@ -80,13 +81,13 @@ class SyncManager {
       
       final lookupCount = await _coordinator.lookupLocal.getLookupsCount();
       if (lookupCount == 0 || serverVersion != clientVersion) {
-        print("🔄 [SYNC ENGINE] Lookup version mismatch or empty. Downloading lookup tables...");
+        AppLogger.sync("Lookup version mismatch or empty. Downloading lookup tables...");
         await PropertiesRepository().fetchAndSaveMetadata();
         if (serverVersion > 0) {
           await prefs.setInt('last_lookup_version', serverVersion);
         }
       } else {
-        print("✅ [SYNC ENGINE] Lookup tables up to date (version: $clientVersion). Skipping lookup sync.");
+        AppLogger.sync("Lookup tables up to date (version: $clientVersion). Skipping lookup sync.");
       }
       
       await triggerDeltaSync();
@@ -119,9 +120,7 @@ class SyncManager {
   void _updateState(SyncState newState) {
     _state = newState;
     _stateController.add(newState);
-    if (kDebugMode) {
-      print("🔄 [SYNC STATE] Changed to: $newState");
-    }
+    AppLogger.d("Sync State changed to: $newState");
   }
 
   Future<void> connect() async {
@@ -129,7 +128,9 @@ class SyncManager {
 
     _updateState(_state == SyncState.disconnected ? SyncState.connecting : SyncState.reconnecting);
 
-    final rawWsUrl = ApiConstants.supabaseUrl.replaceFirst('https', 'wss');
+    final rawWsUrl = ApiConstants.supabaseUrl
+        .replaceFirst('https://', 'wss://')
+        .replaceFirst('http://', 'ws://');
     final wsUrl = "$rawWsUrl/realtime/v1/websocket?apikey=${ApiConstants.supabaseAnonKey}&vsn=1.0.0";
 
     try {
@@ -238,7 +239,7 @@ class SyncManager {
         }
       }
     } catch (e) {
-      print("⚠️ [SYNC ERROR] Error parsing raw socket stream: $e");
+      AppLogger.e("Error parsing raw socket stream: $e");
     }
   }
 
@@ -302,7 +303,7 @@ class SyncManager {
               throw Exception("Failed to fetch property details: Status ${response.statusCode}");
             }
           } catch (e) {
-            print("⚠️ [SYNC WARNING] Failed to fetch property details for $record, falling back to raw record: $e");
+            AppLogger.w("Failed to fetch property details for $record, falling back to raw record: $e");
             final enriched = await _enrichRawRecord("properties", record);
             propertiesToPut.add(PropertyModel.fromJson(enriched).toLocal());
           }
@@ -321,7 +322,7 @@ class SyncManager {
               throw Exception("Failed to fetch requirement details: Status ${response.statusCode}");
             }
           } catch (e) {
-            print("⚠️ [SYNC WARNING] Failed to fetch requirement details for $record, falling back to raw record: $e");
+            AppLogger.w("Failed to fetch requirement details for $record, falling back to raw record: $e");
             final enriched = await _enrichRawRecord("requirements", record);
             requirementsToPut.add(RequirementModel.fromJson(enriched).toLocal());
           }
@@ -382,13 +383,12 @@ class SyncManager {
           }
         });
       } catch (e) {
-        print("⚠️ [SYNC ERROR] Batch write transaction failed: $e");
+        AppLogger.e("Batch write transaction failed: $e");
       }
     }
 
     final isarWriteMs = DateTime.now().difference(writeStart).inMilliseconds;
 
-    final notifyStart = DateTime.now();
     for (final table in tablesToRefresh) {
       if (table == "properties") _coordinator.refreshProperties();
       else if (table == "requirements") _coordinator.refreshRequirements();
@@ -396,7 +396,6 @@ class SyncManager {
       else if (table == "builders") _coordinator.refreshBuilders();
       else if (table == "owners") _coordinator.refreshOwners();
     }
-    final notifyMs = DateTime.now().difference(notifyStart).inMilliseconds;
     final totalMs = DateTime.now().difference(start).inMilliseconds;
 
     PerformanceLogger().logMetric(
@@ -404,11 +403,10 @@ class SyncManager {
       isarWriteMs: isarWriteMs,
       totalMs: totalMs,
     );
-    print("⏱️ [TELEMETRY] Realtime Event | Tables: ${tablesToRefresh.join(', ')} | Merge: ${isarWriteMs}ms | Notify: ${notifyMs}ms | Total: ${totalMs}ms | Rows: ${batch.length}");
   }
 
   void _handleDisconnect(String reason) {
-    print("🔌 [SYNC DISCONNECT] Reason: $reason");
+    AppLogger.d("Sync disconnected: $reason");
     _heartbeatTimer?.cancel();
     _channelSubscription?.cancel();
     try {
@@ -423,7 +421,7 @@ class SyncManager {
 
     _reconnectAttempts++;
     final backoffSeconds = (_reconnectAttempts * 2).clamp(2, 30);
-    print("🔄 [SYNC RECONNECT] Retrying in $backoffSeconds seconds... (Attempt $_reconnectAttempts)");
+    AppLogger.d("Sync reconnecting in $backoffSeconds seconds... (Attempt $_reconnectAttempts)");
 
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(seconds: backoffSeconds), () {
@@ -448,7 +446,7 @@ class SyncManager {
 
   Future<void> triggerDeltaSync() async {
     _updateState(SyncState.syncing);
-    print("🔄 [SYNC ENGINE] Starting Delta Sync...");
+    AppLogger.sync("Starting Delta Sync...");
     final start = DateTime.now();
 
     try {
@@ -478,7 +476,7 @@ class SyncManager {
               final serverUpdatedAt = DateTime.parse(serverItem['updated_at']);
               if (serverUpdatedAt.isAfter(item.createdAt)) {
                 conflictedIds.add(item.id);
-                print("⚠️ [CONFLICT DETECTED] Property $targetId has a newer server edit. Server wins.");
+                AppLogger.w("Conflict detected: Property $targetId has a newer server edit. Server wins.");
               }
             }
           } else if (item.endpoint.startsWith('/requirements')) {
@@ -487,7 +485,7 @@ class SyncManager {
               final serverUpdatedAt = DateTime.parse(serverItem['updated_at']);
               if (serverUpdatedAt.isAfter(item.createdAt)) {
                 conflictedIds.add(item.id);
-                print("⚠️ [CONFLICT DETECTED] Requirement $targetId has a newer server edit. Server wins.");
+                AppLogger.w("Conflict detected: Requirement $targetId has a newer server edit. Server wins.");
               }
             }
           }
@@ -547,15 +545,14 @@ class SyncManager {
         operation: 'SyncManager: Delta Sync completed successfully | Merged: ${pList.length + rList.length} records',
         totalMs: totalMs,
       );
-      print("⏱️ [TELEMETRY] Delta Sync completed | Duration: ${totalMs}ms | Conflicts: ${conflictedIds.length}");
 
     } catch (e) {
-      print("⚠️ [SYNC ERROR] Delta Sync failed: $e");
+      AppLogger.e("Delta Sync failed: $e");
     }
   }
 
   Future<void> processOutboxQueue() async {
-    print("📤 [SYNC ENGINE] Replaying Outbox Queue...");
+    AppLogger.sync("Replaying Outbox Queue...");
     final start = DateTime.now();
     final outboxItems = await _coordinator.outboxLocal.getQueuedRequests();
 
@@ -582,7 +579,7 @@ class SyncManager {
           replayedCount++;
         }
       } catch (e) {
-        print("⚠️ [SYNC ERROR] Outbox replay failed for ${item.endpoint}: $e");
+        AppLogger.w("Outbox replay failed for ${item.endpoint}: $e");
         break; // Stop replaying on network failure, retry on next cycle
       }
     }
@@ -593,7 +590,6 @@ class SyncManager {
         operation: 'SyncManager: Replayed $replayedCount outbox items successfully',
         totalMs: totalMs,
       );
-      print("⏱️ [TELEMETRY] Outbox Replay completed | Replayed: $replayedCount | Duration: ${totalMs}ms");
     }
   }
 

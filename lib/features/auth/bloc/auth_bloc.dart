@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../models/user_model.dart';
@@ -7,6 +6,7 @@ import '../repository/auth_repository.dart';
 import '../../../core/network/sync_manager.dart';
 import '../../../core/storage/session_cleanup.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/utils/app_logger.dart';
 
 // ==========================================
 // Auth Events
@@ -134,20 +134,22 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
       final user = await _authRepository.getProfile();
       RoleGuard.currentUser = user;
-      try {
-        await SyncManager().performStartupSync();
-        SyncManager().isSyncCompleted = true;
-        // Realtime only after authenticated sync.
-        await SyncManager().connectAfterAuth();
-      } catch (syncErr) {
-        SyncManager().isSyncCompleted = false;
-        if (kDebugMode) {
-          // ignore: avoid_print
-          print('⚠️ [LOGIN SYNC WARNING] Startup sync failed during login');
+      AppLogger.i('User ${user.email} (${user.role}) logged in successfully');
+      
+      unawaited(() async {
+        try {
+          await SyncManager().performStartupSync();
+          SyncManager().isSyncCompleted = true;
+          await SyncManager().connectAfterAuth();
+        } catch (syncErr) {
+          SyncManager().isSyncCompleted = false;
+          AppLogger.w('Post-login background sync warning', syncErr);
         }
-      }
+      }());
+
       emit(Authenticated(user: user));
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.e('Login failed for ${event.email}', e, stackTrace);
       RoleGuard.currentUser = null;
       emit(AuthError(message: e.toString()));
       emit(Unauthenticated());

@@ -9,6 +9,7 @@ import 'api_constants.dart';
 import 'interceptors.dart';
 import 'fallback_interceptor.dart';
 import 'supabase_direct_interceptor.dart';
+import 'logging_interceptor.dart';
 
 /// Interceptor to automatically parse JSON strings into Map/List on platforms (like Web)
 /// where the native HTTP client or Dio transformer doesn't decode it automatically.
@@ -57,6 +58,7 @@ class DioClient {
     );
 
     credentials.configureDioCredentials(dioInstance);
+    dioInstance.interceptors.add(LoggingInterceptor());
     dioInstance.interceptors.add(SupabaseDirectInterceptor());
     dioInstance.interceptors.add(JsonDecoderInterceptor());
     dioInstance.interceptors.add(JwtInterceptor());

@@ -468,7 +468,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         ? 2
         : CRMBreakpoints.kpiColumns(context, desktop: 4);
     final double childAspectRatio = isDesktop
-        ? 2.4
+        ? 2.0
         : CRMBreakpoints.kpiAspectRatio(context);
 
     return AnimatedContainer(

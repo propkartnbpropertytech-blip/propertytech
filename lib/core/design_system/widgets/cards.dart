@@ -197,7 +197,10 @@ class _CRMKPICardState extends State<CRMKPICard> {
               accentBorder: _hovered
                   ? activeIconColor.withValues(alpha: 0.45)
                   : null,
-              padding: EdgeInsets.all(isMobile ? CRMSpacing.s : CRMSpacing.m),
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? CRMSpacing.s : CRMSpacing.m,
+                vertical: isMobile ? 8 : 10,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
