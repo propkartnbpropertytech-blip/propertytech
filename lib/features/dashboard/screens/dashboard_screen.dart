@@ -468,7 +468,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         ? 2
         : CRMBreakpoints.kpiColumns(context, desktop: 4);
     final double childAspectRatio = isDesktop
-        ? 2.4
+        ? 2.0
         : CRMBreakpoints.kpiAspectRatio(context);
 
     return AnimatedContainer(
@@ -726,6 +726,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         listingType: p.listingType,
         createdAt: parsedDate,
         status: p.status,
+        bedrooms: p.bedrooms,
+        bathrooms: p.bathrooms,
       );
     }).toList();
 
@@ -1287,8 +1289,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         final fullProperty = snapshot.data;
         final hasImage = fullProperty != null && fullProperty.images.isNotEmpty;
         final firstImage = hasImage ? fullProperty.images.first : '';
-        final bedCount = fullProperty?.bedrooms ?? 0;
-        final bathCount = fullProperty?.bathrooms ?? 0;
+        final bedCount = fullProperty?.bedrooms ?? p.bedrooms;
+        final bathCount = fullProperty?.bathrooms ?? p.bathrooms;
         final displayStatus = fullProperty?.propertyStatusName ?? p.status;
         final hasStatus = displayStatus.isNotEmpty && displayStatus != 'N/A';
 
@@ -1445,46 +1447,37 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     fontSize: 14,
                                   ),
                                 ),
-                                if (snapshot.connectionState == ConnectionState.done && fullProperty != null)
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.bed_outlined,
-                                        size: 15,
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.bed_outlined,
+                                      size: 15,
+                                      color: CRMColors.textSecondaryOf(context),
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '$bedCount',
+                                      style: CRMTypography.caption.copyWith(
                                         color: CRMColors.textSecondaryOf(context),
+                                        fontWeight: FontWeight.bold,
                                       ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        '$bedCount',
-                                        style: CRMTypography.caption.copyWith(
-                                          color: CRMColors.textSecondaryOf(context),
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Icon(
-                                        Icons.bathroom_outlined,
-                                        size: 15,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      Icons.bathroom_outlined,
+                                      size: 15,
+                                      color: CRMColors.textSecondaryOf(context),
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '$bathCount',
+                                      style: CRMTypography.caption.copyWith(
                                         color: CRMColors.textSecondaryOf(context),
+                                        fontWeight: FontWeight.bold,
                                       ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        '$bathCount',
-                                        style: CRMTypography.caption.copyWith(
-                                          color: CRMColors.textSecondaryOf(context),
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                else if (snapshot.connectionState == ConnectionState.waiting)
-                                  const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(strokeWidth: 1.5),
-                                  )
-                                else
-                                  const SizedBox(),
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
                           ],
@@ -2760,6 +2753,8 @@ class _DisplayProperty {
   final String listingType;
   final DateTime createdAt;
   final String status;
+  final int bedrooms;
+  final int bathrooms;
 
   _DisplayProperty({
     required this.id,
@@ -2769,6 +2764,8 @@ class _DisplayProperty {
     required this.listingType,
     required this.createdAt,
     required this.status,
+    this.bedrooms = 0,
+    this.bathrooms = 0,
   });
 }
 

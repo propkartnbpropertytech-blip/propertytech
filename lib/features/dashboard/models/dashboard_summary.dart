@@ -124,6 +124,8 @@ class RecentProperty {
   final String listingType;
   final String createdBy;
   final String createdAt;
+  final int bedrooms;
+  final int bathrooms;
 
   const RecentProperty({
     required this.id,
@@ -136,6 +138,8 @@ class RecentProperty {
     required this.listingType,
     required this.createdBy,
     required this.createdAt,
+    this.bedrooms = 0,
+    this.bathrooms = 0,
   });
 
   factory RecentProperty.fromJson(Map<String, dynamic> json) {
@@ -150,6 +154,8 @@ class RecentProperty {
       listingType: json['listingType'] ?? 'Sale',
       createdBy: json['createdBy'] ?? 'System',
       createdAt: json['createdAt'] ?? '',
+      bedrooms: json['bedrooms'] ?? json['bhk'] ?? 0,
+      bathrooms: json['bathrooms'] ?? 0,
     );
   }
 }

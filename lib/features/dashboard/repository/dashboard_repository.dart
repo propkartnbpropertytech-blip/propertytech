@@ -116,6 +116,8 @@ class DashboardRepository {
         listingType: p.listingTypeName ?? 'Sale',
         createdBy: p.createdByName ?? 'System',
         createdAt: p.createdAt?.toString() ?? '',
+        bedrooms: p.bedrooms,
+        bathrooms: p.bathrooms,
       )).toList();
     }
 

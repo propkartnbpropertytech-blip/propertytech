@@ -36,6 +36,8 @@ import '../../features/library/screens/library_main_screen.dart';
 import '../../features/library/screens/rental_library_screen.dart';
 import '../../features/library/screens/resale_library_screen.dart';
 import '../../features/library/screens/service_agent_library_screen.dart';
+import '../../features/campaign/screens/connections_screen.dart';
+import '../../features/campaign/screens/campaign_leads_screen.dart';
 import '../utils/seo_helper.dart';
 import 'mobile_system_back_handler.dart';
 
@@ -136,6 +138,28 @@ class AppRouter {
               key: state.pageKey,
               child: const UsersScreen(),
             ),
+          ),
+          GoRoute(
+            path: '/campaign',
+            redirect: (context, state) => '/campaign/leads',
+          ),
+          GoRoute(
+            path: '/campaign/connections',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const ConnectionsScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/leads',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const CampaignLeadsScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/integration',
+            redirect: (context, state) => '/campaign/leads',
           ),
           GoRoute(
             path: '/requirements',

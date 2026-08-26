@@ -292,7 +292,7 @@ class SupabaseDirectInterceptor extends Interceptor {
 
         final recentPropertiesData = await safeList(
           () => _supabase.from('properties').select('''
-            id, property_code, title, price, created_at, area_id,
+            id, property_code, title, price, created_at, area_id, bedrooms, bathrooms,
             property_status(name),
             area:areas(area_name),
             listing_type:listing_types(name),
@@ -311,6 +311,8 @@ class SupabaseDirectInterceptor extends Interceptor {
           'listingType': p['listing_type'] is Map ? (p['listing_type']['name'] ?? 'Sale') : 'Sale',
           'createdBy': p['creator'] is Map ? (p['creator']['full_name'] ?? 'System') : 'System',
           'createdAt': p['created_at'],
+          'bedrooms': p['bedrooms'] ?? 0,
+          'bathrooms': p['bathrooms'] ?? 0,
         }).toList();
 
         final checklist = await safeList(

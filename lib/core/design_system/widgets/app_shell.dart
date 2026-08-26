@@ -1835,8 +1835,20 @@ class _CRMAppShellState extends State<CRMAppShell>
                 _buildSidebarItem(Icons.dashboard_rounded, 'Dashboard', '/dashboard', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.home_work_rounded, 'Properties', '/properties', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.assignment_rounded, 'Leads', '/requirements', currentPath, isMobile, isExpanded),
-                if (userRole == 'Admin' || userRole == 'Super Admin')
+                if (userRole == 'Admin' || userRole == 'Super Admin') ...[
                   _buildSidebarItem(Icons.people_outline_rounded, 'Employees', '/users', currentPath, isMobile, isExpanded),
+                  _buildSidebarTreeItem(
+                    icon: Icons.campaign_rounded,
+                    label: 'Campaign',
+                    currentPath: currentPath,
+                    isMobile: isMobile,
+                    isExpanded: isExpanded,
+                    subItems: const [
+                      _SidebarSubItemData(icon: Icons.hub_rounded, label: 'Connections', route: '/campaign/connections'),
+                      _SidebarSubItemData(icon: Icons.table_chart_rounded, label: 'Leads', route: '/campaign/leads'),
+                    ],
+                  ),
+                ],
                 _buildSidebarItem(Icons.folder_open_rounded, 'Library', '/library', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.settings_rounded, 'Settings', '/settings', currentPath, isMobile, isExpanded),
                 _buildSidebarItem(Icons.delete_sweep_rounded, 'Recycle Bin', '/bin', currentPath, isMobile, isExpanded),
@@ -1944,6 +1956,24 @@ class _CRMAppShellState extends State<CRMAppShell>
           context.go(route);
         }
       },
+    );
+  }
+
+  Widget _buildSidebarTreeItem({
+    required IconData icon,
+    required String label,
+    required String currentPath,
+    required bool isMobile,
+    required bool isExpanded,
+    required List<_SidebarSubItemData> subItems,
+  }) {
+    return _SidebarTreeItem(
+      icon: icon,
+      label: label,
+      currentPath: currentPath,
+      isMobile: isMobile,
+      isSidebarExpanded: isExpanded,
+      subItems: subItems,
     );
   }
 }
@@ -2077,6 +2107,321 @@ class _SidebarItemState extends State<_SidebarItem> {
   }
 }
 
+class _SidebarSubItemData {
+  final IconData icon;
+  final String label;
+  final String route;
+
+  const _SidebarSubItemData({
+    required this.icon,
+    required this.label,
+    required this.route,
+  });
+}
+
+class _SidebarTreeItem extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final String currentPath;
+  final bool isMobile;
+  final bool isSidebarExpanded;
+  final List<_SidebarSubItemData> subItems;
+
+  const _SidebarTreeItem({
+    required this.icon,
+    required this.label,
+    required this.currentPath,
+    required this.isMobile,
+    required this.isSidebarExpanded,
+    required this.subItems,
+  });
+
+  @override
+  State<_SidebarTreeItem> createState() => _SidebarTreeItemState();
+}
+
+class _SidebarTreeItemState extends State<_SidebarTreeItem> {
+  bool _isHovered = false;
+  late bool _isOpen;
+
+  @override
+  void initState() {
+    super.initState();
+    _isOpen = _isAnyChildActive();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SidebarTreeItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_isAnyChildActive() && !_isOpen) {
+      _isOpen = true;
+    }
+  }
+
+  bool _isAnyChildActive() {
+    return widget.subItems.any((item) => widget.currentPath.startsWith(item.route)) ||
+        widget.currentPath.startsWith('/campaign') ||
+        widget.currentPath.startsWith('/integration');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isChildActive = _isAnyChildActive();
+    final isExpanded = widget.isSidebarExpanded || widget.isMobile;
+
+    if (!isExpanded) {
+      // In compact sidebar rail mode, show PopupMenu on click
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 4.0),
+        child: PopupMenuButton<String>(
+          tooltip: widget.label,
+          offset: const Offset(48, 0),
+          color: CRMColors.surfaceElevatedOf(context),
+          onSelected: (route) {
+            if (widget.isMobile) Navigator.pop(context);
+            if (widget.currentPath != route) {
+              context.go(route);
+            }
+          },
+          itemBuilder: (ctx) => widget.subItems.map((item) {
+            final isItemActive = widget.currentPath.startsWith(item.route);
+            return PopupMenuItem<String>(
+              value: item.route,
+              child: Row(
+                children: [
+                  Icon(item.icon, size: 18, color: isItemActive ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context)),
+                  const SizedBox(width: 10),
+                  Text(
+                    item.label,
+                    style: TextStyle(
+                      fontWeight: isItemActive ? FontWeight.bold : FontWeight.normal,
+                      color: isItemActive ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _isHovered = true),
+            onExit: (_) => setState(() => _isHovered = false),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.xs, vertical: CRMSpacing.s),
+              decoration: BoxDecoration(
+                color: isChildActive
+                    ? CRMColors.primary.withValues(alpha: 0.14)
+                    : (_isHovered ? CRMColors.primary.withValues(alpha: 0.06) : Colors.transparent),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isChildActive ? CRMColors.primary.withValues(alpha: 0.32) : Colors.transparent,
+                  width: 1,
+                ),
+              ),
+              child: Icon(
+                widget.icon,
+                color: isChildActive ? CRMColors.primary : CRMColors.sidebarTextSecondary,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MouseRegion(
+            onEnter: (_) => setState(() => _isHovered = true),
+            onExit: (_) => setState(() => _isHovered = false),
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () {
+                // Clicking Campaign parent only toggles tree - does NOT navigate
+                setState(() => _isOpen = !_isOpen);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: CRMSpacing.m,
+                  vertical: CRMSpacing.s,
+                ),
+                decoration: BoxDecoration(
+                  color: isChildActive
+                      ? CRMColors.primary.withValues(alpha: 0.10)
+                      : (_isHovered ? CRMColors.primary.withValues(alpha: 0.06) : Colors.transparent),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isChildActive
+                        ? CRMColors.primary.withValues(alpha: 0.25)
+                        : (_isHovered ? CRMColors.primary.withValues(alpha: 0.12) : Colors.transparent),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    AnimatedScale(
+                      scale: _isHovered ? 1.1 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        widget.icon,
+                        color: isChildActive ? CRMColors.primary : CRMColors.sidebarTextSecondary,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: CRMSpacing.m),
+                    Expanded(
+                      child: Text(
+                        widget.label,
+                        style: CRMTypography.bodyMedium.copyWith(
+                          color: isChildActive ? CRMColors.primary : CRMColors.sidebarText,
+                          fontWeight: isChildActive ? FontWeight.w600 : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: _isOpen ? 0.5 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: isChildActive ? CRMColors.primary : CRMColors.sidebarTextSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Sub items tree
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(left: 14.0, top: 4.0, bottom: 4.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: CRMColors.sidebarBorder.withValues(alpha: 0.6),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+                padding: const EdgeInsets.only(left: 8.0),
+                child: Column(
+                  children: widget.subItems.map((item) {
+                    final isSelected = widget.currentPath.startsWith(item.route);
+                    return _SidebarSubItemWidget(
+                      icon: item.icon,
+                      label: item.label,
+                      isSelected: isSelected,
+                      onTap: () {
+                        if (widget.isMobile) Navigator.pop(context);
+                        if (widget.currentPath != item.route) {
+                          context.go(item.route);
+                        }
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+            crossFadeState: _isOpen ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 220),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarSubItemWidget extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _SidebarSubItemWidget({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  State<_SidebarSubItemWidget> createState() => _SidebarSubItemWidgetState();
+}
+
+class _SidebarSubItemWidgetState extends State<_SidebarSubItemWidget> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: widget.isSelected
+                  ? CRMColors.primary.withValues(alpha: 0.14)
+                  : (_isHovered ? CRMColors.primary.withValues(alpha: 0.06) : Colors.transparent),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: widget.isSelected
+                    ? CRMColors.primary.withValues(alpha: 0.32)
+                    : Colors.transparent,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  widget.icon,
+                  size: 16,
+                  color: widget.isSelected ? CRMColors.primary : CRMColors.sidebarTextSecondary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: widget.isSelected ? FontWeight.w600 : FontWeight.w500,
+                      color: widget.isSelected ? CRMColors.primary : CRMColors.sidebarText,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (widget.isSelected)
+                  Container(
+                    width: 5,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: CRMColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class PubSubDivider extends PopupMenuEntry<Never> {
   const PubSubDivider({super.key});

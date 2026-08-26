@@ -16,6 +16,13 @@ class RoleGuard {
     return r == 'admin' || r == 'super admin';
   }
 
+  /// Campaign & Integration Webhooks — Admin and Super Admin only.
+  static bool canAccessIntegration(String? role) => canAccessCampaign(role);
+  static bool canAccessCampaign(String? role) {
+    final r = (role ?? '').toLowerCase();
+    return r == 'admin' || r == 'super admin';
+  }
+
   /// Audit logs — Super Admin only (defense-in-depth).
   static bool canViewAuditLogs(String? role) => isSuperAdmin(role);
 
@@ -41,6 +48,10 @@ class RoleGuard {
     '/settings',
     '/settings/audit-logs',
     '/users',
+    '/integration',
+    '/campaign',
+    '/campaign/connections',
+    '/campaign/leads',
   };
 
   static String? sanitizeRedirectPath(String? raw, {String? role}) {
@@ -62,6 +73,9 @@ class RoleGuard {
     if (!allowed) return null;
 
     if (pathOnly.startsWith('/users') && !canManageEmployees(role)) {
+      return '/dashboard';
+    }
+    if ((pathOnly.startsWith('/integration') || pathOnly.startsWith('/campaign')) && !canAccessCampaign(role)) {
       return '/dashboard';
     }
     if (pathOnly.startsWith('/settings/audit-logs') && !canViewAuditLogs(role)) {
