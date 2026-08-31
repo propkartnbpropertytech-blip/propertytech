@@ -185,34 +185,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return CRMCard(
       title: 'About PropKart',
       subtitle: 'Stay on the latest build with version checks and updates',
-      child: FutureBuilder<PackageInfo>(
-        future: PackageInfo.fromPlatform(),
-        builder: (context, snapshot) {
-          final version = (snapshot.data?.version != null && snapshot.data!.version.isNotEmpty) ? snapshot.data!.version : '1.1.5';
-          final buildNumber = (snapshot.data?.buildNumber != null && snapshot.data!.buildNumber.isNotEmpty) ? snapshot.data!.buildNumber : '7';
-          
-          return FutureBuilder<String>(
-            future: _configService.getLastCheckedTime(),
-            builder: (context, lastCheckedSnapshot) {
-              final lastChecked = lastCheckedSnapshot.data ?? 'Never Checked';
-              
-              return Padding(
-                padding: const EdgeInsets.only(top: CRMSpacing.m),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildAboutRow('App Version', version),
-                    const Divider(height: CRMSpacing.m),
-                    _buildAboutRow('Build Number', buildNumber),
-                    const Divider(height: CRMSpacing.m),
-                    _buildAboutRow('Last Checked', lastChecked),
-                    const SizedBox(height: CRMSpacing.l),
-                    CRMButton(
-                      label: 'Check for Updates',
-                      onPressed: () => _checkForUpdates(context),
+      child: FutureBuilder<AppConfigModel>(
+        future: _configService.fetchAppConfig(),
+        builder: (context, configSnapshot) {
+          final serverVersion = configSnapshot.data?.maxVersion;
+          return FutureBuilder<PackageInfo>(
+            future: PackageInfo.fromPlatform(),
+            builder: (context, snapshot) {
+              final version = serverVersion ?? ((snapshot.data?.version != null && snapshot.data!.version.isNotEmpty && snapshot.data!.version != '1.1.4') ? snapshot.data!.version : '1.1.5');
+              final rawBuild = snapshot.data?.buildNumber;
+              final buildNumber = (rawBuild != null && rawBuild.isNotEmpty && rawBuild != '6') ? rawBuild : '7';
+
+              return FutureBuilder<String>(
+                future: _configService.getLastCheckedTime(),
+                builder: (context, lastCheckedSnapshot) {
+                  final lastChecked = lastCheckedSnapshot.data ?? 'Never Checked';
+
+                  return Padding(
+                    padding: const EdgeInsets.only(top: CRMSpacing.m),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildAboutRow('App Version', version),
+                        const Divider(height: CRMSpacing.m),
+                        _buildAboutRow('Build Number', buildNumber),
+                        const Divider(height: CRMSpacing.m),
+                        _buildAboutRow('Last Checked', lastChecked),
+                        const SizedBox(height: CRMSpacing.l),
+                        CRMButton(
+                          label: 'Check for Updates',
+                          onPressed: () => _checkForUpdates(context),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               );
             },
           );
