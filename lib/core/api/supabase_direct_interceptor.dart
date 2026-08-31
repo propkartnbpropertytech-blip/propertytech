@@ -723,23 +723,17 @@ class SupabaseDirectInterceptor extends Interceptor {
 
       // 9. Share Sessions
       if (path == '/share-sessions' && method == 'POST') {
-        final sessionUser = _supabase.auth.currentUser;
-        if (sessionUser == null) {
-          return handler.reject(DioException(
-            requestOptions: options,
-            response: Response(requestOptions: options, statusCode: 401, data: {'success': false, 'message': 'Unauthorized'}),
-          ));
-        }
-
         final payload = options.data as Map<String, dynamic>;
+        final sessionUser = _supabase.auth.currentUser;
+        String? userId = sessionUser?.id ?? payload['shared_by'];
+
         final reqId = payload['requirement_id'];
         final List<dynamic> propertyIds = payload['property_ids'] ?? [];
         final expiryDays = int.tryParse(payload['expiry_days']?.toString() ?? '7') ?? 7;
 
-        final newSession = {
+        final newSession = <String, dynamic>{
           'requirement_id': reqId,
           'property_ids': propertyIds,
-          'shared_by': sessionUser.id,
           'status': 'Active',
           'total_properties': propertyIds.length,
           'view_count': 0,
@@ -747,6 +741,10 @@ class SupabaseDirectInterceptor extends Interceptor {
           'updated_at': DateTime.now().toIso8601String(),
           'expires_at': DateTime.now().add(Duration(days: expiryDays)).toIso8601String(),
         };
+
+        if (userId != null && userId.toString().isNotEmpty) {
+          newSession['shared_by'] = userId;
+        }
 
         final response = await _supabase.from('share_sessions').insert(newSession).select().single();
 

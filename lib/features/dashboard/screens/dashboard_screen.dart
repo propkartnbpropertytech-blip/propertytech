@@ -1401,86 +1401,92 @@ class _DashboardScreenState extends State<DashboardScreen>
                       const SizedBox(width: 16),
                       // Details on the right
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              p.title,
-                              style: CRMTypography.cardTitle.copyWith(
-                                color: CRMColors.textOf(context),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.location_on_outlined,
-                                  size: 14,
-                                  color: CRMColors.textSecondaryOf(context),
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    p.areaName,
-                                    style: CRMTypography.bodyMedium.copyWith(
-                                      color: CRMColors.textSecondaryOf(context),
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        child: SelectionArea(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTap: () => _openPropertyDetails(p.id),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  CRMCurrencyFormatter.formatShort(p.price),
-                                  style: CRMTypography.body.copyWith(
+                                  p.title,
+                                  style: CRMTypography.cardTitle.copyWith(
+                                    color: CRMColors.textOf(context),
                                     fontWeight: FontWeight.bold,
-                                    color: _atmosphere,
-                                    fontSize: 14,
+                                    fontSize: 15,
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
+                                const SizedBox(height: 4),
                                 Row(
                                   children: [
                                     Icon(
-                                      Icons.bed_outlined,
-                                      size: 15,
+                                      Icons.location_on_outlined,
+                                      size: 14,
                                       color: CRMColors.textSecondaryOf(context),
                                     ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      '$bedCount',
-                                      style: CRMTypography.caption.copyWith(
-                                        color: CRMColors.textSecondaryOf(context),
-                                        fontWeight: FontWeight.bold,
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        p.areaName,
+                                        style: CRMTypography.bodyMedium.copyWith(
+                                          color: CRMColors.textSecondaryOf(context),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Icon(
-                                      Icons.bathroom_outlined,
-                                      size: 15,
-                                      color: CRMColors.textSecondaryOf(context),
-                                    ),
-                                    const SizedBox(width: 3),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
                                     Text(
-                                      '$bathCount',
-                                      style: CRMTypography.caption.copyWith(
-                                        color: CRMColors.textSecondaryOf(context),
+                                      CRMCurrencyFormatter.formatShort(p.price),
+                                      style: CRMTypography.body.copyWith(
                                         fontWeight: FontWeight.bold,
+                                        color: _atmosphere,
+                                        fontSize: 14,
                                       ),
+                                    ),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.bed_outlined,
+                                          size: 15,
+                                          color: CRMColors.textSecondaryOf(context),
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          '$bedCount',
+                                          style: CRMTypography.caption.copyWith(
+                                            color: CRMColors.textSecondaryOf(context),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Icon(
+                                          Icons.bathroom_outlined,
+                                          size: 15,
+                                          color: CRMColors.textSecondaryOf(context),
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          '$bathCount',
+                                          style: CRMTypography.caption.copyWith(
+                                            color: CRMColors.textSecondaryOf(context),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
                               ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ],
@@ -1712,12 +1718,14 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           const SizedBox(width: CRMSpacing.s),
           Expanded(
-            child: Text(
-              item.title,
-              style: CRMTypography.bodyMedium.copyWith(
-                color: CRMColors.textOf(context),
-                fontWeight: FontWeight.w600,
-                decoration: isCompleted ? TextDecoration.lineThrough : null,
+            child: SelectionArea(
+              child: Text(
+                item.title,
+                style: CRMTypography.bodyMedium.copyWith(
+                  color: CRMColors.textOf(context),
+                  fontWeight: FontWeight.w600,
+                  decoration: isCompleted ? TextDecoration.lineThrough : null,
+                ),
               ),
             ),
           ),
@@ -1815,17 +1823,19 @@ class _DashboardScreenState extends State<DashboardScreen>
         return AlertDialog(
           backgroundColor: CRMColors.cardBgOf(context),
           title: Text('Add New Task', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-          content: TextField(
-            controller: controller,
-            textInputAction: TextInputAction.done,
-            decoration: InputDecoration(
-              hintText: 'Task Title',
-              filled: true,
-              fillColor: CRMColors.backgroundOf(context),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+          content: SelectionArea(
+            child: TextField(
+              controller: controller,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                hintText: 'Task Title',
+                filled: true,
+                fillColor: CRMColors.backgroundOf(context),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+              ),
+              autofocus: true,
+              onSubmitted: (val) => saveTask(val, ctx),
             ),
-            autofocus: true,
-            onSubmitted: (val) => saveTask(val, ctx),
           ),
           actions: [
             TextButton(
@@ -2200,49 +2210,51 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           const SizedBox(width: CRMSpacing.m),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  sv.requirementCustomerName ?? 'Client Site Visit',
-                  style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold),
-                ),
-                if (sv.propertyCode != null || sv.propertyTitle != null) ...[
-                  const SizedBox(height: 2),
+            child: SelectionArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    'Property: ${sv.propertyCode ?? ""} - ${sv.propertyTitle ?? ""}',
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                    sv.requirementCustomerName ?? 'Client Site Visit',
+                    style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold),
                   ),
-                ],
-                if (sv.remarks != null && sv.remarks!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                  if (sv.propertyCode != null || sv.propertyTitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Property: ${sv.propertyCode ?? ""} - ${sv.propertyTitle ?? ""}',
+                      style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                    ),
+                  ],
+                  if (sv.remarks != null && sv.remarks!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      sv.remarks!,
+                      style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic),
+                    ),
+                  ],
+                  const SizedBox(height: 6),
                   Text(
-                    sv.remarks!,
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic),
+                    'Scheduled: $formattedDate at $formattedTime',
+                    style: CRMTypography.caption.copyWith(color: CRMColors.primary, fontWeight: FontWeight.w600),
                   ),
+                  if (context.read<AuthBloc>().state is Authenticated &&
+                      (context.read<AuthBloc>().state as Authenticated).user.role != 'Sales' &&
+                      sv.creatorName != null &&
+                      sv.creatorName!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textSecondaryOf(context)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Assigned to: ${sv.creatorName}',
+                          style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
-                const SizedBox(height: 6),
-                Text(
-                  'Scheduled: $formattedDate at $formattedTime',
-                  style: CRMTypography.caption.copyWith(color: CRMColors.primary, fontWeight: FontWeight.w600),
-                ),
-                if (context.read<AuthBloc>().state is Authenticated &&
-                    (context.read<AuthBloc>().state as Authenticated).user.role != 'Sales' &&
-                    sv.creatorName != null &&
-                    sv.creatorName!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textSecondaryOf(context)),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Assigned to: ${sv.creatorName}',
-                        style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
           if (sv.status == 'Pending') ...[
@@ -2374,42 +2386,48 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             const SizedBox(width: CRMSpacing.m),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    f.clientName,
-                    style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 2),
-                  Text('Mobile: ${f.mobile}', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-                  if (f.notes != null && f.notes!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(f.notes!, style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic)),
-                  ],
-                  const SizedBox(height: 6),
-                  Text('Scheduled: $formattedDate at $formattedTime', style: CRMTypography.caption.copyWith(color: CRMColors.primary, fontWeight: FontWeight.w600)),
-                  if (context.read<AuthBloc>().state is Authenticated &&
-                      (context.read<AuthBloc>().state as Authenticated).user.role != 'Sales' &&
-                      f.creatorName != null &&
-                      f.creatorName!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textSecondaryOf(context)),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            'Assigned to: ${f.creatorName}',
-                            style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+              child: SelectionArea(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => _showEditFollowupDialog(f),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        f.clientName,
+                        style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2),
+                      Text('Mobile: ${f.mobile}', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                      if (f.notes != null && f.notes!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(f.notes!, style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic)),
+                      ],
+                      const SizedBox(height: 6),
+                      Text('Scheduled: $formattedDate at $formattedTime', style: CRMTypography.caption.copyWith(color: CRMColors.primary, fontWeight: FontWeight.w600)),
+                      if (context.read<AuthBloc>().state is Authenticated &&
+                          (context.read<AuthBloc>().state as Authenticated).user.role != 'Sales' &&
+                          f.creatorName != null &&
+                          f.creatorName!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textSecondaryOf(context)),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Assigned to: ${f.creatorName}',
+                                style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                  ],
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
             if (f.status == 'Pending') ...[

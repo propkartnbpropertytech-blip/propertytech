@@ -30,6 +30,13 @@ import 'add_edit_property_screen.dart';
 import '../../../core/utils/currency.dart';
 import '../../../core/utils/budget_formatter.dart';
 
+import 'package:flutter/services.dart';
+import 'package:dio/dio.dart';
+import '../../../core/api/dio_client.dart';
+import '../../../core/config/app_config.dart';
+import '../../../core/utils/file_downloader.dart';
+import '../../requirements/utils/property_share_pdf.dart';
+
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
 import '../../../core/theme/theme_manager.dart';
@@ -115,6 +122,287 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         );
       }
     }
+  }
+
+  void _showShareSinglePropertyDialog(BuildContext context, PropertyModel p) {
+    // Pre-fetch property images in background while dialog is opening/visible for 0ms instant PDF build
+    final Map<String, List<Uint8List>> preloadedImagesMap = {};
+    if (p.images.isNotEmpty) {
+      final dio = Dio();
+      final urls = p.images.take(4).toList();
+      Future.wait(urls.map((url) async {
+        try {
+          if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
+          final response = await dio.get<List<int>>(
+            url,
+            options: Options(
+              responseType: ResponseType.bytes,
+              sendTimeout: const Duration(seconds: 2),
+              receiveTimeout: const Duration(seconds: 2),
+            ),
+          ).timeout(const Duration(seconds: 2));
+          if (response.statusCode == 200 && response.data != null) {
+            return Uint8List.fromList(response.data!);
+          }
+        } catch (_) {}
+        return null;
+      })).then((results) {
+        final list = results.whereType<Uint8List>().toList();
+        if (list.isNotEmpty) {
+          preloadedImagesMap[p.id] = list;
+        }
+      });
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        bool isGeneratingLink = false;
+        bool isSharingPdf = false;
+        String? generatedLink;
+        String? error;
+
+        final bhk = p.configurationName ?? (p.bedrooms > 0 ? "${p.bedrooms} BHK" : "Property");
+        final price = '₹${BudgetFormatter.format(p.price)}';
+        final titleText = "$bhk in ${p.areaName} - $price (${p.propertyCode})";
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            if (generatedLink != null) {
+              return AlertDialog(
+                backgroundColor: CRMColors.cardBgOf(context),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+                title: Text("Share Link Created", style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(CRMSpacing.s),
+                      decoration: BoxDecoration(
+                        color: CRMColors.backgroundOf(context),
+                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                        border: Border.all(color: CRMColors.borderOf(context)),
+                      ),
+                      child: SelectableText(
+                        generatedLink!,
+                        style: CRMTypography.caption.copyWith(color: CRMColors.primaryOf(context)),
+                      ),
+                    ),
+                    const SizedBox(height: CRMSpacing.m),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.copy_rounded, size: 16),
+                            label: const Text("Copy"),
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: generatedLink!));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Link copied to clipboard!")),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: CRMSpacing.s),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF25D366), foregroundColor: Colors.white),
+                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                            label: const Text("WhatsApp"),
+                            onPressed: () async {
+                              final text = Uri.encodeComponent("Hello, check out this property: $generatedLink");
+                              final url = "https://wa.me/?text=$text";
+                              final uri = Uri.parse(url);
+                              if (await canLaunchUrl(uri)) {
+                                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: CRMSpacing.s),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.share_rounded, size: 16),
+                      label: const Text("Share"),
+                      onPressed: () async {
+                        try {
+                          await Share.share(generatedLink!);
+                        } catch (e) {
+                          await Clipboard.setData(ClipboardData(text: generatedLink!));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Link copied to clipboard!")),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("Close"),
+                  ),
+                ],
+              );
+            }
+
+            return Stack(
+              children: [
+                AlertDialog(
+                  backgroundColor: CRMColors.cardBgOf(context),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+                  title: Text("Share Matching Properties", style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: CRMSpacing.s),
+                          child: Text(error!, style: const TextStyle(color: CRMColors.danger)),
+                        ),
+                      Container(
+                        padding: const EdgeInsets.all(CRMSpacing.m),
+                        decoration: BoxDecoration(
+                          color: CRMColors.backgroundOf(context),
+                          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                          border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.home_work_outlined, color: CRMColors.primaryOf(context), size: 20),
+                            const SizedBox(width: CRMSpacing.s),
+                            Expanded(
+                              child: Text(
+                                titleText,
+                                style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  actionsAlignment: MainAxisAlignment.spaceBetween,
+                  actions: [
+                    TextButton(
+                      onPressed: (isGeneratingLink || isSharingPdf) ? null : () => Navigator.pop(context),
+                      child: const Text("Cancel"),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        OutlinedButton(
+                          onPressed: () async {
+                            try {
+                              final bytes = await PropertySharePdf.build(
+                                [p],
+                                preloadedImagesMap: preloadedImagesMap,
+                              );
+                              final fileName = PropertySharePdf.fileName(p);
+                              await FileDownloader.download(bytes, fileName);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Property PDF downloaded successfully.')),
+                                );
+                              }
+
+                              // Open WhatsApp in external window fast
+                              final bhk = p.configurationName ?? (p.bedrooms > 0 ? "${p.bedrooms} BHK" : "Property");
+                              final price = '₹${BudgetFormatter.format(p.price)}';
+                              final titleText = "$bhk in ${p.areaName} - $price (${p.propertyCode})";
+                              final shareText = Uri.encodeComponent("Hello, please find property details for:\n$titleText");
+                              final whatsappUrl = "https://wa.me/?text=$shareText";
+
+                              final uri = Uri.parse(whatsappUrl);
+                              if (await canLaunchUrl(uri)) {
+                                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              }
+                            } catch (e) {
+                              debugPrint("Share PDF error: $e");
+                            }
+                          },
+                          child: const Text("Share PDF"),
+                        ),
+                        const SizedBox(width: CRMSpacing.s),
+                        ElevatedButton(
+                          onPressed: (isGeneratingLink || isSharingPdf)
+                              ? null
+                              : () async {
+                                  setDialogState(() => isGeneratingLink = true);
+                                  try {
+                                    final authState = context.read<AuthBloc>().state;
+                                    String? currentAgentName;
+                                    String? currentAgentMobile;
+                                    String? userId;
+                                    if (authState is Authenticated) {
+                                      currentAgentName = authState.user.fullName;
+                                      currentAgentMobile = authState.user.mobile;
+                                      userId = authState.user.id;
+                                    }
+
+                                    final response = await DioClient.dio.post(
+                                      '/share-sessions',
+                                      data: {
+                                        'property_ids': [p.id],
+                                        'expiry_days': 7,
+                                        if (userId != null) 'shared_by': userId,
+                                      },
+                                    );
+                                    if (response.data != null && response.data['success'] == true) {
+                                      final sessionId = response.data['data']['session']['id'];
+                                      setDialogState(() {
+                                        var link = "${AppConfig.publicShareBaseUrl}/$sessionId";
+                                        final queryParams = <String>[];
+                                        if (currentAgentName != null && currentAgentName.isNotEmpty) {
+                                          queryParams.add("agentName=${Uri.encodeComponent(currentAgentName)}");
+                                        }
+                                        if (currentAgentMobile != null && currentAgentMobile.isNotEmpty) {
+                                          queryParams.add("agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+                                        }
+                                        if (queryParams.isNotEmpty) {
+                                          link += "?${queryParams.join('&')}";
+                                        }
+                                        generatedLink = link;
+                                        isGeneratingLink = false;
+                                      });
+                                    } else {
+                                      setDialogState(() {
+                                        error = "Failed to generate link.";
+                                        isGeneratingLink = false;
+                                      });
+                                    }
+                                  } catch (e) {
+                                    debugPrint("Generate Link Exception: $e");
+                                    setDialogState(() {
+                                      error = "Failed to generate link.";
+                                      isGeneratingLink = false;
+                                    });
+                                  }
+                                },
+                          child: const Text("Generate Link"),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                if (isGeneratingLink || isSharingPdf)
+                  Positioned.fill(
+                    child: Container(
+                      color: CRMColors.overlayOf(context),
+                      child: const Center(child: CircularProgressIndicator()),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   bool _hasEditAccess(PropertyModel p, UserModel? currentUser) {
@@ -873,82 +1161,142 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         onSelectChanged: (_) =>
                             _openPropertyDetails(context, p),
                         cells: [
-                          DataCell(Text(p.propertyCode,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold))),
-                          if (isUserAdminOrSuperAdmin)
-                            DataCell(Text(
-                              (currentUser?.role == 'Super Admin' ||
-                                      (currentUser?.role == 'Admin' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.id)) ||
-                                      (currentUser?.role == 'Telecaller' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.adminId)))
-                                  ? p.createdByName
-                                  : '-',
-                            )),
                           DataCell(
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(p.title ?? 'No Title', maxLines: 1, overflow: TextOverflow.ellipsis),
-                                const SizedBox(height: 2),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      p.availableFromFormatted != null 
-                                          ? Icons.event_available_rounded 
-                                          : Icons.event_busy_rounded,
-                                      size: 12,
-                                      color: p.availableFromFormatted != null 
-                                          ? CRMColors.success 
-                                          : CRMColors.textSecondaryOf(context),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      p.availableFromFormatted != null 
-                                          ? 'Available: ${p.availableFromFormatted}' 
-                                          : 'Not Available',
-                                      style: TextStyle(
-                                        color: p.availableFromFormatted != null 
-                                            ? CRMColors.success 
-                                            : CRMColors.textSecondaryOf(context),
-                                        fontSize: 10.5,
-                                        fontWeight: p.availableFromFormatted != null 
-                                            ? FontWeight.bold 
-                                            : FontWeight.normal,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          DataCell(
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 4.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(p.ownerName,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w600)),
-                                  Text(p.ownerMobile,
-                                      style: TextStyle(
-                                          color: CRMColors.textMutedOf(context),
-                                          fontSize: 11)),
-                                ],
+                            SelectionArea(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: () => _openPropertyDetails(context, p),
+                                child: Text(p.propertyCode,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold)),
                               ),
                             ),
                           ),
-                          DataCell(Text(p.areaName)),
-                          DataCell(Text(_getPropertyBhkOrAreaValue(p))),
-                          DataCell(Text(CRMCurrencyFormatter.formatShort(p.price),
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600))),
-                          DataCell(Text(
-                              DateFormat('dd-MM-yyyy').format(p.createdAt))),
+                          if (isUserAdminOrSuperAdmin)
+                            DataCell(
+                              SelectionArea(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.translucent,
+                                  onTap: () => _openPropertyDetails(context, p),
+                                  child: Text(
+                                    (currentUser?.role == 'Super Admin' ||
+                                            (currentUser?.role == 'Admin' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.id)) ||
+                                            (currentUser?.role == 'Telecaller' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.adminId)))
+                                        ? p.createdByName
+                                        : '-',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          DataCell(
+                            SelectionArea(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: () => _openPropertyDetails(context, p),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(p.title ?? 'No Title', maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          p.availableFromFormatted != null 
+                                              ? Icons.event_available_rounded 
+                                              : Icons.event_busy_rounded,
+                                          size: 12,
+                                          color: p.availableFromFormatted != null 
+                                              ? CRMColors.success 
+                                              : CRMColors.textSecondaryOf(context),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          p.availableFromFormatted != null 
+                                              ? 'Available: ${p.availableFromFormatted}' 
+                                              : 'Not Available',
+                                          style: TextStyle(
+                                            color: p.availableFromFormatted != null 
+                                                ? CRMColors.success 
+                                                : CRMColors.textSecondaryOf(context),
+                                            fontSize: 10.5,
+                                            fontWeight: p.availableFromFormatted != null 
+                                                ? FontWeight.bold 
+                                                : FontWeight.normal,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            SelectionArea(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: () => _openPropertyDetails(context, p),
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 4.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(p.ownerName,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w600)),
+                                      Text(p.ownerMobile,
+                                          style: TextStyle(
+                                              color: CRMColors.textMutedOf(context),
+                                              fontSize: 11)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            SelectionArea(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: () => _openPropertyDetails(context, p),
+                                child: Text(p.areaName),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            SelectionArea(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: () => _openPropertyDetails(context, p),
+                                child: Text(_getPropertyBhkOrAreaValue(p)),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            SelectionArea(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: () => _openPropertyDetails(context, p),
+                                child: Text(CRMCurrencyFormatter.formatShort(p.price),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            SelectionArea(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: () => _openPropertyDetails(context, p),
+                                child: Text(
+                                    DateFormat('dd-MM-yyyy').format(p.createdAt)),
+                              ),
+                            ),
+                          ),
                           DataCell(
                             PopupMenuButton<String>(
                               tooltip: 'Change Status',
@@ -1280,33 +1628,73 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                             ),
                           ),
                           DataCell(
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
+                            PopupMenuButton<String>(
+                              icon: Icon(
+                                Icons.more_vert_rounded,
+                                color: CRMColors.textSecondaryOf(context),
+                                size: 20,
+                              ),
+                              tooltip: 'Actions',
+                              elevation: 4,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
+                              ),
+                              color: CRMColors.cardBgOf(context),
+                              onSelected: (String value) {
+                                if (value == 'edit') {
+                                  if (metadata != null) {
+                                    _showAddEditPropertyDialog(context, metadata!, p);
+                                  }
+                                } else if (value == 'delete') {
+                                  _showDeleteConfirmDialog(context, p);
+                                } else if (value == 'message') {
+                                  _launchWhatsApp(p);
+                                } else if (value == 'share') {
+                                  _showShareSinglePropertyDialog(context, p);
+                                }
+                              },
+                              itemBuilder: (BuildContext context) => [
                                 if (isMine) ...[
-                                  IconButton(
-                                    icon: Icon(Icons.edit_outlined,
-                                        color: CRMColors.primaryOf(context), size: 18),
-                                    onPressed: () {
-                                      if (metadata != null) {
-                                        _showAddEditPropertyDialog(
-                                            context, metadata!, p);
-                                      }
-                                    },
+                                  PopupMenuItem<String>(
+                                    value: 'edit',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit_outlined, color: CRMColors.primaryOf(context), size: 18),
+                                        const SizedBox(width: 10),
+                                        Text('Edit', style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context))),
+                                      ],
+                                    ),
                                   ),
-                                  IconButton(
-                                    icon: Icon(Icons.delete_outline_rounded,
-                                        color: CRMColors.danger, size: 18),
-                                    onPressed: () {
-                                      _showDeleteConfirmDialog(context, p);
-                                    },
+                                  PopupMenuItem<String>(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18),
+                                        const SizedBox(width: 10),
+                                        Text('Delete', style: CRMTypography.bodyMedium.copyWith(color: CRMColors.danger)),
+                                      ],
+                                    ),
                                   ),
                                 ],
-                                IconButton(
-                                  icon: Icon(Icons.chat_bubble_outline_rounded,
-                                      color: CRMColors.success, size: 18),
-                                  onPressed: () => _launchWhatsApp(p),
-                                  tooltip: 'Contact on WhatsApp',
+                                PopupMenuItem<String>(
+                                  value: 'message',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.chat_bubble_outline_rounded, color: CRMColors.success, size: 18),
+                                      const SizedBox(width: 10),
+                                      Text('Message', style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context))),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem<String>(
+                                  value: 'share',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.share_rounded, color: CRMColors.primaryOf(context), size: 18),
+                                      const SizedBox(width: 10),
+                                      Text('Share Property', style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context))),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),

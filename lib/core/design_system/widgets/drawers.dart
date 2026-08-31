@@ -210,8 +210,9 @@ class BuildPropertyDetailWidget extends StatelessWidget {
       contactsItems.add(PropertyDetailItem('Brokerage Type', property.brokerageTypeName!, Icons.percent_rounded));
     }
 
-    return Container(
-      width: screenWidth,
+    return SelectionArea(
+      child: Container(
+        width: screenWidth,
       height: double.infinity,
       decoration: BoxDecoration(
         color: CRMColors.backgroundOf(context),
@@ -327,6 +328,7 @@ class BuildPropertyDetailWidget extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 

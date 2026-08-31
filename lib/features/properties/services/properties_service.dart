@@ -461,10 +461,14 @@ class PropertiesService {
   Future<Map<String, dynamic>> updateProperty(String id, Map<String, dynamic> propertyData) async {
     if (ApiConstants.useSupabaseDirect) {
       try {
-        // Extract child lists
-        final List<dynamic> amenities = List.from(propertyData['amenities'] ?? []);
-        final List<dynamic> images = List.from(propertyData['images'] ?? []);
-        final List<dynamic> videos = List.from(propertyData['videos'] ?? []);
+        final bool hasAmenitiesKey = propertyData.containsKey('amenities') && propertyData['amenities'] != null;
+        final bool hasImagesKey = propertyData.containsKey('images') && propertyData['images'] != null;
+        final bool hasVideosKey = propertyData.containsKey('videos') && propertyData['videos'] != null;
+
+        // Extract child lists only if keys exist
+        final List<dynamic> amenities = hasAmenitiesKey ? List.from(propertyData['amenities'] ?? []) : [];
+        final List<dynamic> images = hasImagesKey ? List.from(propertyData['images'] ?? []) : [];
+        final List<dynamic> videos = hasVideosKey ? List.from(propertyData['videos'] ?? []) : [];
 
         // Prepare property row updates - keep only valid database columns
         final List<String> validColumns = [
@@ -522,76 +526,82 @@ class PropertiesService {
         // 1. Update Property details
         final updatedProperty = await _supabase.from('properties').update(cleanProperty).eq('id', id).select().single();
 
-        // 2. Update Amenities
-        await _supabase.from('property_amenities').delete().eq('property_id', id);
-        if (amenities.isNotEmpty) {
-          final amData = amenities.map((amenityId) => {
-            'property_id': id,
-            'amenity_id': amenityId,
-          }).toList();
-          await _supabase.from('property_amenities').insert(amData);
-        }
-
-        // 3. Update Images (Delete orphans from storage and database)
-        final existingImages = await _supabase.from('property_images').select('image_url').eq('property_id', id);
-        final incomingImageUrls = Set<String>.from(images.map((img) => (img is Map) ? (img['imageUrl'] ?? '') : img.toString()));
-        final orphanImagePaths = existingImages
-            .map((img) => img['image_url'].toString())
-            .where((url) => !incomingImageUrls.contains(url))
-            .map((url) => _extractPropertyMediaPath(url))
-            .where((path) => path != null)
-            .cast<String>()
-            .toList();
-
-        if (orphanImagePaths.isNotEmpty) {
-          await _supabase.storage.from('property-media').remove(orphanImagePaths);
-        }
-
-        await _supabase.from('property_images').delete().eq('property_id', id);
-        if (images.isNotEmpty) {
-          final imgData = images.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final img = entry.value;
-            final String url = (img is Map) ? (img['imageUrl'] ?? '') : img.toString();
-            final bool cover = (img is Map) ? (img['isCover'] ?? false) : (idx == 0);
-            return {
+        // 2. Update Amenities (Only if amenities key was passed!)
+        if (hasAmenitiesKey) {
+          await _supabase.from('property_amenities').delete().eq('property_id', id);
+          if (amenities.isNotEmpty) {
+            final amData = amenities.map((amenityId) => {
               'property_id': id,
-              'image_url': url,
-              'image_order': idx,
-              'is_cover': cover,
-            };
-          }).toList();
-          await _supabase.from('property_images').insert(imgData);
+              'amenity_id': amenityId,
+            }).toList();
+            await _supabase.from('property_amenities').insert(amData);
+          }
         }
 
-        // 4. Update Videos (Delete orphans from storage and database)
-        final existingVideos = await _supabase.from('property_videos').select('video_url').eq('property_id', id);
-        final incomingVidUrls = Set<String>.from(videos.map((vid) => (vid is Map) ? (vid['videoUrl'] ?? '') : vid.toString()));
-        final orphanVidPaths = existingVideos
-            .map((vid) => vid['video_url'].toString())
-            .where((url) => !incomingVidUrls.contains(url))
-            .map((url) => _extractPropertyMediaPath(url))
-            .where((path) => path != null)
-            .cast<String>()
-            .toList();
+        // 3. Update Images (Delete orphans from storage and database ONLY if images key was passed!)
+        if (hasImagesKey) {
+          final existingImages = await _supabase.from('property_images').select('image_url').eq('property_id', id);
+          final incomingImageUrls = Set<String>.from(images.map((img) => (img is Map) ? (img['imageUrl'] ?? '') : img.toString()));
+          final orphanImagePaths = existingImages
+              .map((img) => img['image_url'].toString())
+              .where((url) => !incomingImageUrls.contains(url))
+              .map((url) => _extractPropertyMediaPath(url))
+              .where((path) => path != null)
+              .cast<String>()
+              .toList();
 
-        if (orphanVidPaths.isNotEmpty) {
-          await _supabase.storage.from('property-media').remove(orphanVidPaths);
+          if (orphanImagePaths.isNotEmpty) {
+            await _supabase.storage.from('property-media').remove(orphanImagePaths);
+          }
+
+          await _supabase.from('property_images').delete().eq('property_id', id);
+          if (images.isNotEmpty) {
+            final imgData = images.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final img = entry.value;
+              final String url = (img is Map) ? (img['imageUrl'] ?? '') : img.toString();
+              final bool cover = (img is Map) ? (img['isCover'] ?? false) : (idx == 0);
+              return {
+                'property_id': id,
+                'image_url': url,
+                'image_order': idx,
+                'is_cover': cover,
+              };
+            }).toList();
+            await _supabase.from('property_images').insert(imgData);
+          }
         }
 
-        await _supabase.from('property_videos').delete().eq('property_id', id);
-        if (videos.isNotEmpty) {
-          final vidData = videos.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final vid = entry.value;
-            final String url = (vid is Map) ? (vid['videoUrl'] ?? '') : vid.toString();
-            return {
-              'property_id': id,
-              'video_url': url,
-              'video_order': idx,
-            };
-          }).toList();
-          await _supabase.from('property_videos').insert(vidData);
+        // 4. Update Videos (Delete orphans from storage and database ONLY if videos key was passed!)
+        if (hasVideosKey) {
+          final existingVideos = await _supabase.from('property_videos').select('video_url').eq('property_id', id);
+          final incomingVidUrls = Set<String>.from(videos.map((vid) => (vid is Map) ? (vid['videoUrl'] ?? '') : vid.toString()));
+          final orphanVidPaths = existingVideos
+              .map((vid) => vid['video_url'].toString())
+              .where((url) => !incomingVidUrls.contains(url))
+              .map((url) => _extractPropertyMediaPath(url))
+              .where((path) => path != null)
+              .cast<String>()
+              .toList();
+
+          if (orphanVidPaths.isNotEmpty) {
+            await _supabase.storage.from('property-media').remove(orphanVidPaths);
+          }
+
+          await _supabase.from('property_videos').delete().eq('property_id', id);
+          if (videos.isNotEmpty) {
+            final vidData = videos.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final vid = entry.value;
+              final String url = (vid is Map) ? (vid['videoUrl'] ?? '') : vid.toString();
+              return {
+                'property_id': id,
+                'video_url': url,
+                'video_order': idx,
+              };
+            }).toList();
+            await _supabase.from('property_videos').insert(vidData);
+          }
         }
 
         // Fetch fully populated property details to match backend structure
