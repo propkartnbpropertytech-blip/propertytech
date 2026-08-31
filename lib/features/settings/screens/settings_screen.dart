@@ -188,8 +188,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: FutureBuilder<PackageInfo>(
         future: PackageInfo.fromPlatform(),
         builder: (context, snapshot) {
-          final version = (snapshot.data?.version != null && snapshot.data!.version.isNotEmpty) ? snapshot.data!.version : '1.1.4';
-          final buildNumber = (snapshot.data?.buildNumber != null && snapshot.data!.buildNumber.isNotEmpty) ? snapshot.data!.buildNumber : '6';
+          final version = (snapshot.data?.version != null && snapshot.data!.version.isNotEmpty) ? snapshot.data!.version : '1.1.5';
+          final buildNumber = (snapshot.data?.buildNumber != null && snapshot.data!.buildNumber.isNotEmpty) ? snapshot.data!.buildNumber : '7';
           
           return FutureBuilder<String>(
             future: _configService.getLastCheckedTime(),
