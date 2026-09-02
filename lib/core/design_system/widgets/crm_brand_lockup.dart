@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../tokens/app_colors.dart';
 import '../tokens/app_spacing.dart';
 import '../tokens/app_typography.dart';
@@ -42,13 +41,6 @@ class CRMBrandLockup extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(CRMBorderRadius.s + 2),
             border: Border.all(color: gold.withValues(alpha: 0.35), width: 0.8),
-            boxShadow: [
-              BoxShadow(
-                color: gold.withValues(alpha: 0.18),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
           ),
           padding: EdgeInsets.all(compact ? 4 : 6),
           child: Image.asset(
@@ -70,11 +62,11 @@ class CRMBrandLockup extends StatelessWidget {
               children: [
                 Text(
                   'PropKart',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: compact ? 18 : 22,
+                  style: CRMTypography.brandMark.copyWith(
+                    fontSize: compact ? 16 : 18,
                     fontWeight: FontWeight.w700,
                     color: textColor,
-                    letterSpacing: 0.3,
+                    letterSpacing: -0.2,
                     height: 1.1,
                   ),
                   maxLines: 1,

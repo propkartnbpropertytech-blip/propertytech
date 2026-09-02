@@ -29,11 +29,44 @@ class PropertySharePdf {
     return '$safe.pdf';
   }
 
-  static Future<Uint8List> build(
-    List<PropertyModel> properties, {
-    Map<String, List<Uint8List>>? preloadedImagesMap,
-  }) async {
+  static Future<Uint8List> build(List<PropertyModel> properties) async {
     final doc = pw.Document();
+    final dio = Dio();
+
+    // Fetch images in parallel for all properties to speed up execution
+    final Map<String, List<Uint8List>> propertyImagesMap = {};
+    for (final p in properties) {
+      final List<Uint8List> imageBytesList = [];
+      if (p.images.isNotEmpty) {
+        // Limit to 6 images per property to prevent giant PDF file sizes
+        final urls = p.images.take(6).toList();
+        final futures = urls.map((url) async {
+          try {
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+              return null;
+            }
+            final response = await dio.get<List<int>>(
+              url,
+              options: Options(responseType: ResponseType.bytes),
+            );
+            if (response.data != null) {
+              return Uint8List.fromList(response.data!);
+            }
+          } catch (e) {
+            debugPrint('Failed to fetch image $url: $e');
+          }
+          return null;
+        });
+        
+        final results = await Future.wait(futures);
+        for (final bytes in results) {
+          if (bytes != null) {
+            imageBytesList.add(bytes);
+          }
+        }
+      }
+      propertyImagesMap[p.id] = imageBytesList;
+    }
 
     for (final p in properties) {
       final title = displayTitle(p);
@@ -64,9 +97,7 @@ class PropertySharePdf {
         );
       }
 
-      final images = (preloadedImagesMap != null && preloadedImagesMap.containsKey(p.id))
-          ? preloadedImagesMap[p.id]!
-          : <Uint8List>[];
+      final images = propertyImagesMap[p.id] ?? [];
 
       doc.addPage(
         pw.MultiPage(
@@ -190,7 +221,7 @@ class PropertySharePdf {
             if (images.isNotEmpty) ...[
               pw.SizedBox(height: 16),
               pw.Text(
-                'Property Images',
+                'Images',
                 style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
               ),
               pw.SizedBox(height: 8),

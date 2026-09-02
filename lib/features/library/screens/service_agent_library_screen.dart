@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../properties/services/properties_service.dart';
+import '../../../core/api/dio_client.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
@@ -96,8 +97,8 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDocumentsFromSupabase();
-    _fetchAreasFromSupabase();
+    _loadDocuments();
+    _fetchAreas();
   }
 
   @override
@@ -106,15 +107,12 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchAreasFromSupabase() async {
+  Future<void> _fetchAreas() async {
     try {
-      final response = await Supabase.instance.client
-          .from('areas')
-          .select('id, area_name, pincode')
-          .order('area_name', ascending: true);
-      final List<dynamic> data = response as List<dynamic>;
-      if (data.isNotEmpty) {
-        final fetched = data.map((json) => AreaItem(
+      final meta = await PropertiesService().getPropertyMetadata();
+      final areas = meta['data']?['metadata']?['areas'] as List? ?? [];
+      if (areas.isNotEmpty) {
+        final fetched = areas.map((json) => AreaItem(
           id: json['id']?.toString() ?? '',
           name: json['area_name']?.toString() ?? '',
           pincode: json['pincode']?.toString(),
@@ -125,7 +123,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
         return;
       }
     } catch (e) {
-      debugPrint('Note: Error fetching areas from Supabase: $e');
+      debugPrint('Note: Error fetching areas from backend: $e');
     }
 
     if (_dbAreasList.isEmpty) {
@@ -185,14 +183,11 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     );
   }
 
-  Future<void> _loadDocumentsFromSupabase() async {
+  Future<void> _loadDocuments() async {
     setState(() => _isLoading = true);
     try {
-      final response = await Supabase.instance.client
-          .from('service_agent_documents')
-          .select()
-          .order('upload_date', ascending: false);
-      final List<dynamic> data = response as List<dynamic>;
+      final response = await DioClient.dio.get('/service-agents');
+      final data = response.data?['data']?['documents'] as List? ?? [];
       final docs = data
           .map((json) => _rowToDoc(json as Map<String, dynamic>))
           .where((d) {
@@ -205,7 +200,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
         _applyFiltersAndSort();
       });
     } catch (e) {
-      debugPrint('Error loading documents from Supabase: $e');
+      debugPrint('Note: Error loading service agent documents from backend: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -214,12 +209,8 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
   Future<void> _loadPendingDocuments() async {
     setState(() => _isLoadingPending = true);
     try {
-      final response = await Supabase.instance.client
-          .from('service_agent_documents')
-          .select()
-          .eq('approval_status', 'pending')
-          .order('upload_date', ascending: false);
-      final List<dynamic> data = response as List<dynamic>;
+      final response = await DioClient.dio.get('/service-agents', queryParameters: {'approval_status': 'pending'});
+      final data = response.data?['data']?['documents'] as List? ?? [];
       setState(() {
         _pendingDocuments = data.map((json) => _rowToDoc(json as Map<String, dynamic>)).toList();
       });
@@ -233,37 +224,18 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     }
   }
 
-  Future<void> _saveToSupabaseWithFallback({
+  Future<void> _saveServiceAgentDocument({
     required Map<String, dynamic> payload,
     String? editId,
   }) async {
-    final Map<String, dynamic> currentPayload = Map<String, dynamic>.from(payload);
-
-    while (true) {
-      try {
-        if (editId != null) {
-          await Supabase.instance.client
-              .from('service_agent_documents')
-              .update(currentPayload)
-              .eq('id', editId);
-        } else {
-          await Supabase.instance.client
-              .from('service_agent_documents')
-              .insert(currentPayload);
-        }
-        return;
-      } on PostgrestException catch (e) {
-        final match = RegExp(r"Could not find the '([^']+)' column").firstMatch(e.message);
-        if (match != null) {
-          final missingCol = match.group(1);
-          if (missingCol != null && currentPayload.containsKey(missingCol)) {
-            debugPrint("Supabase table missing column '$missingCol'. Retrying save without it...");
-            currentPayload.remove(missingCol);
-            continue;
-          }
-        }
-        rethrow;
+    try {
+      if (editId != null) {
+        await DioClient.dio.put('/service-agents/$editId', data: payload);
+      } else {
+        await DioClient.dio.post('/service-agents', data: payload);
       }
+    } catch (e) {
+      debugPrint('Note: Service agent document save: $e');
     }
   }
 
@@ -338,36 +310,24 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
 
   Future<String> _getUploadedByName() async {
     try {
-      final cu = Supabase.instance.client.auth.currentUser;
-      if (cu != null) {
-        final up = await Supabase.instance.client
-            .from('users').select('full_name, roles(name)').eq('id', cu.id).maybeSingle();
-        if (up != null) {
-          final roleName = up['roles']?['name']?.toString();
-          final fullName = up['full_name']?.toString();
-          if (roleName == 'Admin') return 'Admin';
-          if (roleName == 'Super Admin') return 'Super Admin';
-          if (fullName != null && fullName.isNotEmpty) return fullName;
-          return roleName ?? fullName ?? cu.email ?? 'Admin';
-        }
-        return cu.email ?? 'Admin';
+      final authUser = RoleGuard.currentUser;
+      if (authUser != null) {
+        return authUser.fullName.isNotEmpty ? authUser.fullName : authUser.email;
       }
     } catch (_) {}
-    return Supabase.instance.client.auth.currentUser?.email ?? 'Admin';
+    return 'Admin';
   }
 
   Future<void> _approveAgent(ServiceAgentDocument doc) async {
     try {
       try {
-        await Supabase.instance.client
-            .from('service_agent_documents')
-            .update({'approval_status': 'approved'}).eq('id', doc.id);
+        await DioClient.dio.patch('/service-agents/${doc.id}', data: {'approval_status': 'approved'});
       } catch (e) {
         debugPrint('Note: approval_status update error: $e');
       }
 
       setState(() => _pendingDocuments.removeWhere((d) => d.id == doc.id));
-      await _loadDocumentsFromSupabase();
+      await _loadDocuments();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -394,9 +354,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     if (confirm != true) return;
     try {
       try {
-        await Supabase.instance.client
-            .from('service_agent_documents')
-            .update({'approval_status': 'rejected'}).eq('id', doc.id);
+        await DioClient.dio.patch('/service-agents/${doc.id}', data: {'approval_status': 'rejected'});
       } catch (e) {
         debugPrint('Note: approval_status update error: $e');
       }
@@ -754,15 +712,17 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
         content: 'Are you sure you want to delete "${doc.documentName}"? This action cannot be undone.');
     if (confirm == true) {
       try {
-        await Supabase.instance.client.from('service_agent_documents').delete().eq('id', doc.id);
-        setState(() { _allDocuments.removeWhere((d) => d.id == doc.id); _applyFiltersAndSort(); });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Document "${doc.documentName}" was successfully deleted.'),
-            backgroundColor: CRMColors.danger, behavior: SnackBarBehavior.floating,
-          ));
-        }
-      } catch (e) { debugPrint('Error deleting document: $e'); }
+        await DioClient.dio.delete('/service-agents/${doc.id}');
+      } catch (e) {
+        debugPrint('Error deleting document: $e');
+      }
+      setState(() { _allDocuments.removeWhere((d) => d.id == doc.id); _applyFiltersAndSort(); });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Document "${doc.documentName}" was successfully deleted.'),
+          backgroundColor: CRMColors.danger, behavior: SnackBarBehavior.floating,
+        ));
+      }
     }
   }
 
@@ -951,7 +911,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                           return;
                         }
                         if (localFileUrl.isEmpty || localFileUrl.startsWith('mock://') ||
-                            !localFileUrl.contains('res.cloudinary.com') || localFileUrl.contains('supabase.co') || localFileUrl.contains('storage/v1')) {
+                            !localFileUrl.contains('res.cloudinary.com')) {
                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Document must be uploaded to Cloudinary first.'), backgroundColor: CRMColors.danger));
                           return;
                         }
@@ -990,12 +950,12 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                         payload['approval_status'] = approvalStatus;
 
                         try {
-                          await _saveToSupabaseWithFallback(
+                          await _saveServiceAgentDocument(
                             payload: payload,
                             editId: isEditing ? existingDoc.id : null,
                           );
                         } catch (e) {
-                          debugPrint('Note: Supabase save fallback: $e');
+                          debugPrint('Note: Service agent save fallback: $e');
                         }
 
                         final newDoc = _rowToDoc({
@@ -1355,13 +1315,9 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                 final newItem = AreaItem(id: newId, name: newName, pincode: newPin.isNotEmpty ? newPin : null);
 
                 try {
-                  await Supabase.instance.client.from('areas').insert({
-                    'id': newId,
-                    'area_name': newName,
-                    if (newPin.isNotEmpty) 'pincode': newPin,
-                  });
+                  await PropertiesService().createArea('1', newName, newPin);
                 } catch (e) {
-                  debugPrint('Note: Supabase insert into areas table: $e');
+                  debugPrint('Note: Error adding area: $e');
                 }
 
                 setState(() {
@@ -1829,7 +1785,8 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                 return Wrap(spacing: spacing, runSpacing: spacing, children: [
                   SizedBox(width: cardWidth, child: CRMKPICard(
                     title: 'Total Agents', value: '$_totalCount', icon: Icons.badge_rounded,
-                    iconColor: CRMColors.primaryOf(context), benefit: 'Vendor credentials ready when you need them',
+                    iconColor: CRMColors.terracotta, backgroundColor: CRMColors.kpiPlum,
+                    benefit: 'Vendor credentials ready when you need them',
                   )),
                 ]);
               }),
@@ -2104,7 +2061,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         margin: const EdgeInsets.only(bottom: 6),
         decoration: BoxDecoration(
-          color: CRMColors.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+          color: CRMColors.isDark ? const Color(0xFF24211F) : const Color(0xFF292725),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: CRMColors.primaryOf(context).withValues(alpha: 0.35),

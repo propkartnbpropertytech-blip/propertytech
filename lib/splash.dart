@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'package:pub_semver/pub_semver.dart';
+import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'core/design_system/tokens/app_typography.dart';
 import 'features/auth/bloc/auth_bloc.dart';
@@ -26,7 +28,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   late Animation<double> _scaleAnimation;
   late Animation<double> _shimmerAnimation;
   
-  String _clientVersion = "1.0.0";
+  String _clientVersion = AppConstants.appVersion;
   String _loadingMessage = "Initializing system...";
   bool _showRetryButton = false;
   late DateTime _startTime;
@@ -38,46 +40,38 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   void initState() {
     super.initState();
     _startTime = DateTime.now();
+    _setupAnimations();
+    _startInitializationSequence();
+  }
+
+  void _setupAnimations() {
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3000),
+      duration: const Duration(milliseconds: 2500),
     );
-    
-    _opacityAnimation = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 0.0, end: 1.0).chain(CurveTween(curve: Curves.easeIn)),
-        weight: 27, // 0.0 to 0.81s (27%)
-      ),
-      TweenSequenceItem(
-        tween: ConstantTween<double>(1.0),
-        weight: 50, // 0.81s to 2.31s (50%)
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.0).chain(CurveTween(curve: Curves.easeOut)),
-        weight: 23, // 2.31s to 3.0s (23%)
-      ),
-    ]).animate(_animationController);
 
-    _scaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 0.94, end: 1.0).chain(CurveTween(curve: Curves.easeOut)),
-        weight: 27,
+    _opacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0.0, 0.4, curve: Curves.easeIn),
       ),
-      TweenSequenceItem(
-        tween: ConstantTween<double>(1.0),
-        weight: 73,
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0.0, 0.4, curve: Curves.easeOutBack),
       ),
-    ]).animate(_animationController);
+    );
 
     _shimmerAnimation = Tween<double>(begin: -1.0, end: 2.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: const Interval(0.27, 0.77, curve: Curves.easeInOut),
+        curve: const Interval(0.4, 1.0, curve: Curves.easeInOut),
       ),
     );
-    
+
     _animationController.forward();
-    _startInitializationSequence();
   }
 
   @override
@@ -95,15 +89,26 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     // 1. Resolve dynamic client version safely
     try {
       final packageInfo = await PackageInfo.fromPlatform();
+      final pVersion = packageInfo.version.trim();
+      String resolvedVersion = AppConstants.appVersion;
+      if (pVersion.isNotEmpty && pVersion != "1.0.0") {
+        try {
+          final pSemver = Version.parse(pVersion);
+          final cSemver = Version.parse(AppConstants.appVersion);
+          resolvedVersion = pSemver > cSemver ? pVersion : AppConstants.appVersion;
+        } catch (_) {
+          resolvedVersion = AppConstants.appVersion;
+        }
+      }
       if (mounted) {
         setState(() {
-          _clientVersion = packageInfo.version;
+          _clientVersion = resolvedVersion;
         });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _clientVersion = "1.0.0";
+          _clientVersion = AppConstants.appVersion;
         });
       }
     }
@@ -345,7 +350,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     const Color versionColor = Colors.white54;
-    const Color primaryColor = Color(0xFFD4AF37); // Classic gold
+    const Color primaryColor = Color(0xFFA65D4A);
 
     return Scaffold(
       backgroundColor: Colors.black,

@@ -1,6 +1,4 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../tokens/app_blur.dart';
 import '../tokens/app_colors.dart';
 import '../tokens/app_motion.dart';
 import '../tokens/app_spacing.dart';
@@ -12,28 +10,21 @@ class CRMDialogs {
     required BuildContext ctx,
     required Widget child,
   }) {
-    final reduce = MediaQuery.disableAnimationsOf(ctx);
-    return BackdropFilter(
-      filter: ImageFilter.blur(
-        sigmaX: reduce ? CRMBlur.reduced : CRMBlur.dialog,
-        sigmaY: reduce ? CRMBlur.reduced : CRMBlur.dialog,
-      ),
-      child: Dialog(
-        backgroundColor: CRMColors.surfaceElevatedOf(ctx).withOpacity(0.94),
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(CRMBorderRadius.dialog),
-          side: BorderSide(
-            color: CRMColors.borderOf(ctx).withOpacity(0.5),
-            width: 0.5,
-          ),
+    return Dialog(
+      backgroundColor: CRMColors.surfaceElevatedOf(ctx),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(CRMBorderRadius.dialog),
+        side: BorderSide(
+          color: CRMColors.borderOf(ctx),
+          width: 1.0,
         ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Padding(
-            padding: const EdgeInsets.all(CRMSpacing.l),
-            child: child,
-          ),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Padding(
+          padding: const EdgeInsets.all(CRMSpacing.l),
+          child: child,
         ),
       ),
     );

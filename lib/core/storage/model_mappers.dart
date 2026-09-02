@@ -476,8 +476,6 @@ extension DashboardDataExtensions on DashboardData {
         'listingType': p.listingType,
         'createdBy': p.createdBy,
         'createdAt': p.createdAt,
-        'bedrooms': p.bedrooms,
-        'bathrooms': p.bathrooms,
       }).toList())
       ..checklistJson = jsonEncode(checklist.map((c) => {
         'id': c.id,

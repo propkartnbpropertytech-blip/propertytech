@@ -105,4 +105,9 @@ class AppLogger {
         'IsarRead: ${isarReadMs}ms | Network: ${networkMs}ms | Parse: ${jsonParseMs}ms | IsarWrite: ${isarWriteMs}ms | Total: ${totalMs}ms';
     _logger.d('⏱️ [TELEMETRY] $operation\n   ↳ $details');
   }
+
+  /// Redacts sensitive information from a string.
+  static String redact(String input) {
+    return _sanitize(input) as String;
+  }
 }

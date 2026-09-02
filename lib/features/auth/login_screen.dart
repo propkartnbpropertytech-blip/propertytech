@@ -9,6 +9,7 @@ import '../../core/design_system/tokens/app_colors.dart';
 import '../../core/design_system/tokens/app_shadows.dart';
 import '../../core/design_system/tokens/app_spacing.dart';
 import '../../core/design_system/tokens/app_typography.dart';
+import '../../core/design_system/widgets/buttons.dart';
 import '../../core/api/dio_client.dart';
 import 'package:dio/dio.dart';
 import '../../core/utils/seo_helper.dart';
@@ -467,8 +468,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: IconButton(
                         icon: Icon(
                           _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                          color: CRMColors.primaryOf(context).withOpacity(0.7),
-                          size: 22,
+                          color: CRMColors.textMutedOf(context),
+                          size: 20,
                         ),
                         onPressed: () {
                           setState(() {
@@ -558,10 +559,15 @@ class _LoginScreenState extends State<LoginScreen> {
             BlocBuilder<AuthBloc, AuthState>(
               builder: (context, state) {
                 final isLoading = state is AuthLoading;
-                return PremiumButton(
+                return CRMButton(
                   label: 'Sign In',
                   isLoading: isLoading,
-                  onPressed: isLoading ? null : _submit,
+                  onPressed: _submit,
+                  width: double.infinity,
+                  height: 48,
+                  borderRadius: CRMBorderRadius.input,
+                  backgroundColor: CRMColors.terracotta,
+                  foregroundColor: Colors.white,
                 );
               },
             ),
@@ -627,93 +633,54 @@ class _HeroSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: const _WavePainter(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 40),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Spacer(),
-            Text(
-              'Treasure Of Listed Properties in Your Area',
-              style: CRMTypography.display.copyWith(
-                fontSize: 34,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Manage pipeline boards, supply sheets, and builder agreements seamlessly.',
-              style: CRMTypography.body.copyWith(
-                color: Colors.white.withOpacity(0.75),
-              ),
-            ),
-            const Spacer(),
-          ],
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF292725),
+        border: Border(
+          left: BorderSide(color: Color(0xFF3A3531), width: 1.0),
         ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 48),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF382A26),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: const Color(0xFFC77A64).withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              'REAL ESTATE CRM',
+              style: CRMTypography.captionBold.copyWith(
+                color: const Color(0xFFE8A290),
+                fontSize: 11,
+                letterSpacing: 1.0,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Architectural precision for modern real-estate operations.',
+            style: CRMTypography.display.copyWith(
+              fontSize: 30,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFFF3EEE7),
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Manage properties, buyer requirements, and team workflows in one calm, unified workspace.',
+            style: CRMTypography.body.copyWith(
+              color: const Color(0xFFB9B0A7),
+              height: 1.5,
+            ),
+          ),
+        ],
       ),
     );
   }
-}
-
-class _WavePainter extends CustomPainter {
-  const _WavePainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-
-    // Gradient Background (Brand colors)
-    final bgPaint = Paint()
-      ..shader = LinearGradient(
-        colors: [const Color(0xFF0B1220), CRMColors.accent],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ).createShader(rect);
-    canvas.drawRect(rect, bgPaint);
-
-    // Wave 1
-    final wavePaint1 = Paint()
-      ..color = Colors.white.withOpacity(0.08)
-      ..style = PaintingStyle.fill;
-
-    final path1 = Path();
-    path1.moveTo(0, size.height * 0.5);
-    path1.quadraticBezierTo(
-      size.width * 0.25, size.height * 0.35,
-      size.width * 0.5, size.height * 0.55,
-    );
-    path1.quadraticBezierTo(
-      size.width * 0.75, size.height * 0.75,
-      size.width, size.height * 0.45,
-    );
-    path1.lineTo(size.width, size.height);
-    path1.lineTo(0, size.height);
-    path1.close();
-    canvas.drawPath(path1, wavePaint1);
-
-    // Wave 2
-    final wavePaint2 = Paint()
-      ..color = Colors.white.withOpacity(0.05)
-      ..style = PaintingStyle.fill;
-
-    final path2 = Path();
-    path2.moveTo(0, size.height * 0.65);
-    path2.quadraticBezierTo(
-      size.width * 0.35, size.height * 0.8,
-      size.width * 0.65, size.height * 0.5,
-    );
-    path2.quadraticBezierTo(
-      size.width * 0.85, size.height * 0.35,
-      size.width, size.height * 0.6,
-    );
-    path2.lineTo(size.width, size.height);
-    path2.lineTo(0, size.height);
-    path2.close();
-    canvas.drawPath(path2, wavePaint2);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

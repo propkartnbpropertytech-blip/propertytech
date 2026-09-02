@@ -6,16 +6,15 @@ import '../models/user_model.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart' as auth_model;
 import '../../../core/design_system/tokens/app_colors.dart';
-import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
+import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
-import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/api/dio_client.dart';
 import 'package:dio/dio.dart';
 import 'dart:io';
@@ -761,59 +760,14 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Widget _buildPageHeader() {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 600;
-
-    final textColumn = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "User Management",
-          style: CRMTypography.pageTitle.copyWith(
-            color: CRMColors.text,
-            fontSize: isMobile ? 22 : 28,
-          ),
-        ),
-        const SizedBox(height: 4.0),
-        Text(
-          "Configure workspace permissions, logins, and enterprise roles",
-          style: CRMTypography.benefit.copyWith(
-            color: CRMColors.textSecondary,
-            fontSize: isMobile ? 12 : 13,
-          ),
-        ),
-      ],
-    );
-
-    if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          textColumn,
-          const SizedBox(height: CRMSpacing.m),
-          SizedBox(
-            width: double.infinity,
-            child: CRMButton(
-              label: "Add Employee",
-              prefixIcon: Icons.add_rounded,
-              onPressed: () => _showAddEditUserDialog(),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(child: textColumn),
-        const SizedBox(width: CRMSpacing.m),
-        CRMButton(
-          label: "Add Employee",
-          prefixIcon: Icons.add_rounded,
-          onPressed: () => _showAddEditUserDialog(),
-        ),
-      ],
+    return CRMPageHeader(
+      title: "Employees",
+      trailing: CRMButton(
+        label: "Add Employee",
+        prefixIcon: Icons.add_rounded,
+        height: 40,
+        onPressed: () => _showAddEditUserDialog(),
+      ),
     );
   }
 
@@ -840,68 +794,28 @@ class _UsersScreenState extends State<UsersScreen> {
               .length;
         }
 
-        if (MediaQuery.of(context).size.width < 600) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              CRMKPICard(
-                title: "TOTAL EMPLOYEES",
-                value: total.toString(),
-                icon: Icons.people_rounded,
-                iconColor: CRMColors.primary,
-                benefit: 'Everyone with CRM access in one place',
-              ),
-              const SizedBox(height: CRMSpacing.m),
-              CRMKPICard(
-                title: "ACTIVE SYSTEM USERS",
-                value: active.toString(),
-                icon: Icons.check_circle_outline_rounded,
-                iconColor: CRMColors.success,
-                benefit: 'Logins that can work the pipeline today',
-              ),
-              const SizedBox(height: CRMSpacing.m),
-              CRMKPICard(
-                title: "ADMINISTRATORS",
-                value: admins.toString(),
-                icon: Icons.admin_panel_settings_rounded,
-                iconColor: CRMColors.info,
-                benefit: 'Roles that control workspace security',
-              ),
-            ],
-          );
-        }
-
-        final int crossAxisCount = CRMBreakpoints.kpiColumns(context, desktop: 3);
-        final double childAspectRatio = CRMBreakpoints.kpiAspectRatio(context);
-
-        return GridView.count(
-          crossAxisCount: crossAxisCount,
-          crossAxisSpacing: CRMSpacing.m,
-          mainAxisSpacing: CRMSpacing.m,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: childAspectRatio,
+        return CRMResponsiveKpiRow(
           children: [
             CRMKPICard(
               title: "TOTAL EMPLOYEES",
               value: total.toString(),
               icon: Icons.people_rounded,
-              iconColor: CRMColors.primary,
-              benefit: 'Everyone with CRM access in one place',
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiPlum,
             ),
             CRMKPICard(
               title: "ACTIVE SYSTEM USERS",
               value: active.toString(),
               icon: Icons.check_circle_outline_rounded,
-              iconColor: CRMColors.success,
-              benefit: 'Logins that can work the pipeline today',
+              iconColor: CRMColors.text,
+              backgroundColor: CRMColors.kpiSage,
             ),
             CRMKPICard(
               title: "ADMINISTRATORS",
               value: admins.toString(),
               icon: Icons.admin_panel_settings_rounded,
-              iconColor: CRMColors.info,
-              benefit: 'Roles that control workspace security',
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiRose,
             ),
           ],
         );
@@ -2322,15 +2236,9 @@ class _UsersScreenState extends State<UsersScreen> {
                         (snapshot.data?[0] as List<PropertyModel>?) ?? [];
                     final allReqs =
                         (snapshot.data?[1] as List<RequirementModel>?) ?? [];
-                    final salesmanNameLower = salesman.fullName.trim().toLowerCase();
-                    final requirements = allReqs.where((r) {
-                      final isCreator = r.createdBy == salesman.id ||
-                          (r.creatorName != null && r.creatorName!.trim().toLowerCase() == salesmanNameLower);
-                      final isAssignee = r.assignedTo == salesman.id ||
-                          (r.assigneeName != null && r.assigneeName!.trim().toLowerCase() == salesmanNameLower);
-                      final isAdmin = r.adminId == salesman.id;
-                      return isCreator || isAssignee || isAdmin;
-                    }).toList();
+                    final requirements = allReqs
+                        .where((r) => r.adminId == salesman.id)
+                        .toList();
 
                     // Filter helper functions
                     List<PropertyModel> getFilteredProperties() {
@@ -2559,68 +2467,33 @@ class _UsersScreenState extends State<UsersScreen> {
                         const SizedBox(height: CRMSpacing.l),
 
                         // KPI boxes
-                        if (isMobile)
-                          Column(
-                            children: [
-                              _buildDialogStatCard(
-                                "Properties Added",
-                                filteredProps.length.toString(),
-                                Icons.home_work_outlined,
-                                CRMColors.primary,
-                                isMobile,
-                              ),
-                              const SizedBox(height: CRMSpacing.s),
-                              _buildDialogStatCard(
-                                "Leads",
-                                filteredReqs.length.toString(),
-                                Icons.assignment_outlined,
-                                CRMColors.info,
-                                isMobile,
-                              ),
-                              const SizedBox(height: CRMSpacing.s),
-                              _buildDialogStatCard(
-                                "Won Clients",
-                                wonReqs.toString(),
-                                Icons.workspace_premium_outlined,
-                                CRMColors.success,
-                                isMobile,
-                              ),
-                            ],
-                          )
-                        else
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildDialogStatCard(
-                                  "Properties Added",
-                                  filteredProps.length.toString(),
-                                  Icons.home_work_outlined,
-                                  CRMColors.primary,
-                                  isMobile,
-                                ),
-                              ),
-                              const SizedBox(width: CRMSpacing.s),
-                              Expanded(
-                                child: _buildDialogStatCard(
-                                  "Leads",
-                                  filteredReqs.length.toString(),
-                                  Icons.assignment_outlined,
-                                  CRMColors.info,
-                                  isMobile,
-                                ),
-                              ),
-                              const SizedBox(width: CRMSpacing.s),
-                              Expanded(
-                                child: _buildDialogStatCard(
-                                  "Won Clients",
-                                  wonReqs.toString(),
-                                  Icons.workspace_premium_outlined,
-                                  CRMColors.success,
-                                  isMobile,
-                                ),
-                              ),
-                            ],
-                          ),
+                        Wrap(
+                          spacing: CRMSpacing.s,
+                          runSpacing: CRMSpacing.s,
+                          children: [
+                            _buildDialogStatCard(
+                              "Properties Added",
+                              filteredProps.length.toString(),
+                              Icons.home_work_outlined,
+                              CRMColors.primary,
+                              isMobile,
+                            ),
+                            _buildDialogStatCard(
+                              "Requirements",
+                              filteredReqs.length.toString(),
+                              Icons.assignment_outlined,
+                              CRMColors.info,
+                              isMobile,
+                            ),
+                            _buildDialogStatCard(
+                              "Won Clients",
+                              wonReqs.toString(),
+                              Icons.workspace_premium_outlined,
+                              CRMColors.success,
+                              isMobile,
+                            ),
+                          ],
+                        ),
                         const Spacer(),
 
                         // Bottom Actions
@@ -2660,8 +2533,8 @@ class _UsersScreenState extends State<UsersScreen> {
                                 ),
                                 label: Text(
                                   isMobile
-                                      ? "Leads"
-                                      : "View Leads",
+                                      ? "Requirements"
+                                      : "View Requirements",
                                 ),
                                 style: ElevatedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(
@@ -2697,6 +2570,7 @@ class _UsersScreenState extends State<UsersScreen> {
     bool isMobile,
   ) {
     return Container(
+      width: isMobile ? double.infinity : 180,
       padding: const EdgeInsets.all(CRMSpacing.m),
       decoration: BoxDecoration(
         color: CRMColors.backgroundOf(context),
@@ -2786,12 +2660,11 @@ class _UsersScreenState extends State<UsersScreen> {
                     final p = list[index];
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
-                      onTap: () => showCRMPropertyDrawer(context, p),
                       title: Text(
                         p.title,
                         style: CRMTypography.bodyMedium.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: CRMColors.primary,
+                          color: CRMColors.textOf(context),
                         ),
                       ),
                       subtitle: Text(
@@ -2833,7 +2706,7 @@ class _UsersScreenState extends State<UsersScreen> {
             const SizedBox(width: CRMSpacing.s),
             Expanded(
               child: Text(
-                "Leads Added by ${salesman.fullName}",
+                "Requirements Added by ${salesman.fullName}",
                 style: CRMTypography.sectionTitle.copyWith(fontSize: 16),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -2845,7 +2718,7 @@ class _UsersScreenState extends State<UsersScreen> {
         Expanded(
           child: list.isEmpty
               ? const Center(
-                  child: Text("No leads found for this listing type."),
+                  child: Text("No requirements found for this listing type."),
                 )
               : ListView.separated(
                   itemCount: list.length,
@@ -2857,12 +2730,11 @@ class _UsersScreenState extends State<UsersScreen> {
                         '${r.propertyTypeName} (${r.configurationName ?? ""})';
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
-                      onTap: () => _showRequirementDetailsDialog(context, r),
                       title: Text(
                         r.clientName,
                         style: CRMTypography.bodyMedium.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: CRMColors.primary,
+                          color: CRMColors.textOf(context),
                         ),
                       ),
                       subtitle: Text(
@@ -2913,103 +2785,6 @@ class _UsersScreenState extends State<UsersScreen> {
                 ),
         ),
       ],
-    );
-  }
-
-  void _showRequirementDetailsDialog(BuildContext context, RequirementModel r) {
-    final specLabel = '${r.propertyTypeName} (${r.configurationName ?? "-"})';
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        final isMobile = MediaQuery.of(dialogContext).size.width < 600;
-        return Dialog(
-          backgroundColor: CRMColors.surfaceElevatedOf(dialogContext),
-          elevation: 8,
-          shadowColor: CRMColors.shadow,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(CRMBorderRadius.dialog),
-            side: BorderSide(
-              color: CRMColors.borderOf(dialogContext).withOpacity(0.5),
-              width: 0.5,
-            ),
-          ),
-          child: Container(
-            width: isMobile ? double.infinity : 480,
-            padding: const EdgeInsets.all(CRMSpacing.l),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Lead Details",
-                      style: CRMTypography.sectionTitle.copyWith(
-                        color: CRMColors.textOf(dialogContext),
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        Icons.close_rounded,
-                        color: CRMColors.textMutedOf(dialogContext),
-                      ),
-                      onPressed: () => Navigator.pop(dialogContext),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: CRMSpacing.s),
-                Divider(
-                  color: CRMColors.borderOf(dialogContext).withOpacity(0.5),
-                ),
-                const SizedBox(height: CRMSpacing.m),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildLeadDetailRow(dialogContext, "Client Name", r.clientName),
-                        _buildLeadDetailRow(dialogContext, "Mobile", r.clientMobile),
-                        _buildLeadDetailRow(dialogContext, "Specs / Config", specLabel),
-                        _buildLeadDetailRow(dialogContext, "Target Area(s)", r.areaNames.isNotEmpty ? r.areaNames.join(', ') : 'Any Area'),
-                        _buildLeadDetailRow(
-                          dialogContext,
-                          "Budget Range",
-                          "₹${BudgetFormatter.format(r.minBudget)} - ₹${BudgetFormatter.format(r.maxBudget)}",
-                        ),
-                        _buildLeadDetailRow(dialogContext, "Status", r.status),
-                        if (r.remarks != null && r.remarks!.isNotEmpty)
-                          _buildLeadDetailRow(dialogContext, "Remarks", r.remarks!),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildLeadDetailRow(BuildContext context, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: CRMSpacing.s),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-          ),
-          const SizedBox(height: 2),
-          SelectableText(
-            value,
-            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
     );
   }
 

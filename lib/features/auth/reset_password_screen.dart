@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/api/api_client.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/design_system/tokens/app_colors.dart';
 import '../../core/design_system/tokens/app_shadows.dart';
@@ -59,17 +59,6 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   Future<void> _bootstrapRecovery() async {
-    final customToken = widget.token;
-    if (customToken != null && customToken.isNotEmpty) {
-      setState(() {
-        _sessionLoaded = true;
-        _needsManualConfirm = false;
-        _isVerifyingLink = false;
-      });
-      return;
-    }
-
-    // Supabase redirected here with an explicit error (expired / denied / used link).
     final errorCode = widget.errorCode;
     final errorDescription = widget.errorDescription;
     if (errorCode != null && errorCode.isNotEmpty) {
@@ -79,50 +68,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       return;
     }
 
-    final session = Supabase.instance.client.auth.currentSession;
-    if (session != null) {
-      setState(() => _sessionLoaded = true);
-    }
-
-    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
-      if (data.session != null && mounted) {
-        setState(() {
-          _sessionLoaded = true;
-          _errorMessage = null;
-          _needsManualConfirm = false;
-          _isVerifyingLink = false;
-        });
-      }
-    });
-
-    // PKCE: ?code=... from Supabase verify redirect
-    final code = widget.code;
-    if (code != null && code.isNotEmpty) {
-      await _exchangeCode(code);
-      return;
-    }
-
-    // Preferred cross-device flow: ?token_hash=...&type=recovery
-    // Require a user tap so email security scanners don't consume the one-time token.
-    final tokenHash = widget.tokenHash;
-    if (tokenHash != null && tokenHash.isNotEmpty) {
-      setState(() => _needsManualConfirm = true);
-      return;
-    }
-
-    // Fail-safe if no recovery session appears (implicit hash tokens still parsing).
-    Future.delayed(const Duration(milliseconds: 3500), () {
-      if (!mounted) return;
-      if (!_sessionLoaded &&
-          !_needsManualConfirm &&
-          !_isVerifyingLink &&
-          Supabase.instance.client.auth.currentSession == null &&
-          _errorMessage == null) {
-        setState(() {
-          _errorMessage =
-              'Your password reset link is invalid, expired, or was already used. Please request a new link.';
-        });
-      }
+    setState(() {
+      _sessionLoaded = true;
+      _needsManualConfirm = false;
+      _isVerifyingLink = false;
     });
   }
 
@@ -139,58 +88,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         : 'Unable to open this password reset link. Please request a new one.';
   }
 
-  Future<void> _exchangeCode(String code) async {
+  void _confirmTokenHash() {
     setState(() {
-      _isVerifyingLink = true;
-      _errorMessage = null;
+      _needsManualConfirm = false;
+      _sessionLoaded = true;
     });
-    try {
-      await Supabase.instance.client.auth.exchangeCodeForSession(code);
-      if (!mounted) return;
-      setState(() {
-        _sessionLoaded = true;
-        _isVerifyingLink = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isVerifyingLink = false;
-        _errorMessage =
-            'Could not verify the reset link. It may have expired or already been used. Please request a new one.';
-      });
-    }
-  }
-
-  Future<void> _confirmTokenHash() async {
-    final tokenHash = widget.tokenHash;
-    if (tokenHash == null || tokenHash.isEmpty) return;
-
-    setState(() {
-      _isVerifyingLink = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final typeRaw = (widget.type ?? 'recovery').toLowerCase();
-      final otpType = typeRaw == 'recovery' ? OtpType.recovery : OtpType.email;
-      await Supabase.instance.client.auth.verifyOTP(
-        tokenHash: tokenHash,
-        type: otpType,
-      );
-      if (!mounted) return;
-      setState(() {
-        _sessionLoaded = true;
-        _needsManualConfirm = false;
-        _isVerifyingLink = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isVerifyingLink = false;
-        _errorMessage =
-            'Could not verify the reset link. It may have expired or already been used. Please request a new one.';
-      });
-    }
   }
 
   @override
@@ -210,28 +112,13 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     });
 
     try {
-      final customToken = widget.token;
+      final token = widget.token ?? widget.code ?? widget.tokenHash;
       final newPassword = _passwordController.text;
 
-      if (customToken != null && customToken.isNotEmpty) {
-        await Supabase.instance.client.rpc(
-          'complete_password_reset_with_token',
-          params: {
-            'p_token': customToken,
-            'p_new_password': newPassword,
-          },
-        );
-      } else {
-        final session = Supabase.instance.client.auth.currentSession;
-        if (session == null) {
-          throw Exception('No active recovery session found. Please try requesting a reset link again.');
-        }
-
-        await Supabase.instance.client.rpc(
-          'complete_password_reset',
-          params: {'p_new_password': newPassword},
-        );
-      }
+      await ApiClient().post('/auth/reset-password', {
+        if (token != null && token.isNotEmpty) 'token': token,
+        'password': newPassword,
+      });
 
       if (!mounted) return;
 
@@ -261,11 +148,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           actions: [
             TextButton(
               onPressed: () {
-                Supabase.instance.client.auth.signOut().then((_) {
-                  if (context.mounted) {
-                    context.go('/login');
-                  }
-                });
+                if (context.mounted) {
+                  context.go('/login');
+                }
               },
               child: Text(
                 'Log In',
@@ -302,14 +187,14 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                   end: Alignment.bottomRight,
                   colors: isDark
                       ? [
-                          const Color(0xFF0F172A),
-                          const Color(0xFF1E1E38),
-                          const Color(0xFF0B0F19),
+                          const Color(0xFF1C1A18),
+                          const Color(0xFF24211F),
+                          const Color(0xFF1C1A18),
                         ]
                       : [
-                          const Color(0xFFF8FAFC),
-                          const Color(0xFFEFF6FF),
-                          const Color(0xFFF1F5F9),
+                          const Color(0xFFFFFFFF),
+                          const Color(0xFFF7F7F6),
+                          const Color(0xFFF4F4F3),
                         ],
                 ),
               ),

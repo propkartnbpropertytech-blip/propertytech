@@ -12,7 +12,13 @@ class DashboardRepository {
 
 
 
-  Future<DashboardData> getDashboardData() async {
+  static Future<void>? _refreshInFlight;
+  static DateTime? _lastRefreshAt;
+  static const _minRefreshInterval = Duration(seconds: 45);
+
+  Future<DashboardData> getDashboardData({
+    bool backgroundRefresh = true,
+  }) async {
     final start = DateTime.now();
     
     // Read from local Isar
@@ -35,8 +41,9 @@ class DashboardRepository {
       totalMs: totalMs,
     );
 
-    // Trigger async background refresh
-    _triggerBackgroundDashboardRefresh();
+    if (backgroundRefresh) {
+      _triggerBackgroundDashboardRefresh();
+    }
 
     // Get the dynamic counts of requirements to ensure they are always correct and in sync
     var localReqs = await _coordinator.requirementLocal.getRequirements();
@@ -116,8 +123,6 @@ class DashboardRepository {
         listingType: p.listingTypeName ?? 'Sale',
         createdBy: p.createdByName ?? 'System',
         createdAt: p.createdAt?.toString() ?? '',
-        bedrooms: p.bedrooms,
-        bathrooms: p.bathrooms,
       )).toList();
     }
 
@@ -244,8 +249,15 @@ class DashboardRepository {
   }
 
   void _triggerBackgroundDashboardRefresh() {
+    final last = _lastRefreshAt;
+    if (_refreshInFlight != null) return;
+    if (last != null && DateTime.now().difference(last) < _minRefreshInterval) {
+      return;
+    }
+
+    _lastRefreshAt = DateTime.now();
     final start = DateTime.now();
-    _dashboardService.getDashboardData().then((response) async {
+    _refreshInFlight = _dashboardService.getDashboardData().then((response) async {
       final networkMs = DateTime.now().difference(start).inMilliseconds;
 
       final parseStart = DateTime.now();
@@ -273,6 +285,8 @@ class DashboardRepository {
       );
 
       _coordinator.refreshDashboard();
-    }).catchError((_) {});
+    }).catchError((_) {}).whenComplete(() {
+      _refreshInFlight = null;
+    });
   }
 }

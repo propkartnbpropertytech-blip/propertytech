@@ -163,10 +163,17 @@ class AppRouter {
           ),
           GoRoute(
             path: '/requirements',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const RequirementsScreen(),
-            ),
+            pageBuilder: (context, state) {
+              final tab = state.uri.queryParameters['tab'];
+              final subTab = state.uri.queryParameters['subTab'];
+              return crmFadeSlidePage(
+                key: state.pageKey,
+                child: RequirementsScreen(
+                  initialTab: tab,
+                  initialSubTab: subTab,
+                ),
+              );
+            },
           ),
           GoRoute(
             path: '/clients',
@@ -423,7 +430,7 @@ class AppRouter {
       );
     } else if (location.startsWith('/requirements')) {
       SeoHelper.updateTags(
-        title: 'Requirements | PropKart CRM',
+        title: 'Leads | PropKart CRM',
         description: 'Review client listing requests and buy/rent matchmaking preferences.',
         noIndex: true,
       );

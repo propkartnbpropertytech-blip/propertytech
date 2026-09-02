@@ -45,7 +45,7 @@ class DonutChart3DPainter extends CustomPainter {
 
     for (int i = 3; i >= 1; i--) {
       final shadowPaint = Paint()
-        ..color = (isDark ? Colors.black : const Color(0xFF94A3B8))
+        ..color = (isDark ? Colors.black : CRMColors.sand).withValues(alpha: 0.18)
             .withOpacity(0.06 * i)
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth + (i * 1.5)
@@ -136,7 +136,7 @@ class DonutChart3DPainter extends CustomPainter {
     canvas.drawCircle(center, innerRadius - 1, innerPaint);
 
     final innerRingPaint = Paint()
-      ..color = (isDark ? Colors.white : const Color(0xFF94A3B8)).withOpacity(0.08)
+      ..color = (isDark ? Colors.white : CRMColors.sand).withValues(alpha: 0.12)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.5
       ..isAntiAlias = true;

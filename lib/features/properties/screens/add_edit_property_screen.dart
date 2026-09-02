@@ -1355,13 +1355,13 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildStepNode(0, 'Basic Info', isMobile),
+          _buildStepNode(0, 'Basic', isMobile),
           _buildStepDivider(),
           _buildStepNode(1, 'Location', isMobile),
           _buildStepDivider(),
-          _buildStepNode(2, 'Pricing', isMobile),
+          _buildStepNode(2, 'Price', isMobile),
           _buildStepDivider(),
-          _buildStepNode(3, 'Contacts', isMobile),
+          _buildStepNode(3, 'Owner & Media', isMobile),
         ],
       ),
     );
@@ -3595,7 +3595,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
     final nextButton = _currentStep < 3
         ? CRMButton(
-            label: 'Next Step',
+            label: 'Next',
             variant: CRMButtonVariant.primary,
             onPressed: () {
               if (_formKey.currentState!.validate()) {
@@ -3604,7 +3604,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
             },
           )
         : CRMButton(
-            label: isEdit ? 'Save Changes' : 'Publish Property',
+            label: isEdit ? 'Save Changes' : 'Save Property',
             variant: CRMButtonVariant.primary,
             onPressed: _submitForm,
           );

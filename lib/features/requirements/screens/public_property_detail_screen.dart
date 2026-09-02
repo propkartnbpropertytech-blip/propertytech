@@ -500,6 +500,11 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
       // 4. Key Details Items
       final List<_DetailItem> contactsItems = [];
       
+      final contactName = propModel.ownerName;
+      if (contactName.isNotEmpty) {
+        contactsItems.add(_DetailItem('Contact Name', contactName, Icons.person_outline));
+      }
+      
       final ownership = propModel.ownershipTypeName ?? '';
       if (ownership.isNotEmpty && ownership != 'N/A') {
         contactsItems.add(_DetailItem('Ownership', ownership, Icons.badge_outlined));

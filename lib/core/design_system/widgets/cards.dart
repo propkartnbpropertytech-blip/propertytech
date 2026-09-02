@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../tokens/app_colors.dart';
 import '../tokens/app_motion.dart';
-import '../tokens/app_shadows.dart';
 import '../tokens/app_spacing.dart';
 import '../tokens/app_typography.dart';
+import 'buttons.dart';
 
 class CRMCard extends StatelessWidget {
   final String? title;
@@ -14,6 +14,8 @@ class CRMCard extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final bool elevated;
   final Color? accentBorder;
+  final Color? backgroundColor;
+  final Color? borderColor;
 
   const CRMCard({
     super.key,
@@ -25,6 +27,8 @@ class CRMCard extends StatelessWidget {
     this.padding = const EdgeInsets.all(CRMSpacing.m),
     this.elevated = false,
     this.accentBorder,
+    this.backgroundColor,
+    this.borderColor,
   });
 
   @override
@@ -34,16 +38,15 @@ class CRMCard extends StatelessWidget {
       curve: CRMMotion.easeOut,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: elevated
-            ? CRMColors.surfaceElevatedOf(context)
-            : CRMColors.cardBgOf(context),
+        color: backgroundColor ??
+            (elevated
+                ? CRMColors.surfaceElevatedOf(context)
+                : CRMColors.cardBgOf(context)),
         borderRadius: BorderRadius.circular(CRMBorderRadius.card),
         border: Border.all(
-          color: accentBorder ??
-              CRMColors.borderOf(context).withValues(alpha: 0.55),
-          width: accentBorder != null ? 1.0 : 0.5,
+          color: borderColor ?? accentBorder ?? CRMColors.borderOf(context),
+          width: 1.0,
         ),
-        boxShadow: elevated ? CRMShadows.medium : CRMShadows.soft,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -75,9 +78,9 @@ class CRMCard extends StatelessWidget {
                           const SizedBox(height: CRMSpacing.xxs),
                           Text(
                             subtitle!,
-                            maxLines: 2,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: CRMTypography.benefit.copyWith(
+                            style: CRMTypography.caption.copyWith(
                               color: CRMColors.textSecondaryOf(context),
                             ),
                           ),
@@ -92,7 +95,7 @@ class CRMCard extends StatelessWidget {
             Divider(
               color: CRMColors.divider,
               height: 1,
-              thickness: 0.5,
+              thickness: 1.0,
             ),
           ],
           Padding(
@@ -103,7 +106,7 @@ class CRMCard extends StatelessWidget {
             Divider(
               color: CRMColors.divider,
               height: 1,
-              thickness: 0.5,
+              thickness: 1.0,
             ),
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -129,6 +132,9 @@ class CRMKPICard extends StatefulWidget {
   final String? benefit;
   final VoidCallback? onTap;
   final List<double>? sparkline;
+  final Color? backgroundColor;
+  final Color? borderColor;
+  final Color? textColor;
 
   const CRMKPICard({
     super.key,
@@ -141,6 +147,9 @@ class CRMKPICard extends StatefulWidget {
     this.benefit,
     this.onTap,
     this.sparkline,
+    this.backgroundColor,
+    this.borderColor,
+    this.textColor,
   });
 
   @override
@@ -153,12 +162,17 @@ class _CRMKPICardState extends State<CRMKPICard> {
 
   @override
   Widget build(BuildContext context) {
-    final showGrowth = widget.growthPercent != null;
-    final isPositive = (widget.growthPercent ?? 0.0) >= 0;
-    final activeIconColor = widget.iconColor ?? CRMColors.primaryOf(context);
+    final trend = widget.growthPercent;
+    final showGrowth = trend != null && trend.abs() >= 0.05 && trend.abs() < 99.5;
+    final isPositive = (trend ?? 0.0) >= 0;
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 600;
-    final lift = _pressed ? 0.97 : (_hovered ? 1.02 : 1.0);
+    final lift = _pressed ? 0.98 : 1.0;
+    final accent = widget.iconColor ?? CRMColors.terracotta;
+    final fill = widget.backgroundColor ?? CRMColors.cardBgOf(context);
+    final onFill = ThemeData.estimateBrightnessForColor(fill) == Brightness.dark
+        ? CRMColors.onStrong
+        : CRMColors.textOf(context);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -175,68 +189,53 @@ class _CRMKPICardState extends State<CRMKPICard> {
           scale: lift,
           duration: CRMMotion.press,
           curve: CRMMotion.emphasized,
-          child: AnimatedContainer(
-            duration: CRMMotion.medium,
-            curve: CRMMotion.easeOut,
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-              boxShadow: _hovered
-                  ? [
-                      ...CRMShadows.medium,
-                      BoxShadow(
-                        color: activeIconColor.withValues(alpha: 0.18),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
-                      ),
-                    ]
-                  : CRMShadows.soft,
+          child: CRMCard(
+            elevated: false,
+            backgroundColor: fill,
+            borderColor: widget.borderColor ?? CRMColors.borderOf(context),
+            accentBorder: _hovered ? accent : null,
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? CRMSpacing.s : CRMSpacing.m,
+              vertical: isMobile ? 12 : 16,
             ),
-            child: CRMCard(
-              elevated: true,
-              accentBorder: _hovered
-                  ? activeIconColor.withValues(alpha: 0.45)
-                  : null,
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? CRMSpacing.s : CRMSpacing.m,
-                vertical: isMobile ? 8 : 10,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: (isMobile
-                                  ? CRMTypography.captionBold
-                                      .copyWith(fontSize: 11)
-                                  : CRMTypography.captionBold)
-                              .copyWith(
-                                  color: CRMColors.textSecondaryOf(context)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CRMTypography.captionBold.copyWith(
+                          color: widget.textColor != null
+                              ? widget.textColor!.withValues(alpha: 0.8)
+                              : (ThemeData.estimateBrightnessForColor(fill) ==
+                                      Brightness.dark
+                                  ? CRMColors.onStrong.withValues(alpha: 0.7)
+                                  : CRMColors.textSecondaryOf(context)),
+                          fontSize: isMobile ? 11 : 12,
                         ),
                       ),
-                      const SizedBox(width: CRMSpacing.xxs),
-                      AnimatedContainer(
-                        duration: CRMMotion.fast,
-                        padding: EdgeInsets.all(
-                            isMobile ? CRMSpacing.xxs : CRMSpacing.xs),
-                        decoration: BoxDecoration(
-                          color: activeIconColor
-                              .withValues(alpha: _hovered ? 0.18 : 0.1),
-                          borderRadius:
-                              BorderRadius.circular(CRMBorderRadius.s),
-                        ),
-                        child: Icon(widget.icon,
-                            color: activeIconColor, size: isMobile ? 15 : 18),
+                    ),
+                    const SizedBox(width: CRMSpacing.xxs),
+                    Container(
+                      padding: EdgeInsets.all(isMobile ? 6 : 8),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                    ],
-                  ),
+                      child: Icon(
+                        widget.icon,
+                        color: widget.textColor ?? accent,
+                        size: isMobile ? 16 : 18,
+                      ),
+                    ),
+                  ],
+                ),
                   SizedBox(height: isMobile ? CRMSpacing.xxs : CRMSpacing.s),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -251,7 +250,7 @@ class _CRMKPICardState extends State<CRMKPICard> {
                                     ? CRMTypography.statistics
                                         .copyWith(fontSize: 22)
                                     : CRMTypography.statistics)
-                                .copyWith(color: CRMColors.textOf(context)),
+                                .copyWith(color: widget.textColor ?? onFill),
                           ),
                         ),
                       ),
@@ -263,7 +262,7 @@ class _CRMKPICardState extends State<CRMKPICard> {
                           child: CustomPaint(
                             painter: _SparklinePainter(
                               values: widget.sparkline!,
-                              color: activeIconColor,
+                              color: widget.iconColor ?? CRMColors.primaryOf(context),
                             ),
                           ),
                         ),
@@ -331,8 +330,7 @@ class _CRMKPICardState extends State<CRMKPICard> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -370,4 +368,394 @@ class _SparklinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _SparklinePainter oldDelegate) =>
       oldDelegate.values != values || oldDelegate.color != color;
+}
+
+class CRMHeroMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData? icon;
+  final Color? backgroundColor;
+  final Color? accentColor;
+  final VoidCallback? onTap;
+
+  const CRMHeroMetric({
+    super.key,
+    required this.label,
+    required this.value,
+    this.icon,
+    this.backgroundColor,
+    this.accentColor,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final bg = backgroundColor ?? CRMColors.strongCard;
+    final inverted = ThemeData.estimateBrightnessForColor(bg) == Brightness.dark;
+    final onColor = inverted ? CRMColors.onStrong : CRMColors.textOf(context);
+    final accent = accentColor ?? CRMColors.terracotta;
+    return MouseRegion(
+      cursor: onTap != null ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.l),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: CRMTypography.captionBold.copyWith(
+                        color: inverted
+                            ? onColor.withValues(alpha: 0.72)
+                            : accent,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  if (icon != null) ...[
+                    const SizedBox(width: CRMSpacing.s),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: (inverted ? onColor : accent).withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        icon,
+                        color: inverted ? onColor : accent,
+                        size: isMobile ? 16 : 18,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: CRMSpacing.s),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: CRMTypography.heroStatistic.copyWith(
+                    color: onColor,
+                    fontSize: isMobile ? 36 : 44,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class CRMTintedMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color backgroundColor;
+  final Color? accentColor;
+  final VoidCallback? onTap;
+
+  const CRMTintedMetric({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.backgroundColor,
+    this.accentColor,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 140;
+        return MouseRegion(
+          cursor: onTap != null
+              ? SystemMouseCursors.click
+              : SystemMouseCursors.basic,
+          child: GestureDetector(
+            onTap: onTap,
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? CRMSpacing.s : CRMSpacing.m,
+                vertical: compact ? 12 : 14,
+              ),
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                border: Border.all(color: CRMColors.borderOf(context)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: CRMTypography.captionBold.copyWith(
+                      color: accentColor ?? CRMColors.textMutedOf(context),
+                      fontSize: compact ? 10 : 11,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      style: CRMTypography.statistics.copyWith(
+                        color: CRMColors.textOf(context),
+                        fontSize: compact ? 22 : 26,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class CRMResponsiveKpiRow extends StatelessWidget {
+  final List<Widget> children;
+  final double minCardWidth;
+  final int? maxColumns;
+
+  const CRMResponsiveKpiRow({
+    super.key,
+    required this.children,
+    this.minCardWidth = 160,
+    this.maxColumns,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final gap = CRMSpacing.s;
+        final maxW = constraints.maxWidth;
+        var cols = children.length;
+        if (maxW < minCardWidth) {
+          cols = 1;
+        } else {
+          cols = (maxW / (minCardWidth + gap)).floor().clamp(1, children.length);
+        }
+        if (maxColumns != null) {
+          cols = cols.clamp(1, maxColumns!);
+        }
+        final cardW = cols == 1
+            ? maxW
+            : (maxW - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final child in children)
+              SizedBox(width: cardW, child: child),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class CRMPriorityActionCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String caption;
+  final String actionLabel;
+  final VoidCallback onAction;
+  final Color backgroundColor;
+  final Color accentColor;
+
+  const CRMPriorityActionCard({
+    super.key,
+    required this.title,
+    required this.value,
+    required this.caption,
+    required this.actionLabel,
+    required this.onAction,
+    required this.backgroundColor,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final inverted =
+        ThemeData.estimateBrightnessForColor(backgroundColor) == Brightness.dark;
+    final onColor = inverted ? CRMColors.onStrong : CRMColors.textOf(context);
+    final muted = inverted
+        ? CRMColors.onStrong.withValues(alpha: 0.7)
+        : CRMColors.textSecondaryOf(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(CRMSpacing.l),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: CRMTypography.captionBold.copyWith(
+              color: muted,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: CRMSpacing.s),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: CRMTypography.heroStatistic.copyWith(
+                color: onColor,
+                fontSize: 36,
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            caption,
+            style: CRMTypography.body.copyWith(color: muted),
+          ),
+          const SizedBox(height: CRMSpacing.l),
+          CRMButton(
+            label: actionLabel,
+            onPressed: onAction,
+            backgroundColor: accentColor,
+            foregroundColor: Colors.white,
+            width: double.infinity,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CRMInventoryBar {
+  final String label;
+  final int value;
+  final Color color;
+
+  const CRMInventoryBar({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+}
+
+class CRMInventoryOverview extends StatelessWidget {
+  final String title;
+  final List<CRMInventoryBar> bars;
+
+  const CRMInventoryOverview({
+    super.key,
+    required this.title,
+    required this.bars,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue = bars.fold<int>(0, (m, b) => b.value > m ? b.value : m);
+    final safeMax = maxValue == 0 ? 1 : maxValue;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(CRMSpacing.l),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(color: CRMColors.borderOf(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: CRMTypography.sectionTitle.copyWith(
+              color: CRMColors.textOf(context),
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: CRMSpacing.l),
+          ...bars.map((bar) {
+            final fraction = bar.value / safeMax;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          bar.label,
+                          style: CRMTypography.captionBold.copyWith(
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${bar.value}',
+                        style: CRMTypography.captionBold.copyWith(
+                          color: CRMColors.textOf(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return Stack(
+                          children: [
+                            Container(
+                              height: 14,
+                              width: constraints.maxWidth,
+                              color: CRMColors.groupedBackground,
+                            ),
+                            AnimatedContainer(
+                              duration: CRMMotion.medium,
+                              height: 14,
+                              width: constraints.maxWidth * fraction.clamp(0.04, 1.0),
+                              color: bar.color,
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
 }

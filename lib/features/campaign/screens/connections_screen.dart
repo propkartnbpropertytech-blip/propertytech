@@ -7,6 +7,7 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/cards.dart';
+import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/crm_permission_denied.dart';
 import '../../integration/services/integration_service.dart';
@@ -66,12 +67,12 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             children: [
               // Header
               CRMPageHeader(
-                eyebrow: 'CAMPAIGN & LEAD PIPELINES',
-                title: 'Connections & Webhooks',
-                benefit: 'Manage your marketing connections, webhook endpoints, and API security credentials.',
-                trailing: OutlinedButton.icon(
-                  icon: const Icon(Icons.menu_book_rounded, size: 16),
-                  label: const Text('Setup Guides'),
+                title: 'Connections',
+                trailing: CRMButton(
+                  label: 'Setup Guides',
+                  prefixIcon: Icons.menu_book_rounded,
+                  variant: CRMButtonVariant.outline,
+                  height: 40,
                   onPressed: () => _showSetupGuidesModal(context),
                 ),
               ),
@@ -116,7 +117,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
   Widget _buildMetaConnectionCard(BuildContext context) {
     return CRMCard(
       elevated: true,
-      accentBorder: const Color(0xFF1877F2).withValues(alpha: 0.35),
+      accentBorder: CRMColors.terracotta.withValues(alpha: 0.35),
       title: 'Meta Lead Ads (Facebook & Instagram)',
       subtitle: 'Real-time webhook listener and Conversions API feedback loop for Meta Ads Manager.',
       headerAction: Container(
@@ -165,7 +166,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.link_rounded, color: Color(0xFF1877F2), size: 20),
+                const Icon(Icons.link_rounded, color: CRMColors.terracotta, size: 20),
                 const SizedBox(width: CRMSpacing.s),
                 Expanded(
                   child: SelectableText(
@@ -329,7 +330,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             spacing: CRMSpacing.s,
             children: [
               OutlinedButton.icon(
-                icon: const Icon(Icons.facebook_rounded, color: Color(0xFF1877F2), size: 16),
+                icon: const Icon(Icons.facebook_rounded, color: CRMColors.terracotta, size: 16),
                 label: const Text('Meta Lead Ads Setup Guide'),
                 onPressed: () => _showMetaSetupGuide(context),
               ),
@@ -349,7 +350,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
   Widget _buildGoogleSheetsCard(BuildContext context) {
     return CRMCard(
       elevated: true,
-      accentBorder: const Color(0xFF0F9D58).withValues(alpha: 0.35),
+      accentBorder: CRMColors.sage.withValues(alpha: 0.35),
       title: 'Google Sheets Apps Script Integration',
       subtitle: 'Automatically push incoming spreadsheet rows from Google Forms or offline lead lists into your CRM.',
       headerAction: Container(
@@ -396,7 +397,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.table_chart_rounded, color: Color(0xFF0F9D58), size: 20),
+                const Icon(Icons.table_chart_rounded, color: CRMColors.sage, size: 20),
                 const SizedBox(width: CRMSpacing.s),
                 Expanded(
                   child: SelectableText(
@@ -433,7 +434,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
           const SizedBox(height: CRMSpacing.l),
 
           OutlinedButton.icon(
-            icon: const Icon(Icons.table_chart_rounded, color: Color(0xFF0F9D58), size: 16),
+            icon: const Icon(Icons.table_chart_rounded, color: CRMColors.sage, size: 16),
             label: const Text('Google Sheets Apps Script Guide'),
             onPressed: () => _showGoogleSheetsSetupGuide(context),
           ),
@@ -591,7 +592,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               ListTile(
-                leading: const Icon(Icons.facebook_rounded, color: Color(0xFF1877F2), size: 28),
+                leading: const Icon(Icons.facebook_rounded, color: CRMColors.terracotta, size: 28),
                 title: const Text('Meta Lead Ads Setup Guide', style: TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: const Text('Connect Facebook & Instagram lead forms to auto-ingest into CRM'),
                 trailing: const Icon(Icons.chevron_right),
@@ -606,7 +607,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
               ),
               const SizedBox(height: 10),
               ListTile(
-                leading: const Icon(Icons.table_chart_rounded, color: Color(0xFF0F9D58), size: 28),
+                leading: const Icon(Icons.table_chart_rounded, color: CRMColors.sage, size: 28),
                 title: const Text('Google Sheets Apps Script Guide', style: TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: const Text('Sync new spreadsheet rows directly to your CRM webhook'),
                 trailing: const Icon(Icons.chevron_right),
@@ -653,7 +654,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            const Icon(Icons.facebook_rounded, color: Color(0xFF1877F2)),
+            const Icon(Icons.facebook_rounded, color: CRMColors.terracotta),
             const SizedBox(width: 8),
             const Text('Meta Lead Ads Webhook Setup'),
           ],
@@ -692,7 +693,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            const Icon(Icons.table_chart_rounded, color: Color(0xFF0F9D58)),
+            const Icon(Icons.table_chart_rounded, color: CRMColors.sage),
             const SizedBox(width: 8),
             const Text('Google Sheets Apps Script Integration'),
           ],

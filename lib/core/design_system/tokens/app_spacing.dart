@@ -12,27 +12,28 @@ class CRMSpacing {
   static const double max = 64.0;
 }
 
-/// Corner radius tokens (4, 8, 12, 16, 20, 24, 28, 32, 40).
+/// Corner radius tokens — soft, premium geometry matching the product screens.
 class CRMBorderRadius {
-  static const double xs = 4.0;
-  static const double s = 8.0;
+  static const double xs = 6.0;
+  static const double s = 10.0;
   static const double m = 12.0;
   static const double l = 16.0;
-  /// 20 — new mid radius
-  static const double ml = 20.0;
-  /// 24 — preserved as `xl` for existing call sites
-  static const double xl = 24.0;
-  static const double xxl = 28.0;
-  static const double huge = 32.0;
-  static const double mega = 40.0;
+  static const double ml = 16.0;
+  static const double xl = 16.0;
+  static const double xxl = 20.0;
+  static const double huge = 20.0;
+  static const double mega = 24.0;
   static const double round = 999.0;
 
-  /// Standard card radius.
-  static const double card = xl; // 24
-  static const double kpi = xxl; // 28
-  static const double liquidBar = 28.0;
-  static const double button = ml; // 20
-  static const double input = l; // 16
-  static const double dialog = xxl;
-  static const double sheet = mega;
+  /// Semantic component radiuses
+  static const double button = 999.0;
+  static const double input = 12.0;
+  static const double dropdown = 12.0;
+  static const double card = 16.0;
+  static const double kpi = 16.0;
+  static const double liquidBar = 16.0;
+  static const double dialog = 16.0;
+  static const double drawer = 16.0;
+  static const double sheet = 20.0;
+  static const double badge = 999.0;
 }

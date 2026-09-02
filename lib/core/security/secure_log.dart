@@ -17,4 +17,8 @@ class SecureLog {
   static void w(String message, [Object? error]) {
     AppLogger.w(message, error);
   }
+
+  static String redact(String message) {
+    return AppLogger.redact(message);
+  }
 }

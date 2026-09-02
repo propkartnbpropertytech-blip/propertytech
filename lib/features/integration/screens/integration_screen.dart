@@ -465,12 +465,12 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
             runSpacing: CRMSpacing.s,
             children: [
               OutlinedButton.icon(
-                icon: const Icon(Icons.facebook_rounded, color: Color(0xFF1877F2), size: 18),
+                icon: const Icon(Icons.facebook_rounded, color: CRMColors.terracotta, size: 18),
                 label: const Text('Meta Lead Ads Setup Guide'),
                 onPressed: () => _showMetaSetupGuide(context),
               ),
               OutlinedButton.icon(
-                icon: const Icon(Icons.table_chart_rounded, color: Color(0xFF0F9D58), size: 18),
+                icon: const Icon(Icons.table_chart_rounded, color: CRMColors.sage, size: 18),
                 label: const Text('Google Sheets Apps Script Guide'),
                 onPressed: () => _showGoogleSheetsSetupGuide(context),
               ),
@@ -495,7 +495,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
         const SizedBox(width: CRMSpacing.s),
         _buildMetricItem(context, 'Duplicates Blocked', dups.toString(), Icons.copy_rounded, CRMColors.warning),
         const SizedBox(width: CRMSpacing.s),
-        _buildMetricItem(context, 'Meta Responses', metaSent.toString(), Icons.insights_rounded, const Color(0xFF1877F2)),
+        _buildMetricItem(context, 'Meta Responses', metaSent.toString(), Icons.insights_rounded, CRMColors.terracotta),
       ],
     );
   }
@@ -922,13 +922,13 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
                                   color: lead.source == 'Meta Ads'
-                                      ? const Color(0xFF1877F2).withValues(alpha: 0.15)
-                                      : const Color(0xFF0F9D58).withValues(alpha: 0.15),
+                                      ? CRMColors.terracotta.withValues(alpha: 0.15)
+                                      : CRMColors.sage.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
                                     color: lead.source == 'Meta Ads'
-                                        ? const Color(0xFF1877F2).withValues(alpha: 0.4)
-                                        : const Color(0xFF0F9D58).withValues(alpha: 0.4),
+                                        ? CRMColors.terracotta.withValues(alpha: 0.4)
+                                        : CRMColors.sage.withValues(alpha: 0.4),
                                   ),
                                 ),
                                 child: Text(
@@ -936,7 +936,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: lead.source == 'Meta Ads' ? const Color(0xFF1877F2) : const Color(0xFF0F9D58),
+                                    color: lead.source == 'Meta Ads' ? CRMColors.terracotta : CRMColors.sage,
                                   ),
                                 ),
                               ),
@@ -1086,7 +1086,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               ListTile(
-                leading: const Icon(Icons.facebook_rounded, color: Color(0xFF1877F2), size: 28),
+                leading: const Icon(Icons.facebook_rounded, color: CRMColors.terracotta, size: 28),
                 title: const Text('Meta Lead Ads Setup Guide', style: TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: const Text('Connect Facebook & Instagram lead forms to auto-ingest into CRM'),
                 trailing: const Icon(Icons.chevron_right),
@@ -1101,7 +1101,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
               ),
               const SizedBox(height: 10),
               ListTile(
-                leading: const Icon(Icons.table_chart_rounded, color: Color(0xFF0F9D58), size: 28),
+                leading: const Icon(Icons.table_chart_rounded, color: CRMColors.sage, size: 28),
                 title: const Text('Google Sheets Apps Script Guide', style: TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: const Text('Sync new spreadsheet rows directly to your CRM webhook'),
                 trailing: const Icon(Icons.chevron_right),
@@ -1566,7 +1566,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
             children: [
               Icon(
                 lead.source == 'Meta Ads' ? Icons.facebook_rounded : Icons.table_chart_rounded,
-                color: lead.source == 'Meta Ads' ? const Color(0xFF1877F2) : const Color(0xFF0F9D58),
+                color: lead.source == 'Meta Ads' ? CRMColors.terracotta : CRMColors.sage,
               ),
               const SizedBox(width: 8),
               Text('Lead Details: ${lead.getStringValue("Full Name")}'),

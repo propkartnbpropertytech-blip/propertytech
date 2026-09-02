@@ -740,7 +740,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  widget.requirement != null ? "Edit Requirement" : "Add Requirement",
+                  widget.requirement != null ? "Edit Lead" : "Add Lead",
                   style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
                 ),
                 IconButton(
@@ -755,7 +755,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "Edit Requirement Details",
+                  "Edit Lead Details",
                   style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context)),
                 ),
                 IconButton(

@@ -6,7 +6,6 @@ import 'add_edit_builder_screen.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
-import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/data_table.dart';
@@ -130,23 +129,14 @@ class _BuildersScreenState extends State<BuildersScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Builders & Developers",
-              style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
-            ),
-            const SizedBox(height: 4.0),
-            Text(
-              "Central registry of construction firms, developer representatives, and projects",
-              style: CRMTypography.benefit.copyWith(color: CRMColors.textSecondary),
-            ),
-          ],
+        Text(
+          "Builders",
+          style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
         ),
         CRMButton(
-          label: "Add Developer Group",
+          label: "Add Builder",
           prefixIcon: Icons.add_business_rounded,
+          height: 40,
           onPressed: () => _showAddEditDialog(),
         ),
       ],
@@ -163,41 +153,30 @@ class _BuildersScreenState extends State<BuildersScreen> {
           tier1 = state.builders.where((b) => b.tier == 'Tier 1').length;
         }
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 700;
-            return GridView.count(
-              crossAxisCount: isWide ? 3 : 2,
-              crossAxisSpacing: CRMSpacing.m,
-              mainAxisSpacing: CRMSpacing.m,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: CRMBreakpoints.kpiAspectRatio(context),
-              children: [
-                CRMKPICard(
-                  title: "DEVELOPER PARTNERS",
-                  value: total.toString(),
-                  icon: Icons.business_rounded,
-                  iconColor: CRMColors.primary,
-                  benefit: 'Builders you sell projects with',
-                ),
-                CRMKPICard(
-                  title: "TIER 1 ORGANIZATIONS",
-                  value: tier1.toString(),
-                  icon: Icons.verified_user_rounded,
-                  iconColor: CRMColors.success,
-                  benefit: 'Top-tier partners with stronger trust',
-                ),
-                CRMKPICard(
-                  title: "ACTIVE SITES",
-                  value: (total * 2).toString(), // Mock project scale
-                  icon: Icons.foundation_rounded,
-                  iconColor: CRMColors.info,
-                  benefit: 'Live projects ready for buyer matches',
-                ),
-              ],
-            );
-          },
+        return CRMResponsiveKpiRow(
+          children: [
+            CRMKPICard(
+              title: "DEVELOPER PARTNERS",
+              value: total.toString(),
+              icon: Icons.business_rounded,
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiPlum,
+            ),
+            CRMKPICard(
+              title: "TIER 1 ORGANIZATIONS",
+              value: tier1.toString(),
+              icon: Icons.verified_user_rounded,
+              iconColor: CRMColors.text,
+              backgroundColor: CRMColors.kpiSage,
+            ),
+            CRMKPICard(
+              title: "ACTIVE SITES",
+              value: (total * 2).toString(), // Mock project scale
+              icon: Icons.foundation_rounded,
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiSand,
+            ),
+          ],
         );
       },
     );
