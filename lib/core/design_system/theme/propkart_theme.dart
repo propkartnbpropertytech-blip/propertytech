@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../tokens/app_blur.dart';
 import '../tokens/app_colors.dart';
 import '../tokens/app_motion.dart';
-import '../tokens/app_shadows.dart';
 import '../tokens/app_spacing.dart';
 import '../tokens/app_typography.dart';
 
@@ -58,7 +57,7 @@ class PropKartTheme {
       primary: colors.primary,
       onPrimary: Colors.white,
       secondary: colors.secondary,
-      onSecondary: Colors.white,
+      onSecondary: colors.text,
       error: colors.danger,
       onError: Colors.white,
       surface: colors.surface,
@@ -75,8 +74,6 @@ class PropKartTheme {
       scrim: colors.overlay,
     );
 
-    final borderSoft = colors.border.withValues(alpha: 0.6);
-
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
@@ -90,7 +87,7 @@ class PropKartTheme {
       appBarTheme: AppBarTheme(
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: colors.glassSurface,
+        backgroundColor: colors.surface,
         foregroundColor: colors.text,
         titleTextStyle: CRMTypography.navigationTitle.copyWith(color: colors.text),
       ),
@@ -99,20 +96,21 @@ class PropKartTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-          side: BorderSide(color: borderSoft, width: 0.5),
+          side: BorderSide(color: colors.border, width: 1.0),
         ),
-        shadowColor: colors.shadow,
+        shadowColor: Colors.transparent,
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: colors.surfaceElevated,
+        backgroundColor: colors.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CRMBorderRadius.dialog),
+          side: BorderSide(color: colors.border, width: 1.0),
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: colors.surfaceElevated,
-        modalBackgroundColor: colors.surfaceElevated,
+        backgroundColor: colors.surface,
+        modalBackgroundColor: colors.surface,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(CRMBorderRadius.sheet)),
         ),
@@ -122,16 +120,16 @@ class PropKartTheme {
         filled: true,
         fillColor: colors.surface,
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: CRMSpacing.m,
+          horizontal: CRMSpacing.s,
           vertical: CRMSpacing.s,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-          borderSide: BorderSide(color: colors.border),
+          borderSide: BorderSide(color: CRMColors.inputBorder, width: 1.0),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-          borderSide: BorderSide(color: colors.border),
+          borderSide: BorderSide(color: CRMColors.inputBorder, width: 1.0),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(CRMBorderRadius.input),
@@ -139,7 +137,7 @@ class PropKartTheme {
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-          borderSide: BorderSide(color: colors.danger),
+          borderSide: BorderSide(color: colors.danger, width: 1.0),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -147,14 +145,15 @@ class PropKartTheme {
         backgroundColor: colors.surfaceElevated,
         contentTextStyle: CRMTypography.body.copyWith(color: colors.text),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.button),
+          side: BorderSide(color: colors.border, width: 1.0),
         ),
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
           color: colors.surfaceElevated,
           borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-          boxShadow: CRMShadows.medium,
+          border: Border.all(color: colors.border, width: 1.0),
         ),
         textStyle: CRMTypography.caption.copyWith(color: colors.text),
       ),
@@ -163,17 +162,15 @@ class PropKartTheme {
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: colors.primary,
-        foregroundColor: (brightness == Brightness.dark && !CRMColors.isRentMode)
-            ? const Color(0xFF111827)
-            : Colors.white,
-        elevation: 4,
+        foregroundColor: Colors.white,
+        elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(CRMBorderRadius.xl),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.button),
         ),
       ),
       dividerTheme: DividerThemeData(
         color: colors.divider,
-        thickness: 0.5,
+        thickness: 1.0,
         space: 1,
       ),
       listTileTheme: ListTileThemeData(

@@ -65,12 +65,16 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   DashboardBloc({required DashboardRepository dashboardRepository})
       : _dashboardRepository = dashboardRepository,
         super(DashboardInitial()) {
-    on<LoadDashboard>(_onLoadDashboard);
-    on<RefreshDashboard>(_onRefreshDashboard);
+    on<LoadDashboard>(_onLoadDashboard, transformer: _sequential());
+    on<RefreshDashboard>(_onRefreshDashboard, transformer: _sequential());
 
     _dashboardSubscription = RepositoryCoordinator().dashboardStream.listen((_) {
       add(LoadDashboard());
     });
+  }
+
+  EventTransformer<E> _sequential<E>() {
+    return (events, mapper) => events.asyncExpand(mapper);
   }
 
   @override

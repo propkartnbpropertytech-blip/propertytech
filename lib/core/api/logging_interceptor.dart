@@ -46,11 +46,19 @@ class LoggingInterceptor extends Interceptor {
         ? err.response?.data['message']
         : err.message;
 
+    final typeLabel = err.type.name;
+    final inner = err.error?.toString();
+    final combined = [
+      if (errorMsg != null && errorMsg.toString().isNotEmpty) errorMsg,
+      typeLabel,
+      if (inner != null && inner.isNotEmpty) inner,
+    ].join(' | ');
+
     AppLogger.network(
       method,
       path,
       statusCode: statusCode,
-      error: errorMsg ?? err.type.toString(),
+      error: combined,
       durationMs: durationMs,
     );
 

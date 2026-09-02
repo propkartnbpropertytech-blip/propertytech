@@ -8,7 +8,6 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http_parser/http_parser.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide MultipartFile;
 
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
@@ -112,14 +111,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _healDatabaseHierarchy(UserModel user) async {
     try {
-      if (ApiConstants.useSupabaseDirect) {
-        await Supabase.instance.client
-            .from('users')
-            .update({'admin_id': null})
-            .eq('id', user.id);
-      } else {
-        await DioClient.dio.put('/users/${user.id}', data: {'admin_id': null});
-      }
+      await DioClient.dio.put('/users/${user.id}', data: {'admin_id': null});
       if (mounted) {
         context.read<AuthBloc>().add(AuthCheckStatus());
       }
@@ -417,10 +409,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 const Expanded(
                   child: CRMPageHeader(
-                    eyebrow: 'Account',
-                    title: 'My Profile',
-                    benefit:
-                        'Keep your credentials, role, and photo current so teammates always reach the right you',
+                    title: 'Profile',
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -428,6 +417,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   label: 'Logout',
                   prefixIcon: Icons.logout_rounded,
                   variant: CRMButtonVariant.danger,
+                  height: 40,
                   onPressed: () {
                     RoleGuard.currentUser = null;
                     context.read<AuthBloc>().add(LogoutRequested());

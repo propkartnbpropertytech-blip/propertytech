@@ -22,15 +22,11 @@ class AppSpacing {
 
 /// @Deprecated — facade over CRMColors. Prefer CRMColors / PropKartColors.
 class AppColors {
-  /// Legacy name — now maps to champagne gold brand primary.
+  /// Legacy name — now maps to terracotta brand primary.
   static Color get brandGreen => CRMColors.primary;
   static Color get brandGreenHighlight => CRMColors.accent;
-  static Color get darkBg => CRMColors.isDark
-      ? const Color(0xFF070B14)
-      : const Color(0xFF0B1220);
-  static Color get darkSlate => CRMColors.isDark
-      ? const Color(0xFF121A2A)
-      : const Color(0xFF141B2D);
+  static Color get darkBg => const Color(0xFF1C1A18);
+  static Color get darkSlate => const Color(0xFF24211F);
   static const Color textLight = Colors.white;
   static Color get textMuted => CRMColors.textMuted;
   static Color get textDark => CRMColors.text;
@@ -204,8 +200,8 @@ class PremiumTextField extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14.0),
           child: Icon(
             prefixIcon,
-            color: CRMColors.primaryOf(context),
-            size: 22,
+            color: CRMColors.textMutedOf(context),
+            size: 20,
           ),
         ),
         prefixIconConstraints: const BoxConstraints(

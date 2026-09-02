@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/constants/app_constants.dart';
 
 class AppConfigModel {
   final bool maintenanceMode;
@@ -43,8 +43,8 @@ class AppConfigModel {
       maintenanceMessage: json['maintenance_message'] ?? '',
       androidLink: json['android_link'] ?? 'comingsoon',
       iosLink: json['ios_link'] ?? 'comingsoon',
-      minVersion: json['min_version'] ?? '1.0.0',
-      maxVersion: json['max_version'] ?? '1.0.0',
+      minVersion: json['min_version'] ?? '1.1.2',
+      maxVersion: json['max_version'] ?? '1.1.5',
       latestTermsVersion: json['latest_terms_version'] ?? 1,
       latestPrivacyVersion: json['latest_privacy_version'] ?? 1,
       enableAi: json['enable_ai'] ?? true,
@@ -87,8 +87,8 @@ class ConfigService {
           maintenanceMessage: '',
           androidLink: 'comingsoon',
           iosLink: 'comingsoon',
-          minVersion: '1.0.0',
-          maxVersion: '1.0.0',
+          minVersion: '1.1.2',
+          maxVersion: '1.1.5',
           latestTermsVersion: 1,
           latestPrivacyVersion: 1,
           enableAi: true,
@@ -103,10 +103,19 @@ class ConfigService {
     final prefs = await SharedPreferences.getInstance();
     
     // 1. Resolve dynamic version info safely
-    String currentVersion = "1.0.0";
+    String currentVersion = AppConstants.appVersion;
     try {
       final packageInfo = await PackageInfo.fromPlatform();
-      currentVersion = packageInfo.version;
+      final pVer = packageInfo.version.trim();
+      if (pVer.isNotEmpty && pVer != '1.0.0') {
+        try {
+          final pSemver = Version.parse(pVer);
+          final appSemver = Version.parse(AppConstants.appVersion);
+          currentVersion = pSemver > appSemver ? pVer : AppConstants.appVersion;
+        } catch (_) {
+          currentVersion = AppConstants.appVersion;
+        }
+      }
     } catch (_) {
       // Graceful fallback for missing native channel integration
     }
@@ -119,8 +128,16 @@ class ConfigService {
       );
 
       if (response.statusCode == 200 && response.data != null) {
-        final payload = response.data['data'] as Map<String, dynamic>;
+        final payload = Map<String, dynamic>.from(response.data['data'] as Map);
         
+        // Ensure versionStatus accurately reflects currentVersion against server limits
+        final recalculatedStatus = _calculateVersionStatus(
+          currentVersion: currentVersion,
+          minVersion: payload['min_version']?.toString() ?? '1.1.2',
+          maxVersion: payload['max_version']?.toString() ?? '1.1.5',
+        );
+        payload['versionStatus'] = recalculatedStatus;
+
         // Save fetched data to local SharedPreferences cache
         await prefs.setString(_cacheKey, json.encode(payload));
         await prefs.setString(_lastCheckedKey, DateTime.now().toIso8601String());
@@ -131,7 +148,7 @@ class ConfigService {
       // Offline/Timeout Fallback: Retrieve configuration from local cache
       final cachedJsonString = prefs.getString(_cacheKey);
       if (cachedJsonString != null) {
-        final Map<String, dynamic> cachedMap = json.decode(cachedJsonString);
+        final Map<String, dynamic> cachedMap = Map<String, dynamic>.from(json.decode(cachedJsonString) as Map);
         
         // Recalculate versionStatus locally based on current client version vs cached min/max version limits
         final config = AppConfigModel.fromJson(cachedMap);
@@ -152,8 +169,8 @@ class ConfigService {
       maintenanceMessage: '',
       androidLink: 'comingsoon',
       iosLink: 'comingsoon',
-      minVersion: '1.0.0',
-      maxVersion: '1.0.0',
+      minVersion: '1.1.2',
+      maxVersion: '1.1.5',
       latestTermsVersion: 1,
       latestPrivacyVersion: 1,
       enableAi: true,

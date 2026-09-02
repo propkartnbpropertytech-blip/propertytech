@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'core/theme/app_theme.dart';
 import 'core/design_system/tokens/app_colors.dart';
 import 'core/design_system/tokens/app_spacing.dart';
 import 'core/design_system/tokens/app_typography.dart';
+import 'core/design_system/widgets/buttons.dart';
+import 'core/design_system/widgets/crm_brand_lockup.dart';
 import 'core/utils/seo_helper.dart';
 
 class GetStartedScreen extends StatefulWidget {
@@ -15,279 +15,201 @@ class GetStartedScreen extends StatefulWidget {
 }
 
 class _GetStartedScreenState extends State<GetStartedScreen> {
+  static const _heroWhite = Color(0xFFFFFFFF);
+  static const _heroMuted = Color(0xFFE8E8E6);
+  static const _scrim = Color(0xFF1A1A1A);
+
   @override
   void initState() {
     super.initState();
     SeoHelper.updateTags(
       title: 'PropKart - Premium Property Management Software & CRM',
-      description: 'PropKart is the future of property management. Find your dream home, manage property listings, and connect with top agents and builders effortlessly.',
+      description:
+          'PropKart is the future of property management. Find your dream home, manage property listings, and connect with top agents and builders effortlessly.',
       canonicalUrl: 'https://propkart.nbpropertytech.com/get-started',
       imageUrl: 'https://propkart.nbpropertytech.com/assets/logo.png',
     );
   }
 
+  void _goToLogin() {
+    final from = GoRouterState.of(context).uri.queryParameters['from'];
+    if (from != null && from.isNotEmpty) {
+      context.go('/login?from=${Uri.encodeComponent(from)}');
+    } else {
+      context.go('/login');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      body: Stack(
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth >= 960) {
-                return _buildLaptopLayout(context, constraints);
-              } else {
-                return _buildMobileLayout(context, constraints);
-              }
-            },
-          ),
-          Positioned(
-            top: 24,
-            left: 24,
-            child: Row(
-              children: [
-                Image.asset(
-                  'assets/logo.png',
-                  width: 32,
-                  height: 32,
-                  errorBuilder: (context, error, stackTrace) => Icon(
-                    Icons.apartment_rounded,
-                    color: CRMColors.primary,
-                    size: 32,
+      backgroundColor: _scrim,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isDesktop = constraints.maxWidth >= 900;
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/propbg.jpg',
+                  fit: BoxFit.cover,
+                  alignment: isDesktop
+                      ? const Alignment(0.35, 0)
+                      : Alignment.center,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const ColoredBox(color: _scrim);
+                  },
+                ),
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: isDesktop
+                          ? Alignment.centerLeft
+                          : Alignment.topCenter,
+                      end: isDesktop
+                          ? Alignment.centerRight
+                          : Alignment.bottomCenter,
+                      colors: isDesktop
+                          ? [
+                              _scrim,
+                              _scrim.withValues(alpha: 0.92),
+                              _scrim.withValues(alpha: 0.55),
+                              _scrim.withValues(alpha: 0.12),
+                            ]
+                          : [
+                              _scrim.withValues(alpha: 0.25),
+                              _scrim.withValues(alpha: 0.72),
+                              _scrim.withValues(alpha: 0.96),
+                            ],
+                      stops: isDesktop
+                          ? const [0.0, 0.38, 0.68, 1.0]
+                          : const [0.0, 0.48, 1.0],
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  'PropKart',
-                  style: GoogleFonts.playfairDisplay(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.3,
+              ),
+              SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isDesktop
+                        ? (constraints.maxWidth * 0.07).clamp(32, 80)
+                        : CRMSpacing.l,
+                    vertical: isDesktop ? CRMSpacing.l : CRMSpacing.m,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const CRMBrandLockup(
+                        compact: true,
+                        wordmarkColor: _heroWhite,
+                        markSize: 24,
+                      ),
+                      Expanded(
+                        child: Align(
+                          alignment: isDesktop
+                              ? Alignment.centerLeft
+                              : Alignment.bottomCenter,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: isDesktop ? 560 : double.infinity,
+                            ),
+                            child: SingleChildScrollView(
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  top: isDesktop ? 0 : CRMSpacing.xl,
+                                  bottom: isDesktop ? 0 : CRMSpacing.l,
+                                ),
+                                child: _HeroCopy(
+                                  isDesktop: isDesktop,
+                                  onStarted: _goToLogin,
+                                  titleColor: _heroWhite,
+                                  mutedColor: _heroMuted,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
-        ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }
+}
 
-  // Beautiful Laptop/Desktop Split-Visual Layout
-  Widget _buildLaptopLayout(BuildContext context, BoxConstraints constraints) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Image.asset(
-            'assets/images/propbg.jpg',
-            fit: BoxFit.cover,
-            alignment: const Alignment(0.4, 0.0),
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                color: AppColors.darkSlate,
-                child: const Center(
-                  child: Icon(
-                    Icons.apartment_rounded,
-                    size: 150,
-                    color: Colors.grey,
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        Positioned.fill(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  AppColors.darkBg,
-                  AppColors.darkBg.withOpacity(0.95),
-                  AppColors.darkBg.withOpacity(0.75),
-                  AppColors.darkBg.withOpacity(0.0),
-                ],
-                stops: const [0.0, 0.4, 0.65, 1.0],
-              ),
-            ),
-          ),
-        ),
-        SafeArea(
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: constraints.maxWidth * 0.08,
-              vertical: AppSpacing.xxl,
-            ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 540),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: CRMColors.primary.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(AppBorderRadius.tag),
-                        border: Border.all(
-                          color: CRMColors.primary.withOpacity(0.5),
-                          width: 1,
-                        ),
-                      ),
-                      child: Text(
-                        'PREMIUM REAL ESTATE',
-                        style: CRMTypography.captionBold.copyWith(
-                          color: CRMColors.accent,
-                          fontSize: 12,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    Text(
-                      'Treasure of listed\nproperties in your area',
-                      style: CRMTypography.largeDisplay.copyWith(color: Colors.white),
-                    ),
-                    const SizedBox(height: AppSpacing.l),
-                    Text(
-                      'Find your dream home effortlessly. The ultimate real estate platform designed to streamline your property search and connect you with top listings.',
-                      style: CRMTypography.body.copyWith(
-                        color: AppColors.textMuted,
-                        fontSize: 17,
-                        height: 1.6,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxxl),
-                    PremiumButton(
-                      label: 'Get Started',
-                      width: 220,
-                      onPressed: () {
-                        final from = GoRouterState.of(context).uri.queryParameters['from'];
-                        if (from != null && from.isNotEmpty) {
-                          context.go('/login?from=${Uri.encodeComponent(from)}');
-                        } else {
-                          context.go('/login');
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+class _HeroCopy extends StatelessWidget {
+  final bool isDesktop;
+  final VoidCallback onStarted;
+  final Color titleColor;
+  final Color mutedColor;
 
-  // Premium Mobile Bottom-Faded Stack Layout
-  Widget _buildMobileLayout(BuildContext context, BoxConstraints constraints) {
-    return Stack(
+  const _HeroCopy({
+    required this.isDesktop,
+    required this.onStarted,
+    required this.titleColor,
+    required this.mutedColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Positioned.fill(
-          child: Image.asset(
-            'assets/images/propbg.jpg',
-            fit: BoxFit.cover,
-            alignment: Alignment.center,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                color: AppColors.darkSlate,
-                child: const Center(
-                  child: Icon(
-                    Icons.apartment_rounded,
-                    size: 150,
-                    color: Colors.grey,
-                  ),
-                ),
-              );
-            },
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: CRMColors.terracotta,
+            borderRadius: BorderRadius.circular(CRMBorderRadius.button),
           ),
-        ),
-        Positioned.fill(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  AppColors.darkBg.withOpacity(0.2),
-                  AppColors.darkBg.withOpacity(0.8),
-                  AppColors.darkBg,
-                ],
-                stops: const [0.0, 0.5, 0.85],
-              ),
+          child: Text(
+            'PREMIUM REAL ESTATE',
+            style: CRMTypography.captionBold.copyWith(
+              color: Colors.white,
+              fontSize: isDesktop ? 12 : 11,
+              letterSpacing: 1.4,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
-        SafeArea(
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.l, vertical: AppSpacing.xl),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: CRMColors.primary.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(AppBorderRadius.tag),
-                        border: Border.all(
-                          color: CRMColors.primary.withOpacity(0.5),
-                          width: 1,
-                        ),
-                      ),
-                      child: Text(
-                        'PREMIUM REAL ESTATE',
-                        style: CRMTypography.captionBold.copyWith(
-                          color: CRMColors.accent,
-                          fontSize: 10,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.m),
-                    Text(
-                      'Treasure of listed\nproperties in your area',
-                      style: CRMTypography.display.copyWith(
-                        color: Colors.white,
-                        fontSize: 32,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.m),
-                    Text(
-                      'Find your dream home effortlessly. The ultimate real estate platform designed to streamline your property search.',
-                      style: CRMTypography.body.copyWith(
-                        color: AppColors.textMuted,
-                        fontSize: 15,
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    PremiumButton(
-                      label: 'Get Started',
-                      onPressed: () {
-                        final from = GoRouterState.of(context).uri.queryParameters['from'];
-                        if (from != null && from.isNotEmpty) {
-                          context.go('/login?from=${Uri.encodeComponent(from)}');
-                        } else {
-                          context.go('/login');
-                        }
-                      },
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                  ],
-                ),
-              ),
-            ),
+        SizedBox(height: isDesktop ? CRMSpacing.xl : CRMSpacing.m),
+        Text(
+          'Treasure of listed\nproperties in your area',
+          style: CRMTypography.largeDisplay.copyWith(
+            color: titleColor,
+            fontSize: isDesktop ? 48 : 32,
+            height: 1.12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.8,
           ),
+        ),
+        SizedBox(height: isDesktop ? CRMSpacing.l : CRMSpacing.m),
+        Text(
+          isDesktop
+              ? 'Find your dream home effortlessly. The ultimate real estate platform designed to streamline your property search and connect you with top listings.'
+              : 'Find your dream home effortlessly. The ultimate real estate platform designed to streamline your property search.',
+          style: CRMTypography.body.copyWith(
+            color: mutedColor,
+            fontSize: isDesktop ? 17 : 15,
+            height: 1.55,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+        SizedBox(height: isDesktop ? CRMSpacing.xxl : CRMSpacing.xl),
+        CRMButton(
+          label: 'Get Started',
+          onPressed: onStarted,
+          width: isDesktop ? 220 : double.infinity,
+          height: 52,
+          backgroundColor: CRMColors.terracotta,
+          foregroundColor: Colors.white,
         ),
       ],
     );

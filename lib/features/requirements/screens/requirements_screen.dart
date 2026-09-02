@@ -51,7 +51,14 @@ import '../../../core/api/cloudinary_uploader.dart';
 const Color kWhatsAppGreen = Color(0xFF25D366);
 
 class RequirementsScreen extends StatefulWidget {
-  const RequirementsScreen({super.key});
+  final String? initialTab;
+  final String? initialSubTab;
+
+  const RequirementsScreen({
+    super.key,
+    this.initialTab,
+    this.initialSubTab,
+  });
 
   @override
   State<RequirementsScreen> createState() => _RequirementsScreenState();
@@ -90,7 +97,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   void _refreshFollowupsFuture() {
     _followupsFuture = Future.wait([
-      DashboardRepository().getDashboardData(),
+      DashboardRepository().getDashboardData(backgroundRefresh: false),
       RepositoryCoordinator().requirementLocal.getRequirements(),
     ]);
   }
@@ -98,6 +105,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialTab != null) {
+      final tabLower = widget.initialTab!.toLowerCase();
+      if (tabLower == 'follow-ups' || tabLower == 'followups') {
+        _activeMainTab = 'Follow-ups';
+      } else if (tabLower == 'my won' || tabLower == 'won') {
+        _activeMainTab = 'My Won';
+      } else if (tabLower == 'leads') {
+        _activeMainTab = 'Leads';
+      }
+    }
+    if (widget.initialSubTab != null && widget.initialSubTab!.isNotEmpty) {
+      _selectedFollowupSubTab = widget.initialSubTab!;
+    }
     _refreshFollowupsFuture();
     _requirementsStreamSub = RepositoryCoordinator().requirementsStream.listen((_) {
       if (mounted) {
@@ -120,13 +140,101 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        final action = GoRouterState.of(context).uri.queryParameters['action'];
+        final uri = GoRouterState.of(context).uri;
+        final action = uri.queryParameters['action'];
         if (action == 'add' && !_hasAutoOpenedAdd) {
           _hasAutoOpenedAdd = true;
           _showAddEditDialog();
         }
+        final tabParam = uri.queryParameters['tab'];
+        if (tabParam != null) {
+          final tabLower = tabParam.toLowerCase();
+          if (tabLower == 'follow-ups' || tabLower == 'followups') {
+            if (_activeMainTab != 'Follow-ups') {
+              setState(() {
+                _activeMainTab = 'Follow-ups';
+              });
+              _refreshFollowupsFuture();
+            }
+          }
+        }
+        final subTabParam = uri.queryParameters['subTab'];
+        if (subTabParam != null && subTabParam.isNotEmpty) {
+          if (_selectedFollowupSubTab != subTabParam) {
+            setState(() {
+              _selectedFollowupSubTab = subTabParam;
+            });
+          }
+        }
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant RequirementsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialTab != oldWidget.initialTab && widget.initialTab != null) {
+      final tabLower = widget.initialTab!.toLowerCase();
+      if (tabLower == 'follow-ups' || tabLower == 'followups') {
+        setState(() {
+          _activeMainTab = 'Follow-ups';
+        });
+        _refreshFollowupsFuture();
+      } else if (tabLower == 'my won' || tabLower == 'won') {
+        setState(() {
+          _activeMainTab = 'My Won';
+        });
+        _triggerFetch();
+      } else if (tabLower == 'leads') {
+        setState(() {
+          _activeMainTab = 'Leads';
+        });
+        _triggerFetch();
+      }
+    }
+    if (widget.initialSubTab != oldWidget.initialSubTab &&
+        widget.initialSubTab != null &&
+        widget.initialSubTab!.isNotEmpty) {
+      setState(() {
+        _selectedFollowupSubTab = widget.initialSubTab!;
+      });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    try {
+      final uri = GoRouterState.of(context).uri;
+      final tabParam = uri.queryParameters['tab'];
+      if (tabParam != null) {
+        final tabLower = tabParam.toLowerCase();
+        String? targetTab;
+        if (tabLower == 'follow-ups' || tabLower == 'followups') {
+          targetTab = 'Follow-ups';
+        } else if (tabLower == 'my won' || tabLower == 'won') {
+          targetTab = 'My Won';
+        } else if (tabLower == 'leads') {
+          targetTab = 'Leads';
+        }
+        if (targetTab != null && targetTab != _activeMainTab) {
+          setState(() {
+            _activeMainTab = targetTab!;
+          });
+          if (targetTab == 'Follow-ups') {
+            _refreshFollowupsFuture();
+          } else {
+            _triggerFetch();
+          }
+        }
+      }
+      final subTabParam = uri.queryParameters['subTab'];
+      if (subTabParam != null && subTabParam.isNotEmpty && subTabParam != _selectedFollowupSubTab) {
+        setState(() {
+          _selectedFollowupSubTab = subTabParam;
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -639,13 +747,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CRMPageHeader(
-          eyebrow: '',
-          title: 'Requirements',
-          benefit:
-              'Capture buyer demand and run listing matches that convert faster',
+          title: 'Leads',
           trailing: CRMButton(
-            label: 'Add Requirement',
+            label: 'Add Lead',
             prefixIcon: Icons.add_rounded,
+            height: 40,
             onPressed: () => _showAddEditDialog(),
           ),
         ),
@@ -663,23 +769,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
         decoration: BoxDecoration(
-          color: _isMobileFiltersExpanded ? CRMColors.primary : CRMColors.cardBgOf(context),
-          borderRadius: BorderRadius.circular(30),
+          color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.cardBgOf(context),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.button),
           border: Border.all(
-            color: _isMobileFiltersExpanded ? CRMColors.primary : CRMColors.borderOf(context).withOpacity(0.6),
+            color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.borderOf(context),
             width: 1.0,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.black.withOpacity(0.3)
-                  : const Color(0xFF64748B).withOpacity(0.08),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -951,7 +1048,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           label,
           style: CRMTypography.bodyMedium.copyWith(
             color: isSelected
-                ? (label == 'Re-Sale' && CRMColors.isDark ? const Color(0xFF111827) : Colors.white)
+                ? CRMColors.onAtmosphereAccent(label == 'Rent')
                 : CRMColors.textSecondary,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
           ),
@@ -1054,10 +1151,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
-        color: CRMColors.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+        color: CRMColors.isDark ? const Color(0xFF24211F) : const Color(0xFF292725),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: (isRent ? CRMColors.info : CRMColors.primary).withValues(alpha: 0.35),
+          color: (isRent ? CRMColors.rentAccent : CRMColors.primary).withValues(alpha: 0.35),
         ),
         boxShadow: [
           BoxShadow(
@@ -1101,14 +1198,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.xxs, vertical: 2),
             decoration: BoxDecoration(
-              color: (isRent ? CRMColors.info : CRMColors.primary).withValues(alpha: 0.1),
+              color: (isRent ? CRMColors.rentAccent : CRMColors.primary).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
             ),
             child: Text(
               listingLabel,
               style: CRMTypography.captionBold.copyWith(
                 fontSize: 10,
-                color: isRent ? CRMColors.info : CRMColors.primary,
+                color: isRent ? CRMColors.rentAccent : CRMColors.primary,
               ),
             ),
           ),
@@ -6206,14 +6303,14 @@ class _RequirementWinPropertySelectionDialogState
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: (isRent ? CRMColors.success : CRMColors.primaryOf(context))
+                                      color: (isRent ? CRMColors.rentAccent : CRMColors.primaryOf(context))
                                           .withValues(alpha: 0.12),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       isRent ? "Rent" : "Re-sale",
                                       style: TextStyle(
-                                        color: isRent ? CRMColors.success : CRMColors.primaryOf(context),
+                                        color: isRent ? CRMColors.rentAccent : CRMColors.primaryOf(context),
                                         fontSize: 11,
                                         fontWeight: FontWeight.bold,
                                       ),

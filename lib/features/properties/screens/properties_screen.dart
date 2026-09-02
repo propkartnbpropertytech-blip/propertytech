@@ -1330,19 +1330,17 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   Widget _buildPageHeader(PropertyMetadataModel? metadata) {
     return CRMPageHeader(
-      eyebrow: 'Workspace',
-      title: 'Available Inventory',
+      title: 'Properties',
       trailing: CRMButton(
         label: 'Add Property',
-        prefixIcon: Icons.add_circle_outline_rounded,
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        prefixIcon: Icons.add_rounded,
+        height: 40,
         onPressed: () {
           if (metadata == null) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                   content:
-                      Text('Metadata lookups loading, please try again.')),
+                      Text('Loading details, please wait...')),
             );
             return;
           }
@@ -1401,7 +1399,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         title: '${_selectedStatusFilter ?? "Inventory"} listings',
         value: '$statusCount',
         icon: Icons.bolt_rounded,
-        iconColor: CRMColors.primaryOf(context),
+        iconColor: CRMColors.terracotta,
+        backgroundColor: CRMColors.kpiSage,
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1449,7 +1448,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         title: 'Commercial (${_selectedStatusFilter ?? "Inventory"})',
         value: '$statusCount',
         icon: Icons.business_center_outlined,
-        iconColor: CRMColors.primaryOf(context),
+        iconColor: CRMColors.terracotta,
+        backgroundColor: CRMColors.kpiTerracotta,
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1500,7 +1500,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         title: 'Industrial (${_selectedStatusFilter ?? "Inventory"})',
         value: '$statusCount',
         icon: Icons.factory_outlined,
-        iconColor: CRMColors.primaryOf(context),
+        iconColor: CRMColors.text,
+        backgroundColor: CRMColors.kpiSand,
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1540,7 +1541,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         title: 'Land & Plots (${_selectedStatusFilter ?? "Inventory"})',
         value: '$statusCount',
         icon: Icons.landscape_outlined,
-        iconColor: CRMColors.primaryOf(context),
+        iconColor: CRMColors.terracotta,
+        backgroundColor: CRMColors.kpiPlum,
       );
       widgets.add(SizedBox(
         width: cardWidth,
@@ -1592,7 +1594,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   cat,
                   style: TextStyle(
                     color: isSelected
-                        ? ((CRMColors.isDark && !CRMColors.isRentMode) ? const Color(0xFF111827) : Colors.white)
+                        ? Colors.white
                         : CRMColors.textSecondaryOf(context),
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                     fontSize: 13,
@@ -2139,7 +2141,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           style: TextStyle(
             fontSize: 12,
             color: isSelected
-                ? (label == 'Re-Sale' && CRMColors.isDark ? const Color(0xFF111827) : Colors.white)
+                ? CRMColors.onAtmosphereAccent(label == 'Rent')
                 : CRMColors.textSecondaryOf(context),
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
           ),
@@ -2722,54 +2724,28 @@ class _CRMChartCardState extends State<CRMChartCard>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final titleColor = isDark ? const Color(0xFFF8FAFC) : const Color(0xFF1E293B);
-    final subtitleColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = CRMColors.cardBgOf(context);
+    final titleColor = CRMColors.textOf(context);
+    final subtitleColor = CRMColors.textSecondaryOf(context);
 
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 600;
 
     final sectorsToShow = widget.sectors.isNotEmpty
         ? widget.sectors
-        : [ChartSector(label: 'No Listings', value: 1.0, color: Colors.grey.shade400)];
+        : [ChartSector(label: 'No Listings', value: 1.0, color: CRMColors.textMutedOf(context))];
 
     final total = sectorsToShow.fold<double>(0, (s, e) => s + e.value);
 
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
-              : [Colors.white, const Color(0xFFF8FAFC)],
-        ),
+        color: bgColor,
         borderRadius: BorderRadius.circular(CRMBorderRadius.card),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withOpacity(0.08)
-              : const Color(0xFFE2E8F0),
+          color: CRMColors.borderOf(context),
           width: 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: isDark
-                ? Colors.black.withOpacity(0.3)
-                : const Color(0xFF64748B).withOpacity(0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-            spreadRadius: -2,
-          ),
-          BoxShadow(
-            color: isDark
-                ? Colors.black.withOpacity(0.15)
-                : const Color(0xFF64748B).withOpacity(0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       padding: EdgeInsets.all(isMobile ? CRMSpacing.s : CRMSpacing.m),
       child: Column(
@@ -2991,7 +2967,7 @@ class DonutChart3DPainter extends CustomPainter {
     // --- 3D Shadow / Depth layers ---
     for (int i = 3; i >= 1; i--) {
       final shadowPaint = Paint()
-        ..color = (isDark ? Colors.black : const Color(0xFF94A3B8))
+        ..color = (isDark ? Colors.black : CRMColors.sand).withValues(alpha: 0.18)
             .withOpacity(0.06 * i)
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth + (i * 1.5)
@@ -3071,8 +3047,8 @@ class DonutChart3DPainter extends CustomPainter {
       Offset(center.dx - innerRadius * 0.2, center.dy - innerRadius * 0.2),
       innerRadius,
       isDark
-          ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
-          : [Colors.white, const Color(0xFFF1F5F9)],
+          ? [CRMColors.surfaceElevated, CRMColors.background]
+          : [CRMColors.cardBg, CRMColors.groupedBackground],
       [0.0, 1.0],
     );
     final innerPaint = Paint()
@@ -3083,7 +3059,7 @@ class DonutChart3DPainter extends CustomPainter {
 
     // Subtle inner ring border
     final innerRingPaint = Paint()
-      ..color = (isDark ? Colors.white : const Color(0xFF94A3B8)).withOpacity(0.08)
+      ..color = (isDark ? Colors.white : CRMColors.sand).withValues(alpha: 0.12)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.5
       ..isAntiAlias = true;
@@ -3141,16 +3117,9 @@ class _HoverChartTooltipState extends State<HoverChartTooltip> {
       if (!mounted || !_isHovered || _overlayEntry != null) return;
       _overlayEntry = OverlayEntry(
         builder: (context) {
-          final theme = Theme.of(context);
-          final bgColor = theme.brightness == Brightness.dark
-              ? const Color(0xFF1E293B)
-              : Colors.white;
-          final borderColor = theme.brightness == Brightness.dark
-              ? const Color(0xFF334155)
-              : const Color(0xFFE2E8F0);
-          final titleColor = theme.brightness == Brightness.dark
-              ? const Color(0xFFF8FAFC)
-              : const Color(0xFF1E293B);
+          final bgColor = CRMColors.surfaceElevatedOf(context);
+          final borderColor = CRMColors.borderOf(context);
+          final titleColor = CRMColors.textOf(context);
 
           return Positioned(
             width: 320,
@@ -3494,7 +3463,7 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final bgColor = CRMColors.cardBgOf(context);
 
     final sectorsToShow = widget.sectors.isNotEmpty
         ? widget.sectors
@@ -3523,26 +3492,12 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
                 width: cardWidth,
                 height: cardHeight,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: isDark
-                        ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
-                        : [Colors.white, const Color(0xFFF8FAFC)],
-                  ),
+                  color: CRMColors.cardBgOf(context),
                   borderRadius: BorderRadius.circular(CRMBorderRadius.card),
                   border: Border.all(
-                    color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFE2E8F0),
+                    color: CRMColors.borderOf(context),
                     width: 1,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: isDark ? Colors.black.withOpacity(0.3) : const Color(0xFF64748B).withOpacity(0.08),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                      spreadRadius: -2,
-                    ),
-                  ],
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xs),
                 child: Column(
@@ -3569,7 +3524,7 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white70 : Colors.black87,
+                            color: CRMColors.textOf(context),
                           ),
                         ),
                         const SizedBox(width: 2),
@@ -3594,25 +3549,12 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
                   margin: const EdgeInsets.only(top: CRMSpacing.m),
                   padding: const EdgeInsets.all(CRMSpacing.m),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: isDark
-                          ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
-                          : [Colors.white, const Color(0xFFF8FAFC)],
-                    ),
+                    color: CRMColors.cardBgOf(context),
                     borderRadius: BorderRadius.circular(CRMBorderRadius.card),
                     border: Border.all(
-                      color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFE2E8F0),
+                      color: CRMColors.borderOf(context),
                       width: 1,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: isDark ? Colors.black.withOpacity(0.2) : const Color(0xFF64748B).withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

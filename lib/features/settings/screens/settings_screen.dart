@@ -18,6 +18,7 @@ import '../../properties/models/property_model.dart';
 import '../../properties/services/properties_service.dart';
 import 'sync_debug_screen.dart';
 import '../../../core/storage/isar_service.dart';
+import '../../../core/constants/app_constants.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -29,6 +30,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final ConfigService _configService = ConfigService();
   bool _isLoading = false;
+  String _activeSection = 'profile';
 
   @override
   void initState() {
@@ -43,8 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildProfileCard(String name, String email) {
     return CRMCard(
       elevated: true,
-      title: 'User Profile',
-      subtitle: 'Keep your identity and access details current',
+      title: 'Profile',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.m),
         child: Column(
@@ -119,10 +120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildAppearanceCard(bool isAdminOrSuperAdmin) {
     final isDark = ThemeManager().isDarkMode;
     return CRMCard(
-      title: 'System & Appearance',
-      subtitle: isAdminOrSuperAdmin
-          ? 'Tune the look of your workspace and open sync diagnostics'
-          : 'Tune the look of your workspace for day-long comfort',
+      title: 'Appearance',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.xs),
         child: Column(
@@ -136,7 +134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               subtitle: Text(
-                'Toggle between light and dark visual themes',
+                'Light or dark theme',
                 style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
               ),
               secondary: Icon(
@@ -161,7 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 subtitle: Text(
-                  'View network logs, outbox status, and realtime diagnostics',
+                  'Network logs and outbox',
                   style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
                 ),
                 leading: Icon(Icons.sync_rounded, color: CRMColors.primary),
@@ -183,36 +181,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildAboutCard() {
     return CRMCard(
-      title: 'About PropKart',
-      subtitle: 'Stay on the latest build with version checks and updates',
-      child: FutureBuilder<PackageInfo>(
-        future: PackageInfo.fromPlatform(),
-        builder: (context, snapshot) {
-          final version = (snapshot.data?.version != null && snapshot.data!.version.isNotEmpty) ? snapshot.data!.version : '1.1.4';
-          final buildNumber = (snapshot.data?.buildNumber != null && snapshot.data!.buildNumber.isNotEmpty) ? snapshot.data!.buildNumber : '6';
-          
-          return FutureBuilder<String>(
-            future: _configService.getLastCheckedTime(),
-            builder: (context, lastCheckedSnapshot) {
-              final lastChecked = lastCheckedSnapshot.data ?? 'Never Checked';
-              
-              return Padding(
-                padding: const EdgeInsets.only(top: CRMSpacing.m),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildAboutRow('App Version', version),
-                    const Divider(height: CRMSpacing.m),
-                    _buildAboutRow('Build Number', buildNumber),
-                    const Divider(height: CRMSpacing.m),
-                    _buildAboutRow('Last Checked', lastChecked),
-                    const SizedBox(height: CRMSpacing.l),
-                    CRMButton(
-                      label: 'Check for Updates',
-                      onPressed: () => _checkForUpdates(context),
+      title: 'About',
+      child: FutureBuilder<AppConfigModel>(
+        future: _configService.fetchAppConfig(),
+        builder: (context, configSnapshot) {
+          final serverVersion = configSnapshot.data?.maxVersion;
+          return FutureBuilder<PackageInfo>(
+            future: PackageInfo.fromPlatform(),
+            builder: (context, snapshot) {
+              final rawVersion = snapshot.data?.version;
+              final version = (rawVersion != null && rawVersion.isNotEmpty && rawVersion != '1.0.0' && rawVersion != '1.1.1' && rawVersion != '1.1.4')
+                  ? rawVersion
+                  : (serverVersion ?? AppConstants.appVersion);
+              final rawBuild = snapshot.data?.buildNumber;
+              final buildNumber = (rawBuild != null && rawBuild.isNotEmpty && rawBuild != '1' && rawBuild != '3' && rawBuild != '6')
+                  ? rawBuild
+                  : AppConstants.buildNumber;
+
+              return FutureBuilder<String>(
+                future: _configService.getLastCheckedTime(),
+                builder: (context, lastCheckedSnapshot) {
+                  final lastChecked = lastCheckedSnapshot.data ?? 'Never Checked';
+
+                  return Padding(
+                    padding: const EdgeInsets.only(top: CRMSpacing.m),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildAboutRow('App Version', version),
+                        const Divider(height: CRMSpacing.m),
+                        _buildAboutRow('Build Number', buildNumber),
+                        const Divider(height: CRMSpacing.m),
+                        _buildAboutRow('Last Checked', lastChecked),
+                        const SizedBox(height: CRMSpacing.l),
+                        CRMButton(
+                          label: 'Check for Updates',
+                          onPressed: () => _checkForUpdates(context),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               );
             },
           );
@@ -282,7 +291,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildAuditLogsCard() {
     return CRMCard(
       title: 'Audit Logs',
-      subtitle: 'Trace who changed what — accountability across the CRM',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.xs),
         child: ListTile(
@@ -294,7 +302,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           subtitle: Text(
-            'Trace user operations, entity mutations, and operational histories',
+            'User actions and entity changes',
             style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
           ),
           leading: CircleAvatar(
@@ -315,7 +323,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 700;
+    final isMobile = screenWidth < 900;
 
     final authState = context.watch<AuthBloc>().state;
     String currentUserName = 'Guest';
@@ -331,84 +339,157 @@ class _SettingsScreenState extends State<SettingsScreen> {
       currentUserName = authState.user.fullName;
     }
 
+    final sections = <_SettingsNavItem>[
+      const _SettingsNavItem(id: 'profile', label: 'Profile', icon: Icons.person_outline_rounded),
+      const _SettingsNavItem(id: 'appearance', label: 'Appearance', icon: Icons.tune_rounded),
+      const _SettingsNavItem(id: 'locations', label: 'Locations', icon: Icons.location_city_outlined),
+      if (isSuperAdmin)
+        const _SettingsNavItem(id: 'audit', label: 'Audit Logs', icon: Icons.history_rounded),
+      const _SettingsNavItem(id: 'system', label: 'System', icon: Icons.info_outline_rounded),
+    ];
+
+    if (!sections.any((s) => s.id == _activeSection)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _activeSection = 'profile');
+      });
+    }
+
+    Widget sectionContent() {
+      switch (_activeSection) {
+        case 'appearance':
+          return _buildAppearanceCard(isAdminOrSuperAdmin);
+        case 'locations':
+          return _buildLocationConfigCard();
+        case 'audit':
+          return _buildAuditLogsCard();
+        case 'system':
+          return Column(
+            children: [
+              _buildAboutCard(),
+              if (isSuperAdmin) ...[
+                const SizedBox(height: CRMSpacing.l),
+                _buildDiagnosticsCard(),
+              ],
+            ],
+          );
+        case 'profile':
+        default:
+          return _buildProfileCard(currentUserName, currentUserEmail);
+      }
+    }
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
+          : Padding(
               padding: const EdgeInsets.all(CRMSpacing.l),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const CRMPageHeader(
-                    eyebrow: 'System configuration',
-                    title: 'Settings & Profile',
-                    benefit:
-                        'Control appearance, access, and system tools that keep PropKart running smoothly',
-                  ),
+                  const CRMPageHeader(title: 'Settings'),
                   const SizedBox(height: CRMSpacing.l),
-                  if (isMobile) ...[
-                    _buildProfileCard(currentUserName, currentUserEmail),
-                    const SizedBox(height: CRMSpacing.l),
-                    _buildAppearanceCard(isAdminOrSuperAdmin),
-                    const SizedBox(height: CRMSpacing.l),
-                    if (isSuperAdmin) ...[
-                      _buildAuditLogsCard(),
-                      const SizedBox(height: CRMSpacing.l),
-                    ],
-                    _buildLocationConfigCard(),
-                    const SizedBox(height: CRMSpacing.l),
-                    _buildAboutCard(),
-                    if (isSuperAdmin) ...[
-                      const SizedBox(height: CRMSpacing.l),
-                      _buildDiagnosticsCard(),
-                    ],
-                  ] else ...[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _buildProfileCard(currentUserName, currentUserEmail),
-                              const SizedBox(height: CRMSpacing.l),
-                              _buildAppearanceCard(isAdminOrSuperAdmin),
-                            ],
+                  if (isMobile)
+                    Expanded(
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            height: 44,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: sections.length,
+                              separatorBuilder: (_, __) => const SizedBox(width: CRMSpacing.xs),
+                              itemBuilder: (context, index) {
+                                final item = sections[index];
+                                final selected = item.id == _activeSection;
+                                return ChoiceChip(
+                                  label: Text(item.label),
+                                  selected: selected,
+                                  onSelected: (_) => setState(() => _activeSection = item.id),
+                                  selectedColor: CRMColors.terracottaSoft,
+                                  labelStyle: CRMTypography.captionBold.copyWith(
+                                    color: selected ? CRMColors.terracotta : CRMColors.textSecondaryOf(context),
+                                  ),
+                                  side: BorderSide(
+                                    color: selected ? CRMColors.terracotta.withValues(alpha: 0.35) : CRMColors.borderOf(context),
+                                  ),
+                                  backgroundColor: CRMColors.cardBgOf(context),
+                                );
+                              },
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: CRMSpacing.l),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (isSuperAdmin) ...[
-                                _buildAuditLogsCard(),
-                                const SizedBox(height: CRMSpacing.l),
-                              ],
-                              _buildLocationConfigCard(),
-                              const SizedBox(height: CRMSpacing.l),
-                              _buildAboutCard(),
-                              if (isSuperAdmin) ...[
-                                const SizedBox(height: CRMSpacing.l),
-                                _buildDiagnosticsCard(),
-                              ],
-                            ],
+                          const SizedBox(height: CRMSpacing.m),
+                          Expanded(
+                            child: SingleChildScrollView(child: sectionContent()),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 220,
+                            child: CRMCard(
+                              padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
+                              child: Column(
+                                children: [
+                                  for (final item in sections)
+                                    _buildSettingsNavTile(item),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: CRMSpacing.l),
+                          Expanded(
+                            child: SingleChildScrollView(child: sectionContent()),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
                 ],
               ),
             ),
     );
   }
 
+  Widget _buildSettingsNavTile(_SettingsNavItem item) {
+    final selected = item.id == _activeSection;
+    return InkWell(
+      onTap: () => setState(() => _activeSection = item.id),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? CRMColors.terracottaSoft : Colors.transparent,
+          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              item.icon,
+              size: 18,
+              color: selected ? CRMColors.terracotta : CRMColors.textMutedOf(context),
+            ),
+            const SizedBox(width: CRMSpacing.s),
+            Text(
+              item.label,
+              style: CRMTypography.bodyMedium.copyWith(
+                color: selected ? CRMColors.terracotta : CRMColors.textOf(context),
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildLocationConfigCard() {
     return CRMCard(
-      title: 'Location Configurations',
-      subtitle: 'Keep city and area maps accurate for inventory and demand',
+      title: 'Locations',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.xs),
         child: ListTile(
@@ -420,7 +501,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           subtitle: Text(
-            'Configure active cities, states, countries, and area postal codes',
+            'Cities, areas, and pincodes',
             style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
           ),
           leading: CircleAvatar(
@@ -440,8 +521,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildDiagnosticsCard() {
     return CRMCard(
-      title: 'Diagnostics',
-      subtitle: 'Verify integrations before issues hit your team',
+      title: 'System',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.m),
         child: Column(
@@ -493,4 +573,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ThemeManager().removeListener(_onThemeChanged);
     super.dispose();
   }
+}
+
+class _SettingsNavItem {
+  final String id;
+  final String label;
+  final IconData icon;
+
+  const _SettingsNavItem({
+    required this.id,
+    required this.label,
+    required this.icon,
+  });
 }

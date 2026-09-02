@@ -433,7 +433,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
               Text('Recycle Bin', style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context))),
               const SizedBox(height: 4),
               Text(
-                _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Leads',
+                _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Requirements',
                 style: CRMTypography.pageTitle.copyWith(
                   color: CRMColors.textOf(context),
                   fontWeight: FontWeight.bold,
@@ -462,7 +462,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                   ),
                   const SizedBox(width: CRMSpacing.s),
                   ChoiceChip(
-                    label: const Text('Leads'),
+                    label: const Text('Requirements'),
                     selected: _selectedTab == 'Requirements',
                     selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
                     labelStyle: TextStyle(
@@ -501,7 +501,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                       runSpacing: CRMSpacing.s,
                       children: [
                         Text(
-                          _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Leads',
+                          _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Requirements',
                           style: CRMTypography.pageTitle.copyWith(
                             color: CRMColors.textOf(context),
                             fontWeight: FontWeight.bold,
@@ -526,7 +526,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                           },
                         ),
                         ChoiceChip(
-                          label: const Text('Leads'),
+                          label: const Text('Requirements'),
                           selected: _selectedTab == 'Requirements',
                           selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
                           labelStyle: TextStyle(
@@ -1012,10 +1012,10 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
-        color: CRMColors.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+        color: CRMColors.isDark ? const Color(0xFF24211F) : const Color(0xFF292725),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: (isRent ? CRMColors.info : CRMColors.primary).withValues(alpha: 0.35),
+          color: (isRent ? CRMColors.rentAccent : CRMColors.primary).withValues(alpha: 0.35),
         ),
         boxShadow: [
           BoxShadow(

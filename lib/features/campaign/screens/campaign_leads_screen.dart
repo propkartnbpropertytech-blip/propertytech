@@ -118,14 +118,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             children: [
               // Page Header
               CRMPageHeader(
-                eyebrow: 'CAMPAIGN LEADS',
-                title: 'Lead Spreadsheet View',
-                benefit: 'Live spreadsheet view of ingested leads with dynamic column mapping, bulk operations & database deletion.',
+                title: 'Campaign Leads',
                 trailing: CRMButton(
                   label: 'Paste JSON Payload',
                   prefixIcon: Icons.code_rounded,
                   variant: CRMButtonVariant.outline,
-                  height: 36,
+                  height: 40,
                   onPressed: () => _showPasteJsonDialog(context),
                 ),
               ),
@@ -155,15 +153,37 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   // --- WIDGETS ---
 
   Widget _buildKpiMetricsRow(BuildContext context, int total, int unique, int dups, int metaSent) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    if (isMobile) {
+      return Column(
+        children: [
+          Row(
+            children: [
+              _buildMetricItem(context, 'Total Leads', total.toString(), Icons.inbox_rounded, CRMColors.primaryOf(context)),
+              const SizedBox(width: CRMSpacing.s),
+              _buildMetricItem(context, 'Unique Leads', unique.toString(), Icons.verified_user_rounded, CRMColors.success),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.s),
+          Row(
+            children: [
+              _buildMetricItem(context, 'Duplicates', dups.toString(), Icons.copy_rounded, CRMColors.warning),
+              const SizedBox(width: CRMSpacing.s),
+              _buildMetricItem(context, 'Meta Synced', metaSent.toString(), Icons.insights_rounded, CRMColors.textSecondaryOf(context)),
+            ],
+          ),
+        ],
+      );
+    }
     return Row(
       children: [
-        _buildMetricItem(context, 'Total Ingested', total.toString(), Icons.inbox_rounded, CRMColors.primaryOf(context)),
+        _buildMetricItem(context, 'Total Leads', total.toString(), Icons.inbox_rounded, CRMColors.primaryOf(context)),
         const SizedBox(width: CRMSpacing.s),
-        _buildMetricItem(context, 'Unique Valid', unique.toString(), Icons.verified_user_rounded, CRMColors.success),
+        _buildMetricItem(context, 'Unique Leads', unique.toString(), Icons.verified_user_rounded, CRMColors.success),
         const SizedBox(width: CRMSpacing.s),
-        _buildMetricItem(context, 'Duplicates Blocked', dups.toString(), Icons.copy_rounded, CRMColors.warning),
+        _buildMetricItem(context, 'Duplicates', dups.toString(), Icons.copy_rounded, CRMColors.warning),
         const SizedBox(width: CRMSpacing.s),
-        _buildMetricItem(context, 'Meta Responses', metaSent.toString(), Icons.insights_rounded, const Color(0xFF1877F2)),
+        _buildMetricItem(context, 'Meta Synced', metaSent.toString(), Icons.insights_rounded, CRMColors.textSecondaryOf(context)),
       ],
     );
   }
@@ -348,218 +368,250 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     List<String> visibleHeaders,
     List<IntegrationLeadModel> leads,
   ) {
-    return CRMCard(
-      elevated: true,
-      title: 'Spreadsheet view',
-      subtitle: 'Dynamic column headers with visibility controls, header merging & automated deduplication.',
-      headerAction: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Header Visibility Checkbox Selector Button
-          SizedBox(
-            height: 36,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.tune_rounded, size: 15),
-              label: Text('Columns (${visibleHeaders.length}/${allDetectedHeaders.length} visible)'),
-              style: OutlinedButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-              onPressed: () => _showColumnVisibilityDialog(context, allDetectedHeaders),
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobile = screenWidth < 700;
+
+    final columnsButton = SizedBox(
+      height: 36,
+      child: OutlinedButton.icon(
+        icon: const Icon(Icons.tune_rounded, size: 15),
+        label: Text('Columns (${visibleHeaders.length}/${allDetectedHeaders.length} visible)'),
+        style: OutlinedButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        onPressed: () => _showColumnVisibilityDialog(context, allDetectedHeaders),
+      ),
+    );
+
+    final addHeaderButton = CRMButton(
+      label: 'Add Header',
+      prefixIcon: Icons.add_rounded,
+      variant: CRMButtonVariant.secondary,
+      height: 36,
+      onPressed: () => _showAddCustomHeaderDialog(context),
+    );
+
+    final moreToolsButton = PopupMenuButton<String>(
+      tooltip: 'More Tools',
+      onSelected: (action) {
+        if (action == 'merge') {
+          _showMergeHeadersDialog(context, allDetectedHeaders);
+        } else if (action == 'dedup') {
+          _service.deduplicateAll();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Deduplication scan complete. Duplicates flagged.')),
+          );
+        } else if (action == 'purge') {
+          _service.purgeDuplicates();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Removed all duplicate lead entries.')),
+          );
+        } else if (action == 'json') {
+          _showPasteJsonDialog(context);
+        } else if (action == 'clear') {
+          _confirmClearAllLeadsDialog(context);
+        }
+      },
+      itemBuilder: (ctx) => [
+        const PopupMenuItem(
+          value: 'merge',
+          child: Row(
+            children: [
+              Icon(Icons.merge_type_rounded, size: 16),
+              SizedBox(width: 8),
+              Text('Merge Columns'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'dedup',
+          child: Row(
+            children: [
+              Icon(Icons.cleaning_services_rounded, size: 16),
+              SizedBox(width: 8),
+              Text('Scan for Duplicates'),
+            ],
+          ),
+        ),
+        if (_service.leads.any((l) => l.isDuplicate))
+          const PopupMenuItem(
+            value: 'purge',
+            child: Row(
+              children: [
+                Icon(Icons.delete_sweep_rounded, size: 18, color: CRMColors.danger),
+                SizedBox(width: 10),
+                Text('Purge Duplicates', style: TextStyle(color: CRMColors.danger)),
+              ],
             ),
           ),
-          const SizedBox(width: CRMSpacing.s),
-          CRMButton(
-            label: 'Add Header',
-            prefixIcon: Icons.add_rounded,
-            variant: CRMButtonVariant.secondary,
-            height: 36,
-            onPressed: () => _showAddCustomHeaderDialog(context),
-          ),
-          const SizedBox(width: CRMSpacing.s),
-          PopupMenuButton<String>(
-            tooltip: 'More Tools',
-            onSelected: (action) {
-              if (action == 'merge') {
-                _showMergeHeadersDialog(context, allDetectedHeaders);
-              } else if (action == 'dedup') {
-                _service.deduplicateAll();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Deduplication scan complete. Duplicates flagged.')),
-                );
-              } else if (action == 'purge') {
-                _service.purgeDuplicates();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Removed all duplicate lead entries.')),
-                );
-              } else if (action == 'json') {
-                _showPasteJsonDialog(context);
-              } else if (action == 'clear') {
-                _confirmClearAllLeadsDialog(context);
-              }
-            },
-            itemBuilder: (ctx) => [
-              const PopupMenuItem(
-                value: 'merge',
-                child: Row(
-                  children: [
-                    Icon(Icons.merge_type_rounded, size: 16),
-                    SizedBox(width: 8),
-                    Text('Merge Columns'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'dedup',
-                child: Row(
-                  children: [
-                    Icon(Icons.cleaning_services_rounded, size: 16),
-                    SizedBox(width: 8),
-                    Text('Scan for Duplicates'),
-                  ],
-                ),
-              ),
-              if (_service.leads.any((l) => l.isDuplicate))
-                const PopupMenuItem(
-                  value: 'purge',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete_sweep_rounded, size: 18, color: CRMColors.danger),
-                      SizedBox(width: 10),
-                      Text('Purge Duplicates', style: TextStyle(color: CRMColors.danger)),
-                    ],
-                  ),
-                ),
-              const PopupMenuItem(
-                value: 'json',
-                child: Row(
-                  children: [
-                    Icon(Icons.code_rounded, size: 18),
-                    SizedBox(width: 10),
-                    Text('Paste JSON Payload'),
-                  ],
-                ),
-              ),
-              if (_service.leads.isNotEmpty) ...[
-                const PopupMenuDivider(),
-                const PopupMenuItem(
-                  value: 'clear',
-                  child: Row(
-                    children: [
-                      Icon(Icons.clear_all_rounded, size: 18, color: CRMColors.danger),
-                      SizedBox(width: 10),
-                      Text('Clear All Leads', style: TextStyle(color: CRMColors.danger)),
-                    ],
-                  ),
-                ),
-              ],
+        const PopupMenuItem(
+          value: 'json',
+          child: Row(
+            children: [
+              Icon(Icons.code_rounded, size: 18),
+              SizedBox(width: 10),
+              Text('Paste JSON Payload'),
             ],
-            child: Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: CRMColors.surfaceElevatedOf(context),
-                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                border: Border.all(color: CRMColors.borderOf(context)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.more_horiz_rounded, size: 16, color: CRMColors.textOf(context)),
-                  const SizedBox(width: 4),
-                  Text('More Tools', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CRMColors.textOf(context))),
-                  const Icon(Icons.arrow_drop_down, size: 16),
-                ],
-              ),
+          ),
+        ),
+        if (_service.leads.isNotEmpty) ...[
+          const PopupMenuDivider(),
+          const PopupMenuItem(
+            value: 'clear',
+            child: Row(
+              children: [
+                Icon(Icons.clear_all_rounded, size: 18, color: CRMColors.danger),
+                SizedBox(width: 10),
+                Text('Clear All Leads', style: TextStyle(color: CRMColors.danger)),
+              ],
             ),
           ),
         ],
+      ],
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: CRMColors.surfaceElevatedOf(context),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+          border: Border.all(color: CRMColors.borderOf(context)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.more_horiz_rounded, size: 16, color: CRMColors.textOf(context)),
+            if (!isMobile) ...[
+              const SizedBox(width: 4),
+              Text('More Tools', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CRMColors.textOf(context))),
+            ],
+            const Icon(Icons.arrow_drop_down, size: 16),
+          ],
+        ),
       ),
+    );
+
+    final searchInput = SizedBox(
+      height: 38,
+      child: TextField(
+        controller: _searchController,
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          hintText: 'Search cell data, names, phone, email...',
+          hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+          ),
+          filled: true,
+          fillColor: CRMColors.cardBgOf(context),
+        ),
+      ),
+    );
+
+    final sourceDropdown = Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: CRMColors.borderOf(context)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: isMobile,
+          value: _selectedSourceFilter,
+          items: const [
+            DropdownMenuItem(value: 'All', child: Text('All Sources')),
+            DropdownMenuItem(value: 'Meta Ads', child: Text('Meta Ads ')),
+            DropdownMenuItem(value: 'Google Sheets', child: Text('Google Sheets ')),
+            DropdownMenuItem(value: 'Webhook API', child: Text('Webhook API ')),
+          ],
+          onChanged: (val) {
+            if (val != null) setState(() => _selectedSourceFilter = val);
+          },
+        ),
+      ),
+    );
+
+    final duplicateDropdown = Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: CRMColors.borderOf(context)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: isMobile,
+          value: _selectedDuplicateFilter,
+          items: const [
+            DropdownMenuItem(value: 'All', child: Text('Show All Leads')),
+            DropdownMenuItem(value: 'Duplicates Only', child: Text('Duplicates Only ')),
+            DropdownMenuItem(value: 'Unique Only', child: Text('Unique Leads Only ')),
+          ],
+          onChanged: (val) {
+            if (val != null) setState(() => _selectedDuplicateFilter = val);
+          },
+        ),
+      ),
+    );
+
+    return CRMCard(
+      elevated: true,
+      title: 'Spreadsheet view',
+      subtitle: isMobile ? null : 'Dynamic column headers with visibility controls, header merging & automated deduplication.',
+      headerAction: isMobile
+          ? moreToolsButton
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                columnsButton,
+                const SizedBox(width: CRMSpacing.s),
+                addHeaderButton,
+                const SizedBox(width: CRMSpacing.s),
+                moreToolsButton,
+              ],
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Toolbar Filters & Search
-          Row(
-            children: [
-              // Search Input
-              Expanded(
-                flex: 3,
-                child: SizedBox(
-                  height: 38,
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      hintText: 'Search cell data, names, phone, email...',
-                      hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: CRMColors.borderOf(context)),
-                      ),
-                      filled: true,
-                      fillColor: CRMColors.cardBgOf(context),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: CRMSpacing.m),
-
-              // Source Filter
-              Container(
-                height: 38,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: CRMColors.cardBgOf(context),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: CRMColors.borderOf(context)),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedSourceFilter,
-                    items: const [
-                      DropdownMenuItem(value: 'All', child: Text('All Sources')),
-                      DropdownMenuItem(value: 'Meta Ads', child: Text('Meta Ads ')),
-                      DropdownMenuItem(value: 'Google Sheets', child: Text('Google Sheets ')),
-                      DropdownMenuItem(value: 'Webhook API', child: Text('Webhook API ')),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedSourceFilter = val);
-                    },
-                  ),
-                ),
-              ),
-
-              const SizedBox(width: CRMSpacing.m),
-
-              // Duplicate Filter
-              Container(
-                height: 38,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: CRMColors.cardBgOf(context),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: CRMColors.borderOf(context)),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedDuplicateFilter,
-                    items: const [
-                      DropdownMenuItem(value: 'All', child: Text('Show All Leads')),
-                      DropdownMenuItem(value: 'Duplicates Only', child: Text('Duplicates Only ')),
-                      DropdownMenuItem(value: 'Unique Only', child: Text('Unique Leads Only ')),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedDuplicateFilter = val);
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
+          // Toolbar Filters & Search (Responsive)
+          if (isMobile) ...[
+            Wrap(
+              spacing: CRMSpacing.s,
+              runSpacing: CRMSpacing.s,
+              children: [
+                columnsButton,
+                addHeaderButton,
+              ],
+            ),
+            const SizedBox(height: CRMSpacing.s),
+            searchInput,
+            const SizedBox(height: CRMSpacing.s),
+            Row(
+              children: [
+                Expanded(child: sourceDropdown),
+                const SizedBox(width: CRMSpacing.s),
+                Expanded(child: duplicateDropdown),
+              ],
+            ),
+          ] else ...[
+            Row(
+              children: [
+                Expanded(flex: 3, child: searchInput),
+                const SizedBox(width: CRMSpacing.m),
+                sourceDropdown,
+                const SizedBox(width: CRMSpacing.m),
+                duplicateDropdown,
+              ],
+            ),
+          ],
 
           const SizedBox(height: CRMSpacing.m),
 
@@ -713,13 +765,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
                                   color: lead.source == 'Meta Ads'
-                                      ? const Color(0xFF1877F2).withValues(alpha: 0.15)
-                                      : const Color(0xFF0F9D58).withValues(alpha: 0.15),
+                                      ? CRMColors.terracotta.withValues(alpha: 0.15)
+                                      : CRMColors.sage.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
                                     color: lead.source == 'Meta Ads'
-                                        ? const Color(0xFF1877F2).withValues(alpha: 0.4)
-                                        : const Color(0xFF0F9D58).withValues(alpha: 0.4),
+                                        ? CRMColors.terracotta.withValues(alpha: 0.4)
+                                        : CRMColors.sage.withValues(alpha: 0.4),
                                   ),
                                 ),
                                 child: Text(
@@ -727,7 +779,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: lead.source == 'Meta Ads' ? const Color(0xFF1877F2) : const Color(0xFF0F9D58),
+                                    color: lead.source == 'Meta Ads' ? CRMColors.terracotta : CRMColors.sage,
                                   ),
                                 ),
                               ),

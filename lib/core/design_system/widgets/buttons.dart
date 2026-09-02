@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../tokens/app_colors.dart';
 import '../tokens/app_motion.dart';
-import '../tokens/app_shadows.dart';
 import '../tokens/app_spacing.dart';
 import '../tokens/app_typography.dart';
 
@@ -19,6 +18,7 @@ class CRMButton extends StatefulWidget {
 
   final Color? backgroundColor;
   final Color? foregroundColor;
+  final double? borderRadius;
 
   const CRMButton({
     super.key,
@@ -32,6 +32,7 @@ class CRMButton extends StatefulWidget {
     this.padding,
     this.backgroundColor,
     this.foregroundColor,
+    this.borderRadius,
   });
 
   @override
@@ -46,30 +47,17 @@ class _CRMButtonState extends State<CRMButton> {
     Color bgColor;
     Color fgColor;
     BorderSide borderSide = BorderSide.none;
-    List<BoxShadow>? shadows;
 
     switch (widget.variant) {
       case CRMButtonVariant.primary:
         bgColor = widget.backgroundColor ?? CRMColors.primaryOf(context);
-        fgColor = widget.foregroundColor ??
-            ((CRMColors.isDark && !CRMColors.isRentMode)
-                ? const Color(0xFF111827)
-                : Colors.white);
-        shadows = widget.onPressed != null && !widget.isLoading
-            ? (widget.backgroundColor != null
-                ? [
-                    BoxShadow(
-                      color: widget.backgroundColor!.withValues(alpha: 0.35),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : CRMShadows.primaryGlow)
-            : null;
+        fgColor = widget.foregroundColor ?? Colors.white;
+        borderSide = BorderSide.none;
         break;
       case CRMButtonVariant.secondary:
         bgColor = CRMColors.groupedBackground;
         fgColor = CRMColors.textOf(context);
+        borderSide = BorderSide(color: CRMColors.borderOf(context), width: 1);
         break;
       case CRMButtonVariant.outline:
         bgColor = Colors.transparent;
@@ -79,26 +67,37 @@ class _CRMButtonState extends State<CRMButton> {
       case CRMButtonVariant.danger:
         bgColor = CRMColors.danger;
         fgColor = Colors.white;
+        borderSide = BorderSide.none;
         break;
     }
 
     if (widget.onPressed == null) {
       bgColor = bgColor.withValues(alpha: 0.45);
       fgColor = fgColor.withValues(alpha: 0.55);
-      shadows = null;
     }
 
-    final h = widget.height ?? 48.0;
+    final h = widget.height ?? 40.0;
     final compact = h < 36;
 
+    final labelText = Text(
+      widget.label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: CRMTypography.button.copyWith(
+        color: fgColor,
+        fontSize: compact ? 12 : (h >= 48 ? 14 : 13),
+        fontWeight: h >= 48 ? FontWeight.w600 : FontWeight.w500,
+      ),
+    );
+
     Widget content = Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: widget.width != null ? MainAxisSize.max : MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         if (widget.isLoading) ...[
           SizedBox(
-            height: 16,
-            width: 16,
+            height: 14,
+            width: 14,
             child: CircularProgressIndicator(
               strokeWidth: 2,
               valueColor: AlwaysStoppedAnimation<Color>(fgColor),
@@ -106,21 +105,15 @@ class _CRMButtonState extends State<CRMButton> {
           ),
           const SizedBox(width: CRMSpacing.xs),
         ] else if (widget.prefixIcon != null) ...[
-          Icon(widget.prefixIcon, size: compact ? 14 : 18, color: fgColor),
+          Icon(widget.prefixIcon, size: compact ? 14 : 16, color: fgColor),
           const SizedBox(width: CRMSpacing.xs),
         ],
-        Text(
-          widget.label,
-          style: CRMTypography.button.copyWith(
-            color: fgColor,
-            fontSize: compact ? 12 : 15,
-          ),
-        ),
+        if (widget.width != null) Flexible(child: labelText) else labelText,
       ],
     );
 
     return AnimatedScale(
-      scale: _pressed ? 0.97 : 1.0,
+      scale: _pressed ? 0.98 : 1.0,
       duration: CRMMotion.press,
       curve: CRMMotion.easeOut,
       child: SizedBox(
@@ -132,26 +125,27 @@ class _CRMButtonState extends State<CRMButton> {
               : (_) => setState(() => _pressed = true),
           onPointerUp: (_) => setState(() => _pressed = false),
           onPointerCancel: (_) => setState(() => _pressed = false),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-              boxShadow: shadows,
-            ),
-            child: OutlinedButton(
-              onPressed: widget.isLoading ? null : widget.onPressed,
-              style: OutlinedButton.styleFrom(
-                backgroundColor: bgColor,
-                foregroundColor: fgColor,
-                side: borderSide,
-                elevation: 0,
-                padding: widget.padding ??
-                    const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+          child: OutlinedButton(
+            onPressed: widget.isLoading ? null : widget.onPressed,
+            style: OutlinedButton.styleFrom(
+              backgroundColor: bgColor,
+              foregroundColor: fgColor,
+              disabledBackgroundColor: bgColor,
+              disabledForegroundColor: fgColor,
+              overlayColor: Colors.black.withValues(alpha: 0.08),
+              side: borderSide,
+              elevation: 0,
+              padding: widget.padding ??
+                  EdgeInsets.symmetric(
+                    horizontal: compact ? CRMSpacing.s : CRMSpacing.m,
+                  ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(
+                  widget.borderRadius ?? CRMBorderRadius.button,
                 ),
               ),
-              child: content,
             ),
+            child: content,
           ),
         ),
       ),

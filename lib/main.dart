@@ -23,7 +23,6 @@ import 'core/storage/performance_logger.dart';
 import 'core/network/sync_manager.dart';
 import 'core/storage/repository_coordinator.dart';
 
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/api/api_constants.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
@@ -35,38 +34,26 @@ void main() async {
   if (kIsWeb) {
     usePathUrlStrategy();
   }
-  WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    await Supabase.initialize(
-      url: ApiConstants.supabaseUrl,
-      anonKey: ApiConstants.supabaseAnonKey,
-      authOptions: const FlutterAuthClientOptions(
-        authFlowType: AuthFlowType.pkce,
-      ),
-    );
-  } catch (e) {
-    debugPrint("Error initializing Supabase: $e");
-  }
+  Future<void> bootstrap() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Keep Isar on the critical path (offline reads). Defer logging/sync
-  // until after the first frame so Android cold start stays responsive.
-  try {
-    await IsarService().initialize();
-  } catch (e, stackTrace) {
-    debugPrint("🚨 Error during Isar initialization: $e");
-    debugPrint("🚨 Startup initialization stack trace:\n$stackTrace");
-    MyApp.startupError = e.toString();
-    MyApp.startupStackTrace = stackTrace.toString();
-  }
+    // Keep Isar on the critical path (offline reads). Defer logging/sync
+    // until after the first frame so Android cold start stays responsive.
+    try {
+      await IsarService().initialize();
+    } catch (e, stackTrace) {
+      debugPrint("🚨 Error during Isar initialization: $e");
+      debugPrint("🚨 Startup initialization stack trace:\n$stackTrace");
+      MyApp.startupError = e.toString();
+      MyApp.startupStackTrace = stackTrace.toString();
+    }
 
-  final authRepository = AuthRepository();
+    final authRepository = AuthRepository();
 
-  void scheduleDeferredStartup() {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         await PerformanceLogger().initialize();
-        // Do NOT connect Supabase Realtime before login — auth gates sync.
         await SyncManager().initialize();
 
         final lookupCount =
@@ -79,6 +66,8 @@ void main() async {
         debugPrint("🚨 Deferred startup stack trace:\n$stackTrace");
       }
     });
+
+    runApp(MyApp(authRepository: authRepository));
   }
 
   if (ApiConstants.sentryDsn != 'YOUR_SENTRY_DSN') {
@@ -91,14 +80,10 @@ void main() async {
         options.profilesSampleRate = kReleaseMode ? 0.05 : 0.2;
         options.environment = kReleaseMode ? 'production' : 'development';
       },
-      appRunner: () {
-        scheduleDeferredStartup();
-        runApp(MyApp(authRepository: authRepository));
-      },
+      appRunner: bootstrap,
     );
   } else {
-    scheduleDeferredStartup();
-    runApp(MyApp(authRepository: authRepository));
+    await bootstrap();
   }
 }
 

@@ -1,24 +1,14 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/integration_lead_model.dart';
 import '../../clients/services/clients_service.dart';
 
 class IntegrationService extends ChangeNotifier {
   static final IntegrationService _instance = IntegrationService._internal();
   factory IntegrationService() => _instance;
-  IntegrationService._internal() {
-    _initFromSupabase();
-  }
+  IntegrationService._internal();
 
   final ClientsService _clientsService = ClientsService();
-  SupabaseClient? get _supabase {
-    try {
-      return Supabase.instance.client;
-    } catch (_) {
-      return null;
-    }
-  }
 
   // Webhook configuration
   String webhookUrl = "https://api-propkart.nbpropertytech.com/api/v1/integrations/webhooks/meta-leads";
@@ -84,48 +74,6 @@ class IntegrationService extends ChangeNotifier {
     'source': 'Lead Source Tag',
   };
 
-  /// Initialize and load saved leads & column mappings from Supabase
-  Future<void> _initFromSupabase() async {
-    final client = _supabase;
-    if (client == null) return;
-
-    try {
-      // 1. Fetch saved leads from Supabase table `integration_leads`
-      final leadsRes = await client
-          .from('integration_leads')
-          .select('*')
-          .order('received_at', ascending: false)
-          .limit(100);
-
-      if (leadsRes.isNotEmpty) {
-        _leads = (leadsRes as List).map((r) => IntegrationLeadModel.fromJson(Map<String, dynamic>.from(r as Map))).toList();
-      }
-
-      // 2. Fetch saved headers from `integration_column_mappings`
-      final colRes = await client.from('integration_column_mappings').select('*');
-      if (colRes.isNotEmpty) {
-        for (final r in (colRes as List)) {
-          final headerName = r['header_name']?.toString() ?? '';
-          final crmTarget = r['crm_field_target']?.toString();
-          final isVisible = r['is_visible'] != false;
-          final isCustom = r['is_custom'] == true;
-
-          if (headerName.isNotEmpty) {
-            if (isCustom) _customHeaders.add(headerName);
-            if (!isVisible) _hiddenHeaders.add(headerName);
-            if (crmTarget != null && crmTarget.isNotEmpty) {
-              _columnToCrmFieldMap[headerName] = crmTarget;
-            }
-          }
-        }
-      }
-
-      notifyListeners();
-    } catch (e) {
-      debugPrint('IntegrationService init from Supabase notice: $e');
-    }
-  }
-
   /// Add a custom header dynamically
   Future<void> addCustomHeader(String headerName, {String? crmField}) async {
     final trimmed = headerName.trim();
@@ -141,20 +89,6 @@ class IntegrationService extends ChangeNotifier {
     }
 
     notifyListeners();
-
-    // Persist to Supabase if connected
-    final client = _supabase;
-    if (client != null) {
-      try {
-        await client.from('integration_column_mappings').upsert({
-          'header_name': trimmed,
-          'crm_field_target': _columnToCrmFieldMap[trimmed],
-          'is_visible': true,
-          'is_custom': true,
-          'updated_at': DateTime.now().toIso8601String(),
-        });
-      } catch (_) {}
-    }
   }
 
   /// Remove a custom header
@@ -171,13 +105,6 @@ class IntegrationService extends ChangeNotifier {
     }
     _leads = updated;
     notifyListeners();
-
-    final client = _supabase;
-    if (client != null) {
-      try {
-        await client.from('integration_column_mappings').delete().eq('header_name', headerName);
-      } catch (_) {}
-    }
   }
 
   /// Toggle header visibility
@@ -188,18 +115,6 @@ class IntegrationService extends ChangeNotifier {
       _hiddenHeaders.add(header);
     }
     notifyListeners();
-
-    final client = _supabase;
-    if (client != null) {
-      try {
-        await client.from('integration_column_mappings').upsert({
-          'header_name': header,
-          'is_visible': isVisible,
-          'crm_field_target': _columnToCrmFieldMap[header],
-          'updated_at': DateTime.now().toIso8601String(),
-        });
-      } catch (_) {}
-    }
   }
 
   /// Select or Deselect all headers
@@ -303,27 +218,6 @@ class IntegrationService extends ChangeNotifier {
 
     _leads.insert(0, newLead);
     notifyListeners();
-
-    // Persist to Supabase table `integration_leads`
-    final client = _supabase;
-    if (client != null) {
-      try {
-        await client.from('integration_leads').insert({
-          'source': source,
-          'external_lead_id': newLead.externalLeadId,
-          'raw_json': rawJson,
-          'sanitized_phone': _normalizePhone(phone),
-          'sanitized_email': email.trim().toLowerCase(),
-          'is_duplicate': isDup,
-          'duplicate_reason': dupReason,
-          'quality_status': 'Pending',
-          'import_status': 'Pending',
-          'received_at': DateTime.now().toIso8601String(),
-        });
-      } catch (e) {
-        debugPrint('Supabase insert integration_lead note: $e');
-      }
-    }
   }
 
   /// Merge multiple headers into a single target header across all leads
@@ -386,17 +280,6 @@ class IntegrationService extends ChangeNotifier {
       _columnToCrmFieldMap[header] = crmField;
     }
     notifyListeners();
-
-    final client = _supabase;
-    if (client != null) {
-      try {
-        client.from('integration_column_mappings').upsert({
-          'header_name': header,
-          'crm_field_target': crmField,
-          'updated_at': DateTime.now().toIso8601String(),
-        });
-      } catch (_) {}
-    }
   }
 
   void _autoSuggestMappingForHeader(String header) {
@@ -486,18 +369,6 @@ class IntegrationService extends ChangeNotifier {
 
     notifyListeners();
 
-    // Update in Supabase
-    final client = _supabase;
-    if (client != null) {
-      try {
-        await client.from('integration_leads').update({
-          'quality_status': qualityStatus,
-          'meta_feedback_event_id': eventId,
-          'meta_feedback_sent_at': DateTime.now().toIso8601String(),
-        }).eq('external_lead_id', lead.externalLeadId ?? '');
-      } catch (_) {}
-    }
-
     return {
       'success': true,
       'eventId': eventId,
@@ -570,56 +441,25 @@ class IntegrationService extends ChangeNotifier {
     return importedCount;
   }
 
-  /// Delete single lead (from local memory and Supabase DB)
+  /// Delete single lead (from local memory)
   Future<bool> deleteLead(String id) async {
     final leadIndex = _leads.indexWhere((l) => l.id == id);
     if (leadIndex == -1) return false;
 
-    final lead = _leads[leadIndex];
     _leads.removeAt(leadIndex);
     notifyListeners();
-
-    final client = _supabase;
-    if (client != null) {
-      try {
-        if (lead.externalLeadId != null && lead.externalLeadId!.isNotEmpty) {
-          await client.from('integration_leads').delete().eq('external_lead_id', lead.externalLeadId!);
-        } else {
-          await client.from('integration_leads').delete().eq('id', id);
-        }
-      } catch (e) {
-        debugPrint('Supabase deleteLead error (falling back to local deletion): $e');
-      }
-    }
     return true;
   }
 
-  /// Batch delete multiple leads (from local memory and Supabase DB)
+  /// Batch delete multiple leads (from local memory)
   Future<int> deleteLeads(List<String> ids) async {
     if (ids.isEmpty) return 0;
 
     final idsSet = ids.toSet();
     final leadsToDelete = _leads.where((l) => idsSet.contains(l.id)).toList();
-    final externalIds = leadsToDelete
-        .map((l) => l.externalLeadId)
-        .where((ext) => ext != null && ext.isNotEmpty)
-        .cast<String>()
-        .toList();
 
     _leads.removeWhere((l) => idsSet.contains(l.id));
     notifyListeners();
-
-    final client = _supabase;
-    if (client != null) {
-      try {
-        if (externalIds.isNotEmpty) {
-          await client.from('integration_leads').delete().inFilter('external_lead_id', externalIds);
-        }
-        await client.from('integration_leads').delete().inFilter('id', ids);
-      } catch (e) {
-        debugPrint('Supabase deleteLeads batch error: $e');
-      }
-    }
     return leadsToDelete.length;
   }
 
@@ -658,23 +498,8 @@ class IntegrationService extends ChangeNotifier {
       duplicateReason: null,
     );
 
-    // Delete the secondary leads from memory and DB
+    // Delete the secondary leads from memory
     await deleteLeads(secondaryLeadIds);
-
-    // Update primary in Supabase
-    final client = _supabase;
-    if (client != null) {
-      try {
-        await client.from('integration_leads').update({
-          'raw_json': mergedRaw,
-          'is_duplicate': false,
-          'duplicate_reason': null,
-          'updated_at': DateTime.now().toIso8601String(),
-        }).eq('external_lead_id', primaryLead.externalLeadId ?? '');
-      } catch (e) {
-        debugPrint('Supabase merge update primary lead note: $e');
-      }
-    }
 
     deduplicateAll();
     notifyListeners();
@@ -696,27 +521,6 @@ class IntegrationService extends ChangeNotifier {
     }
     _leads = updated;
     notifyListeners();
-
-    final client = _supabase;
-    if (client != null) {
-      try {
-        final externalIds = _leads
-            .where((l) => idsSet.contains(l.id))
-            .map((l) => l.externalLeadId)
-            .where((ext) => ext != null && ext.isNotEmpty)
-            .cast<String>()
-            .toList();
-
-        if (externalIds.isNotEmpty) {
-          await client.from('integration_leads').update({
-            'quality_status': qualityStatus,
-            'updated_at': DateTime.now().toIso8601String(),
-          }).inFilter('external_lead_id', externalIds);
-        }
-      } catch (e) {
-        debugPrint('Supabase bulkUpdateQualityStatus note: $e');
-      }
-    }
   }
 
   // --- Helper Methods ---

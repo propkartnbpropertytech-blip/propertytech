@@ -6,13 +6,13 @@ import '../models/user_model.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart' as auth_model;
 import '../../../core/design_system/tokens/app_colors.dart';
-import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
+import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/api/dio_client.dart';
@@ -760,59 +760,14 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Widget _buildPageHeader() {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 600;
-
-    final textColumn = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "User Management",
-          style: CRMTypography.pageTitle.copyWith(
-            color: CRMColors.text,
-            fontSize: isMobile ? 22 : 28,
-          ),
-        ),
-        const SizedBox(height: 4.0),
-        Text(
-          "Configure workspace permissions, logins, and enterprise roles",
-          style: CRMTypography.benefit.copyWith(
-            color: CRMColors.textSecondary,
-            fontSize: isMobile ? 12 : 13,
-          ),
-        ),
-      ],
-    );
-
-    if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          textColumn,
-          const SizedBox(height: CRMSpacing.m),
-          SizedBox(
-            width: double.infinity,
-            child: CRMButton(
-              label: "Add Employee",
-              prefixIcon: Icons.add_rounded,
-              onPressed: () => _showAddEditUserDialog(),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(child: textColumn),
-        const SizedBox(width: CRMSpacing.m),
-        CRMButton(
-          label: "Add Employee",
-          prefixIcon: Icons.add_rounded,
-          onPressed: () => _showAddEditUserDialog(),
-        ),
-      ],
+    return CRMPageHeader(
+      title: "Employees",
+      trailing: CRMButton(
+        label: "Add Employee",
+        prefixIcon: Icons.add_rounded,
+        height: 40,
+        onPressed: () => _showAddEditUserDialog(),
+      ),
     );
   }
 
@@ -839,68 +794,28 @@ class _UsersScreenState extends State<UsersScreen> {
               .length;
         }
 
-        if (MediaQuery.of(context).size.width < 600) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              CRMKPICard(
-                title: "TOTAL EMPLOYEES",
-                value: total.toString(),
-                icon: Icons.people_rounded,
-                iconColor: CRMColors.primary,
-                benefit: 'Everyone with CRM access in one place',
-              ),
-              const SizedBox(height: CRMSpacing.m),
-              CRMKPICard(
-                title: "ACTIVE SYSTEM USERS",
-                value: active.toString(),
-                icon: Icons.check_circle_outline_rounded,
-                iconColor: CRMColors.success,
-                benefit: 'Logins that can work the pipeline today',
-              ),
-              const SizedBox(height: CRMSpacing.m),
-              CRMKPICard(
-                title: "ADMINISTRATORS",
-                value: admins.toString(),
-                icon: Icons.admin_panel_settings_rounded,
-                iconColor: CRMColors.info,
-                benefit: 'Roles that control workspace security',
-              ),
-            ],
-          );
-        }
-
-        final int crossAxisCount = CRMBreakpoints.kpiColumns(context, desktop: 3);
-        final double childAspectRatio = CRMBreakpoints.kpiAspectRatio(context);
-
-        return GridView.count(
-          crossAxisCount: crossAxisCount,
-          crossAxisSpacing: CRMSpacing.m,
-          mainAxisSpacing: CRMSpacing.m,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: childAspectRatio,
+        return CRMResponsiveKpiRow(
           children: [
             CRMKPICard(
               title: "TOTAL EMPLOYEES",
               value: total.toString(),
               icon: Icons.people_rounded,
-              iconColor: CRMColors.primary,
-              benefit: 'Everyone with CRM access in one place',
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiPlum,
             ),
             CRMKPICard(
               title: "ACTIVE SYSTEM USERS",
               value: active.toString(),
               icon: Icons.check_circle_outline_rounded,
-              iconColor: CRMColors.success,
-              benefit: 'Logins that can work the pipeline today',
+              iconColor: CRMColors.text,
+              backgroundColor: CRMColors.kpiSage,
             ),
             CRMKPICard(
               title: "ADMINISTRATORS",
               value: admins.toString(),
               icon: Icons.admin_panel_settings_rounded,
-              iconColor: CRMColors.info,
-              benefit: 'Roles that control workspace security',
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiRose,
             ),
           ],
         );
