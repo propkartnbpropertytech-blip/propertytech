@@ -51,8 +51,8 @@ class AnalyticsSection extends StatelessWidget {
   }
 }
 
-// ── Inventory Overview Line Chart ───────────────────────────
-class InventoryOverviewChartCard extends StatefulWidget {
+// ── Inventory snapshot (horizontal comparison, not a fake trend) ──
+class InventoryOverviewChartCard extends StatelessWidget {
   final DashboardSummary? summary;
   final bool isRent;
 
@@ -63,34 +63,35 @@ class InventoryOverviewChartCard extends StatefulWidget {
   });
 
   @override
-  State<InventoryOverviewChartCard> createState() =>
-      _InventoryOverviewChartCardState();
-}
-
-class _InventoryOverviewChartCardState
-    extends State<InventoryOverviewChartCard> {
-  String _selectedRange = 'This Month';
-
-  @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final isRent = widget.isRent;
+    final primary = ThemeManager().primaryColor;
     final availableVal = (isRent
-            ? widget.summary?.rentalAvailable
-            : widget.summary?.resaleAvailable) ??
+            ? summary?.rentalAvailable
+            : summary?.resaleAvailable) ??
         0;
-    final reqsVal = (isRent
-            ? widget.summary?.rentalRequirements
-            : widget.summary?.resaleRequirements) ??
-        0;
-    final closedVal = (isRent
-            ? widget.summary?.rentalRented
-            : widget.summary?.resaleSold) ??
+    final closedVal = (isRent ? summary?.rentalRented : summary?.resaleSold) ?? 0;
+    final leadsVal = (isRent
+            ? summary?.rentalRequirements
+            : summary?.resaleRequirements) ??
         0;
     final wonVal = (isRent
-            ? widget.summary?.rentalWonRequirements
-            : widget.summary?.resaleWonRequirements) ??
+            ? summary?.rentalWonRequirements
+            : summary?.resaleWonRequirements) ??
         0;
+
+    final listingTotal = availableVal + closedVal;
+    final leadTotal = leadsVal + wonVal;
+    final listingShare = listingTotal == 0
+        ? 0
+        : ((availableVal / listingTotal) * 100).round();
+    final conversion = leadTotal == 0
+        ? 0
+        : ((wonVal / leadTotal) * 100).round();
+    final closedLabel = isRent ? 'Rented' : 'Sold';
+
+    final titleColor = isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D);
+    final mutedColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -112,266 +113,182 @@ class _InventoryOverviewChartCardState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isRent ? 'Rental Inventory' : 'Re-Sale Inventory',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isDark
-                          ? const Color(0xFFF8FAFC)
-                          : const Color(0xFF14213D),
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Property volume and turnover',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark
-                          ? const Color(0xFF94A3B8)
-                          : const Color(0xFF68738A),
-                    ),
-                  ),
-                ],
-              ),
-              _buildDropdown(
-                value: _selectedRange,
-                items: const [
-                  'This Week',
-                  'This Month',
-                  'This Quarter',
-                  'This Year',
-                ],
-                isDark: isDark,
-                onChanged: (val) {
-                  if (val != null) setState(() => _selectedRange = val);
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            height: 180,
-            width: double.infinity,
-            child: CustomPaint(
-              painter: _ModernLineChartPainter(
-                lineColor: ThemeManager().primaryColor,
-                isDark: isDark,
-                fillGradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    ThemeManager().primaryColor.withValues(alpha: isDark ? 0.35 : 0.25),
-                    ThemeManager().primaryColor.withValues(alpha: 0.0),
-                  ],
-                ),
-                dataPoints: [
-                  availableVal.toDouble(),
-                  reqsVal.toDouble(),
-                  closedVal.toDouble(),
-                  wonVal.toDouble(),
-                  (widget.summary?.available ?? 0).toDouble(),
-                  (widget.summary?.totalProperties ?? 0).toDouble(),
-                ],
-                xLabels: const [
-                  'Avail',
-                  'Leads',
-                  'Closed',
-                  'Won',
-                  'Total Avail',
-                  'Inventory',
-                ],
-              ),
+          Text(
+            isRent ? 'Rental snapshot' : 'Re-sale snapshot',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: titleColor,
+              letterSpacing: -0.2,
             ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Open vs closed listings, and lead conversion',
+            style: TextStyle(fontSize: 12, color: mutedColor),
+          ),
+          const SizedBox(height: 20),
+          _SnapshotGroupLabel(
+            label: 'Listings',
+            hint: listingTotal == 0
+                ? 'No listings yet'
+                : '$listingShare% still available',
+            isDark: isDark,
+          ),
+          const SizedBox(height: 10),
+          _SnapshotBar(
+            label: 'Available',
+            value: availableVal,
+            maxValue: listingTotal,
+            color: primary,
+            isDark: isDark,
+          ),
+          const SizedBox(height: 8),
+          _SnapshotBar(
+            label: closedLabel,
+            value: closedVal,
+            maxValue: listingTotal,
+            color: const Color(0xFF64748B),
+            isDark: isDark,
+          ),
+          const SizedBox(height: 18),
+          _SnapshotGroupLabel(
+            label: 'Leads',
+            hint: leadTotal == 0
+                ? 'No leads yet'
+                : '$conversion% converted to won',
+            isDark: isDark,
+          ),
+          const SizedBox(height: 10),
+          _SnapshotBar(
+            label: 'Active',
+            value: leadsVal,
+            maxValue: leadTotal,
+            color: const Color(0xFF3B82F6),
+            isDark: isDark,
+          ),
+          const SizedBox(height: 8),
+          _SnapshotBar(
+            label: 'Won',
+            value: wonVal,
+            maxValue: leadTotal,
+            color: const Color(0xFF10B981),
+            isDark: isDark,
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildDropdown({
-    required String value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
-    required bool isDark,
-  }) {
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF243044) : const Color(0xFFF1F4F9),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          dropdownColor:
-              isDark ? const Color(0xFF1E293B) : Colors.white,
-          icon: Icon(
-            Icons.keyboard_arrow_down_rounded,
-            size: 16,
-            color: isDark
-                ? const Color(0xFF94A3B8)
-                : const Color(0xFF68738A),
-          ),
+class _SnapshotGroupLabel extends StatelessWidget {
+  final String label;
+  final String hint;
+  final bool isDark;
+
+  const _SnapshotGroupLabel({
+    required this.label,
+    required this.hint,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          label,
           style: TextStyle(
             fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: isDark
-                ? const Color(0xFFF8FAFC)
-                : const Color(0xFF14213D),
+            fontWeight: FontWeight.w700,
+            color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
           ),
-          onChanged: onChanged,
-          items: items
-              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-              .toList(),
         ),
-      ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            hint,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 11.5,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _ModernLineChartPainter extends CustomPainter {
-  final Color lineColor;
-  final Gradient fillGradient;
-  final List<double> dataPoints;
-  final List<String> xLabels;
+class _SnapshotBar extends StatelessWidget {
+  final String label;
+  final int value;
+  final int maxValue;
+  final Color color;
   final bool isDark;
 
-  _ModernLineChartPainter({
-    required this.lineColor,
-    required this.fillGradient,
-    required this.dataPoints,
-    required this.xLabels,
-    this.isDark = false,
+  const _SnapshotBar({
+    required this.label,
+    required this.value,
+    required this.maxValue,
+    required this.color,
+    required this.isDark,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    if (dataPoints.isEmpty) return;
+  Widget build(BuildContext context) {
+    final fraction = maxValue <= 0 ? 0.0 : (value / maxValue).clamp(0.0, 1.0);
+    final track = isDark ? const Color(0xFF243044) : const Color(0xFFF1F4F9);
+    final titleColor = isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D);
 
-    final double bottomPadding = 24.0;
-    final double chartHeight = size.height - bottomPadding;
-    final double chartWidth = size.width;
-
-    // Grid lines
-    final gridPaint = Paint()
-      ..color = isDark
-          ? const Color(0xFF334155).withValues(alpha: 0.5)
-          : const Color(0xFFF1F4F9)
-      ..strokeWidth = 1;
-
-    for (int i = 0; i <= 4; i++) {
-      final y = chartHeight * (i / 4);
-      canvas.drawLine(Offset(0, y), Offset(chartWidth, y), gridPaint);
-    }
-
-    final double maxVal = dataPoints.reduce(math.max) > 0
-        ? dataPoints.reduce(math.max) * 1.15
-        : 10.0;
-    final double minVal = 0.0;
-    final double range = (maxVal - minVal) == 0 ? 1 : (maxVal - minVal);
-
-    final List<Offset> points = [];
-    final double stepX = chartWidth / (dataPoints.length - 1);
-
-    for (int i = 0; i < dataPoints.length; i++) {
-      final x = i * stepX;
-      final y = chartHeight - ((dataPoints[i] - minVal) / range) * chartHeight;
-      points.add(Offset(x, y));
-    }
-
-    // Smooth Bezier Curve Path
-    final path = Path();
-    final fillPath = Path();
-
-    path.moveTo(points[0].dx, points[0].dy);
-    fillPath.moveTo(points[0].dx, chartHeight);
-    fillPath.lineTo(points[0].dx, points[0].dy);
-
-    for (int i = 0; i < points.length - 1; i++) {
-      final p0 = points[i];
-      final p1 = points[i + 1];
-      final controlX1 = p0.dx + (p1.dx - p0.dx) / 2;
-      final controlY1 = p0.dy;
-      final controlX2 = p0.dx + (p1.dx - p0.dx) / 2;
-      final controlY2 = p1.dy;
-
-      path.cubicTo(controlX1, controlY1, controlX2, controlY2, p1.dx, p1.dy);
-      fillPath.cubicTo(
-        controlX1,
-        controlY1,
-        controlX2,
-        controlY2,
-        p1.dx,
-        p1.dy,
-      );
-    }
-
-    fillPath.lineTo(points.last.dx, chartHeight);
-    fillPath.close();
-
-    // Draw Fill
-    final fillPaint = Paint()
-      ..shader = fillGradient.createShader(
-        Rect.fromLTWH(0, 0, chartWidth, chartHeight),
-      )
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(fillPath, fillPaint);
-
-    // Draw Line
-    final linePaint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..isAntiAlias = true;
-    canvas.drawPath(path, linePaint);
-
-    // Draw Dots and Labels
-    final dotPaint = Paint()
-      ..color = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final dotStrokePaint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke;
-
-    for (int i = 0; i < points.length; i++) {
-      final pt = points[i];
-      canvas.drawCircle(pt, 4.5, dotPaint);
-      canvas.drawCircle(pt, 4.5, dotStrokePaint);
-
-      // X label
-      if (i < xLabels.length) {
-        final textPainter = TextPainter(
-          text: TextSpan(
-            text: xLabels[i],
-            style: TextStyle(
-              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-              fontSize: 10,
-              fontWeight: FontWeight.w500,
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: titleColor,
+                ),
+              ),
+            ),
+            Text(
+              '$value',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: titleColor,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: SizedBox(
+            height: 10,
+            child: Stack(
+              children: [
+                Container(color: track),
+                FractionallySizedBox(
+                  widthFactor: fraction == 0 ? 0 : math.max(fraction, 0.04),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        final x = (pt.dx - textPainter.width / 2).clamp(
-          0.0,
-          chartWidth - textPainter.width,
-        );
-        textPainter.paint(canvas, Offset(x, chartHeight + 8));
-      }
-    }
+        ),
+      ],
+    );
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 // ── Top Locations Donut Chart ───────────────────────────────

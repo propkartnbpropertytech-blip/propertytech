@@ -15,6 +15,7 @@
         android:label="propkart"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:extractNativeLibs="true">
         <activity
             android:name="com.nbpropertytech.propkart.MainActivity"

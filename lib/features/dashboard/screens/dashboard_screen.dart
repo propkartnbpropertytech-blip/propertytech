@@ -35,6 +35,7 @@ import '../widgets/recent_properties_card.dart';
 import '../widgets/todays_schedule_card.dart';
 import '../widgets/followups_card.dart';
 import '../widgets/analytics_section.dart';
+import '../../requirements/screens/requirements_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -333,14 +334,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                               final scheduleWidget = TodaysScheduleCard(
                                 siteVisits: data.siteVisits,
-                                onSiteVisitTap: (sv) {
-                                  if (sv.propertyCode != null &&
-                                      sv.propertyCode!.isNotEmpty) {
-                                    _openPropertyDetails(sv.propertyCode!);
-                                  } else if (sv.id.isNotEmpty) {
-                                    _openPropertyDetails(sv.id);
-                                  }
-                                },
+                                onSiteVisitTap: _openSiteVisit,
                               );
 
                               final followupsWidget = FollowupsCard(
@@ -2658,7 +2652,10 @@ class _DashboardScreenState extends State<DashboardScreen>
         "${displayHour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $amPm";
     final formattedDate = "${date.day}/${date.month}/${date.year}";
 
-    return Container(
+    return InkWell(
+      onTap: () => _openSiteVisit(sv),
+      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+      child: Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.s),
       padding: const EdgeInsets.all(CRMSpacing.m),
       decoration: BoxDecoration(
@@ -2809,6 +2806,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           ],
         ],
       ),
+    ),
     );
   }
 
@@ -3316,6 +3314,100 @@ class _DashboardScreenState extends State<DashboardScreen>
               ],
             );
           },
+        );
+      },
+    );
+  }
+
+  Future<void> _openSiteVisit(DashboardSiteVisit sv) async {
+    final propertyId = sv.propertyId;
+    if (propertyId != null && propertyId.isNotEmpty) {
+      _openPropertyDetails(propertyId);
+      return;
+    }
+
+    if (sv.propertyCode != null && sv.propertyCode!.isNotEmpty) {
+      final byCode = await PropertiesRepository().getPropertyById(
+        sv.propertyCode!,
+      );
+      if (byCode != null) {
+        _openPropertyDetails(byCode.id);
+        return;
+      }
+    }
+
+    final reqId = sv.requirementId;
+    if (reqId != null && reqId.isNotEmpty) {
+      try {
+        final local = await RepositoryCoordinator().requirementLocal
+            .getRequirement(reqId);
+        if (local != null && mounted) {
+          showCRMRequirementDrawer(context, local.toModel());
+          return;
+        }
+      } catch (_) {}
+
+      if (mounted) {
+        final name = sv.requirementCustomerName ?? '';
+        context.go(
+          name.isNotEmpty
+              ? '/requirements?openId=${Uri.encodeComponent(reqId)}&search=${Uri.encodeComponent(name)}'
+              : '/requirements?openId=${Uri.encodeComponent(reqId)}',
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      _showSiteVisitDetailsSheet(sv);
+    }
+  }
+
+  void _showSiteVisitDetailsSheet(DashboardSiteVisit sv) {
+    final parsed = DateTime.tryParse(sv.visitDate);
+    final when = parsed != null
+        ? DateFormat('dd MMM yyyy, hh:mm a').format(parsed.toLocal())
+        : (sv.visitDate.isNotEmpty ? sv.visitDate : 'Today');
+    final title = (sv.requirementCustomerName != null &&
+            sv.requirementCustomerName!.isNotEmpty)
+        ? sv.requirementCustomerName!
+        : (sv.propertyTitle ?? 'Site visit');
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text('Visit: $title'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Time: $when'),
+              if (sv.creatorName != null && sv.creatorName!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('Agent: ${sv.creatorName}'),
+              ],
+              if (sv.remarks != null && sv.remarks!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(sv.remarks!),
+              ],
+              const SizedBox(height: 8),
+              Text('Status: ${sv.status.isNotEmpty ? sv.status : 'Pending'}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.go('/requirements');
+              },
+              child: const Text('Open requirements'),
+            ),
+          ],
         );
       },
     );

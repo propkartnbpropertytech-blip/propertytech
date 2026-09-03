@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/design_system/widgets/crm_brand_lockup.dart';
 import 'user_profile_card.dart';
 
 class ModernSidebar extends StatefulWidget {
@@ -78,74 +79,13 @@ class _ModernSidebarState extends State<ModernSidebar> {
               height: 74,
               padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 14 : 20),
               alignment: isCollapsed ? Alignment.center : Alignment.centerLeft,
-              child: Row(
-                mainAxisAlignment: isCollapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: primaryColor,
-                      borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: primaryColor.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.home_work_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                  ),
-                  if (!isCollapsed) ...[
-                    const SizedBox(width: 12),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'PropKart',
-                          style: TextStyle(
-                            color: isDark
-                                ? const Color(0xFFF8FAFC)
-                                : const Color(0xFF14213D),
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: -0.4,
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: primaryColor,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'REALTY CRM',
-                              style: TextStyle(
-                                color: isDark
-                                    ? const Color(0xFF94A3B8)
-                                    : const Color(0xFF68738A),
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.8,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
+              child: CRMBrandLockup(
+                expanded: !isCollapsed,
+                compact: false,
+                markSize: 38,
+                wordmarkColor: isDark
+                    ? const Color(0xFFF8FAFC)
+                    : const Color(0xFF14213D),
               ),
             ),
             Divider(

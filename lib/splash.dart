@@ -410,14 +410,18 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 },
                 child: Hero(
                   tag: 'app_logo',
-                  child: Image.asset(
-                    'assets/logo.png',
-                    width: 120,
-                    height: 120,
-                    errorBuilder: (context, error, stackTrace) => Icon(
-                      Icons.apartment_rounded,
-                      size: 100,
-                      color: primaryColor,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: Image.asset(
+                      'assets/branding/app_icon.png',
+                      width: 128,
+                      height: 128,
+                      filterQuality: FilterQuality.high,
+                      errorBuilder: (context, error, stackTrace) => Icon(
+                        Icons.apartment_rounded,
+                        size: 100,
+                        color: primaryColor,
+                      ),
                     ),
                   ),
                 ),

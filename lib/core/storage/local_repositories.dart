@@ -17,6 +17,21 @@ class PropertyLocalRepository {
     return await _isar.propertyLocals.filter().idEqualTo(id).findFirst();
   }
 
+  Future<PropertyLocal?> getPropertyByIdOrCode(String idOrCode) async {
+    final byId = await getPropertyById(idOrCode);
+    if (byId != null) return byId;
+    if (kIsWeb) {
+      for (final p in inMemory.values) {
+        if (p.propertyCode == idOrCode) return p;
+      }
+      return null;
+    }
+    return await _isar.propertyLocals
+        .filter()
+        .propertyCodeEqualTo(idOrCode)
+        .findFirst();
+  }
+
   Future<List<PropertyLocal>> getProperties({
     String? search,
     String? categoryId,

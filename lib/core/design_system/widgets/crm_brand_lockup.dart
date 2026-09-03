@@ -28,61 +28,46 @@ class CRMBrandLockup extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: size + 8,
-          height: size + 8,
+          width: size,
+          height: size,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                gold.withValues(alpha: 0.22),
-                gold.withValues(alpha: 0.06),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(CRMBorderRadius.s + 2),
-            border: Border.all(color: gold.withValues(alpha: 0.35), width: 0.8),
+            color: const Color(0xFF000000),
+            borderRadius: BorderRadius.circular(size * 0.22),
+            border: Border.all(color: gold.withValues(alpha: 0.32), width: 0.8),
+            boxShadow: [
+              BoxShadow(
+                color: gold.withValues(alpha: 0.10),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          padding: EdgeInsets.all(compact ? 4 : 6),
+          padding: EdgeInsets.all(size * 0.18),
           child: Image.asset(
-            'assets/logo.png',
+            'assets/branding/brand_mark.png',
             fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => Icon(
+            filterQuality: FilterQuality.high,
+            errorBuilder: (context, error, stackTrace) => Icon(
               Icons.apartment_rounded,
               color: gold,
-              size: size * 0.7,
+              size: size * 0.55,
             ),
           ),
         ),
         if (expanded) ...[
           SizedBox(width: compact ? CRMSpacing.s : CRMSpacing.m),
           Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'PropKart',
-                  style: CRMTypography.brandMark.copyWith(
-                    fontSize: compact ? 16 : 18,
-                    fontWeight: FontWeight.w700,
-                    color: textColor,
-                    letterSpacing: -0.2,
-                    height: 1.1,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (!compact)
-                  Text(
-                    '',
-                    style: CRMTypography.caption.copyWith(
-                      color: textColor.withValues(alpha: 0.55),
-                      fontSize: 10,
-                      letterSpacing: 1.1,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-              ],
+            child: Text(
+              'PropKart',
+              style: CRMTypography.brandMark.copyWith(
+                fontSize: compact ? 16 : 18,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+                letterSpacing: -0.2,
+                height: 1.1,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

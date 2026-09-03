@@ -502,7 +502,14 @@ extension DashboardDataExtensions on DashboardData {
         'visit_date': sv.visitDate,
         'remarks': sv.remarks,
         'status': sv.status,
-        'property': sv.propertyCode != null ? {'property_code': sv.propertyCode, 'title': sv.propertyTitle} : null,
+        'property_id': sv.propertyId,
+        'property': (sv.propertyId != null || sv.propertyCode != null)
+            ? {
+                'id': sv.propertyId,
+                'property_code': sv.propertyCode,
+                'title': sv.propertyTitle,
+              }
+            : null,
         'requirement': sv.requirementCustomerName != null ? {'customer_name': sv.requirementCustomerName, 'id': sv.requirementId} : null,
         'requirement_id': sv.requirementId,
         'creator': sv.creatorName != null ? {'full_name': sv.creatorName} : null,

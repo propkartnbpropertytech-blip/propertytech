@@ -169,6 +169,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             });
           }
         }
+        final searchParam = uri.queryParameters['search'];
+        if (searchParam != null && searchParam.isNotEmpty) {
+          _searchController.text = searchParam;
+          setState(() {});
+        }
+        final openId = uri.queryParameters['openId'];
+        if (openId != null && openId.isNotEmpty) {
+          RepositoryCoordinator().requirementLocal.getRequirement(openId).then((local) {
+            if (local != null && mounted) {
+              showCRMRequirementDrawer(context, local.toModel());
+            }
+          });
+        }
       }
     });
   }
@@ -4633,13 +4646,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _showRequirementDetailDrawer(RequirementModel req) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) {
-        return _CRMRequirementDetailDrawer(requirement: req);
-      },
-    );
+    showCRMRequirementDrawer(context, req);
   }
 
 
@@ -6178,6 +6185,16 @@ String getListingTypeLabel(RequirementModel r) {
     return 'Re-Sale';
   }
   return 'Rent';
+}
+
+void showCRMRequirementDrawer(BuildContext context, RequirementModel req) {
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (context) {
+      return _CRMRequirementDetailDrawer(requirement: req);
+    },
+  );
 }
 
 class _CRMRequirementDetailDrawer extends StatefulWidget {

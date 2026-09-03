@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../properties/models/property_model.dart';
 import '../../properties/repository/properties_repository.dart';
 import '../../../core/storage/repository_coordinator.dart';
@@ -113,19 +114,76 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     if (_error != null && _property == null) {
       return Scaffold(
         backgroundColor: CRMColors.backgroundOf(context),
+        appBar: AppBar(
+          backgroundColor: CRMColors.backgroundOf(context),
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(
+              Icons.arrow_back_rounded,
+              color: CRMColors.textOf(context),
+            ),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/dashboard');
+              }
+            },
+          ),
+          title: Text(
+            'Property',
+            style: CRMTypography.sectionTitle.copyWith(
+              color: CRMColors.textOf(context),
+            ),
+          ),
+        ),
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.error_outline_rounded,
-                  color: CRMColors.danger, size: 48),
-              const SizedBox(height: CRMSpacing.m),
-              Text(
-                _error!,
-                style: CRMTypography.bodyMedium
-                    .copyWith(color: CRMColors.textSecondaryOf(context)),
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(CRMSpacing.xl),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.error_outline_rounded,
+                  color: CRMColors.danger,
+                  size: 48,
+                ),
+                const SizedBox(height: CRMSpacing.m),
+                Text(
+                  _error!,
+                  style: CRMTypography.bodyMedium.copyWith(
+                    color: CRMColors.textOf(context),
+                    fontWeight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: CRMSpacing.s),
+                Text(
+                  'This link is not a property record, or the listing was removed.',
+                  style: CRMTypography.body.copyWith(
+                    color: CRMColors.textSecondaryOf(context),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: CRMSpacing.l),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: CRMSpacing.s,
+                  runSpacing: CRMSpacing.s,
+                  children: [
+                    CRMButton(
+                      label: 'Back to dashboard',
+                      onPressed: () => context.go('/dashboard'),
+                    ),
+                    CRMButton(
+                      label: 'View properties',
+                      variant: CRMButtonVariant.outline,
+                      onPressed: () => context.go('/properties'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       );
