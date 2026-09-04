@@ -114,7 +114,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(CRMSpacing.l),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Page Header
               CampaignSubshellHeader(
@@ -562,115 +562,131 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ),
     );
 
-    return CRMCard(
-      elevated: true,
-      title: 'Spreadsheet view',
-      subtitle: isMobile ? null : 'Dynamic column headers with visibility controls, header merging & automated deduplication.',
-      headerAction: isMobile
-          ? moreToolsButton
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                columnsButton,
-                const SizedBox(width: CRMSpacing.s),
-                addHeaderButton,
-                const SizedBox(width: CRMSpacing.s),
-                moreToolsButton,
-              ],
-            ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Toolbar Filters & Search (Responsive)
-          if (isMobile) ...[
-            Wrap(
-              spacing: CRMSpacing.s,
-              runSpacing: CRMSpacing.s,
-              children: [
-                columnsButton,
-                addHeaderButton,
-              ],
-            ),
-            const SizedBox(height: CRMSpacing.s),
-            searchInput,
-            const SizedBox(height: CRMSpacing.s),
-            Row(
-              children: [
-                Expanded(child: sourceDropdown),
-                const SizedBox(width: CRMSpacing.s),
-                Expanded(child: duplicateDropdown),
-              ],
-            ),
-          ] else ...[
-            Row(
-              children: [
-                Expanded(flex: 3, child: searchInput),
-                const SizedBox(width: CRMSpacing.m),
-                sourceDropdown,
-                const SizedBox(width: CRMSpacing.m),
-                duplicateDropdown,
-              ],
-            ),
-          ],
-
-          const SizedBox(height: CRMSpacing.m),
-
-          // Spreadsheet Data Table or Clean Empty State
-          if (leads.isEmpty)
-            Container(
-              height: 220,
-              width: double.infinity,
-              padding: const EdgeInsets.all(CRMSpacing.l),
-              decoration: BoxDecoration(
-                border: Border.all(color: CRMColors.borderOf(context)),
-                borderRadius: BorderRadius.circular(8),
-                color: CRMColors.cardBgOf(context),
-              ),
-              alignment: Alignment.center,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+    return SizedBox(
+      width: double.infinity,
+      child: CRMCard(
+        elevated: true,
+        title: 'Spreadsheet view',
+        subtitle: isMobile ? null : 'Dynamic column headers with visibility controls, header merging & automated deduplication.',
+        headerAction: isMobile
+            ? moreToolsButton
+            : Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.inbox_outlined, size: 48, color: CRMColors.primaryOf(context)),
-                  const SizedBox(height: CRMSpacing.m),
-                  Text('No Leads Ingested Yet', style: CRMTypography.headline.copyWith(fontSize: 17)),
-                  const SizedBox(height: CRMSpacing.xs),
-                  Text(
-                    'Your Webhook is live. New leads from Meta Lead Ads and Google Sheets will automatically appear in this table.',
-                    style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 13),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: CRMSpacing.m),
-                  Wrap(
-                    spacing: CRMSpacing.s,
+                  columnsButton,
+                  const SizedBox(width: CRMSpacing.s),
+                  addHeaderButton,
+                  const SizedBox(width: CRMSpacing.s),
+                  moreToolsButton,
+                ],
+              ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Toolbar Filters & Search (Responsive)
+            if (isMobile) ...[
+              Wrap(
+                spacing: CRMSpacing.s,
+                runSpacing: CRMSpacing.s,
+                children: [
+                  columnsButton,
+                  addHeaderButton,
+                ],
+              ),
+              const SizedBox(height: CRMSpacing.s),
+              searchInput,
+              const SizedBox(height: CRMSpacing.s),
+              Row(
+                children: [
+                  Expanded(child: sourceDropdown),
+                  const SizedBox(width: CRMSpacing.s),
+                  Expanded(child: duplicateDropdown),
+                ],
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(flex: 3, child: searchInput),
+                  const SizedBox(width: CRMSpacing.m),
+                  sourceDropdown,
+                  const SizedBox(width: CRMSpacing.m),
+                  duplicateDropdown,
+                ],
+              ),
+            ],
+
+            const SizedBox(height: CRMSpacing.m),
+
+            // Spreadsheet Data Table or Clean Empty State
+            if (leads.isEmpty)
+              Container(
+                height: 240,
+                width: double.infinity,
+                padding: const EdgeInsets.all(CRMSpacing.l),
+                decoration: BoxDecoration(
+                  border: Border.all(color: CRMColors.borderOf(context)),
+                  borderRadius: BorderRadius.circular(8),
+                  color: CRMColors.cardBgOf(context),
+                ),
+                alignment: Alignment.center,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.add_rounded, size: 16),
-                        label: const Text('Define Dynamic Header'),
-                        onPressed: () => _showAddCustomHeaderDialog(context),
+                      Icon(Icons.inbox_outlined, size: 48, color: CRMColors.primaryOf(context)),
+                      const SizedBox(height: CRMSpacing.m),
+                      Text(
+                        'No Leads Ingested Yet',
+                        style: CRMTypography.headline.copyWith(fontSize: 17),
+                        textAlign: TextAlign.center,
                       ),
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.code_rounded, size: 16),
-                        label: const Text('Paste JSON Payload'),
-                        onPressed: () => _showPasteJsonDialog(context),
+                      const SizedBox(height: CRMSpacing.xs),
+                      Text(
+                        'Your Webhook is live. New leads from Meta Lead Ads and Google Sheets will automatically appear in this table.',
+                        style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 13),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: CRMSpacing.m),
+                      Wrap(
+                        spacing: CRMSpacing.s,
+                        runSpacing: CRMSpacing.s,
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.add_rounded, size: 16),
+                            label: const Text('Define Dynamic Header'),
+                            onPressed: () => _showAddCustomHeaderDialog(context),
+                          ),
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.code_rounded, size: 16),
+                            label: const Text('Paste JSON Payload'),
+                            onPressed: () => _showPasteJsonDialog(context),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-            )
-          else
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: CRMColors.borderOf(context)),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: DataTable(
+                ),
+              )
+            else
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  border: Border.all(color: CRMColors.borderOf(context)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.vertical,
+                          child: DataTable(
                       showCheckboxColumn: true,
                       onSelectAll: (val) {
                         setState(() {
@@ -903,10 +919,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 ),
               ),
             ),
+          ),
+        ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   // --- DIALOGS & ACTIONS ---
 

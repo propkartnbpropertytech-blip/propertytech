@@ -63,7 +63,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(CRMSpacing.l),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Header
               CampaignSubshellHeader(
