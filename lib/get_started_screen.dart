@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'core/design_system/tokens/app_colors.dart';
 import 'core/design_system/tokens/app_spacing.dart';
 import 'core/design_system/tokens/app_typography.dart';
 import 'core/design_system/widgets/buttons.dart';
 import 'core/design_system/widgets/crm_brand_lockup.dart';
+import 'core/theme/theme_manager.dart';
 import 'core/utils/seo_helper.dart';
 
 class GetStartedScreen extends StatefulWidget {
@@ -42,25 +42,32 @@ class _GetStartedScreenState extends State<GetStartedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _scrim,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isDesktop = constraints.maxWidth >= 900;
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: Image.asset(
-                  'assets/images/propbg.jpg',
-                  fit: BoxFit.cover,
-                  alignment: isDesktop
-                      ? const Alignment(0.35, 0)
-                      : Alignment.center,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const ColoredBox(color: _scrim);
-                  },
-                ),
-              ),
+    return ListenableBuilder(
+      listenable: ThemeManager(),
+      builder: (context, _) {
+        final theme = ThemeManager().currentTheme;
+        final isDark = ThemeManager().isDarkMode;
+        final primaryColor = isDark ? theme.primaryDark : theme.primaryLight;
+
+        return Scaffold(
+          backgroundColor: _scrim,
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              final isDesktop = constraints.maxWidth >= 900;
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: Image.asset(
+                      'assets/images/propbg.jpg',
+                      fit: BoxFit.cover,
+                      alignment: isDesktop
+                          ? const Alignment(0.35, 0)
+                          : Alignment.center,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const ColoredBox(color: _scrim);
+                      },
+                    ),
+                  ),
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -126,6 +133,7 @@ class _GetStartedScreenState extends State<GetStartedScreen> {
                                   onStarted: _goToLogin,
                                   titleColor: _heroWhite,
                                   mutedColor: _heroMuted,
+                                  primaryColor: primaryColor,
                                 ),
                               ),
                             ),
@@ -141,6 +149,8 @@ class _GetStartedScreenState extends State<GetStartedScreen> {
         },
       ),
     );
+      },
+    );
   }
 }
 
@@ -149,12 +159,14 @@ class _HeroCopy extends StatelessWidget {
   final VoidCallback onStarted;
   final Color titleColor;
   final Color mutedColor;
+  final Color primaryColor;
 
   const _HeroCopy({
     required this.isDesktop,
     required this.onStarted,
     required this.titleColor,
     required this.mutedColor,
+    required this.primaryColor,
   });
 
   @override
@@ -166,7 +178,7 @@ class _HeroCopy extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: CRMColors.terracotta,
+            color: primaryColor,
             borderRadius: BorderRadius.circular(CRMBorderRadius.button),
           ),
           child: Text(
@@ -208,7 +220,7 @@ class _HeroCopy extends StatelessWidget {
           onPressed: onStarted,
           width: isDesktop ? 220 : double.infinity,
           height: 52,
-          backgroundColor: CRMColors.terracotta,
+          backgroundColor: primaryColor,
           foregroundColor: Colors.white,
         ),
       ],

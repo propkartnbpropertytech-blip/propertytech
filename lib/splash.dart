@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'core/security/role_guard.dart';
 
 import 'package:pub_semver/pub_semver.dart';
 import 'core/constants/app_constants.dart';
@@ -233,12 +235,32 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     if (!mounted) return;
     await _ensureMinSplashDelay();
     if (!mounted) return;
+
     final from = GoRouterState.of(context).uri.queryParameters['from'];
-    if (from != null && from.isNotEmpty) {
-      context.go(Uri.decodeComponent(from));
-    } else {
-      context.go('/dashboard');
+    final sanitizedFrom = RoleGuard.sanitizeRedirectPath(from);
+    if (sanitizedFrom != null) {
+      context.go(sanitizedFrom);
+      return;
     }
+
+    if (kIsWeb) {
+      final baseFrom = Uri.base.queryParameters['from'];
+      final sanitizedBaseFrom = RoleGuard.sanitizeRedirectPath(baseFrom);
+      if (sanitizedBaseFrom != null) {
+        context.go(sanitizedBaseFrom);
+        return;
+      }
+
+      final fragment = Uri.base.fragment;
+      if (fragment.isNotEmpty && !fragment.contains('/splash') && !fragment.contains('/login') && !fragment.contains('/get-started')) {
+        final sanitizedFragment = RoleGuard.sanitizeRedirectPath(fragment);
+        if (sanitizedFragment != null) {
+          context.go(sanitizedFragment);
+          return;
+        }
+      }
+    }
+    context.go('/dashboard');
   }
 
   Future<void> _navigateToGetStarted() async {
@@ -388,14 +410,18 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 },
                 child: Hero(
                   tag: 'app_logo',
-                  child: Image.asset(
-                    'assets/logo.png',
-                    width: 120,
-                    height: 120,
-                    errorBuilder: (context, error, stackTrace) => Icon(
-                      Icons.apartment_rounded,
-                      size: 100,
-                      color: primaryColor,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: Image.asset(
+                      'assets/branding/app_icon.png',
+                      width: 128,
+                      height: 128,
+                      filterQuality: FilterQuality.high,
+                      errorBuilder: (context, error, stackTrace) => Icon(
+                        Icons.apartment_rounded,
+                        size: 100,
+                        color: primaryColor,
+                      ),
                     ),
                   ),
                 ),

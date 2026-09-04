@@ -21,6 +21,8 @@ import '../../../core/storage/repository_coordinator.dart';
 import '../../../features/properties/services/properties_service.dart';
 import '../../../features/properties/models/property_model.dart';
 import '../../navigation/mobile_system_back_handler.dart';
+import '../../../../features/shell/widgets/sidebar.dart';
+import '../../../../features/shell/widgets/top_bar.dart';
 
 class CRMAppShell extends StatefulWidget {
   final Widget child;
@@ -66,7 +68,9 @@ class _CRMAppShellState extends State<CRMAppShell>
         });
         _showQuickActionsBottomSheet();
       } else {
-        final location = GoRouter.of(context).routerDelegate.currentConfiguration.last.matchedLocation;
+        final location = GoRouter.of(
+          context,
+        ).routerDelegate.currentConfiguration.last.matchedLocation;
         if (index != _previousIndex || location != _getTabRoutePath(index)) {
           _previousIndex = index;
           context.go(_getTabRoutePath(index));
@@ -78,7 +82,9 @@ class _CRMAppShellState extends State<CRMAppShell>
       if (mounted) {
         setState(() {
           _notifications.insert(0, newNotif);
-          _unreadNotificationsCount = _notifications.where((n) => n['is_read'] == false).length;
+          _unreadNotificationsCount = _notifications
+              .where((n) => n['is_read'] == false)
+              .length;
         });
       }
     });
@@ -88,8 +94,10 @@ class _CRMAppShellState extends State<CRMAppShell>
       await NotificationCenter.init();
       _fetchNotifications();
       _notificationsTimer?.cancel();
-    _notifCenterSub?.cancel();
-      _notificationsTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
+      _notifCenterSub?.cancel();
+      _notificationsTimer = Timer.periodic(const Duration(minutes: 5), (
+        _,
+      ) async {
         if (mounted) await _fetchNotifications();
       });
     });
@@ -105,6 +113,7 @@ class _CRMAppShellState extends State<CRMAppShell>
     _notificationsTimer?.cancel();
     super.dispose();
   }
+
   OverlayEntry? _searchOverlayEntry;
   final LayerLink _searchLayerLink = LayerLink();
   List<dynamic> _propertySuggestions = [];
@@ -150,12 +159,17 @@ class _CRMAppShellState extends State<CRMAppShell>
       context: context,
       backgroundColor: CRMColors.surfaceElevatedOf(context),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(CRMBorderRadius.sheet)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(CRMBorderRadius.sheet),
+        ),
       ),
       builder: (context) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: CRMSpacing.l, horizontal: CRMSpacing.xl),
+            padding: const EdgeInsets.symmetric(
+              vertical: CRMSpacing.l,
+              horizontal: CRMSpacing.xl,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -171,7 +185,10 @@ class _CRMAppShellState extends State<CRMAppShell>
                       ),
                     ),
                     IconButton(
-                      icon: Icon(Icons.close_rounded, color: CRMColors.textSecondary),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: CRMColors.textSecondary,
+                      ),
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -182,7 +199,10 @@ class _CRMAppShellState extends State<CRMAppShell>
                 ListTile(
                   leading: CircleAvatar(
                     backgroundColor: CRMColors.primary.withOpacity(0.12),
-                    child: Icon(Icons.add_business_rounded, color: CRMColors.primary),
+                    child: Icon(
+                      Icons.add_business_rounded,
+                      color: CRMColors.primary,
+                    ),
                   ),
                   title: Text(
                     'Add Property',
@@ -200,7 +220,10 @@ class _CRMAppShellState extends State<CRMAppShell>
                 ListTile(
                   leading: CircleAvatar(
                     backgroundColor: CRMColors.primary.withOpacity(0.12),
-                    child: Icon(Icons.add_task_rounded, color: CRMColors.primary),
+                    child: Icon(
+                      Icons.add_task_rounded,
+                      color: CRMColors.primary,
+                    ),
                   ),
                   title: Text(
                     'Add Requirement',
@@ -282,11 +305,14 @@ class _CRMAppShellState extends State<CRMAppShell>
       final id = n['id']?.toString() ?? '';
       final type = n['type']?.toString().toLowerCase() ?? '';
 
-      if (!isAdminOrSuperAdmin && (type == 'forgot_password' || type == 'password_reset')) {
+      if (!isAdminOrSuperAdmin &&
+          (type == 'forgot_password' || type == 'password_reset')) {
         continue;
       }
 
-      if (id.isNotEmpty && !seenIds.contains(id) && !NotificationCenter.deletedIds.contains(id)) {
+      if (id.isNotEmpty &&
+          !seenIds.contains(id) &&
+          !NotificationCenter.deletedIds.contains(id)) {
         seenIds.add(id);
         uniqueNotifs.add(n);
       }
@@ -296,7 +322,9 @@ class _CRMAppShellState extends State<CRMAppShell>
       setState(() {
         _notifications = uniqueNotifs;
         _totalNotificationPages = apiTotalPages;
-        _unreadNotificationsCount = _notifications.where((n) => n['is_read'] == false).length;
+        _unreadNotificationsCount = _notifications
+            .where((n) => n['is_read'] == false)
+            .length;
         _isLoadingNotifications = false;
       });
     }
@@ -331,9 +359,17 @@ class _CRMAppShellState extends State<CRMAppShell>
       final message = notif?['message']?.toString();
 
       if (id.startsWith('local_')) {
-        await NotificationCenter.deleteNotification(id, title: title, message: message);
+        await NotificationCenter.deleteNotification(
+          id,
+          title: title,
+          message: message,
+        );
       } else {
-        await NotificationCenter.deleteNotification(id, title: title, message: message);
+        await NotificationCenter.deleteNotification(
+          id,
+          title: title,
+          message: message,
+        );
         await DioClient.dio.delete('/notifications/$id');
       }
       _fetchNotifications();
@@ -363,52 +399,62 @@ class _CRMAppShellState extends State<CRMAppShell>
       if (authState is Authenticated) {
         currentUserRole = authState.user.role;
       }
-      final bool isUserAdminOrSuperAdmin = currentUserRole == 'Admin' || currentUserRole == 'Super Admin';
+      final bool isUserAdminOrSuperAdmin =
+          currentUserRole == 'Admin' || currentUserRole == 'Super Admin';
 
       // 1. Active Properties
       final props = await RepositoryCoordinator().propertyLocal.getProperties();
-      final matchedProps = props.where((p) {
-        final code = (p.propertyCode ?? '').toLowerCase();
-        final name = (p.title ?? '').toLowerCase();
-        final ownerName = (p.ownerName ?? '').toLowerCase();
-        final ownerMobile = (p.ownerMobile ?? '').toLowerCase();
-        final area = (p.areaName ?? '').toLowerCase();
-        final bhk = (p.configurationName ?? '').toLowerCase();
-        final bhkNormalized = bhk.replaceAll(' ', '');
-        final date = p.createdAt.toString().toLowerCase();
-        final status = (p.propertyStatusName ?? '').toLowerCase();
-        final superBuiltup = (p.superBuiltupArea?.toString() ?? '').toLowerCase();
-        final type = (p.propertyTypeName ?? '').toLowerCase();
-        final category = (p.categoryName ?? '').toLowerCase();
-        final remarks = (p.remarks ?? '').toLowerCase();
-        final description = (p.description ?? '').toLowerCase();
-        final salesman = (p.createdByName ?? '').toLowerCase();
+      final matchedProps = props
+          .where((p) {
+            final code = (p.propertyCode ?? '').toLowerCase();
+            final name = (p.title ?? '').toLowerCase();
+            final ownerName = (p.ownerName ?? '').toLowerCase();
+            final ownerMobile = (p.ownerMobile ?? '').toLowerCase();
+            final area = (p.areaName ?? '').toLowerCase();
+            final bhk = (p.configurationName ?? '').toLowerCase();
+            final bhkNormalized = bhk.replaceAll(' ', '');
+            final date = p.createdAt.toString().toLowerCase();
+            final status = (p.propertyStatusName ?? '').toLowerCase();
+            final superBuiltup = (p.superBuiltupArea?.toString() ?? '')
+                .toLowerCase();
+            final type = (p.propertyTypeName ?? '').toLowerCase();
+            final category = (p.categoryName ?? '').toLowerCase();
+            final remarks = (p.remarks ?? '').toLowerCase();
+            final description = (p.description ?? '').toLowerCase();
+            final salesman = (p.createdByName ?? '').toLowerCase();
 
-        final matchesGeneral = code.contains(queryLower) ||
-            name.contains(queryLower) ||
-            ownerName.contains(queryLower) ||
-            ownerMobile.contains(queryLower) ||
-            area.contains(queryLower) ||
-            bhk.contains(queryLower) ||
-            (bhkNormalized.isNotEmpty && bhkNormalized.contains(queryNormalized)) ||
-            date.contains(queryLower) ||
-            status.contains(queryLower) ||
-            superBuiltup.contains(queryLower) ||
-            type.contains(queryLower) ||
-            category.contains(queryLower) ||
-            remarks.contains(queryLower) ||
-            description.contains(queryLower);
+            final matchesGeneral =
+                code.contains(queryLower) ||
+                name.contains(queryLower) ||
+                ownerName.contains(queryLower) ||
+                ownerMobile.contains(queryLower) ||
+                area.contains(queryLower) ||
+                bhk.contains(queryLower) ||
+                (bhkNormalized.isNotEmpty &&
+                    bhkNormalized.contains(queryNormalized)) ||
+                date.contains(queryLower) ||
+                status.contains(queryLower) ||
+                superBuiltup.contains(queryLower) ||
+                type.contains(queryLower) ||
+                category.contains(queryLower) ||
+                remarks.contains(queryLower) ||
+                description.contains(queryLower);
 
-        final matchesSalesman = isUserAdminOrSuperAdmin && salesman.contains(queryLower);
+            final matchesSalesman =
+                isUserAdminOrSuperAdmin && salesman.contains(queryLower);
 
-        return matchesGeneral || matchesSalesman;
-      }).map((p) => {
-        'id': p.id,
-        'title': p.title,
-        'property_code': p.propertyCode,
-        'price': p.price,
-        'is_recycle_bin': false,
-      }).toList();
+            return matchesGeneral || matchesSalesman;
+          })
+          .map(
+            (p) => {
+              'id': p.id,
+              'title': p.title,
+              'property_code': p.propertyCode,
+              'price': p.price,
+              'is_recycle_bin': false,
+            },
+          )
+          .toList();
 
       // 1b. Recycle Bin / Deleted Properties
       List<Map<String, dynamic>> matchedBinProps = [];
@@ -418,48 +464,57 @@ class _CRMAppShellState extends State<CRMAppShell>
         final binList = binData['properties'] as List? ?? [];
         final binProps = binList.map((p) => PropertyModel.fromJson(p)).toList();
 
-        matchedBinProps = binProps.where((p) {
-          final code = (p.propertyCode ?? '').toLowerCase();
-          final name = (p.title ?? '').toLowerCase();
-          final ownerName = (p.ownerName ?? '').toLowerCase();
-          final ownerMobile = (p.ownerMobile ?? '').toLowerCase();
-          final area = (p.areaName ?? '').toLowerCase();
-          final bhk = (p.configurationName ?? '').toLowerCase();
-          final bhkNormalized = bhk.replaceAll(' ', '');
-          final date = p.createdAt.toString().toLowerCase();
-          final status = (p.propertyStatusName ?? '').toLowerCase();
-          final superBuiltup = (p.superBuiltupArea?.toString() ?? '').toLowerCase();
-          final type = (p.propertyTypeName ?? '').toLowerCase();
-          final category = (p.categoryName ?? '').toLowerCase();
-          final remarks = (p.remarks ?? '').toLowerCase();
-          final description = (p.description ?? '').toLowerCase();
-          final salesman = (p.createdByName ?? '').toLowerCase();
+        matchedBinProps = binProps
+            .where((p) {
+              final code = (p.propertyCode ?? '').toLowerCase();
+              final name = (p.title ?? '').toLowerCase();
+              final ownerName = (p.ownerName ?? '').toLowerCase();
+              final ownerMobile = (p.ownerMobile ?? '').toLowerCase();
+              final area = (p.areaName ?? '').toLowerCase();
+              final bhk = (p.configurationName ?? '').toLowerCase();
+              final bhkNormalized = bhk.replaceAll(' ', '');
+              final date = p.createdAt.toString().toLowerCase();
+              final status = (p.propertyStatusName ?? '').toLowerCase();
+              final superBuiltup = (p.superBuiltupArea?.toString() ?? '')
+                  .toLowerCase();
+              final type = (p.propertyTypeName ?? '').toLowerCase();
+              final category = (p.categoryName ?? '').toLowerCase();
+              final remarks = (p.remarks ?? '').toLowerCase();
+              final description = (p.description ?? '').toLowerCase();
+              final salesman = (p.createdByName ?? '').toLowerCase();
 
-          final matchesGeneral = code.contains(queryLower) ||
-              name.contains(queryLower) ||
-              ownerName.contains(queryLower) ||
-              ownerMobile.contains(queryLower) ||
-              area.contains(queryLower) ||
-              bhk.contains(queryLower) ||
-              (bhkNormalized.isNotEmpty && bhkNormalized.contains(queryNormalized)) ||
-              date.contains(queryLower) ||
-              status.contains(queryLower) ||
-              superBuiltup.contains(queryLower) ||
-              type.contains(queryLower) ||
-              category.contains(queryLower) ||
-              remarks.contains(queryLower) ||
-              description.contains(queryLower);
+              final matchesGeneral =
+                  code.contains(queryLower) ||
+                  name.contains(queryLower) ||
+                  ownerName.contains(queryLower) ||
+                  ownerMobile.contains(queryLower) ||
+                  area.contains(queryLower) ||
+                  bhk.contains(queryLower) ||
+                  (bhkNormalized.isNotEmpty &&
+                      bhkNormalized.contains(queryNormalized)) ||
+                  date.contains(queryLower) ||
+                  status.contains(queryLower) ||
+                  superBuiltup.contains(queryLower) ||
+                  type.contains(queryLower) ||
+                  category.contains(queryLower) ||
+                  remarks.contains(queryLower) ||
+                  description.contains(queryLower);
 
-          final matchesSalesman = isUserAdminOrSuperAdmin && salesman.contains(queryLower);
+              final matchesSalesman =
+                  isUserAdminOrSuperAdmin && salesman.contains(queryLower);
 
-          return matchesGeneral || matchesSalesman;
-        }).map((p) => {
-          'id': p.id,
-          'title': '[In Recycle Bin] ${p.title}',
-          'property_code': p.propertyCode,
-          'price': p.price,
-          'is_recycle_bin': true,
-        }).toList();
+              return matchesGeneral || matchesSalesman;
+            })
+            .map(
+              (p) => {
+                'id': p.id,
+                'title': '[In Recycle Bin] ${p.title}',
+                'property_code': p.propertyCode,
+                'price': p.price,
+                'is_recycle_bin': true,
+              },
+            )
+            .toList();
       } catch (_) {
         // fail silently if bin fetch fails
       }
@@ -467,77 +522,95 @@ class _CRMAppShellState extends State<CRMAppShell>
       final allMatchedProps = [...matchedProps, ...matchedBinProps];
 
       // 2. Requirements
-      final reqs = await RepositoryCoordinator().requirementLocal.getRequirements();
-      final matchedReqs = reqs.where((r) {
-        final name = (r.clientName ?? '').toLowerCase();
-        final mobile = (r.clientMobile ?? '').toLowerCase();
-        final remarks = (r.remarks ?? '').toLowerCase();
-        final type = (r.propertyTypeName ?? '').toLowerCase();
-        final config = (r.configurationName ?? '').toLowerCase();
-        final configNormalized = config.replaceAll(' ', '');
-        final category = (r.categoryName ?? '').toLowerCase();
-        final matchesArea = r.areaNames.any((name) => name.toLowerCase().contains(queryLower));
-        final salesmanCreator = (r.creatorName ?? '').toLowerCase();
-        final salesmanAssignee = (r.assigneeName ?? '').toLowerCase();
+      final reqs = await RepositoryCoordinator().requirementLocal
+          .getRequirements();
+      final matchedReqs = reqs
+          .where((r) {
+            final name = (r.clientName ?? '').toLowerCase();
+            final mobile = (r.clientMobile ?? '').toLowerCase();
+            final remarks = (r.remarks ?? '').toLowerCase();
+            final type = (r.propertyTypeName ?? '').toLowerCase();
+            final config = (r.configurationName ?? '').toLowerCase();
+            final configNormalized = config.replaceAll(' ', '');
+            final category = (r.categoryName ?? '').toLowerCase();
+            final matchesArea = r.areaNames.any(
+              (name) => name.toLowerCase().contains(queryLower),
+            );
+            final salesmanCreator = (r.creatorName ?? '').toLowerCase();
+            final salesmanAssignee = (r.assigneeName ?? '').toLowerCase();
 
-        final matchesGeneral = name.contains(queryLower) ||
-            mobile.contains(queryLower) ||
-            remarks.contains(queryLower) ||
-            type.contains(queryLower) ||
-            config.contains(queryLower) ||
-            (configNormalized.isNotEmpty && configNormalized.contains(queryNormalized)) ||
-            category.contains(queryLower) ||
-            matchesArea;
+            final matchesGeneral =
+                name.contains(queryLower) ||
+                mobile.contains(queryLower) ||
+                remarks.contains(queryLower) ||
+                type.contains(queryLower) ||
+                config.contains(queryLower) ||
+                (configNormalized.isNotEmpty &&
+                    configNormalized.contains(queryNormalized)) ||
+                category.contains(queryLower) ||
+                matchesArea;
 
-        final matchesSalesman = isUserAdminOrSuperAdmin &&
-            (salesmanCreator.contains(queryLower) || salesmanAssignee.contains(queryLower));
+            final matchesSalesman =
+                isUserAdminOrSuperAdmin &&
+                (salesmanCreator.contains(queryLower) ||
+                    salesmanAssignee.contains(queryLower));
 
-        return matchesGeneral || matchesSalesman;
-      }).map((r) => {
-        'id': r.id,
-        'customer_name': r.clientName,
-        'mobile': r.clientMobile,
-      }).toList();
+            return matchesGeneral || matchesSalesman;
+          })
+          .map(
+            (r) => {
+              'id': r.id,
+              'customer_name': r.clientName,
+              'mobile': r.clientMobile,
+            },
+          )
+          .toList();
 
       // 3. Owners
       final owners = await RepositoryCoordinator().ownerLocal.getOwners();
-      final matchedOwners = owners.where((o) =>
-        (o.name ?? '').toLowerCase().contains(queryLower) ||
-        (o.mobile ?? '').contains(queryLower) ||
-        (o.email?.toLowerCase().contains(queryLower) ?? false)
-      ).map((o) => {
-        'id': o.id,
-        'name': o.name,
-        'mobile': o.mobile,
-      }).toList();
+      final matchedOwners = owners
+          .where(
+            (o) =>
+                (o.name ?? '').toLowerCase().contains(queryLower) ||
+                (o.mobile ?? '').contains(queryLower) ||
+                (o.email?.toLowerCase().contains(queryLower) ?? false),
+          )
+          .map((o) => {'id': o.id, 'name': o.name, 'mobile': o.mobile})
+          .toList();
 
       // 4. Builders
       final builders = await RepositoryCoordinator().builderLocal.getBuilders();
-      final matchedBuilders = builders.where((b) =>
-        (b.companyName ?? '').toLowerCase().contains(queryLower) ||
-        (b.contactPerson ?? '').toLowerCase().contains(queryLower) ||
-        (b.mobile ?? '').contains(queryLower) ||
-        (b.email ?? '').toLowerCase().contains(queryLower) ||
-        (b.remarks?.toLowerCase().contains(queryLower) ?? false)
-      ).map((b) => {
-        'id': b.id,
-        'company_name': b.companyName,
-        'contact_person': b.contactPerson,
-        'mobile': b.mobile,
-      }).toList();
+      final matchedBuilders = builders
+          .where(
+            (b) =>
+                (b.companyName ?? '').toLowerCase().contains(queryLower) ||
+                (b.contactPerson ?? '').toLowerCase().contains(queryLower) ||
+                (b.mobile ?? '').contains(queryLower) ||
+                (b.email ?? '').toLowerCase().contains(queryLower) ||
+                (b.remarks?.toLowerCase().contains(queryLower) ?? false),
+          )
+          .map(
+            (b) => {
+              'id': b.id,
+              'company_name': b.companyName,
+              'contact_person': b.contactPerson,
+              'mobile': b.mobile,
+            },
+          )
+          .toList();
 
       // 5. Clients
       final clients = await RepositoryCoordinator().clientLocal.getClients();
-      final matchedClients = clients.where((c) =>
-        (c.name ?? '').toLowerCase().contains(queryLower) ||
-        (c.mobile ?? '').contains(queryLower) ||
-        (c.email ?? '').toLowerCase().contains(queryLower) ||
-        (c.remarks?.toLowerCase().contains(queryLower) ?? false)
-      ).map((c) => {
-        'id': c.id,
-        'name': c.name,
-        'mobile': c.mobile,
-      }).toList();
+      final matchedClients = clients
+          .where(
+            (c) =>
+                (c.name ?? '').toLowerCase().contains(queryLower) ||
+                (c.mobile ?? '').contains(queryLower) ||
+                (c.email ?? '').toLowerCase().contains(queryLower) ||
+                (c.remarks?.toLowerCase().contains(queryLower) ?? false),
+          )
+          .map((c) => {'id': c.id, 'name': c.name, 'mobile': c.mobile})
+          .toList();
 
       setState(() {
         _propertySuggestions = allMatchedProps;
@@ -562,12 +635,13 @@ class _CRMAppShellState extends State<CRMAppShell>
         final double screenHeight = MediaQuery.of(context).size.height;
         final double topPadding = MediaQuery.of(context).padding.top;
         final double keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-        
+
         final bool isMobile = screenWidth < 600;
 
-        final double availableHeight = screenHeight - (70 + topPadding + 16) - keyboardHeight;
-        final double calculatedMaxHeight = availableHeight > 100 
-            ? (availableHeight < 400 ? availableHeight : 400) 
+        final double availableHeight =
+            screenHeight - (70 + topPadding + 16) - keyboardHeight;
+        final double calculatedMaxHeight = availableHeight > 100
+            ? (availableHeight < 400 ? availableHeight : 400)
             : 100;
 
         final Widget cardContent = Material(
@@ -579,7 +653,10 @@ class _CRMAppShellState extends State<CRMAppShell>
             constraints: BoxConstraints(maxHeight: calculatedMaxHeight),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 0.5),
+              border: Border.all(
+                color: CRMColors.borderOf(context).withOpacity(0.6),
+                width: 0.5,
+              ),
             ),
             child: _isSearching
                 ? const Padding(
@@ -587,90 +664,103 @@ class _CRMAppShellState extends State<CRMAppShell>
                     child: Center(child: CircularProgressIndicator()),
                   )
                 : (_propertySuggestions.isEmpty &&
-                        _requirementSuggestions.isEmpty &&
-                        _ownerSuggestions.isEmpty &&
-                        _builderSuggestions.isEmpty &&
-                        _clientSuggestions.isEmpty)
-                    ? Padding(
-                        padding: const EdgeInsets.all(CRMSpacing.m),
-                        child: Text(
-                          'No suggestions found.',
-                          style: TextStyle(color: CRMColors.textSecondary),
-                          textAlign: TextAlign.center,
+                      _requirementSuggestions.isEmpty &&
+                      _ownerSuggestions.isEmpty &&
+                      _builderSuggestions.isEmpty &&
+                      _clientSuggestions.isEmpty)
+                ? Padding(
+                    padding: const EdgeInsets.all(CRMSpacing.m),
+                    child: Text(
+                      'No suggestions found.',
+                      style: TextStyle(color: CRMColors.textSecondary),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : ListView(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
+                    children: [
+                      if (_propertySuggestions.isNotEmpty) ...[
+                        _buildSuggestionSectionHeader('Properties'),
+                        ..._propertySuggestions.map(
+                          (p) => _buildSuggestionTile(
+                            icon: Icons.business_rounded,
+                            title: p['title'] ?? '',
+                            subtitle: p['is_recycle_bin'] == true
+                                ? 'Code: ${p['property_code']} • ₹${BudgetFormatter.format((p['price'] as num?)?.toDouble() ?? 0.0)} • [In Recycle Bin]'
+                                : 'Code: ${p['property_code']} • ₹${BudgetFormatter.format((p['price'] as num?)?.toDouble() ?? 0.0)}',
+                            onTap: () {
+                              _hideSearchOverlay();
+                              if (p['is_recycle_bin'] == true) {
+                                context.go('/bin');
+                              } else {
+                                context.go(
+                                  '/properties?openId=${p['id']}&t=${DateTime.now().millisecondsSinceEpoch}',
+                                );
+                              }
+                            },
+                          ),
                         ),
-                      )
-                    : ListView(
-                        shrinkWrap: true,
-                        padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
-                        children: [
-                          if (_propertySuggestions.isNotEmpty) ...[
-                            _buildSuggestionSectionHeader('Properties'),
-                            ..._propertySuggestions.map((p) => _buildSuggestionTile(
-                                  icon: Icons.business_rounded,
-                                  title: p['title'] ?? '',
-                                  subtitle: p['is_recycle_bin'] == true
-                                      ? 'Code: ${p['property_code']} • ₹${BudgetFormatter.format((p['price'] as num?)?.toDouble() ?? 0.0)} • [In Recycle Bin]'
-                                      : 'Code: ${p['property_code']} • ₹${BudgetFormatter.format((p['price'] as num?)?.toDouble() ?? 0.0)}',
-                                  onTap: () {
-                                    _hideSearchOverlay();
-                                    if (p['is_recycle_bin'] == true) {
-                                      context.go('/bin');
-                                    } else {
-                                      context.go('/properties?openId=${p['id']}&t=${DateTime.now().millisecondsSinceEpoch}');
-                                    }
-                                  },
-                                )),
-                          ],
-                          if (_requirementSuggestions.isNotEmpty) ...[
-                            _buildSuggestionSectionHeader('Leads'),
-                            ..._requirementSuggestions.map((r) => _buildSuggestionTile(
-                                  icon: Icons.person_search_rounded,
-                                  title: r['customer_name'] ?? '',
-                                  subtitle: 'Mobile: ${r['mobile']}',
-                                  onTap: () {
-                                    _hideSearchOverlay();
-                                    context.go('/requirements');
-                                  },
-                                )),
-                          ],
-                          if (_ownerSuggestions.isNotEmpty) ...[
-                            _buildSuggestionSectionHeader('Owners'),
-                            ..._ownerSuggestions.map((o) => _buildSuggestionTile(
-                                  icon: Icons.person_rounded,
-                                  title: o['name'] ?? '',
-                                  subtitle: 'Mobile: ${o['mobile']}',
-                                  onTap: () {
-                                    _hideSearchOverlay();
-                                    context.go('/owners');
-                                  },
-                                )),
-                          ],
-                          if (_builderSuggestions.isNotEmpty) ...[
-                            _buildSuggestionSectionHeader('Builders'),
-                            ..._builderSuggestions.map((b) => _buildSuggestionTile(
-                                  icon: Icons.construction_rounded,
-                                  title: b['company_name'] ?? '',
-                                  subtitle: 'Contact: ${b['contact_person']} • Mobile: ${b['mobile']}',
-                                  onTap: () {
-                                    _hideSearchOverlay();
-                                    context.go('/builders');
-                                  },
-                                )),
-                          ],
-                          if (_clientSuggestions.isNotEmpty) ...[
-                            _buildSuggestionSectionHeader('Clients'),
-                            ..._clientSuggestions.map((c) => _buildSuggestionTile(
-                                  icon: Icons.people_alt_rounded,
-                                  title: c['name'] ?? '',
-                                  subtitle: 'Mobile: ${c['mobile']}',
-                                  onTap: () {
-                                    _hideSearchOverlay();
-                                    context.go('/clients');
-                                  },
-                                )),
-                          ],
-                        ],
-                      ),
+                      ],
+                      if (_requirementSuggestions.isNotEmpty) ...[
+                        _buildSuggestionSectionHeader('Leads'),
+                        ..._requirementSuggestions.map(
+                          (r) => _buildSuggestionTile(
+                            icon: Icons.person_search_rounded,
+                            title: r['customer_name'] ?? '',
+                            subtitle: 'Mobile: ${r['mobile']}',
+                            onTap: () {
+                              _hideSearchOverlay();
+                              context.go('/requirements');
+                            },
+                          ),
+                        ),
+                      ],
+                      if (_ownerSuggestions.isNotEmpty) ...[
+                        _buildSuggestionSectionHeader('Owners'),
+                        ..._ownerSuggestions.map(
+                          (o) => _buildSuggestionTile(
+                            icon: Icons.person_rounded,
+                            title: o['name'] ?? '',
+                            subtitle: 'Mobile: ${o['mobile']}',
+                            onTap: () {
+                              _hideSearchOverlay();
+                              context.go('/owners');
+                            },
+                          ),
+                        ),
+                      ],
+                      if (_builderSuggestions.isNotEmpty) ...[
+                        _buildSuggestionSectionHeader('Builders'),
+                        ..._builderSuggestions.map(
+                          (b) => _buildSuggestionTile(
+                            icon: Icons.construction_rounded,
+                            title: b['company_name'] ?? '',
+                            subtitle:
+                                'Contact: ${b['contact_person']} • Mobile: ${b['mobile']}',
+                            onTap: () {
+                              _hideSearchOverlay();
+                              context.go('/builders');
+                            },
+                          ),
+                        ),
+                      ],
+                      if (_clientSuggestions.isNotEmpty) ...[
+                        _buildSuggestionSectionHeader('Clients'),
+                        ..._clientSuggestions.map(
+                          (c) => _buildSuggestionTile(
+                            icon: Icons.people_alt_rounded,
+                            title: c['name'] ?? '',
+                            subtitle: 'Mobile: ${c['mobile']}',
+                            onTap: () {
+                              _hideSearchOverlay();
+                              context.go('/clients');
+                            },
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
           ),
         );
 
@@ -706,7 +796,10 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   Widget _buildSuggestionSectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
+      padding: const EdgeInsets.symmetric(
+        horizontal: CRMSpacing.m,
+        vertical: CRMSpacing.xs,
+      ),
       child: Text(
         title.toUpperCase(),
         style: TextStyle(
@@ -727,8 +820,18 @@ class _CRMAppShellState extends State<CRMAppShell>
   }) {
     return ListTile(
       leading: Icon(icon, color: CRMColors.textSecondary, size: 20),
-      title: Text(title, style: TextStyle(color: CRMColors.textOf(context), fontSize: 13, fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle, style: TextStyle(color: CRMColors.textSecondary, fontSize: 11)),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: CRMColors.textOf(context),
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(color: CRMColors.textSecondary, fontSize: 11),
+      ),
       onTap: onTap,
       dense: true,
     );
@@ -760,6 +863,21 @@ class _CRMAppShellState extends State<CRMAppShell>
     final isTablet = size.width >= 768 && size.width < 1024;
     final isDesktop = size.width >= 1024;
 
+    String currentUserName = 'User';
+    String currentUserEmail = '';
+    String currentUserRole = 'Agent';
+    if (userState is Authenticated) {
+      if (userState.user.fullName.isNotEmpty) {
+        currentUserName = userState.user.fullName;
+      }
+      if (userState.user.email.isNotEmpty) {
+        currentUserEmail = userState.user.email;
+      }
+      if (userState.user.role.isNotEmpty) {
+        currentUserRole = userState.user.role;
+      }
+    }
+
     final targetIndex = _getTabRouteIndex(location);
     if (_tabController.index != targetIndex) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -771,7 +889,6 @@ class _CRMAppShellState extends State<CRMAppShell>
     }
 
     final showSidebar = isDesktop || isTablet;
-    final sidebarWidth = _isSidebarExpanded ? 260.0 : 78.0;
 
     final entryCurved = CurvedAnimation(
       parent: _entryController,
@@ -794,210 +911,217 @@ class _CRMAppShellState extends State<CRMAppShell>
         return false;
       },
       child: Stack(
-          children: [
-            FadeTransition(
-              opacity: entryCurved,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.012),
-                  end: Offset.zero,
-                ).animate(entryCurved),
-                child: Scaffold(
-                  backgroundColor: CRMColors.backgroundOf(context),
-                  extendBody: isMobile,
-                  drawer: isMobile
-                      ? Drawer(
-                          backgroundColor: CRMColors.sidebarBgOf(context),
-                          child: _buildSidebarContent(
-                            location,
-                            userState,
-                            isMobile: true,
+        children: [
+          FadeTransition(
+            opacity: entryCurved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.012),
+                end: Offset.zero,
+              ).animate(entryCurved),
+              child: Scaffold(
+                backgroundColor: CRMColors.backgroundOf(context),
+                extendBody: isMobile,
+                drawer: isMobile
+                    ? Drawer(
+                        backgroundColor: ThemeManager().isDarkMode
+                            ? const Color(0xFF0F172A)
+                            : Colors.white,
+                        child: ModernSidebar(
+                          currentPath: location,
+                          userName: currentUserName,
+                          userEmail: currentUserEmail,
+                          userRole: currentUserRole,
+                          onItemTapped: () => Navigator.of(context).pop(),
+                        ),
+                      )
+                    : null,
+                bottomNavigationBar: isMobile
+                    ? AnimatedSlide(
+                        offset: _isBottomBarVisible
+                            ? Offset.zero
+                            : const Offset(0, 1.5),
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                        child: IgnorePointer(
+                          ignoring: !_isBottomBarVisible,
+                          child: CustomBottomNavBar(
+                            selectedIndex: targetIndex,
+                            onItemSelected: (index) {
+                              if (index == 2) {
+                                _showQuickActionsBottomSheet();
+                                return;
+                              }
+                              final path = _getTabRoutePath(index);
+                              if (GoRouterState.of(context).matchedLocation !=
+                                  path) {
+                                context.go(path);
+                              }
+                            },
                           ),
-                        )
-                      : null,
-                  bottomNavigationBar: isMobile
-                      ? AnimatedSlide(
-                          offset: _isBottomBarVisible ? Offset.zero : const Offset(0, 1.5),
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeInOut,
-                          child: IgnorePointer(
-                            ignoring: !_isBottomBarVisible,
-                            child: CustomBottomNavBar(
-                              selectedIndex: targetIndex,
-                              onItemSelected: (index) {
-                                if (index == 2) {
-                                  _showQuickActionsBottomSheet();
-                                  return;
+                        ),
+                      )
+                    : null,
+                body: Row(
+                  children: [
+                    if (showSidebar)
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: _isSidebarExpanded ? 245.0 : 70.0,
+                        child: ModernSidebar(
+                          currentPath: location,
+                          userName: currentUserName,
+                          userEmail: currentUserEmail,
+                          userRole: currentUserRole,
+                          isCollapsed: !_isSidebarExpanded,
+                        ),
+                      ),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Builder(
+                            builder: (scaffoldContext) => ModernTopBar(
+                              onToggleSidebar: () {
+                                if (isMobile) {
+                                  Scaffold.of(scaffoldContext).openDrawer();
+                                } else {
+                                  setState(() {
+                                    _isSidebarExpanded = !_isSidebarExpanded;
+                                  });
                                 }
-                                final path = _getTabRoutePath(index);
-                                if (GoRouterState.of(context).matchedLocation !=
-                                    path) {
-                                  context.go(path);
-                                }
+                              },
+                              onLogout: _handleLogout,
+                              userName: currentUserName,
+                              userRole: currentUserRole,
+                              searchController: _searchController,
+                              unreadNotifications: _unreadNotificationsCount > 0
+                                  ? _unreadNotificationsCount
+                                  : 3,
+                              onNotificationsTap: () {
+                                setState(() {
+                                  _notificationsPanelOpen =
+                                      !_notificationsPanelOpen;
+                                });
                               },
                             ),
                           ),
-                        )
-                      : null,
-              body: Row(
-                children: [
-                  if (showSidebar)
-                    AnimatedContainer(
-                      duration: CRMMotion.medium,
-                      curve: CRMMotion.easeInOut,
-                      width: sidebarWidth,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: CRMColors.sidebarBgOf(context),
-                          border: Border(
-                            right: BorderSide(
-                              color: CRMColors.sidebarBorder,
-                              width: 0.5,
-                            ),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(
-                                alpha: Theme.of(context).brightness ==
-                                        Brightness.dark
-                                    ? 0.22
-                                    : 0.06,
-                              ),
-                              blurRadius: 24,
-                              offset: const Offset(4, 0),
-                            ),
-                          ],
-                        ),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            return _buildSidebarContent(
-                              location,
-                              userState,
-                              sidebarWidth: constraints.maxWidth,
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        isMobile
-                            ? SafeArea(
-                                bottom: false,
-                                child: _buildTopBar(context, isMobile),
-                              )
-                            : _buildTopBar(context, isMobile),
-                        Expanded(
-                          child: isMobile
-                              ? NotificationListener<ScrollNotification>(
-                                  onNotification: (scrollNotification) {
-                                    if (scrollNotification is ScrollUpdateNotification) {
-                                      if (scrollNotification.metrics.axis == Axis.vertical) {
-                                        final pixels = scrollNotification.metrics.pixels;
-                                        final scrollDelta = scrollNotification.scrollDelta;
-                                        if (pixels <= 10) {
-                                          if (!_isBottomBarVisible) {
-                                            setState(() {
-                                              _isBottomBarVisible = true;
-                                            });
-                                          }
-                                        } else if (scrollDelta != null && scrollDelta.abs() > 4) {
-                                          if (scrollDelta > 0) {
-                                            if (_isBottomBarVisible) {
-                                              setState(() {
-                                                _isBottomBarVisible = false;
-                                              });
-                                            }
-                                          } else if (scrollDelta < 0) {
+                          Expanded(
+                            child: isMobile
+                                ? NotificationListener<ScrollNotification>(
+                                    onNotification: (scrollNotification) {
+                                      if (scrollNotification
+                                          is ScrollUpdateNotification) {
+                                        if (scrollNotification.metrics.axis ==
+                                            Axis.vertical) {
+                                          final pixels =
+                                              scrollNotification.metrics.pixels;
+                                          final scrollDelta =
+                                              scrollNotification.scrollDelta;
+                                          if (pixels <= 10) {
                                             if (!_isBottomBarVisible) {
                                               setState(() {
                                                 _isBottomBarVisible = true;
                                               });
                                             }
+                                          } else if (scrollDelta != null &&
+                                              scrollDelta.abs() > 4) {
+                                            if (scrollDelta > 0) {
+                                              if (_isBottomBarVisible) {
+                                                setState(() {
+                                                  _isBottomBarVisible = false;
+                                                });
+                                              }
+                                            } else if (scrollDelta < 0) {
+                                              if (!_isBottomBarVisible) {
+                                                setState(() {
+                                                  _isBottomBarVisible = true;
+                                                });
+                                              }
+                                            }
                                           }
                                         }
                                       }
-                                    }
-                                    return false;
-                                  },
-                                  child: MediaQuery(
-                                    data: MediaQuery.of(context).copyWith(
-                                      padding: MediaQuery.of(context).padding.copyWith(
-                                        bottom: MediaQuery.of(context)
-                                                .padding
-                                                .bottom +
-                                            76,
+                                      return false;
+                                    },
+                                    child: MediaQuery(
+                                      data: MediaQuery.of(context).copyWith(
+                                        padding: MediaQuery.of(context).padding
+                                            .copyWith(
+                                              bottom:
+                                                  MediaQuery.of(
+                                                    context,
+                                                  ).padding.bottom +
+                                                  76,
+                                            ),
                                       ),
+                                      child: widget.child,
                                     ),
-                                    child: widget.child,
-                                  ),
-                                )
-                              : widget.child,
+                                  )
+                                : widget.child,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_notificationsPanelOpen) _buildNotificationsPanel(context),
+          ValueListenableBuilder<bool>(
+            valueListenable: SyncManager().isSyncing,
+            builder: (context, isSyncing, _) {
+              if (!isSyncing) return const SizedBox.shrink();
+              return Container(
+                color: CRMColors.overlayOf(context),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(32),
+                    margin: const EdgeInsets.symmetric(horizontal: 24),
+                    decoration: BoxDecoration(
+                      color: CRMColors.surfaceElevatedOf(context),
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.l),
+                      border: Border.all(
+                        color: CRMColors.primaryOf(context).withOpacity(0.3),
+                        width: 0.5,
+                      ),
+                      boxShadow: CRMShadows.modal,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(
+                          color: CRMColors.primaryOf(context),
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          'Updating lookup lists...',
+                          style: CRMTypography.body.copyWith(
+                            color: CRMColors.textOf(context),
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Synchronizing database metadata...',
+                          style: CRMTypography.body.copyWith(
+                            color: CRMColors.textSecondaryOf(context),
+                            fontSize: 14,
+                            decoration: TextDecoration.none,
+                            fontWeight: FontWeight.normal,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        if (_notificationsPanelOpen) _buildNotificationsPanel(context),
-        ValueListenableBuilder<bool>(
-          valueListenable: SyncManager().isSyncing,
-          builder: (context, isSyncing, _) {
-            if (!isSyncing) return const SizedBox.shrink();
-            return Container(
-              color: CRMColors.overlayOf(context),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.all(32),
-                  margin: const EdgeInsets.symmetric(horizontal: 24),
-                  decoration: BoxDecoration(
-                    color: CRMColors.surfaceElevatedOf(context),
-                    borderRadius: BorderRadius.circular(CRMBorderRadius.l),
-                    border: Border.all(
-                      color: CRMColors.primaryOf(context).withOpacity(0.3),
-                      width: 0.5,
-                    ),
-                    boxShadow: CRMShadows.modal,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(
-                        color: CRMColors.primaryOf(context),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Updating lookup lists...',
-                        style: CRMTypography.body.copyWith(
-                          color: CRMColors.textOf(context),
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          decoration: TextDecoration.none,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Synchronizing database metadata...',
-                        style: CRMTypography.body.copyWith(
-                          color: CRMColors.textSecondaryOf(context),
-                          fontSize: 14,
-                          decoration: TextDecoration.none,
-                          fontWeight: FontWeight.normal,
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
-              ),
-            );
-          },
-        ),
-      ],
-    ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -1006,281 +1130,290 @@ class _CRMAppShellState extends State<CRMAppShell>
     final horizontalPad = isMobile ? 10.0 : 14.0;
 
     Widget bar = Container(
-              height: isMobile ? 56 : 60,
-              decoration: BoxDecoration(
-                borderRadius: isMobile ? barRadius : BorderRadius.circular(CRMBorderRadius.card),
-                color: CRMColors.cardBgOf(context),
-                border: Border.all(
-                  color: CRMColors.borderOf(context),
-                  width: 1.0,
+      height: isMobile ? 56 : 60,
+      decoration: BoxDecoration(
+        borderRadius: isMobile
+            ? barRadius
+            : BorderRadius.circular(CRMBorderRadius.card),
+        color: CRMColors.cardBgOf(context),
+        border: Border.all(color: CRMColors.borderOf(context), width: 1.0),
+      ),
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 14),
+      child: Stack(
+        children: [
+          if (isMobile) ...[
+            // Layer 1: Normal Top Bar Content
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              top: _isMobileSearchActive ? -58.0 : 0.0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 200),
+                opacity: _isMobileSearchActive ? 0.0 : 1.0,
+                child: Row(
+                  children: [
+                    Builder(
+                      builder: (context) => IconButton(
+                        icon: Icon(
+                          Icons.menu_rounded,
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
+                        onPressed: () => Scaffold.of(context).openDrawer(),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: CRMBrandLockup(
+                          expanded: true,
+                          compact: true,
+                          wordmarkColor: CRMColors.textOf(context),
+                          markSize: 24,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        Icons.search_rounded,
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isMobileSearchActive = true;
+                        });
+                        Future.delayed(const Duration(milliseconds: 50), () {
+                          _searchFocusNode.requestFocus();
+                        });
+                      },
+                    ),
+                    _buildNotificationButton(context),
+                  ],
                 ),
               ),
-              padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 14),
-              child: Stack(
-                children: [
-                  if (isMobile) ...[
-                    // Layer 1: Normal Top Bar Content
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeInOut,
-                      top: _isMobileSearchActive ? -58.0 : 0.0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 200),
-                        opacity: _isMobileSearchActive ? 0.0 : 1.0,
-                        child: Row(
-                          children: [
-                            Builder(
-                              builder: (context) => IconButton(
-                                icon: Icon(
-                                  Icons.menu_rounded,
-                                  color: CRMColors.textSecondaryOf(context),
-                                ),
-                                onPressed: () => Scaffold.of(context).openDrawer(),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: CRMBrandLockup(
-                                  expanded: true,
-                                  compact: true,
-                                  wordmarkColor: CRMColors.textOf(context),
-                                  markSize: 24,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.search_rounded,
-                                color: CRMColors.textSecondaryOf(context),
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _isMobileSearchActive = true;
-                                });
+            ),
+            // Layer 2: Search Bar Content
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              top: _isMobileSearchActive ? 0.0 : -58.0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 200),
+                opacity: _isMobileSearchActive ? 1.0 : 0.0,
+                child: Center(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: CompositedTransformTarget(
+                          link: _searchLayerLink,
+                          child: Focus(
+                            onFocusChange: (hasFocus) {
+                              if (!hasFocus) {
                                 Future.delayed(
-                                  const Duration(milliseconds: 50),
+                                  const Duration(milliseconds: 200),
                                   () {
-                                    _searchFocusNode.requestFocus();
-                                  },
-                                );
-                              },
-                            ),
-                            _buildNotificationButton(context),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // Layer 2: Search Bar Content
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeInOut,
-                      top: _isMobileSearchActive ? 0.0 : -58.0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 200),
-                        opacity: _isMobileSearchActive ? 1.0 : 0.0,
-                        child: Center(
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: CompositedTransformTarget(
-                                  link: _searchLayerLink,
-                                  child: Focus(
-                                    onFocusChange: (hasFocus) {
-                                      if (!hasFocus) {
-                                        Future.delayed(
-                                          const Duration(milliseconds: 200),
-                                          () {
-                                            _hideSearchOverlay();
-                                            if (mounted) {
-                                              setState(() {
-                                                _isMobileSearchActive = false;
-                                              });
-                                            }
-                                          },
-                                        );
-                                      }
-                                    },
-                                    child: TextField(
-                                      controller: _searchController,
-                                      focusNode: _searchFocusNode,
-                                      style: CRMTypography.body.copyWith(
-                                        color: CRMColors.textOf(context),
-                                        fontSize: 14,
-                                      ),
-                                      onChanged: _onSearchChanged,
-                                      autofocus: false,
-                                      decoration: InputDecoration(
-                                        hintText: 'Search...',
-                                        hintStyle: CRMTypography.body.copyWith(
-                                          color: CRMColors.textMutedOf(context),
-                                          fontSize: 14,
-                                        ),
-                                        prefixIcon: Icon(
-                                          Icons.search_rounded,
-                                          color: CRMColors.textMutedOf(context),
-                                          size: 18,
-                                        ),
-                                        suffixIcon: IconButton(
-                                          icon: const Icon(
-                                            Icons.close_rounded,
-                                            size: 18,
-                                          ),
-                                          onPressed: () {
-                                            _searchController.clear();
-                                            _hideSearchOverlay();
-                                            _searchFocusNode.unfocus();
-                                            setState(() {
-                                              _isMobileSearchActive = false;
-                                            });
-                                          },
-                                        ),
-                                        filled: true,
-                                        fillColor: CRMColors.groupedBackground,
-                                        isDense: true,
-                                        contentPadding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 10,
-                                        ),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                                          borderSide: BorderSide.none,
-                                        ),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                                          borderSide: BorderSide.none,
-                                        ),
-                                        focusedBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                                          borderSide: BorderSide(
-                                            color: CRMColors.primaryOf(context).withValues(alpha: 0.35),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ] else ...[
-                    Row(
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          curve: Curves.easeInOut,
-                          width: 44,
-                          child: IconButton(
-                            icon: Icon(
-                              _isSidebarExpanded
-                                  ? Icons.menu_open_rounded
-                                  : Icons.menu_rounded,
-                              color: CRMColors.textSecondaryOf(context),
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _isSidebarExpanded = !_isSidebarExpanded;
-                              });
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 380),
-                              child: CompositedTransformTarget(
-                                link: _searchLayerLink,
-                                child: Focus(
-                                  onFocusChange: (hasFocus) {
-                                    if (!hasFocus) {
-                                      Future.delayed(
-                                        const Duration(milliseconds: 200),
-                                        () {
-                                          _hideSearchOverlay();
-                                        },
-                                      );
+                                    _hideSearchOverlay();
+                                    if (mounted) {
+                                      setState(() {
+                                        _isMobileSearchActive = false;
+                                      });
                                     }
                                   },
-                                  child: TextField(
-                                    controller: _searchController,
-                                    focusNode: _searchFocusNode,
-                                    style: CRMTypography.body.copyWith(
-                                      color: CRMColors.textOf(context),
-                                      fontSize: 14,
-                                    ),
-                                    onChanged: _onSearchChanged,
-                                    decoration: InputDecoration(
-                                      hintText: 'Search PropKart...',
-                                      hintStyle: CRMTypography.body.copyWith(
-                                        color: CRMColors.textMutedOf(context),
-                                        fontSize: 14,
-                                      ),
-                                      prefixIcon: Icon(
-                                        Icons.search_rounded,
-                                        color: CRMColors.textMutedOf(context),
-                                        size: 18,
-                                      ),
-                                      filled: true,
-                                      fillColor: CRMColors.groupedBackground,
-                                      isDense: true,
-                                      contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
-                                      ),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-                                        borderSide: BorderSide(
-                                          color: CRMColors.primaryOf(context).withValues(alpha: 0.35),
-                                        ),
-                                      ),
-                                    ),
+                                );
+                              }
+                            },
+                            child: TextField(
+                              controller: _searchController,
+                              focusNode: _searchFocusNode,
+                              style: CRMTypography.body.copyWith(
+                                color: CRMColors.textOf(context),
+                                fontSize: 14,
+                              ),
+                              onChanged: _onSearchChanged,
+                              autofocus: false,
+                              decoration: InputDecoration(
+                                hintText: 'Search...',
+                                hintStyle: CRMTypography.body.copyWith(
+                                  color: CRMColors.textMutedOf(context),
+                                  fontSize: 14,
+                                ),
+                                prefixIcon: Icon(
+                                  Icons.search_rounded,
+                                  color: CRMColors.textMutedOf(context),
+                                  size: 18,
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                  ),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _hideSearchOverlay();
+                                    _searchFocusNode.unfocus();
+                                    setState(() {
+                                      _isMobileSearchActive = false;
+                                    });
+                                  },
+                                ),
+                                filled: true,
+                                fillColor: CRMColors.groupedBackground,
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    CRMBorderRadius.round,
+                                  ),
+                                  borderSide: BorderSide.none,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    CRMBorderRadius.round,
+                                  ),
+                                  borderSide: BorderSide.none,
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    CRMBorderRadius.round,
+                                  ),
+                                  borderSide: BorderSide(
+                                    color: CRMColors.primaryOf(
+                                      context,
+                                    ).withValues(alpha: 0.35),
                                   ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        if (MediaQuery.sizeOf(context).width >= 1100) ...[
-                          const LiveClockWidget(),
-                          const SizedBox(width: 8),
-                        ],
-                        _buildNotificationButton(context),
-                        const SizedBox(width: 8),
-                        _buildQuickActionsButton(context),
-                        const SizedBox(width: 8),
-                        _buildThemeToggleButton(context),
-                      ],
-                    ),
-                  ],
-                ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
+            ),
+          ] else ...[
+            Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  width: 44,
+                  child: IconButton(
+                    icon: Icon(
+                      _isSidebarExpanded
+                          ? Icons.menu_open_rounded
+                          : Icons.menu_rounded,
+                      color: CRMColors.textSecondaryOf(context),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isSidebarExpanded = !_isSidebarExpanded;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 380),
+                      child: CompositedTransformTarget(
+                        link: _searchLayerLink,
+                        child: Focus(
+                          onFocusChange: (hasFocus) {
+                            if (!hasFocus) {
+                              Future.delayed(
+                                const Duration(milliseconds: 200),
+                                () {
+                                  _hideSearchOverlay();
+                                },
+                              );
+                            }
+                          },
+                          child: TextField(
+                            controller: _searchController,
+                            focusNode: _searchFocusNode,
+                            style: CRMTypography.body.copyWith(
+                              color: CRMColors.textOf(context),
+                              fontSize: 14,
+                            ),
+                            onChanged: _onSearchChanged,
+                            decoration: InputDecoration(
+                              hintText: 'Search PropKart...',
+                              hintStyle: CRMTypography.body.copyWith(
+                                color: CRMColors.textMutedOf(context),
+                                fontSize: 14,
+                              ),
+                              prefixIcon: Icon(
+                                Icons.search_rounded,
+                                color: CRMColors.textMutedOf(context),
+                                size: 18,
+                              ),
+                              filled: true,
+                              fillColor: CRMColors.groupedBackground,
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(
+                                  CRMBorderRadius.round,
+                                ),
+                                borderSide: BorderSide.none,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(
+                                  CRMBorderRadius.round,
+                                ),
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(
+                                  CRMBorderRadius.round,
+                                ),
+                                borderSide: BorderSide(
+                                  color: CRMColors.primaryOf(
+                                    context,
+                                  ).withValues(alpha: 0.35),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (MediaQuery.sizeOf(context).width >= 1100) ...[
+                  const LiveClockWidget(),
+                  const SizedBox(width: 8),
+                ],
+                _buildNotificationButton(context),
+                const SizedBox(width: 8),
+                _buildQuickActionsButton(context),
+                const SizedBox(width: 8),
+                _buildThemeToggleButton(context),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
 
-    bar = ClipRRect(
-      borderRadius: barRadius,
-      child: bar,
-    );
+    bar = ClipRRect(borderRadius: barRadius, child: bar);
 
     return Padding(
       padding: EdgeInsets.fromLTRB(horizontalPad, 8, horizontalPad, 6),
@@ -1294,7 +1427,8 @@ class _CRMAppShellState extends State<CRMAppShell>
         backgroundRefresh: false,
       );
       final followups = dashboardData.followups;
-      final localReqs = await RepositoryCoordinator().requirementLocal.getRequirements();
+      final localReqs = await RepositoryCoordinator().requirementLocal
+          .getRequirements();
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final authState = context.read<AuthBloc>().state;
@@ -1306,7 +1440,8 @@ class _CRMAppShellState extends State<CRMAppShell>
         currentUserId = authState.user.id;
         currentUserName = authState.user.fullName;
       }
-      final isHighRole = role == 'Admin' || role == 'Super Admin' || role == 'Telecaller';
+      final isHighRole =
+          role == 'Admin' || role == 'Super Admin' || role == 'Telecaller';
 
       int activeDueCount = 0;
       for (final f in followups) {
@@ -1330,19 +1465,28 @@ class _CRMAppShellState extends State<CRMAppShell>
           String salesPerson = f.creatorName ?? '';
           if (salesPerson.isEmpty && req != null) {
             try {
-              salesPerson = (req.assignedToName ?? req.addedByName ?? req.creatorName ?? '').toString();
+              salesPerson =
+                  (req.assignedToName ??
+                          req.addedByName ??
+                          req.creatorName ??
+                          '')
+                      .toString();
             } catch (_) {}
           }
-          
+
           bool isMine = false;
-          if (salesPerson.isNotEmpty && currentUserName != null && currentUserName.isNotEmpty) {
-            if (salesPerson.trim().toLowerCase() == currentUserName.trim().toLowerCase()) {
+          if (salesPerson.isNotEmpty &&
+              currentUserName != null &&
+              currentUserName.isNotEmpty) {
+            if (salesPerson.trim().toLowerCase() ==
+                currentUserName.trim().toLowerCase()) {
               isMine = true;
             }
           }
           if (!isMine && req != null) {
             try {
-              if (req.adminId == currentUserId || req.assignedToId == currentUserId) {
+              if (req.adminId == currentUserId ||
+                  req.assignedToId == currentUserId) {
                 isMine = true;
               }
             } catch (_) {}
@@ -1359,14 +1503,20 @@ class _CRMAppShellState extends State<CRMAppShell>
             final clientName = f.clientName;
 
             // For Admin, Super Admin & Telecaller: send notification only ONCE PER DAY per client!
-            if (isHighRole && NotificationCenter.hasNotificationToday(clientName)) {
+            if (isHighRole &&
+                NotificationCenter.hasNotificationToday(clientName)) {
               continue;
             }
 
             String salesPerson = f.creatorName ?? '';
             if (salesPerson.isEmpty && req != null) {
               try {
-                salesPerson = (req.assignedToName ?? req.addedByName ?? req.creatorName ?? '').toString();
+                salesPerson =
+                    (req.assignedToName ??
+                            req.addedByName ??
+                            req.creatorName ??
+                            '')
+                        .toString();
               } catch (_) {}
             }
             if (salesPerson.isEmpty) salesPerson = 'Sales Team';
@@ -1487,39 +1637,42 @@ class _CRMAppShellState extends State<CRMAppShell>
                             ],
                           ),
                         ),
-                        Divider(
-                          height: 1,
-                          color: CRMColors.borderOf(context),
-                        ),
+                        Divider(height: 1, color: CRMColors.borderOf(context)),
                         Expanded(
-                          child: _isLoadingNotifications && _notifications.isEmpty
+                          child:
+                              _isLoadingNotifications && _notifications.isEmpty
                               ? const Center(child: CircularProgressIndicator())
                               : _notifications.isEmpty
-                                  ? _buildNotificationsEmpty(context)
-                                  : ListView(
-                                      padding: const EdgeInsets.all(12),
-                                      children: [
-                                        if (unread.isNotEmpty) ...[
-                                          _notifSectionLabel('New'),
-                                          ...unread.map(_buildNotificationTile),
-                                        ],
-                                        if (read.isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          _notifSectionLabel('Earlier'),
-                                          ...read.map(_buildNotificationTile),
-                                        ],
-                                        if (_notificationsPage < _totalNotificationPages)
-                                          TextButton(
-                                            onPressed: () => _fetchNotifications(loadMore: true),
-                                            child: Text(
-                                              'Load more',
-                                              style: CRMTypography.captionBold.copyWith(
-                                                color: CRMColors.primaryOf(context),
+                              ? _buildNotificationsEmpty(context)
+                              : ListView(
+                                  padding: const EdgeInsets.all(12),
+                                  children: [
+                                    if (unread.isNotEmpty) ...[
+                                      _notifSectionLabel('New'),
+                                      ...unread.map(_buildNotificationTile),
+                                    ],
+                                    if (read.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      _notifSectionLabel('Earlier'),
+                                      ...read.map(_buildNotificationTile),
+                                    ],
+                                    if (_notificationsPage <
+                                        _totalNotificationPages)
+                                      TextButton(
+                                        onPressed: () =>
+                                            _fetchNotifications(loadMore: true),
+                                        child: Text(
+                                          'Load more',
+                                          style: CRMTypography.captionBold
+                                              .copyWith(
+                                                color: CRMColors.primaryOf(
+                                                  context,
+                                                ),
                                               ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                         ),
                       ],
                     ),
@@ -1659,9 +1812,16 @@ class _CRMAppShellState extends State<CRMAppShell>
           value: 'property',
           child: Row(
             children: [
-              Icon(Icons.add_business_rounded, color: CRMColors.primary, size: 20),
+              Icon(
+                Icons.add_business_rounded,
+                color: CRMColors.primary,
+                size: 20,
+              ),
               const SizedBox(width: CRMSpacing.s),
-              Text('Add Property', style: TextStyle(color: CRMColors.textOf(context))),
+              Text(
+                'Add Property',
+                style: TextStyle(color: CRMColors.textOf(context)),
+              ),
             ],
           ),
         ),
@@ -1671,7 +1831,10 @@ class _CRMAppShellState extends State<CRMAppShell>
             children: [
               Icon(Icons.add_task_rounded, color: CRMColors.primary, size: 20),
               const SizedBox(width: CRMSpacing.s),
-              Text('Add Requirement', style: TextStyle(color: CRMColors.textOf(context))),
+              Text(
+                'Add Requirement',
+                style: TextStyle(color: CRMColors.textOf(context)),
+              ),
             ],
           ),
         ),
@@ -1693,18 +1856,25 @@ class _CRMAppShellState extends State<CRMAppShell>
     );
   }
 
-  Widget _buildSidebarContent(String currentPath, AuthState userState, {bool isMobile = false, double? sidebarWidth}) {
+  Widget _buildSidebarContent(
+    String currentPath,
+    AuthState userState, {
+    bool isMobile = false,
+    double? sidebarWidth,
+  }) {
     String userRole = '';
     String userFullName = '';
     String? userProfilePhoto;
-    
+
     if (userState is Authenticated) {
       userRole = userState.user.role;
       userFullName = userState.user.fullName;
       userProfilePhoto = userState.user.profilePhoto;
     }
 
-    final isExpanded = isMobile || (sidebarWidth == null ? _isSidebarExpanded : sidebarWidth > 200.0);
+    final isExpanded =
+        isMobile ||
+        (sidebarWidth == null ? _isSidebarExpanded : sidebarWidth > 200.0);
     final displayRole = isExpanded ? userRole : '';
     final displayFullName = isExpanded ? userFullName : '';
 
@@ -1734,11 +1904,39 @@ class _CRMAppShellState extends State<CRMAppShell>
                 horizontal: isExpanded ? CRMSpacing.s : CRMSpacing.xxs,
               ),
               children: [
-                _buildSidebarItem(Icons.dashboard_rounded, 'Dashboard', '/dashboard', currentPath, isMobile, isExpanded),
-                _buildSidebarItem(Icons.home_work_rounded, 'Properties', '/properties', currentPath, isMobile, isExpanded),
-                _buildSidebarItem(Icons.assignment_rounded, 'Leads', '/requirements', currentPath, isMobile, isExpanded),
+                _buildSidebarItem(
+                  Icons.dashboard_rounded,
+                  'Dashboard',
+                  '/dashboard',
+                  currentPath,
+                  isMobile,
+                  isExpanded,
+                ),
+                _buildSidebarItem(
+                  Icons.home_work_rounded,
+                  'Properties',
+                  '/properties',
+                  currentPath,
+                  isMobile,
+                  isExpanded,
+                ),
+                _buildSidebarItem(
+                  Icons.assignment_rounded,
+                  'Leads',
+                  '/requirements',
+                  currentPath,
+                  isMobile,
+                  isExpanded,
+                ),
                 if (userRole == 'Admin' || userRole == 'Super Admin') ...[
-                  _buildSidebarItem(Icons.people_outline_rounded, 'Employees', '/users', currentPath, isMobile, isExpanded),
+                  _buildSidebarItem(
+                    Icons.people_outline_rounded,
+                    'Employees',
+                    '/users',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                   _buildSidebarTreeItem(
                     icon: Icons.campaign_rounded,
                     label: 'Campaign',
@@ -1746,14 +1944,43 @@ class _CRMAppShellState extends State<CRMAppShell>
                     isMobile: isMobile,
                     isExpanded: isExpanded,
                     subItems: const [
-                      _SidebarSubItemData(icon: Icons.hub_rounded, label: 'Connections', route: '/campaign/connections'),
-                      _SidebarSubItemData(icon: Icons.table_chart_rounded, label: 'Campaign Leads', route: '/campaign/leads'),
+                      _SidebarSubItemData(
+                        icon: Icons.hub_rounded,
+                        label: 'Connections',
+                        route: '/campaign/connections',
+                      ),
+                      _SidebarSubItemData(
+                        icon: Icons.table_chart_rounded,
+                        label: 'Campaign Leads',
+                        route: '/campaign/leads',
+                      ),
                     ],
                   ),
                 ],
-                _buildSidebarItem(Icons.folder_open_rounded, 'Library', '/library', currentPath, isMobile, isExpanded),
-                _buildSidebarItem(Icons.settings_rounded, 'Settings', '/settings', currentPath, isMobile, isExpanded),
-                _buildSidebarItem(Icons.delete_sweep_rounded, 'Recycle Bin', '/bin', currentPath, isMobile, isExpanded),
+                _buildSidebarItem(
+                  Icons.folder_open_rounded,
+                  'Library',
+                  '/library',
+                  currentPath,
+                  isMobile,
+                  isExpanded,
+                ),
+                _buildSidebarItem(
+                  Icons.settings_rounded,
+                  'Settings',
+                  '/settings',
+                  currentPath,
+                  isMobile,
+                  isExpanded,
+                ),
+                _buildSidebarItem(
+                  Icons.delete_sweep_rounded,
+                  'Recycle Bin',
+                  '/bin',
+                  currentPath,
+                  isMobile,
+                  isExpanded,
+                ),
               ],
             ),
           ),
@@ -1764,27 +1991,41 @@ class _CRMAppShellState extends State<CRMAppShell>
               horizontal: isExpanded ? CRMSpacing.m : CRMSpacing.xs,
             ),
             child: Row(
-              mainAxisAlignment: isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+              mainAxisAlignment: isExpanded
+                  ? MainAxisAlignment.start
+                  : MainAxisAlignment.center,
               children: [
                 GestureDetector(
                   onTap: () {
-                    final currentRoute = GoRouterState.of(context).uri.toString();
+                    final currentRoute = GoRouterState.of(
+                      context,
+                    ).uri.toString();
                     if (currentRoute != '/profile') {
                       context.go('/profile');
                     }
                   },
                   child: CircleAvatar(
                     backgroundColor: CRMColors.primary.withValues(alpha: 0.18),
-                    backgroundImage: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
+                    backgroundImage:
+                        (userProfilePhoto != null &&
+                            userProfilePhoto!.isNotEmpty)
                         ? ResizeImage(
                             NetworkImage(userProfilePhoto!),
-                            width: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
-                            height: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                            width: (40 * MediaQuery.devicePixelRatioOf(context))
+                                .round(),
+                            height:
+                                (40 * MediaQuery.devicePixelRatioOf(context))
+                                    .round(),
                           )
                         : null,
-                    child: (userProfilePhoto != null && userProfilePhoto!.isNotEmpty)
+                    child:
+                        (userProfilePhoto != null &&
+                            userProfilePhoto!.isNotEmpty)
                         ? null
-                        : Icon(Icons.person_outline_rounded, color: CRMColors.primary),
+                        : Icon(
+                            Icons.person_outline_rounded,
+                            color: CRMColors.primary,
+                          ),
                   ),
                 ),
                 if (isExpanded) ...[
@@ -1792,7 +2033,9 @@ class _CRMAppShellState extends State<CRMAppShell>
                   Expanded(
                     child: GestureDetector(
                       onTap: () {
-                        final currentRoute = GoRouterState.of(context).uri.toString();
+                        final currentRoute = GoRouterState.of(
+                          context,
+                        ).uri.toString();
                         if (currentRoute != '/profile') {
                           context.go('/profile');
                         }
@@ -1802,13 +2045,18 @@ class _CRMAppShellState extends State<CRMAppShell>
                         children: [
                           Text(
                             displayFullName,
-                            style: CRMTypography.captionBold.copyWith(color: CRMColors.sidebarText),
+                            style: CRMTypography.captionBold.copyWith(
+                              color: CRMColors.sidebarText,
+                            ),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
                           Text(
                             displayRole,
-                            style: CRMTypography.caption.copyWith(color: CRMColors.sidebarTextSecondary, fontSize: 10),
+                            style: CRMTypography.caption.copyWith(
+                              color: CRMColors.sidebarTextSecondary,
+                              fontSize: 10,
+                            ),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
@@ -1819,9 +2067,16 @@ class _CRMAppShellState extends State<CRMAppShell>
                   IconButton(
                     tooltip: 'Logout',
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
+                    ),
                     visualDensity: VisualDensity.compact,
-                    icon: Icon(Icons.logout_rounded, color: CRMColors.danger, size: 20),
+                    icon: Icon(
+                      Icons.logout_rounded,
+                      color: CRMColors.danger,
+                      size: 20,
+                    ),
                     onPressed: _handleLogout,
                   ),
                 ],
@@ -1832,8 +2087,6 @@ class _CRMAppShellState extends State<CRMAppShell>
       ),
     );
   }
-
-
 
   Widget _buildSidebarItem(
     IconData icon,
@@ -1939,25 +2192,35 @@ class _SidebarItemState extends State<_SidebarItem> {
             ),
             decoration: BoxDecoration(
               color: isSelected
-                  ? (CRMColors.isDark ? const Color(0xFF382A26) : const Color(0xFFF3E4DE))
+                  ? (CRMColors.isDark
+                        ? const Color(0xFF382A26)
+                        : const Color(0xFFF3E4DE))
                   : (_isHovered
-                      ? (CRMColors.isDark ? const Color(0xFF262320) : const Color(0xFFF4F4F3))
-                      : Colors.transparent),
+                        ? (CRMColors.isDark
+                              ? const Color(0xFF262320)
+                              : const Color(0xFFF4F4F3))
+                        : Colors.transparent),
               borderRadius: BorderRadius.circular(CRMBorderRadius.button),
               border: Border.all(
                 color: isSelected
-                    ? (CRMColors.isDark ? const Color(0xFF4A3530) : const Color(0xFFE8CEC5))
+                    ? (CRMColors.isDark
+                          ? const Color(0xFF4A3530)
+                          : const Color(0xFFE8CEC5))
                     : Colors.transparent,
                 width: 1,
               ),
             ),
             child: Row(
-              mainAxisAlignment: isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+              mainAxisAlignment: isExpanded
+                  ? MainAxisAlignment.start
+                  : MainAxisAlignment.center,
               children: [
                 Icon(
                   widget.icon,
                   color: isSelected
-                      ? (CRMColors.isDark ? const Color(0xFFE8A290) : const Color(0xFF8F4E3E))
+                      ? (CRMColors.isDark
+                            ? const Color(0xFFE8A290)
+                            : const Color(0xFF8F4E3E))
                       : CRMColors.sidebarTextSecondary,
                   size: 18,
                 ),
@@ -1968,9 +2231,13 @@ class _SidebarItemState extends State<_SidebarItem> {
                       widget.label,
                       style: CRMTypography.bodyMedium.copyWith(
                         color: isSelected
-                            ? (CRMColors.isDark ? const Color(0xFFE8A290) : const Color(0xFF8F4E3E))
+                            ? (CRMColors.isDark
+                                  ? const Color(0xFFE8A290)
+                                  : const Color(0xFF8F4E3E))
                             : CRMColors.sidebarText,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                         fontSize: 13,
                       ),
                     ),
@@ -2037,7 +2304,9 @@ class _SidebarTreeItemState extends State<_SidebarTreeItem> {
   }
 
   bool _isAnyChildActive() {
-    return widget.subItems.any((item) => widget.currentPath.startsWith(item.route)) ||
+    return widget.subItems.any(
+          (item) => widget.currentPath.startsWith(item.route),
+        ) ||
         widget.currentPath.startsWith('/campaign') ||
         widget.currentPath.startsWith('/integration');
   }
@@ -2067,13 +2336,23 @@ class _SidebarTreeItemState extends State<_SidebarTreeItem> {
               value: item.route,
               child: Row(
                 children: [
-                  Icon(item.icon, size: 16, color: isItemActive ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context)),
+                  Icon(
+                    item.icon,
+                    size: 16,
+                    color: isItemActive
+                        ? CRMColors.primaryOf(context)
+                        : CRMColors.textSecondaryOf(context),
+                  ),
                   const SizedBox(width: 10),
                   Text(
                     item.label,
                     style: TextStyle(
-                      fontWeight: isItemActive ? FontWeight.w600 : FontWeight.normal,
-                      color: isItemActive ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                      fontWeight: isItemActive
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                      color: isItemActive
+                          ? CRMColors.primaryOf(context)
+                          : CRMColors.textOf(context),
                       fontSize: 13,
                     ),
                   ),
@@ -2086,20 +2365,37 @@ class _SidebarTreeItemState extends State<_SidebarTreeItem> {
             onExit: (_) => setState(() => _isHovered = false),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.xs, vertical: CRMSpacing.s),
+              padding: const EdgeInsets.symmetric(
+                horizontal: CRMSpacing.xs,
+                vertical: CRMSpacing.s,
+              ),
               decoration: BoxDecoration(
                 color: isChildActive
-                    ? (CRMColors.isDark ? const Color(0xFF382A26) : const Color(0xFFF3E4DE))
-                    : (_isHovered ? (CRMColors.isDark ? const Color(0xFF262320) : const Color(0xFFEAE4DC)) : Colors.transparent),
+                    ? (CRMColors.isDark
+                          ? const Color(0xFF382A26)
+                          : const Color(0xFFF3E4DE))
+                    : (_isHovered
+                          ? (CRMColors.isDark
+                                ? const Color(0xFF262320)
+                                : const Color(0xFFEAE4DC))
+                          : Colors.transparent),
                 borderRadius: BorderRadius.circular(CRMBorderRadius.button),
                 border: Border.all(
-                  color: isChildActive ? (CRMColors.isDark ? const Color(0xFF4A3530) : const Color(0xFFE8CEC5)) : Colors.transparent,
+                  color: isChildActive
+                      ? (CRMColors.isDark
+                            ? const Color(0xFF4A3530)
+                            : const Color(0xFFE8CEC5))
+                      : Colors.transparent,
                   width: 1,
                 ),
               ),
               child: Icon(
                 widget.icon,
-                color: isChildActive ? (CRMColors.isDark ? const Color(0xFFE8A290) : const Color(0xFF8F4E3E)) : CRMColors.sidebarTextSecondary,
+                color: isChildActive
+                    ? (CRMColors.isDark
+                          ? const Color(0xFFE8A290)
+                          : const Color(0xFF8F4E3E))
+                    : CRMColors.sidebarTextSecondary,
                 size: 18,
               ),
             ),
@@ -2131,12 +2427,20 @@ class _SidebarTreeItemState extends State<_SidebarTreeItem> {
                 ),
                 decoration: BoxDecoration(
                   color: isChildActive
-                      ? (CRMColors.isDark ? const Color(0xFF382A26) : const Color(0xFFF3E4DE))
-                      : (_isHovered ? (CRMColors.isDark ? const Color(0xFF262320) : const Color(0xFFEAE4DC)) : Colors.transparent),
+                      ? (CRMColors.isDark
+                            ? const Color(0xFF382A26)
+                            : const Color(0xFFF3E4DE))
+                      : (_isHovered
+                            ? (CRMColors.isDark
+                                  ? const Color(0xFF262320)
+                                  : const Color(0xFFEAE4DC))
+                            : Colors.transparent),
                   borderRadius: BorderRadius.circular(CRMBorderRadius.button),
                   border: Border.all(
                     color: isChildActive
-                        ? (CRMColors.isDark ? const Color(0xFF4A3530) : const Color(0xFFE8CEC5))
+                        ? (CRMColors.isDark
+                              ? const Color(0xFF4A3530)
+                              : const Color(0xFFE8CEC5))
                         : Colors.transparent,
                     width: 1,
                   ),
@@ -2145,7 +2449,11 @@ class _SidebarTreeItemState extends State<_SidebarTreeItem> {
                   children: [
                     Icon(
                       widget.icon,
-                      color: isChildActive ? (CRMColors.isDark ? const Color(0xFFE8A290) : const Color(0xFF8F4E3E)) : CRMColors.sidebarTextSecondary,
+                      color: isChildActive
+                          ? (CRMColors.isDark
+                                ? const Color(0xFFE8A290)
+                                : const Color(0xFF8F4E3E))
+                          : CRMColors.sidebarTextSecondary,
                       size: 18,
                     ),
                     const SizedBox(width: CRMSpacing.m),
@@ -2153,8 +2461,14 @@ class _SidebarTreeItemState extends State<_SidebarTreeItem> {
                       child: Text(
                         widget.label,
                         style: CRMTypography.bodyMedium.copyWith(
-                          color: isChildActive ? (CRMColors.isDark ? const Color(0xFFE8A290) : const Color(0xFF8F4E3E)) : CRMColors.sidebarText,
-                          fontWeight: isChildActive ? FontWeight.w600 : FontWeight.w500,
+                          color: isChildActive
+                              ? (CRMColors.isDark
+                                    ? const Color(0xFFE8A290)
+                                    : const Color(0xFF8F4E3E))
+                              : CRMColors.sidebarText,
+                          fontWeight: isChildActive
+                              ? FontWeight.w600
+                              : FontWeight.w500,
                           fontSize: 13,
                         ),
                       ),
@@ -2165,7 +2479,11 @@ class _SidebarTreeItemState extends State<_SidebarTreeItem> {
                       child: Icon(
                         Icons.keyboard_arrow_down_rounded,
                         size: 16,
-                        color: isChildActive ? (CRMColors.isDark ? const Color(0xFFE8A290) : const Color(0xFF8F4E3E)) : CRMColors.sidebarTextSecondary,
+                        color: isChildActive
+                            ? (CRMColors.isDark
+                                  ? const Color(0xFFE8A290)
+                                  : const Color(0xFF8F4E3E))
+                            : CRMColors.sidebarTextSecondary,
                       ),
                     ),
                   ],
@@ -2190,7 +2508,9 @@ class _SidebarTreeItemState extends State<_SidebarTreeItem> {
                 padding: const EdgeInsets.only(left: 8.0),
                 child: Column(
                   children: widget.subItems.map((item) {
-                    final isSelected = widget.currentPath.startsWith(item.route);
+                    final isSelected = widget.currentPath.startsWith(
+                      item.route,
+                    );
                     return _SidebarSubItemWidget(
                       icon: item.icon,
                       label: item.label,
@@ -2206,7 +2526,9 @@ class _SidebarTreeItemState extends State<_SidebarTreeItem> {
                 ),
               ),
             ),
-            crossFadeState: _isOpen ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            crossFadeState: _isOpen
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
             duration: const Duration(milliseconds: 150),
           ),
         ],
@@ -2250,12 +2572,20 @@ class _SidebarSubItemWidgetState extends State<_SidebarSubItemWidget> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
               color: widget.isSelected
-                  ? (CRMColors.isDark ? const Color(0xFF382A26) : const Color(0xFFF3E4DE))
-                  : (_isHovered ? (CRMColors.isDark ? const Color(0xFF262320) : const Color(0xFFEAE4DC)) : Colors.transparent),
+                  ? (CRMColors.isDark
+                        ? const Color(0xFF382A26)
+                        : const Color(0xFFF3E4DE))
+                  : (_isHovered
+                        ? (CRMColors.isDark
+                              ? const Color(0xFF262320)
+                              : const Color(0xFFEAE4DC))
+                        : Colors.transparent),
               borderRadius: BorderRadius.circular(CRMBorderRadius.button),
               border: Border.all(
                 color: widget.isSelected
-                    ? (CRMColors.isDark ? const Color(0xFF4A3530) : const Color(0xFFE8CEC5))
+                    ? (CRMColors.isDark
+                          ? const Color(0xFF4A3530)
+                          : const Color(0xFFE8CEC5))
                     : Colors.transparent,
                 width: 1,
               ),
@@ -2265,7 +2595,11 @@ class _SidebarSubItemWidgetState extends State<_SidebarSubItemWidget> {
                 Icon(
                   widget.icon,
                   size: 15,
-                  color: widget.isSelected ? (CRMColors.isDark ? const Color(0xFFE8A290) : const Color(0xFF8F4E3E)) : CRMColors.sidebarTextSecondary,
+                  color: widget.isSelected
+                      ? (CRMColors.isDark
+                            ? const Color(0xFFE8A290)
+                            : const Color(0xFF8F4E3E))
+                      : CRMColors.sidebarTextSecondary,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -2273,8 +2607,14 @@ class _SidebarSubItemWidgetState extends State<_SidebarSubItemWidget> {
                     widget.label,
                     style: TextStyle(
                       fontSize: 12.5,
-                      fontWeight: widget.isSelected ? FontWeight.w600 : FontWeight.normal,
-                      color: widget.isSelected ? (CRMColors.isDark ? const Color(0xFFE8A290) : const Color(0xFF8F4E3E)) : CRMColors.sidebarText,
+                      fontWeight: widget.isSelected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                      color: widget.isSelected
+                          ? (CRMColors.isDark
+                                ? const Color(0xFFE8A290)
+                                : const Color(0xFF8F4E3E))
+                          : CRMColors.sidebarText,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -2298,6 +2638,7 @@ class PubSubDivider extends PopupMenuEntry<Never> {
   @override
   State<PubSubDivider> createState() => _PubSubDividerState();
 }
+
 class _PubSubDividerState extends State<PubSubDivider> {
   @override
   Widget build(BuildContext context) => const Divider(height: 1, thickness: 1);
@@ -2351,7 +2692,9 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: CRMColors.primaryOf(context).withValues(alpha: isDark ? 0.15 : 0.08),
+          color: CRMColors.primaryOf(
+            context,
+          ).withValues(alpha: isDark ? 0.15 : 0.08),
           borderRadius: BorderRadius.circular(CRMBorderRadius.round),
           border: Border.all(
             color: CRMColors.primaryOf(context).withValues(alpha: 0.28),
@@ -2411,9 +2754,7 @@ class CustomBottomNavBar extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: CRMColors.cardBgOf(context),
                   borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                  border: Border.all(
-                    color: CRMColors.borderOf(context),
-                  ),
+                  border: Border.all(color: CRMColors.borderOf(context)),
                 ),
                 child: Row(
                   children: [
@@ -2462,7 +2803,11 @@ class CustomBottomNavBar extends StatelessWidget {
                     shape: BoxShape.circle,
                     color: CRMColors.primaryOf(context),
                   ),
-                  child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+                  child: const Icon(
+                    Icons.add_rounded,
+                    color: Colors.white,
+                    size: 26,
+                  ),
                 ),
               ),
             ),
@@ -2496,9 +2841,7 @@ class CustomBottomNavBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? (CRMColors.isDark
-                        ? CRMColors.terracottaSoft.withValues(alpha: 0.18)
-                        : CRMColors.terracottaSoft)
+                    ? activeColor.withValues(alpha: CRMColors.isDark ? 0.18 : 0.12)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -2516,9 +2859,7 @@ class CustomBottomNavBar extends StatelessWidget {
               style: TextStyle(
                 fontSize: 9,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected
-                    ? CRMColors.textOf(context)
-                    : inactiveColor,
+                color: isSelected ? CRMColors.textOf(context) : inactiveColor,
               ),
             ),
           ],

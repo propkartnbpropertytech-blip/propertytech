@@ -17,6 +17,21 @@ class PropertyLocalRepository {
     return await _isar.propertyLocals.filter().idEqualTo(id).findFirst();
   }
 
+  Future<PropertyLocal?> getPropertyByIdOrCode(String idOrCode) async {
+    final byId = await getPropertyById(idOrCode);
+    if (byId != null) return byId;
+    if (kIsWeb) {
+      for (final p in inMemory.values) {
+        if (p.propertyCode == idOrCode) return p;
+      }
+      return null;
+    }
+    return await _isar.propertyLocals
+        .filter()
+        .propertyCodeEqualTo(idOrCode)
+        .findFirst();
+  }
+
   Future<List<PropertyLocal>> getProperties({
     String? search,
     String? categoryId,
@@ -317,6 +332,7 @@ class RequirementLocalRepository {
             ..areaIds = List<String>.from(map['areaIds'] ?? [])
             ..areaNames = List<String>.from(map['areaNames'] ?? [])
             ..remarks = map['remarks']
+            ..notes = map['notes']
             ..status = map['status'] ?? 'Active'
             ..createdAt = DateTime.tryParse(map['createdAt'] ?? '') ?? DateTime.now()
             ..budget = map['budget'] != null ? double.tryParse(map['budget'].toString()) : null
@@ -351,6 +367,7 @@ class RequirementLocalRepository {
         'areaIds': item.areaIds,
         'areaNames': item.areaNames,
         'remarks': item.remarks,
+        'notes': item.notes,
         'status': item.status,
         'createdAt': item.createdAt.toIso8601String(),
         'budget': item.budget,

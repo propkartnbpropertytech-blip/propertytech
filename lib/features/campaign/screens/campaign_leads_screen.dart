@@ -9,10 +9,10 @@ import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
-import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/crm_permission_denied.dart';
 import '../../integration/services/integration_service.dart';
 import '../../integration/models/integration_lead_model.dart';
+import 'campaign_subshell_header.dart';
 
 class CampaignLeadsScreen extends StatefulWidget {
   const CampaignLeadsScreen({super.key});
@@ -117,8 +117,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Page Header
-              CRMPageHeader(
-                title: 'Campaign Leads',
+              CampaignSubshellHeader(
+                activeTab: 'leads',
                 trailing: CRMButton(
                   label: 'Paste JSON Payload',
                   prefixIcon: Icons.code_rounded,

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../features/auth/bloc/auth_bloc.dart';
@@ -7,6 +8,7 @@ import '../../features/auth/login_screen.dart';
 import '../../features/auth/reset_password_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/properties/screens/properties_screen.dart';
+import '../../features/properties/screens/property_search_screen.dart';
 import '../../features/properties/screens/property_detail_screen.dart';
 import '../../features/properties/bloc/properties_bloc.dart';
 import '../../features/users/screens/users_screen.dart';
@@ -64,10 +66,40 @@ class AppRouter {
 
   AppRouter(this.authBloc);
 
+  static String _getWebInitialLocation() {
+    if (kIsWeb) {
+      String frag = Uri.base.fragment.trim();
+      if (frag.startsWith('#')) {
+        frag = frag.substring(1).trim();
+      }
+      if (frag.isNotEmpty && !frag.contains('/splash') && !frag.contains('/login') && !frag.contains('/get-started')) {
+        final sanitized = RoleGuard.sanitizeRedirectPath(frag);
+        if (sanitized != null && sanitized.isNotEmpty) {
+          return sanitized;
+        }
+      }
+      final fromParam = Uri.base.queryParameters['from'];
+      final sanitizedFrom = RoleGuard.sanitizeRedirectPath(fromParam);
+      if (sanitizedFrom != null && sanitizedFrom.isNotEmpty) {
+        return sanitizedFrom;
+      }
+    }
+    return '/splash';
+  }
+
   late final router = GoRouter(
-    initialLocation: '/splash',
+    initialLocation: _getWebInitialLocation(),
     refreshListenable: GoRouterRefreshStream(authBloc.stream),
     routes: [
+      GoRoute(
+        path: '/',
+        redirect: (context, state) {
+          final from = state.uri.queryParameters['from'];
+          final sanitizedFrom = RoleGuard.sanitizeRedirectPath(from);
+          if (sanitizedFrom != null) return sanitizedFrom;
+          return '/splash';
+        },
+      ),
       GoRoute(
         path: '/splash',
         builder: (context, state) => const SplashScreen(),
@@ -107,6 +139,22 @@ class AppRouter {
           token: state.uri.queryParameters['token'],
         ),
       ),
+      GoRoute(
+        path: '/search',
+        pageBuilder: (context, state) => crmFadeSlidePage(
+          key: state.pageKey,
+          name: state.name,
+          child: BlocProvider(
+            create: (context) => PropertiesBloc(),
+            child: PropertySearchScreen(
+              initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
+              initialListingType: state.uri.queryParameters['listingType'],
+              initialCategoryTab: state.uri.queryParameters['categoryTab'],
+              initialBhk: state.uri.queryParameters['bhk'],
+            ),
+          ),
+        ),
+      ),
       ShellRoute(
         builder: (context, state, child) => CRMAppShell(child: child),
         routes: [
@@ -141,7 +189,7 @@ class AppRouter {
           ),
           GoRoute(
             path: '/campaign',
-            redirect: (context, state) => '/campaign/leads',
+            redirect: (context, state) => '/campaign/connections',
           ),
           GoRoute(
             path: '/campaign/connections',
@@ -388,8 +436,19 @@ class AppRouter {
           if (!SyncManager().isSyncCompleted) {
             return null;
           }
-          final from = state.uri.queryParameters['from'];
-          return RoleGuard.sanitizeRedirectPath(from, role: role) ?? '/dashboard';
+          final from = state.uri.queryParameters['from'] ?? (kIsWeb ? Uri.base.queryParameters['from'] : null);
+          final sanitizedFrom = RoleGuard.sanitizeRedirectPath(from, role: role);
+          if (sanitizedFrom != null) return sanitizedFrom;
+
+          if (kIsWeb) {
+            final fragment = Uri.base.fragment;
+            if (fragment.isNotEmpty && !fragment.contains('/splash') && !fragment.contains('/login') && !fragment.contains('/get-started')) {
+              final sanitizedFragment = RoleGuard.sanitizeRedirectPath(fragment, role: role);
+              if (sanitizedFragment != null) return sanitizedFragment;
+            }
+          }
+
+          return '/dashboard';
         }
         return null;
       }

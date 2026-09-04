@@ -117,7 +117,9 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     }
 
     try {
-      final data = await _dashboardRepository.getDashboardData();
+      final data = await _dashboardRepository.getDashboardData(
+        forceRefresh: true,
+      );
       emit(DashboardLoadedState(data: data));
     } catch (e) {
       if (currentState is DashboardLoadedState) {

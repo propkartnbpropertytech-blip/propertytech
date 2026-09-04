@@ -7,6 +7,7 @@ import '../../core/design_system/tokens/app_colors.dart';
 import '../../core/design_system/tokens/app_shadows.dart';
 import '../../core/design_system/tokens/app_spacing.dart';
 import '../../core/design_system/tokens/app_typography.dart';
+import '../../core/design_system/widgets/crm_brand_lockup.dart';
 import '../../core/utils/seo_helper.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
@@ -220,34 +221,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
-                          children: [
-                            Image.asset(
-                              'assets/logo.png',
-                              width: 36,
-                              height: 36,
-                              errorBuilder: (context, error, stackTrace) => Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: CRMColors.primaryOf(context).withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(
-                                  Icons.apartment_rounded,
-                                  color: CRMColors.primaryOf(context),
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              'PropKart',
-                              style: CRMTypography.sectionTitle.copyWith(
-                                fontSize: 22,
-                                color: CRMColors.primaryOf(context),
-                              ),
-                            ),
-                          ],
+                        CRMBrandLockup(
+                          markSize: 40,
+                          wordmarkColor: CRMColors.primaryOf(context),
                         ),
                         const SizedBox(height: 32),
                         Text(

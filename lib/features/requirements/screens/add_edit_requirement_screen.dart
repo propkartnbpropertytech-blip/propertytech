@@ -1046,7 +1046,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
                 DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
                 DropdownMenuItem(value: "Won", child: Text("Won")),
-                DropdownMenuItem(value: "Bin", child: Text("Bin")),
+                DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
                 DropdownMenuItem(value: "Not Interested", child: Text("Not Interested")),
               ],
               onChanged: (val) {

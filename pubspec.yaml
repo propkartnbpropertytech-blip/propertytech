@@ -64,20 +64,28 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+    - assets/branding/
     - assets/images/
     - assets/legal/
 
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/logo.png"
-  adaptive_icon_foreground: "assets/logo.png"
+  image_path: "assets/branding/app_icon.png"
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/branding/app_icon_foreground.png"
+  adaptive_icon_foreground_inset: 0
+  remove_alpha_ios: true
+  background_color_ios: "#000000"
   web:
     generate: true
-    image_path: "assets/logo.png"
+    image_path: "assets/branding/app_icon.png"
+    background_color: "#000000"
+    theme_color: "#000000"
   windows:
     generate: true
-    image_path: "assets/logo.png"
+    image_path: "assets/branding/app_icon.png"
+    icon_size: 48
   macos:
     generate: true
-    image_path: "assets/logo.png"
+    image_path: "assets/branding/app_icon.png"

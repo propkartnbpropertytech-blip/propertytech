@@ -6,44 +6,49 @@ import '../../theme/theme_manager.dart';
 class CRMColors {
   static bool get isDark => ThemeManager().isDarkMode;
 
-  // ── Core surfaces (premium white) ──────────────────────────
+  // ── Core surfaces (modern clean SaaS) ──────────────────────
   static Color get background =>
-      isDark ? const Color(0xFF1C1A18) : const Color(0xFFFFFFFF);
+      isDark ? const Color(0xFF0F172A) : const Color(0xFFF7F9FC);
   static Color get groupedBackground =>
-      isDark ? const Color(0xFF2A2623) : const Color(0xFFF4F4F3);
+      isDark ? const Color(0xFF0B1120) : const Color(0xFFF7F9FC);
   static Color get cardBg =>
-      isDark ? const Color(0xFF24211F) : const Color(0xFFFFFFFF);
+      isDark ? const Color(0xFF1E293B) : const Color(0xFFFFFFFF);
   static Color get surface => cardBg;
   static Color get surfaceElevated =>
-      isDark ? const Color(0xFF2C2825) : const Color(0xFFFFFFFF);
+      isDark ? const Color(0xFF243044) : const Color(0xFFFFFFFF);
   static Color get sidebarBg =>
-      isDark ? const Color(0xFF1E1B19) : const Color(0xFFFFFFFF);
+      isDark ? const Color(0xFF0F172A) : const Color(0xFFFFFFFF);
   static Color get glassSurface =>
-      isDark ? const Color(0xFF24211F) : const Color(0xFFFFFFFF);
+      isDark ? const Color(0xFF1E293B) : const Color(0xFFFFFFFF);
 
   // ── Brand / Deep Terracotta & Clay ────────────────────────
   static bool get isRentMode => ThemeManager().isRentMode;
 
   static Color getPrimaryColor(bool dark, bool rent) {
-    return dark ? const Color(0xFFD47A66) : const Color(0xFFC15D4A);
+    final theme = ThemeManager().currentTheme;
+    return dark ? theme.primaryDark : theme.primaryLight;
   }
 
   static Color getPrimaryHoverColor(bool dark, bool rent) {
-    return dark ? const Color(0xFFE08B78) : const Color(0xFFA64C3C);
+    final theme = ThemeManager().currentTheme;
+    return dark ? theme.primaryHoverDark : theme.primaryHoverLight;
   }
 
   static Color getSecondaryColor(bool dark, bool rent) {
-    return dark ? const Color(0xFF2A2623) : const Color(0xFFF4F4F3);
+    final theme = ThemeManager().currentTheme;
+    return dark ? theme.secondaryDark : theme.secondaryLight;
   }
 
   static Color getAccentColor(bool dark, bool rent) {
-    return dark ? const Color(0xFF3A2824) : const Color(0xFFF6D8D0);
+    final theme = ThemeManager().currentTheme;
+    return dark ? theme.accentDark : theme.accentLight;
   }
 
   static List<Color> getGradientPrimaryColor(bool dark, bool rent) {
+    final theme = ThemeManager().currentTheme;
     return dark
-        ? const [Color(0xFFD47A66), Color(0xFFC15D4A)]
-        : const [Color(0xFFC15D4A), Color(0xFFA64C3C)];
+        ? [theme.primaryDark, theme.primaryHoverDark]
+        : [theme.primaryLight, theme.primaryHoverLight];
   }
 
   static Color get primary => getPrimaryColor(isDark, isRentMode);
@@ -82,8 +87,9 @@ class CRMColors {
   static Color get rentAccent =>
       isDark ? const Color(0xFFE8E4DF) : const Color(0xFF1A1A1A);
 
-  static Color get resaleAccent =>
-      isDark ? const Color(0xFFD47A66) : const Color(0xFFC15D4A);
+  static Color get resaleAccent => isDark
+      ? ThemeManager().currentTheme.primaryDark
+      : ThemeManager().currentTheme.primaryLight;
 
   static Color atmosphereAccent(bool isRent) =>
       isRent ? rentAccent : resaleAccent;
@@ -95,35 +101,40 @@ class CRMColors {
 
   static List<Color> atmosphereGradient(bool isRent) => isDark
       ? (isRent
-          ? const [Color(0xFFE8E4DF), Color(0xFFD4CFC8)]
-          : const [Color(0xFFD47A66), Color(0xFFC15D4A)])
+            ? const [Color(0xFFE8E4DF), Color(0xFFD4CFC8)]
+            : [
+                ThemeManager().currentTheme.primaryDark,
+                ThemeManager().currentTheme.primaryHoverDark,
+              ])
       : (isRent
-          ? const [Color(0xFF1A1A1A), Color(0xFF2C2C2C)]
-          : const [Color(0xFFC15D4A), Color(0xFFA64C3C)]);
+            ? const [Color(0xFF1A1A1A), Color(0xFF2C2C2C)]
+            : [
+                ThemeManager().currentTheme.primaryLight,
+                ThemeManager().currentTheme.primaryHoverLight,
+              ]);
 
   // Sidebar styling
   static Color get sidebarText =>
-      isDark ? const Color(0xFFF4F4F3) : const Color(0xFF1A1A1A);
+      isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D);
   static Color get sidebarTextSecondary =>
-      isDark ? const Color(0xFFB9B0A7) : const Color(0xFF5C5C5C);
+      isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A);
   static Color get sidebarBorder =>
-      isDark ? const Color(0xFF3A3531) : const Color(0xFFE8E8E6);
+      isDark ? const Color(0xFF334155) : const Color(0xFFE8ECF2);
 
   // ── Borders / dividers ─────────────────────────────────────
   static Color get border =>
-      isDark ? const Color(0xFF3A3531) : const Color(0xFFE8E8E6);
+      isDark ? const Color(0xFF334155) : const Color(0xFFE8ECF2);
   static Color get strongBorder =>
-      isDark ? const Color(0xFF4A433E) : const Color(0xFFD8D8D6);
+      isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1);
   static Color get inputBorder =>
-      isDark ? const Color(0xFF4A433E) : const Color(0xFFE2E2E0);
+      isDark ? const Color(0xFF334155) : const Color(0xFFE8ECF2);
   static Color get divider =>
-      isDark ? const Color(0xFF322E2A) : const Color(0xFFF0F0EE);
+      isDark ? const Color(0xFF243044) : const Color(0xFFE8ECF2);
 
   // ── Strong ink cards (charcoal) ────────────────────────────
   static Color get strongCard =>
-      isDark ? const Color(0xFF2C2825) : const Color(0xFF1A1A1A);
-  static Color get onStrong =>
-      isDark ? const Color(0xFFF4F4F3) : const Color(0xFFFFFFFF);
+      isDark ? const Color(0xFF1E293B) : const Color(0xFF14213D);
+  static Color get onStrong => const Color(0xFFFFFFFF);
 
   // ── KPI fills — white on white canvas, hairline only ───────
   static Color get kpiCream => cardBg;
@@ -136,13 +147,13 @@ class CRMColors {
 
   static Color kpiTintFor(Color accent) => cardBg;
 
-  // ── Text — charcoal, not warm brown ────────────────────────
+  // ── Text — modern navy/charcoal hierarchy ──────────────────
   static Color get text =>
-      isDark ? const Color(0xFFF4F4F3) : const Color(0xFF1A1A1A);
+      isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D);
   static Color get textSecondary =>
-      isDark ? const Color(0xFFB9B0A7) : const Color(0xFF5C5C5C);
+      isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A);
   static Color get textMuted =>
-      isDark ? const Color(0xFF7D766F) : const Color(0xFF8C8C8C);
+      isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8);
 
   // ── Semantic (Warm, compatible with brand) ──────────────────
   static const Color success = Color(0xFF5F8064);
@@ -182,7 +193,8 @@ class CRMColors {
 
   static List<Color> get graphColors => chartColors;
 
-  static List<Color> get gradientPrimary => getGradientPrimaryColor(isDark, isRentMode);
+  static List<Color> get gradientPrimary =>
+      getGradientPrimaryColor(isDark, isRentMode);
 
   static Color get skeletonBase =>
       isDark ? const Color(0xFF282522) : const Color(0xFFF2F2F1);
@@ -220,12 +232,12 @@ class CRMColors {
       PropKartColors.maybeOf(context)?.accent ?? accent;
   static Color strongCardOf(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark
-          ? const Color(0xFF2C2825)
-          : const Color(0xFF1A1A1A);
+      ? const Color(0xFF2C2825)
+      : const Color(0xFF1A1A1A);
   static Color onStrongOf(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark
-          ? const Color(0xFFF4F4F3)
-          : const Color(0xFFFFFFFF);
+      ? const Color(0xFFF4F4F3)
+      : const Color(0xFFFFFFFF);
 }
 
 /// ThemeExtension carrying PropKart semantic colors for light/dark.
@@ -335,39 +347,39 @@ class PropKartColors extends ThemeExtension<PropKartColors> {
   static PropKartColors dark() {
     final rent = ThemeManager().isRentMode;
     return PropKartColors(
-      background: const Color(0xFF1C1A18),
-      groupedBackground: const Color(0xFF2A2623),
-      surface: const Color(0xFF24211F),
-      surfaceElevated: const Color(0xFF2C2825),
-      sidebarBg: const Color(0xFF1E1B19),
-      glassSurface: const Color(0xFF24211F),
+      background: const Color(0xFF0F172A),
+      groupedBackground: const Color(0xFF0B1120),
+      surface: const Color(0xFF1E293B),
+      surfaceElevated: const Color(0xFF243044),
+      sidebarBg: const Color(0xFF0F172A),
+      glassSurface: const Color(0xFF1E293B),
       primary: CRMColors.getPrimaryColor(true, rent),
       primaryHover: CRMColors.getPrimaryHoverColor(true, rent),
       secondary: CRMColors.getSecondaryColor(true, rent),
       accent: CRMColors.getAccentColor(true, rent),
       rentAccent: const Color(0xFFE8E4DF),
-      resaleAccent: const Color(0xFFD47A66),
-      border: const Color(0xFF3A3531),
-      divider: const Color(0xFF322E2A),
-      text: const Color(0xFFF3EEE7),
-      textSecondary: const Color(0xFFB9B0A7),
-      textMuted: const Color(0xFF7D766F),
-      success: const Color(0xFF86A58C),
-      warning: const Color(0xFFC99E6E),
-      danger: const Color(0xFFC47C78),
-      info: const Color(0xFF839B9A),
-      disabled: const Color(0xFF423C37),
+      resaleAccent: const Color(0xFF10B981),
+      border: const Color(0xFF334155),
+      divider: const Color(0xFF243044),
+      text: const Color(0xFFF8FAFC),
+      textSecondary: const Color(0xFF94A3B8),
+      textMuted: const Color(0xFF64748B),
+      success: const Color(0xFF10B981),
+      warning: const Color(0xFFF59E0B),
+      danger: const Color(0xFFEF4444),
+      info: const Color(0xFF3B82F6),
+      disabled: const Color(0xFF475569),
       overlay: const Color(0x99000000),
       shadow: const Color(0x40000000),
-      skeletonBase: const Color(0xFF282522),
-      skeletonHighlight: const Color(0xFF332E2A),
+      skeletonBase: const Color(0xFF1E293B),
+      skeletonHighlight: const Color(0xFF334155),
       chartColors: const [
-        Color(0xFFD47A66),
-        Color(0xFF8FB392),
-        Color(0xFFD4A45E),
-        Color(0xFFD48B84),
-        Color(0xFF7A9B8A),
-        Color(0xFF8A6068),
+        Color(0xFF10B981),
+        Color(0xFF3B82F6),
+        Color(0xFF8B5CF6),
+        Color(0xFFF59E0B),
+        Color(0xFF06B6D4),
+        Color(0xFFEC4899),
       ],
       gradientPrimary: CRMColors.getGradientPrimaryColor(true, rent),
     );

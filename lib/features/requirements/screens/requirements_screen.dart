@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import '../../../core/services/notification_center.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
@@ -88,17 +89,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   final PropertiesRepository _propertiesRepository = PropertiesRepository();
   List<PropertyModel>? _propertiesForMatches;
   PropertyMetadataModel? _metadata;
+  bool _isTableView = false;
   bool _isLoadingMetadata = true;
   bool _hasAutoOpenedAdd = false;
   bool _isMobileFiltersExpanded = false;
   late Future<List<dynamic>> _followupsFuture;
   StreamSubscription? _requirementsStreamSub;
   StreamSubscription? _dashboardStreamSub;
+  OverlayEntry? _notesOverlayEntry;
 
   void _refreshFollowupsFuture() {
     _followupsFuture = Future.wait([
       DashboardRepository().getDashboardData(backgroundRefresh: false),
-      RepositoryCoordinator().requirementLocal.getRequirements(),
+      RequirementsRepository().getRequirements(),
     ]);
   }
 
@@ -165,6 +168,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               _selectedFollowupSubTab = subTabParam;
             });
           }
+        }
+        final searchParam = uri.queryParameters['search'];
+        if (searchParam != null && searchParam.isNotEmpty) {
+          _searchController.text = searchParam;
+          setState(() {});
+        }
+        final openId = uri.queryParameters['openId'];
+        if (openId != null && openId.isNotEmpty) {
+          RepositoryCoordinator().requirementLocal.getRequirement(openId).then((local) {
+            if (local != null && mounted) {
+              showCRMRequirementDrawer(context, local.toModel());
+            }
+          });
         }
       }
     });
@@ -239,6 +255,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   @override
   void dispose() {
+    _removeNotesPopover();
     _requirementsStreamSub?.cancel();
     _dashboardStreamSub?.cancel();
     _searchController.dispose();
@@ -277,7 +294,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _triggerFetch() {
-    _refreshFollowupsFuture();
+    if (mounted) {
+      setState(() {
+        _refreshFollowupsFuture();
+      });
+    }
     String? listingTypeId;
     if (_metadata != null && _metadata!.listingTypes.isNotEmpty) {
       try {
@@ -439,6 +460,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _changeStatus(RequirementModel req, String newStatus) async {
+    _removeNotesPopover();
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
     if (_isLeadTransferredAway(req, currentUser)) return;
@@ -524,6 +546,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             context.read<RequirementsBloc>().add(
               UpdateRequirementEvent(req.copyWith(status: 'Won')),
             );
+            await RequirementsRepository().updateRequirementFields(req.id, {
+              'status': 'Won',
+            });
 
             final selectedIds = selectedProperties.map((p) => p.id).toList();
             await PropertyDealClientStore.setWonRequirementProperties(req.id, selectedIds);
@@ -569,6 +594,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       context.read<RequirementsBloc>().add(
         UpdateRequirementEvent(req.copyWith(status: newStatus)),
       );
+      RequirementsRepository().updateRequirementFields(req.id, {
+        'status': newStatus,
+      });
     }
   }
 
@@ -802,7 +830,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   Widget _buildSearchAndFiltersCard() {
     final bool isMobile = MediaQuery.of(context).size.width < 600;
-    String configDropdownLabel = 'Configuration';
+    String configDropdownLabel = 'BHK';
     final selectedCat = _metadata?.categories.firstWhere(
       (c) => c.id == _selectedCategoryId,
       orElse: () => LookupItem(id: '', name: ''),
@@ -853,7 +881,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       }
       specLookupItems = filtered;
     } else {
-      configDropdownLabel = 'Configuration';
+      configDropdownLabel = 'BHK';
       
       var filtered = _metadata?.configurations.where((c) => _selectedCategoryId == null || c.categoryId == _selectedCategoryId).toList() ?? [];
       if (filtered.isEmpty && _metadata != null) {
@@ -940,7 +968,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
                         DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
                         DropdownMenuItem(value: "Won", child: Text("Won")),
-                        DropdownMenuItem(value: "Bin", child: Text("Bin")),
+                        DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
                         DropdownMenuItem(value: "Not Interested", child: Text("Not Interested")),
                       ],
                       isMobile: isMobile,
@@ -1002,7 +1030,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
                         DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
                         DropdownMenuItem(value: "Won", child: Text("Won")),
-                        DropdownMenuItem(value: "Bin", child: Text("Bin")),
+                        DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
                         DropdownMenuItem(value: "Not Interested", child: Text("Not Interested")),
                       ],
                       isMobile: isMobile,
@@ -1101,17 +1129,26 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   String _getSalesmanName(RequirementModel req, UserModel? currentUser) {
-    if (req.creatorName != null && req.creatorName!.isNotEmpty) {
-      return req.creatorName!;
-    }
     if (req.assigneeName != null && req.assigneeName!.isNotEmpty) {
       return req.assigneeName!;
     }
-    
+    if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
+      try {
+        final usersState = context.read<UsersBloc>().state;
+        if (usersState is UsersLoaded) {
+          final match = usersState.users.firstWhereOrNull((u) => u.id == req.assignedTo);
+          if (match != null && match.fullName.isNotEmpty) {
+            return match.fullName;
+          }
+        }
+      } catch (_) {}
+    }
+    if (req.creatorName != null && req.creatorName!.isNotEmpty) {
+      return req.creatorName!;
+    }
     if (currentUser != null && req.adminId == currentUser.id) {
       return currentUser.fullName;
     }
-    
     try {
       final usersState = context.read<UsersBloc>().state;
       if (usersState is UsersLoaded) {
@@ -1124,7 +1161,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
       }
     } catch (_) {}
-    return 'N/A';
+    return 'Unassigned';
   }
 
   Widget _buildCustomTooltip({
@@ -1648,6 +1685,156 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  String displayStatusLabel(String status) {
+    if (status == 'Active' || status == 'Live') return 'Interested';
+    if (status == 'Closed' || status == 'Won') return 'Won';
+    if (status.startsWith('Rejected') || status == 'Not Interested' || status == 'Bin') return 'Rejected';
+    return status;
+  }
+
+  PopupMenuItem<String> _buildStatusMenuItem(
+    String value,
+    String label,
+    String currentStatus, {
+    Color? color,
+  }) {
+    final bool isSelected = currentStatus == value ||
+        (value == 'Follow-up' && (currentStatus == 'Follow-up' || currentStatus == 'Re-Followup')) ||
+        (value == 'Interested' && (currentStatus == 'Interested' || currentStatus == 'Active' || currentStatus == 'Live')) ||
+        (value == 'Won' && (currentStatus == 'Won' || currentStatus == 'Closed'));
+
+    return PopupMenuItem<String>(
+      value: value,
+      child: MouseRegion(
+        onEnter: (_) => _removeRejectionOverlay(),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: color ?? CRMColors.textOf(context),
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 13,
+              ),
+            ),
+            if (isSelected)
+              const Icon(
+                Icons.check_rounded,
+                size: 16,
+                color: Color(0xFF5C6BC0),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Offset _lastTapPosition = const Offset(400, 300);
+  OverlayEntry? _rejectionOverlayEntry;
+
+  void _removeRejectionOverlay() {
+    if (_rejectionOverlayEntry != null) {
+      _rejectionOverlayEntry?.remove();
+      _rejectionOverlayEntry = null;
+    }
+  }
+
+  void _showRejectionOverlayAtContext(BuildContext itemContext, RequirementModel req) {
+    if (_rejectionOverlayEntry != null) return;
+
+    final RenderBox? renderBox = itemContext.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final Offset itemGlobalOffset = renderBox.localToGlobal(Offset.zero);
+    final overlay = Overlay.of(itemContext);
+    final size = MediaQuery.of(itemContext).size;
+
+    // Position exact left touching the main status popup menu window (190px width)
+    double left = (itemGlobalOffset.dx - 192).clamp(10.0, size.width - 200.0);
+    double top = (itemGlobalOffset.dy - 120).clamp(40.0, size.height - 380.0);
+
+    final List<String> reasons = [
+      'Not Answering',
+      'No Requirement',
+      'Budget Mismatch',
+      'Locality Mismatch',
+      'Broker',
+      'Already rented',
+      'Want Ready-To-Move',
+      'Negotiation Failed',
+      'Others',
+    ];
+
+    _rejectionOverlayEntry = OverlayEntry(
+      builder: (overlayContext) {
+        return Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(8),
+            color: CRMColors.cardBgOf(context),
+            child: Container(
+              width: 190,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              decoration: BoxDecoration(
+                color: CRMColors.cardBgOf(context),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: reasons.map((reason) {
+                  final bool isSelected = req.status == 'Rejected ($reason)';
+                  return InkWell(
+                    onTap: () {
+                      _removeRejectionOverlay();
+                      Navigator.of(context, rootNavigator: true).maybePop();
+                      _changeStatus(req, 'Rejected ($reason)');
+                    },
+                    hoverColor: CRMColors.backgroundOf(context),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            reason,
+                            style: TextStyle(
+                              color: CRMColors.textOf(context),
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              fontSize: 13,
+                            ),
+                          ),
+                          if (isSelected)
+                            const Icon(
+                              Icons.check_rounded,
+                              size: 16,
+                              color: Color(0xFF5C6BC0),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_rejectionOverlayEntry!);
+  }
+
   Widget _buildStatusControl(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
     if (_isLeadTransferredAway(req, currentUser)) {
       return Container(
@@ -1670,54 +1857,445 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       );
     }
 
-    final statusColor = compact ? _getStatusColor(req.status) : CRMColors.primary;
-    return PopupMenuButton<String>(
-      tooltip: 'Change Status',
-      onSelected: (String newStatus) => _changeStatus(req, newStatus),
-      itemBuilder: (BuildContext context) {
-        final bool hasPreviousFollowup = req.status == 'Follow-up' ||
-            req.status == 'Re-Followup' ||
-            req.nextFollowupDate != null;
-        final String followupLabel = hasPreviousFollowup ? 'Re-Followup' : 'Follow-up';
-        final String followupValue = hasPreviousFollowup ? 'Re-Followup' : 'Follow-up';
+    final String currentStatus = req.status;
+    final statusColor = compact ? _getStatusColor(currentStatus) : CRMColors.primary;
+    final bool hasPreviousFollowup = currentStatus == 'Follow-up' ||
+        currentStatus == 'Re-Followup' ||
+        req.nextFollowupDate != null;
+    final String followupLabel = hasPreviousFollowup ? 'Re-Followup' : 'Follow-up';
+    final String followupValue = hasPreviousFollowup ? 'Re-Followup' : 'Follow-up';
 
-        return [
-          const PopupMenuItem<String>(value: 'Not Started', child: Text('Not Started')),
-          PopupMenuItem<String>(value: followupValue, child: Text(followupLabel)),
-          const PopupMenuItem<String>(value: 'Interested', child: Text('Interested')),
-        PopupMenuItem<String>(value: 'Site Visit', child: Text('Site Visit Sche.')),
-        PopupMenuItem<String>(value: 'Site Visit Done', child: Text('Site Visit Done')),
-        PopupMenuItem<String>(value: 'Negotiation', child: Text('Negotiation')),
-        PopupMenuItem<String>(value: 'Won', child: Text('Won')),
-        PopupMenuItem<String>(value: 'Bin', child: Text('Bin')),
-        PopupMenuItem<String>(value: 'Not Interested', child: Text('Not Interested')),
-        ];
+    String mainLabel = displayStatusLabel(currentStatus);
+    String? subReason;
+    if (currentStatus.startsWith('Rejected') && currentStatus.contains('(') && currentStatus.contains(')')) {
+      mainLabel = 'Rejected';
+      subReason = currentStatus.substring(currentStatus.indexOf('(') + 1, currentStatus.indexOf(')')).trim();
+    } else if (currentStatus.startsWith('Rejected: ')) {
+      mainLabel = 'Rejected';
+      subReason = currentStatus.replaceFirst('Rejected: ', '').trim();
+    }
+
+    return GestureDetector(
+      onTapDown: (details) {
+        _lastTapPosition = details.globalPosition;
       },
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xxs),
-          decoration: BoxDecoration(
-            color: statusColor.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-            border: Border.all(color: statusColor.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                displayStatusLabel(req.status),
-                style: CRMTypography.captionBold.copyWith(
-                  color: statusColor,
-                  fontSize: compact ? 11 : 12,
-                ),
+      child: PopupMenuButton<String>(
+        tooltip: 'Change Status',
+        onCanceled: () {
+          _removeRejectionOverlay();
+        },
+        onSelected: (String newStatus) {
+          if (newStatus == 'Rejected') {
+            // Handled via overlay
+          } else {
+            _removeRejectionOverlay();
+            _changeStatus(req, newStatus);
+          }
+        },
+        itemBuilder: (BuildContext context) {
+          return [
+            _buildStatusMenuItem('Not Started', 'Not Started', currentStatus),
+            _buildStatusMenuItem(followupValue, followupLabel, currentStatus),
+            _buildStatusMenuItem('Interested', 'Interested', currentStatus),
+            _buildStatusMenuItem('Site Visit', 'Site Visit Sche.', currentStatus),
+            _buildStatusMenuItem('Site Visit Done', 'Site Visit Done', currentStatus),
+            _buildStatusMenuItem('Negotiation', 'Negotiation', currentStatus),
+            _buildStatusMenuItem('Won', 'Deal Success (Won)', currentStatus),
+            PopupMenuItem<String>(
+              value: 'Rejected',
+              child: Builder(
+                builder: (itemContext) {
+                  return StatefulBuilder(
+                    builder: (context, setItemState) {
+                      final bool isOpen = _rejectionOverlayEntry != null;
+                      return MouseRegion(
+                        onEnter: (_) {
+                          setItemState(() {});
+                          _showRejectionOverlayAtContext(itemContext, req);
+                        },
+                        onExit: (_) {
+                          setItemState(() {});
+                        },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  isOpen ? '>  ' : '<  ',
+                                  style: const TextStyle(
+                                    color: CRMColors.danger,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                Text(
+                                  'Rejected',
+                                  style: TextStyle(
+                                    color: CRMColors.danger,
+                                    fontWeight: currentStatus.startsWith('Rejected') ? FontWeight.bold : FontWeight.normal,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (currentStatus.startsWith('Rejected') || currentStatus == 'Not Interested' || currentStatus == 'Bin')
+                              const Icon(
+                                Icons.check_rounded,
+                                size: 16,
+                                color: Color(0xFF5C6BC0),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
-              const SizedBox(width: 2),
-              Icon(Icons.arrow_drop_down_rounded, size: 16, color: statusColor),
-            ],
+            ),
+          ];
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xxs),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+              border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      mainLabel,
+                      style: CRMTypography.captionBold.copyWith(
+                        color: statusColor,
+                        fontSize: compact ? 11 : 12,
+                      ),
+                    ),
+                    if (subReason != null && subReason.isNotEmpty)
+                      Text(
+                        subReason,
+                        style: CRMTypography.caption.copyWith(
+                          color: statusColor.withOpacity(0.85),
+                          fontSize: compact ? 9.5 : 10.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.arrow_drop_down_rounded, size: 16, color: statusColor),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  String? _getCleanNote(RequirementModel req) {
+    if (req.notes == null) return null;
+    final text = req.notes!.trim();
+    if (text.isEmpty || text.toLowerCase() == 'null' || text.toLowerCase() == 'n/a') {
+      return null;
+    }
+    return text;
+  }
+
+  void _removeNotesPopover() {
+    _notesOverlayEntry?.remove();
+    _notesOverlayEntry = null;
+  }
+
+  void _showNotesPopover(BuildContext anchorContext, RequirementModel req) {
+    _removeNotesPopover();
+
+    final RenderBox? renderBox = anchorContext.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final size = renderBox.size;
+    final offset = renderBox.localToGlobal(Offset.zero);
+    
+    final OverlayState overlay = Overlay.of(anchorContext);
+    final RenderBox? overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    final double maxCanvasWidth = overlayBox?.size.width ?? MediaQuery.of(anchorContext).size.width;
+    final double maxCanvasHeight = overlayBox?.size.height ?? MediaQuery.of(anchorContext).size.height;
+
+    final existingCleanNote = _getCleanNote(req);
+    final notesController = TextEditingController(text: existingCleanNote ?? '');
+
+    const double popoverWidth = 320.0;
+    const double popoverHeight = 245.0;
+
+    final double targetCenterX = offset.dx + (size.width / 2);
+    double left = targetCenterX - (popoverWidth / 2);
+
+    if (left + popoverWidth > maxCanvasWidth - 16) {
+      left = maxCanvasWidth - popoverWidth - 16;
+    }
+    if (left < 16) {
+      left = 16;
+    }
+
+    double arrowLeft = targetCenterX - left - 10;
+    if (arrowLeft < 16) arrowLeft = 16;
+    if (arrowLeft > popoverWidth - 36) arrowLeft = popoverWidth - 36;
+
+    double top = offset.dy + size.height + 4;
+    bool showAbove = top + popoverHeight > maxCanvasHeight;
+    if (showAbove) {
+      top = offset.dy - popoverHeight - 14;
+    }
+
+    _notesOverlayEntry = OverlayEntry(
+      builder: (context) {
+        bool isSaving = false;
+
+        return StatefulBuilder(
+          builder: (context, setOverlayState) {
+            final bool hasText = notesController.text.trim().isNotEmpty;
+
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _removeNotesPopover,
+                    child: Container(color: Colors.black.withOpacity(0.15)),
+                  ),
+                ),
+                Positioned(
+                  left: left,
+                  top: top,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (!showAbove)
+                          Padding(
+                            padding: EdgeInsets.only(left: arrowLeft),
+                            child: CustomPaint(
+                              size: const Size(20, 10),
+                              painter: _PopoverTrianglePainter(
+                                color: CRMColors.cardBgOf(anchorContext),
+                              ),
+                            ),
+                          ),
+                        Container(
+                          width: popoverWidth,
+                          decoration: BoxDecoration(
+                            color: CRMColors.cardBgOf(anchorContext),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.18),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Notes',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                    color: CRMColors.textOf(anchorContext),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(anchorContext).brightness == Brightness.dark
+                                        ? Colors.black12
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: CRMColors.borderOf(anchorContext).withOpacity(0.6),
+                                    ),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  child: TextField(
+                                    controller: notesController,
+                                    maxLines: 4,
+                                    minLines: 3,
+                                    onChanged: (val) => setOverlayState(() {}),
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: CRMColors.textOf(anchorContext),
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: 'Type your notes here...',
+                                      hintStyle: TextStyle(
+                                        fontSize: 13,
+                                        color: CRMColors.textSecondaryOf(anchorContext).withOpacity(0.6),
+                                      ),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    TextButton(
+                                      onPressed: () {
+                                        notesController.clear();
+                                        setOverlayState(() {});
+                                      },
+                                      child: Text(
+                                        'Clear',
+                                        style: TextStyle(
+                                          color: CRMColors.textOf(anchorContext),
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: hasText
+                                            ? const Color(0xFF6C5CE7)
+                                            : const Color(0xFFA0AEC0),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                      ),
+                                      onPressed: isSaving
+                                          ? null
+                                          : () async {
+                                              setOverlayState(() => isSaving = true);
+                                              final newCleanNotes = notesController.text.trim();
+
+                                              try {
+                                                context.read<RequirementsBloc>().add(
+                                                  UpdateRequirementEvent(
+                                                    req.copyWith(notes: newCleanNotes),
+                                                  ),
+                                                );
+
+                                                await RequirementsRepository().updateRequirementFields(
+                                                  req.id,
+                                                  {'notes': newCleanNotes},
+                                                );
+
+                                                _removeNotesPopover();
+
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(newCleanNotes.isEmpty
+                                                          ? 'Note cleared successfully.'
+                                                          : 'Note saved successfully.'),
+                                                      backgroundColor: CRMColors.success,
+                                                    ),
+                                                  );
+                                                }
+                                              } catch (e) {
+                                                setOverlayState(() => isSaving = false);
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text('Failed to save notes: $e'),
+                                                      backgroundColor: CRMColors.danger,
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                      child: isSaving
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Text(
+                                              'Save Notes',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (showAbove)
+                          Padding(
+                            padding: EdgeInsets.only(left: arrowLeft),
+                            child: CustomPaint(
+                              size: const Size(20, 10),
+                              painter: _PopoverTrianglePainter(
+                                color: CRMColors.cardBgOf(anchorContext),
+                                pointingDown: true,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    overlay.insert(_notesOverlayEntry!);
+  }
+
+  Widget _buildStatusControlWithNotes(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
+    final String? userNote = _getCleanNote(req);
+    final bool hasNotes = userNote != null && userNote.isNotEmpty;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        _buildStatusControl(req, currentUser, compact: compact),
+        const SizedBox(height: 4),
+        Builder(
+          builder: (btnContext) {
+            return InkWell(
+              onTap: () => _showNotesPopover(btnContext, req),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Text(
+                  hasNotes ? 'View Notes' : '+Add Notes',
+                  style: TextStyle(
+                    fontSize: compact ? 11 : 12,
+                    fontWeight: FontWeight.bold,
+                    decoration: TextDecoration.underline,
+                    color: CRMColors.textOf(context),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -1759,14 +2337,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             String mappedStatus = r.status;
             if (mappedStatus == 'Active' || mappedStatus == 'Live') mappedStatus = 'Interested';
             if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
-            if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
+            if (mappedStatus == 'Suspended' || mappedStatus == 'Dead' || mappedStatus.startsWith('Rejected') || mappedStatus == 'Not Interested' || mappedStatus == 'Bin') mappedStatus = 'Rejected';
 
             // Exclude Won requirements from the active Requirements view
             if (mappedStatus == 'Won') return false;
 
             final matchesStatus = _selectedStatus == "All" ||
                 r.status == _selectedStatus ||
-                mappedStatus == _selectedStatus;
+                mappedStatus == _selectedStatus ||
+                (_selectedStatus == 'Rejected' && r.status.startsWith('Rejected'));
 
             bool matchesSearch = true;
             if (query.isNotEmpty) {
@@ -1813,13 +2392,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           builder: (context, constraints) {
             final isMobile = constraints.maxWidth < 700;
 
-            if (isMobile) {
-              return _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount);
+            if (isMobile || !_isTableView) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildActionBar(requirements, currentUser),
+                  _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount),
+                ],
+              );
             }
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _buildActionBar(requirements, currentUser),
                 CRMDataTable(
                   isLoading: isLoading,
                   emptyTitle: 'No Requirements Found',
@@ -1922,7 +2508,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         ),
                         DataCell(_buildTargetAreasCell(req)),
                         DataCell(
-                          _buildStatusControl(req, currentUser),
+                          _buildStatusControlWithNotes(req, currentUser),
                         ),
 
                         DataCell(
@@ -2197,302 +2783,339 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         ),
       );
     }
-
     return Column(
       children: [
         ...requirements.map((req) {
-          final isMobile = MediaQuery.of(context).size.width < 600;
-          final budget = '₹${BudgetFormatter.format(req.minBudget)} - ₹${BudgetFormatter.format(req.maxBudget)}';
-          final readinessColor = req.matchingReadiness == 'Ready'
-              ? CRMColors.success
-              : req.matchingReadiness == 'Needs Information'
-                  ? CRMColors.warning
-                  : CRMColors.danger;
+          final String budgetText = '₹${BudgetFormatter.format(req.minBudget)} - ₹${BudgetFormatter.format(req.maxBudget)}';
+          final String dateText = DateFormat("dd MMM ''yy, h:mm a").format(req.createdAt.toLocal());
+          final String specsText = '${req.propertyTypeName} (${req.configurationName ?? "Any Config"})';
+          final String areasText = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : 'All Areas';
+          final String listingType = getListingTypeLabel(req);
 
-          final qualityColor = req.requirementQuality == 'High'
-              ? CRMColors.success
-              : req.requirementQuality == 'Medium'
-                  ? CRMColors.warning
-                  : CRMColors.danger;
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: CRMSpacing.m),
-            decoration: BoxDecoration(
-              color: CRMColors.cardBgOf(context),
-              borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-              border: Border.all(color: CRMColors.borderOf(context), width: 1),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Client header with status, Added by & Assign to block
-                Padding(
-                  padding: const EdgeInsets.all(CRMSpacing.m),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          return Padding(
+            padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+            child: CRMCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top Row: Client Name, User badge, Share button, Status dropdown
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundColor: CRMColors.primary.withValues(alpha: 0.1),
-                            child: Text(
-                              req.clientName.isNotEmpty ? req.clientName[0].toUpperCase() : '?',
-                              style: CRMTypography.bodyMedium.copyWith(
-                                color: CRMColors.primary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: CRMSpacing.s),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                GestureDetector(
-                                  onTap: () => _showRequirementDetailDrawer(req),
-                                  child: Text(
-                                    req.clientName,
-                                    style: CRMTypography.bodyMedium.copyWith(
-                                      color: CRMColors.primary,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 15,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Icon(Icons.phone_outlined, size: 12, color: CRMColors.textSecondaryOf(context)),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      req.clientMobile,
-                                      style: CRMTypography.caption.copyWith(
-                                        color: CRMColors.textSecondaryOf(context),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 4,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    Text(
-                                      req.requirementCode,
-                                      style: CRMTypography.captionBold.copyWith(
-                                        color: CRMColors.primary,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                    if (req.nextFollowupDate != null) ...[
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                        decoration: BoxDecoration(
-                                          color: CRMColors.warning.withValues(alpha: 0.1),
-                                          borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(Icons.alarm_rounded, size: 10, color: CRMColors.warning),
-                                            const SizedBox(width: 2),
-                                            Text(
-                                              DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal()),
-                                              style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 9),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // Status dropdown back on the top right!
-                          _buildStatusControl(req, currentUser, compact: true),
-                        ],
-                      ),
-                      const SizedBox(height: CRMSpacing.m),
-                      
-                      // Added by & Assign to block
-                      Container(
-                        padding: const EdgeInsets.all(CRMSpacing.s),
-                        decoration: BoxDecoration(
-                          color: CRMColors.backgroundOf(context).withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                          border: Border.all(
-                            color: CRMColors.borderOf(context).withValues(alpha: 0.5),
-                            width: 0.5,
-                          ),
-                        ),
-                        child: Row(
+                      Expanded(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            // Added By
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Added by',
-                                    style: CRMTypography.caption.copyWith(
-                                      color: CRMColors.textSecondaryOf(context),
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Row(
-                                    children: [
-                                      Icon(Icons.person_add_alt_1_outlined, size: 12, color: CRMColors.textMuted),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          req.creatorName ?? 'System',
-                                          style: CRMTypography.captionBold.copyWith(
-                                            color: CRMColors.textOf(context),
-                                            fontSize: 11,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                            GestureDetector(
+                              onTap: () => _showRequirementDetailDrawer(req),
+                              child: Text(
+                                req.clientName,
+                                style: CRMTypography.sectionTitle.copyWith(
+                                  color: CRMColors.primaryOf(context),
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                ),
                               ),
                             ),
                             Container(
-                              width: 1,
-                              height: 24,
-                              color: CRMColors.borderOf(context).withValues(alpha: 0.5),
-                            ),
-                            const SizedBox(width: CRMSpacing.s),
-                            // Assign To
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Assign to',
-                                    style: CRMTypography.caption.copyWith(
-                                      color: CRMColors.textSecondaryOf(context),
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
-                                    _buildMobileAssignToDropdown(req)
-                                  else
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          _isLeadTransferredAway(req, currentUser)
-                                              ? Icons.swap_horiz_rounded
-                                              : Icons.person_outline_rounded,
-                                          size: 12,
-                                          color: _isLeadTransferredAway(req, currentUser)
-                                              ? CRMColors.warning
-                                              : CRMColors.textMuted,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: _buildSalesAssignToLabel(req, currentUser),
-                                        ),
-                                      ],
-                                    ),
-                                ],
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: CRMColors.primaryOf(context).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: CRMColors.primaryOf(context).withOpacity(0.3)),
+                              ),
+                              child: Text(
+                                req.requirementCode,
+                                style: TextStyle(
+                                  color: CRMColors.primaryOf(context),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildStatusControlWithNotes(req, currentUser, compact: true),
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert_rounded, size: 18),
+                            tooltip: 'More Actions',
+                            onSelected: (action) {
+                              if (action == 'add_another') {
+                                _showAddAnotherRequirementDialog(req);
+                              } else if (action == 'share') {
+                                _showSharePropertiesDialog(req);
+                              } else if (action == 'view_details') {
+                                _showRequirementDetailDrawer(req);
+                              } else if (action == 'edit') {
+                                _showAddEditDialog(req);
+                              } else if (action == 'delete') {
+                                _showDeleteConfirmDialog(req);
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'view_details',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.info_outline_rounded, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('View Details'),
+                                  ],
+                                ),
+                              ),
+                              if (!_isLeadTransferredAway(req, currentUser))
+                                const PopupMenuItem(
+                                  value: 'add_another',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.add_circle_outline_rounded, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Add Another Requirement'),
+                                    ],
+                                  ),
+                                ),
+                              const PopupMenuItem(
+                                value: 'share',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.share_outlined, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('Share Properties'),
+                                  ],
+                                ),
+                              ),
+                              if (_hasEditAccess(req, currentUser)) ...[
+                                const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit_outlined, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Edit'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
+                                      SizedBox(width: 8),
+                                      Text('Delete', style: TextStyle(color: CRMColors.danger)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                ),
-                Divider(color: CRMColors.borderOf(context), height: 1),
+                  const SizedBox(height: 4),
 
-                // Details grid
-                Padding(
-                  padding: const EdgeInsets.all(CRMSpacing.m),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  // Second Line: Added Date & Time
+                  Text(
+                    dateText,
+                    style: CRMTypography.caption.copyWith(
+                      color: CRMColors.textMutedOf(context),
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Third Row: Requirement Specs & Tag Pills (Listing Type, Budget, Area Specs)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        specsText,
+                        style: CRMTypography.bodyMedium.copyWith(
+                          color: CRMColors.textOf(context),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: CRMColors.sidebarBgOf(context),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                        ),
+                        child: Text(
+                          listingType,
+                          style: TextStyle(
+                            color: CRMColors.textSecondaryOf(context),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: CRMColors.primaryOf(context).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          budgetText,
+                          style: TextStyle(
+                            color: CRMColors.primaryOf(context),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Fourth Row: Contact Info & WhatsApp Button & Staff Badges
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(child: _buildDetailChip(Icons.sell_outlined, 'Listing Type', getListingTypeLabel(req), isMobile: isMobile)),
-                          const SizedBox(width: CRMSpacing.m),
-                          Expanded(child: _buildDetailChip(Icons.apartment_rounded, 'Type', '${req.propertyTypeName} (${req.configurationName ?? "-"})', isMobile: isMobile)),
+                          Icon(Icons.phone_outlined, size: 14, color: CRMColors.primaryOf(context)),
+                          const SizedBox(width: 4),
+                          SelectableText(
+                            req.clientMobile,
+                            style: TextStyle(
+                              color: CRMColors.textOf(context),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: CRMSpacing.s),
+                      InkWell(
+                        onTap: () async {
+                          final phone = req.clientMobile.replaceAll(RegExp(r'\D'), '');
+                          final formattedPhone = phone.length == 10 ? '91$phone' : phone;
+                          final url = "https://wa.me/$formattedPhone";
+                          final uri = Uri.parse(url);
+                          if (await canLaunchUrl(uri)) {
+                            await launchUrl(uri, mode: LaunchMode.externalApplication);
+                          }
+                        },
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.chat_bubble_outline_rounded, size: 14, color: kWhatsAppGreen),
+                            SizedBox(width: 4),
+                            Text(
+                              'Chat on WhatsApp',
+                              style: TextStyle(
+                                color: kWhatsAppGreen,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(child: _buildDetailChip(Icons.currency_rupee_rounded, 'Budget', budget, isMobile: isMobile)),
-                          const SizedBox(width: CRMSpacing.m),
-                          Expanded(child: _buildDetailChip(Icons.location_on_rounded, 'Area', req.areaNames.join(', '), isMobile: isMobile)),
+                          Icon(Icons.person_add_alt_1_outlined, size: 13, color: CRMColors.textMutedOf(context)),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Added by: ${req.creatorName ?? "System"}',
+                            style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.person_outline_rounded, size: 13, color: CRMColors.textMutedOf(context)),
+                          const SizedBox(width: 4),
+                          if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Assign: ',
+                                  style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5, fontWeight: FontWeight.w600),
+                                ),
+                                SizedBox(
+                                  width: 120,
+                                  child: _buildMobileAssignToDropdown(req),
+                                ),
+                              ],
+                            )
+                          else
+                            Text(
+                              'Assign: ${_getSalesmanName(req, currentUser)}',
+                              style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5, fontWeight: FontWeight.w600),
+                            ),
                         ],
                       ),
                     ],
                   ),
-                ),
-                
-                // Action buttons
-                Divider(color: CRMColors.borderOf(context), height: 1),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.s),
-                  child: Row(
-                    children: [
-                      _RunMatchesButtonWithBadge(
-                        requirement: req,
-                        onPressed: () => _showMatchesDrawer(req),
-                        properties: _propertiesForMatches,
-                        isMobileIconOnly: true,
-                      ),
-                      const SizedBox(width: 8),
-                      if (!_isLeadTransferredAway(req, currentUser))
-                        _buildActionButton(
-                          icon: Icons.add_circle_outline_rounded,
-                          color: CRMColors.primary,
-                          onPressed: () => _showAddAnotherRequirementDialog(req),
-                          tooltip: 'Add Another Requirement',
+                  const SizedBox(height: 12),
+
+                  // Bottom Details Box (Subtle Container with Budget, Localities, and Run Matches Button)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: CRMColors.backgroundOf(context).withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Localities Interested in:',
+                                style: TextStyle(
+                                  color: CRMColors.textMutedOf(context),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                areasText,
+                                style: TextStyle(
+                                  color: CRMColors.textOf(context),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      if (!_isLeadTransferredAway(req, currentUser))
-                        const SizedBox(width: 8),
-                      _buildActionButton(
-                        icon: Icons.share_rounded,
-                        color: CRMColors.info,
-                        onPressed: () => _showSharePropertiesDialog(req),
-                        tooltip: 'Share Properties',
-                      ),
-                      if (_hasEditAccess(req, currentUser)) ...[
-                        const SizedBox(width: 8),
-                        _buildActionButton(
-                          icon: Icons.edit_outlined,
-                          color: CRMColors.primary,
-                          onPressed: () => _showAddEditDialog(req),
-                          tooltip: 'Edit',
-                        ),
-                        const SizedBox(width: 8),
-                        _buildActionButton(
-                          icon: Icons.delete_outline_rounded,
-                          color: CRMColors.danger,
-                          onPressed: () => _showDeleteConfirmDialog(req),
-                          tooltip: 'Delete',
+                        const SizedBox(width: 12),
+                        _RunMatchesButtonWithBadge(
+                          requirement: req,
+                          onPressed: () => _showMatchesDrawer(req),
+                          properties: _propertiesForMatches,
                         ),
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         }),
@@ -2530,17 +3153,211 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  Widget _buildViewSwitcher() {
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: CRMColors.sidebarBgOf(context),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+            color: CRMColors.borderOf(context).withOpacity(0.6),
+            width: 0.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: () {
+              if (_isTableView) {
+                setState(() => _isTableView = false);
+              }
+            },
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: !_isTableView ? CRMColors.cardBgOf(context) : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                boxShadow: !_isTableView ? CRMShadows.small : null,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.view_stream_rounded,
+                    size: 16,
+                    color: !_isTableView ? CRMColors.primaryOf(context) : CRMColors.textMutedOf(context),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Cards',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: !_isTableView ? FontWeight.bold : FontWeight.normal,
+                      color: !_isTableView ? CRMColors.primaryOf(context) : CRMColors.textMutedOf(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          InkWell(
+            onTap: () {
+              if (!_isTableView) {
+                setState(() => _isTableView = true);
+              }
+            },
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: _isTableView ? CRMColors.cardBgOf(context) : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                boxShadow: _isTableView ? CRMShadows.small : null,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.table_chart_outlined,
+                    size: 16,
+                    color: _isTableView ? CRMColors.primaryOf(context) : CRMColors.textMutedOf(context),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Table',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: _isTableView ? FontWeight.bold : FontWeight.normal,
+                      color: _isTableView ? CRMColors.primaryOf(context) : CRMColors.textMutedOf(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionBar(List<RequirementModel> requirements, UserModel? currentUser) {
+    final role = currentUser?.role.toLowerCase() ?? '';
+    final bool canExport = role == 'admin' || role == 'super admin' || role == 'telecaller';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          if (canExport)
+            ElevatedButton.icon(
+              onPressed: () => _exportLeadsToExcel(requirements, currentUser),
+              icon: const Icon(Icons.download_rounded, size: 16),
+              label: const Text(
+                'Export Leads',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF217346),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 1,
+              ),
+            )
+          else
+            const SizedBox(),
+          _buildViewSwitcher(),
+        ],
+      ),
+    );
+  }
+
+  void _exportLeadsToExcel(List<RequirementModel> requirements, UserModel? currentUser) {
+    if (requirements.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No leads available to export.'),
+          backgroundColor: CRMColors.warning,
+        ),
+      );
+      return;
+    }
+
+    final List<String> headers = [
+      'Req ID',
+      'Client Name',
+      'Client Mobile',
+      'Category',
+      'Configuration',
+      'Property Types',
+      'Listing Type',
+      'Min Budget',
+      'Max Budget',
+      'Interested Areas',
+      'Status',
+      'Next Followup Date',
+      'Added By',
+      'Assigned To',
+      'Notes / Remarks',
+      'Created Date',
+    ];
+
+    final StringBuffer csvBuffer = StringBuffer();
+    // UTF-8 BOM so Excel opens with UTF-8 encoding and auto column split
+    csvBuffer.write('\uFEFF');
+    csvBuffer.writeln(headers.map((h) => '"${h.replaceAll('"', '""')}"').join(','));
+
+    for (final req in requirements) {
+      final row = [
+        req.requirementCode,
+        req.clientName,
+        req.clientMobile,
+        req.categoryName ?? '',
+        req.configurationName ?? '',
+        req.propertyTypeName ?? '',
+        req.listingTypeName ?? '',
+        BudgetFormatter.format(req.minBudget),
+        BudgetFormatter.format(req.maxBudget),
+        req.areaNames.join('; '),
+        req.status,
+        req.nextFollowupDate != null && req.nextFollowupDate!.isNotEmpty
+            ? DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal())
+            : '',
+        req.creatorName ?? 'System',
+        _getSalesmanName(req, currentUser),
+        _getCleanNote(req) ?? '',
+        req.createdAt != null ? DateFormat('dd/MM/yyyy hh:mm a').format(req.createdAt!.toLocal()) : '',
+      ];
+
+      csvBuffer.writeln(row.map((val) => '"${val.toString().replaceAll('"', '""')}"').join(','));
+    }
+
+    final bytes = utf8.encode(csvBuffer.toString());
+    final filename = 'Leads_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
+    FileDownloader.download(bytes, filename);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${requirements.length} leads exported to Excel format successfully!'),
+        backgroundColor: CRMColors.success,
+      ),
+    );
+  }
+
   Color _getStatusColor(String status) {
+    if (status.startsWith('Rejected')) return CRMColors.danger;
     switch (status) {
       case 'Won':
         return CRMColors.success;
       case 'Follow-up':
+      case 'Re-Followup':
         return CRMColors.warning;
       case 'Interested':
       case 'Active':
       case 'Live':
         return CRMColors.info;
       case 'Site Visit':
+      case 'Site Visit Sche.':
       case 'Site Visit Done':
         return Colors.purple;
       case 'Negotiation':
@@ -2549,6 +3366,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       case 'Not Interested':
       case 'Dead':
       case 'Suspended':
+      case 'Rejected':
         return CRMColors.danger;
       case 'Not Started':
       default:
@@ -2739,7 +3557,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  Widget _buildMobileFollowupCard(DashboardFollowup f, List<RequirementLocal> localReqs) {
+  Widget _buildMobileFollowupCard(DashboardFollowup f, List<RequirementModel> reqsList) {
     final parsed = DateTime.tryParse(f.followupDate)?.toLocal();
     final displayDate = parsed != null
         ? DateFormat('dd/MM/yyyy  hh:mm a').format(parsed)
@@ -2749,7 +3567,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final currentUser = authState is Authenticated ? authState.user : null;
     final isHighRole = currentUser != null &&
         (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
-    final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
+    final reqModel = reqsList.firstWhereOrNull((r) => r.id == f.requirementId);
 
     return Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.m),
@@ -2765,8 +3583,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(CRMBorderRadius.card),
         onTap: () {
-          if (reqLocal != null) {
-            _showRequirementDetailDrawer(reqLocal.toModel());
+          if (reqModel != null) {
+            _showRequirementDetailDrawer(reqModel);
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Associated requirement details not found.')),
@@ -2807,7 +3625,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     Icon(Icons.person_outline_rounded, size: 13, color: CRMColors.textSecondaryOf(context)),
                     const SizedBox(width: 4),
                     Text(
-                      'Added by: ${f.creatorName ?? (reqLocal != null ? _getSalesmanName(reqLocal.toModel(), currentUser) : "N/A")}',
+                      'Added by: ${f.creatorName ?? (reqModel != null ? _getSalesmanName(reqModel, currentUser) : "N/A")}',
                       style: CRMTypography.caption.copyWith(
                         color: CRMColors.textSecondaryOf(context),
                         fontWeight: FontWeight.w600,
@@ -2959,7 +3777,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               }
 
               final dashboardData = snapshot.data?[0] as DashboardData?;
-              final localReqs = snapshot.data?[1] as List<RequirementLocal>? ?? [];
+              final reqsList = snapshot.data?[1] as List<RequirementModel>? ?? [];
 
               final followups = dashboardData?.followups ?? [];
 
@@ -2990,25 +3808,66 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 }
               }
 
+              // Also include any requirements with pending followups or nextFollowupDate not yet in dashboard payload
+              for (final req in reqsList) {
+                final reqStatus = req.status;
+                final hasFollowupStatus = reqStatus == 'Follow-up' || reqStatus == 'Re-Followup' || reqStatus == 'Site Visit';
+                final hasNextDate = req.nextFollowupDate != null && req.nextFollowupDate!.isNotEmpty;
+
+                if ((hasFollowupStatus || hasNextDate) && reqStatus != 'Won' && reqStatus != 'Closed' && !reqStatus.startsWith('Rejected') && reqStatus != 'Dead') {
+                  final key = req.id;
+                  if (!latestReqFollowupsMap.containsKey(key)) {
+                    latestReqFollowupsMap[key] = DashboardFollowup(
+                      id: 'local_${req.id}',
+                      requirementId: req.id,
+                      clientName: req.clientName,
+                      mobile: req.clientMobile,
+                      followupDate: (req.nextFollowupDate != null && req.nextFollowupDate!.isNotEmpty)
+                          ? req.nextFollowupDate!
+                          : req.createdAt.toIso8601String(),
+                      status: reqStatus,
+                      notes: req.notes ?? req.remarks,
+                      creatorName: req.creatorName ?? req.assigneeName,
+                    );
+                  }
+                }
+              }
+
               final List<DashboardFollowup> todayFollowups = [];
               final List<DashboardFollowup> dueFollowups = [];
               final List<DashboardFollowup> futureFollowups = [];
               final List<DashboardFollowup> allClientsFollowups = [];
 
               for (final f in latestReqFollowupsMap.values) {
-                final req = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
+                final req = reqsList.firstWhereOrNull((r) => r.id == f.requirementId);
                 if (req == null) continue;
 
-                final reqStatus = req.status ?? '';
-                if (reqStatus != 'Follow-up' && reqStatus != 'Re-Followup') continue;
+                final reqStatus = req.status;
+                if (reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') continue;
 
                 final isRentTab = _activeListingTab == 'Rent';
-                final reqIsRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
+                final listingNameLower = (req.listingTypeName ?? '').toLowerCase();
+                final reqIsRent = listingNameLower.contains('rent') ||
+                    (req.listingTypeId != null && (LookupLocalRepository.getLookupNameSync(req.listingTypeId!)?.toLowerCase().contains('rent') ?? false)) ||
+                    req.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
                 if (isRentTab != reqIsRent) continue;
 
                 allClientsFollowups.add(f);
 
-                final parsed = DateTime.tryParse(f.followupDate)?.toLocal();
+                DateTime? parsed = DateTime.tryParse(f.followupDate)?.toLocal();
+                if (parsed == null && f.followupDate.isNotEmpty) {
+                  try {
+                    final parts = f.followupDate.split(RegExp(r'[/\\-]'));
+                    if (parts.length >= 3) {
+                      final d = int.tryParse(parts[0]);
+                      final m = int.tryParse(parts[1]);
+                      final y = int.tryParse(parts[2]);
+                      if (d != null && m != null && y != null) {
+                        parsed = DateTime(y, m, d);
+                      }
+                    }
+                  } catch (_) {}
+                }
                 if (parsed == null) continue;
                 final fDate = DateTime(parsed.year, parsed.month, parsed.day);
 
@@ -3099,7 +3958,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     ? CRMColors.danger
                     : (tabKey == 'Future'
                         ? CRMColors.info
-                        : (tabKey == 'AllClients' ? CRMColors.secondary : CRMColors.primary));
+                        : (tabKey == 'AllClients' ? const Color(0xFF6C5CE7) : CRMColors.primary));
 
                 return GestureDetector(
                   onTap: () {
@@ -3211,7 +4070,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     )
                   else if (isMobile)
                     Column(
-                      children: pageItems.map((f) => _buildMobileFollowupCard(f, localReqs)).toList(),
+                      children: pageItems.map((f) => _buildMobileFollowupCard(f, reqsList)).toList(),
                     )
                   else
                     CRMDataTable(
@@ -3228,8 +4087,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         const DataColumn(label: Text('Actions')),
                       ],
                       rows: pageItems.map((f) {
-                        final reqLocal = localReqs.firstWhereOrNull((r) => r.id == f.requirementId);
-                        final reqModel = reqLocal?.toModel();
+                        final reqModel = reqsList.firstWhereOrNull((r) => r.id == f.requirementId);
 
                         final parsedDate = DateTime.tryParse(f.followupDate)?.toLocal();
                         final displayDate = parsedDate != null
@@ -3788,13 +4646,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _showRequirementDetailDrawer(RequirementModel req) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) {
-        return _CRMRequirementDetailDrawer(requirement: req);
-      },
-    );
+    showCRMRequirementDrawer(context, req);
   }
 
 
@@ -3901,7 +4753,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     SizedBox(
                       width: isMobile ? double.infinity : 200,
                       child: CRMMultiSelectDropdown(
-                        label: 'Configuration',
+                        label: 'BHK',
                         selectedIds: _wonConfigurationIds,
                         items: filteredConfigs,
                         onChanged: (vals) {
@@ -4281,7 +5133,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
       if (widget.isSiteVisit) {
         await DioClient.dio.post('/site-visits', data: {
           'requirement_id': widget.requirement.id,
-          'visit_date': scheduledDateTime.toUtc().toIso8601String(),
+          'visit_date': scheduledDateTime.toIso8601String(),
           'remarks': remarks,
         });
 
@@ -4296,26 +5148,24 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           'client_name': widget.requirement.clientName,
           'mobile': widget.requirement.clientMobile,
           'notes': remarks,
-          'followup_date': scheduledDateTime.toUtc().toIso8601String(),
+          'followup_date': scheduledDateTime.toIso8601String(),
           'requirement_id': widget.requirement.id,
         });
 
-        if (widget.updateStatusOnSave) {
-          final RequirementsRepository requirementsRepository = RequirementsRepository();
-          final bool hasPreviousFollowup = widget.requirement.status == 'Follow-up' ||
-              widget.requirement.status == 'Re-Followup' ||
-              widget.requirement.nextFollowupDate != null;
-          final String targetStatus = hasPreviousFollowup ? 'Re-Followup' : 'Follow-up';
+        final RequirementsRepository requirementsRepository = RequirementsRepository();
+        final bool hasPreviousFollowup = widget.requirement.status == 'Follow-up' ||
+            widget.requirement.status == 'Re-Followup' ||
+            widget.requirement.nextFollowupDate != null;
+        final String targetStatus = hasPreviousFollowup ? 'Re-Followup' : 'Follow-up';
 
-          final updatedReq = widget.requirement.copyWith(
-            status: targetStatus,
-            nextFollowupDate: scheduledDateTime.toUtc().toIso8601String(),
-            remarks: remarks,
-          );
-          await requirementsRepository.updateRequirement(updatedReq);
-          RepositoryCoordinator().refreshDashboard();
-          RepositoryCoordinator().refreshRequirements();
-        }
+        final updatedReq = widget.requirement.copyWith(
+          status: targetStatus,
+          nextFollowupDate: scheduledDateTime.toIso8601String(),
+          remarks: remarks,
+        );
+        await requirementsRepository.updateRequirement(updatedReq);
+        RepositoryCoordinator().refreshDashboard();
+        RepositoryCoordinator().refreshRequirements();
       }
 
       if (mounted) {
@@ -5337,6 +6187,16 @@ String getListingTypeLabel(RequirementModel r) {
   return 'Rent';
 }
 
+void showCRMRequirementDrawer(BuildContext context, RequirementModel req) {
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (context) {
+      return _CRMRequirementDetailDrawer(requirement: req);
+    },
+  );
+}
+
 class _CRMRequirementDetailDrawer extends StatefulWidget {
   final RequirementModel requirement;
 
@@ -5448,7 +6308,6 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
     }
   }
 
-  @override
   Widget _buildShareHistoryTable() {
     final req = widget.requirement;
     return _isLoading
@@ -6549,4 +7408,34 @@ class _FollowupActionButton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PopoverTrianglePainter extends CustomPainter {
+  final Color color;
+  final bool pointingDown;
+  _PopoverTrianglePainter({required this.color, this.pointingDown = false});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    if (pointingDown) {
+      path.moveTo(0, 0);
+      path.lineTo(size.width / 2, size.height);
+      path.lineTo(size.width, 0);
+    } else {
+      path.moveTo(0, size.height);
+      path.lineTo(size.width / 2, 0);
+      path.lineTo(size.width, size.height);
+    }
+    path.close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

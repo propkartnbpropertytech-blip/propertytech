@@ -39,6 +39,7 @@ class RoleGuard {
   static const allowedPostLoginPaths = <String>{
     '/dashboard',
     '/properties',
+    '/search',
     '/requirements',
     '/clients',
     '/owners',
@@ -58,7 +59,10 @@ class RoleGuard {
     if (raw == null || raw.isEmpty) return null;
     String path;
     try {
-      path = Uri.decodeComponent(raw);
+      path = Uri.decodeComponent(raw).trim();
+      if (path.startsWith('#')) {
+        path = path.substring(1);
+      }
     } catch (_) {
       return null;
     }

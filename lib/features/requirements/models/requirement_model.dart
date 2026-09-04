@@ -23,6 +23,7 @@ class RequirementModel {
   final List<dynamic>? rawSiteVisits;
   final List<dynamic>? rawShareSessions;
   final String? remarks;
+  final String? notes;
   final String status; // 'Active', 'Closed', 'Suspended'
   final DateTime createdAt;
   final String? adminId;
@@ -60,6 +61,7 @@ class RequirementModel {
     this.rawSiteVisits,
     this.rawShareSessions,
     this.remarks,
+    this.notes,
     required this.status,
     required this.createdAt,
     this.adminId,
@@ -189,6 +191,7 @@ class RequirementModel {
       rawSiteVisits: json['site_visits'] as List<dynamic>?,
       rawShareSessions: json['share_sessions'] as List<dynamic>?,
       remarks: json['remarks'],
+      notes: json['notes'] as String?,
       status: json['status'] ?? 'Active',
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
@@ -299,6 +302,7 @@ class RequirementModel {
       'configuration_ids': configurationIds.isNotEmpty ? configurationIds : (configurationId != null ? [configurationId!] : null),
       'property_type_ids': propertyTypeIds.isNotEmpty ? propertyTypeIds : [propertyTypeId],
       'remarks': remarks,
+      'notes': notes,
       'status': status,
       'assigned_to': (assignedTo == null || assignedTo!.isEmpty) ? null : assignedTo,
       'furnishing_type_ids': furnishingIds,
@@ -416,6 +420,7 @@ class RequirementModel {
     List<dynamic>? rawSiteVisits,
     List<dynamic>? rawShareSessions,
     String? remarks,
+    String? notes,
     String? status,
     DateTime? createdAt,
     String? adminId,
@@ -453,6 +458,7 @@ class RequirementModel {
       rawSiteVisits: rawSiteVisits ?? this.rawSiteVisits,
       rawShareSessions: rawShareSessions ?? this.rawShareSessions,
       remarks: remarks ?? this.remarks,
+      notes: notes ?? this.notes,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       adminId: adminId ?? this.adminId,

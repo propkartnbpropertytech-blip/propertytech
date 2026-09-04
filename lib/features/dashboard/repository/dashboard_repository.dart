@@ -18,19 +18,49 @@ class DashboardRepository {
 
   Future<DashboardData> getDashboardData({
     bool backgroundRefresh = true,
+    bool forceRefresh = false,
   }) async {
     final start = DateTime.now();
     
-    // Read from local Isar
-    final localDashboard = await _coordinator.dashboardLocal.getDashboard();
-    final isarReadMs = DateTime.now().difference(start).inMilliseconds;
-    
     DashboardData? cachedData;
     int jsonParseMs = 0;
-    if (localDashboard != null) {
-      final parseStart = DateTime.now();
-      cachedData = localDashboard.toModel();
-      jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
+    int isarReadMs = 0;
+
+    if (!forceRefresh) {
+      // Read from local Isar
+      final localDashboard = await _coordinator.dashboardLocal.getDashboard();
+      isarReadMs = DateTime.now().difference(start).inMilliseconds;
+      if (localDashboard != null) {
+        final parseStart = DateTime.now();
+        cachedData = localDashboard.toModel();
+        jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
+      }
+    }
+
+    if (forceRefresh || cachedData == null) {
+      try {
+        final response = await _dashboardService.getDashboardData();
+        final freshData = DashboardData.fromJson(response);
+        await _coordinator.dashboardLocal.saveDashboard(freshData.toLocal());
+        final listData = response['followups'] as List? ?? [];
+        final freshFollowups = listData
+            .map((item) => DashboardFollowup.fromJson(item))
+            .toList();
+        final localEntities = freshFollowups
+            .map((f) => f.toLocal('System'))
+            .toList();
+        await _coordinator.followupLocal.saveFollowups(localEntities);
+        cachedData = freshData;
+      } catch (_) {
+        if (cachedData == null) {
+          final localDashboard = await _coordinator.dashboardLocal.getDashboard();
+          if (localDashboard != null) {
+            cachedData = localDashboard.toModel();
+          }
+        }
+      }
+    } else if (backgroundRefresh) {
+      _triggerBackgroundDashboardRefresh();
     }
 
     final totalMs = DateTime.now().difference(start).inMilliseconds;
@@ -40,10 +70,6 @@ class DashboardRepository {
       jsonParseMs: jsonParseMs,
       totalMs: totalMs,
     );
-
-    if (backgroundRefresh) {
-      _triggerBackgroundDashboardRefresh();
-    }
 
     // Get the dynamic counts of requirements to ensure they are always correct and in sync
     var localReqs = await _coordinator.requirementLocal.getRequirements();

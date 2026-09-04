@@ -25,6 +25,8 @@ import '../../../core/utils/budget_formatter.dart';
 import '../../../core/security/role_guard.dart';
 import '../../properties/repository/properties_repository.dart';
 import '../../requirements/repository/requirements_repository.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/design_system/widgets/drawers.dart';
 import '../../properties/models/property_model.dart';
 import '../../requirements/models/requirement_model.dart';
 
@@ -2199,9 +2201,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.l),
                 child: FutureBuilder<List<dynamic>>(
                   future: Future.wait([
-                    PropertiesRepository().getProperties(
-                      createdBy: salesman.id,
-                    ),
+                    PropertiesRepository().getProperties(),
                     RequirementsRepository().getRequirements(),
                   ]),
                   builder: (context, snapshot) {
@@ -2232,17 +2232,42 @@ class _UsersScreenState extends State<UsersScreen> {
                       );
                     }
 
-                    final properties =
+                    final allProps =
                         (snapshot.data?[0] as List<PropertyModel>?) ?? [];
                     final allReqs =
                         (snapshot.data?[1] as List<RequirementModel>?) ?? [];
-                    final requirements = allReqs
-                        .where((r) => r.adminId == salesman.id)
-                        .toList();
+
+                    final sId = salesman.id;
+                    final sName = salesman.fullName.toLowerCase().trim();
+
+                    final salesmanProps = allProps.where((p) {
+                      final pAdminId = p.adminId ?? '';
+                      final pCreatedBy = p.createdBy;
+                      final pCreatedByName = p.createdByName.toLowerCase().trim();
+
+                      return pAdminId == sId ||
+                             pCreatedBy == sId ||
+                             (pCreatedByName.isNotEmpty && pCreatedByName == sName) ||
+                             (pCreatedBy.toLowerCase().trim() == sName);
+                    }).toList();
+
+                    final salesmanReqs = allReqs.where((r) {
+                      final rAdminId = r.adminId ?? '';
+                      final rAssignedTo = r.assignedTo ?? '';
+                      final rCreatedBy = r.createdBy ?? '';
+                      final rCreatorName = (r.creatorName ?? '').toLowerCase().trim();
+                      final rAssigneeName = (r.assigneeName ?? '').toLowerCase().trim();
+
+                      return rAdminId == sId ||
+                             rAssignedTo == sId ||
+                             rCreatedBy == sId ||
+                             (rCreatorName.isNotEmpty && rCreatorName == sName) ||
+                             (rAssigneeName.isNotEmpty && rAssigneeName == sName);
+                    }).toList();
 
                     // Filter helper functions
                     List<PropertyModel> getFilteredProperties() {
-                      return properties.where((p) {
+                      return salesmanProps.where((p) {
                         final ltName = p.listingTypeName.toLowerCase();
                         final matchesListing = activeTab == 'Rent'
                             ? ltName.contains('rent')
@@ -2254,7 +2279,7 @@ class _UsersScreenState extends State<UsersScreen> {
                     }
 
                     List<RequirementModel> getFilteredRequirements() {
-                      return requirements.where((r) {
+                      return salesmanReqs.where((r) {
                         final matchesListing =
                             _getListingTypeLabelForSalesman(r) == activeTab;
                         return matchesListing;
@@ -2644,6 +2669,17 @@ class _UsersScreenState extends State<UsersScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            TextButton.icon(
+              icon: const Icon(Icons.open_in_new, size: 14),
+              label: Text(
+                isMobile ? "View All" : "Open in Properties Page",
+                style: const TextStyle(fontSize: 12),
+              ),
+              onPressed: () {
+                Navigator.of(context, rootNavigator: true).pop();
+                context.go('/properties?search=${Uri.encodeComponent(salesman.fullName)}');
+              },
+            ),
           ],
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -2660,6 +2696,10 @@ class _UsersScreenState extends State<UsersScreen> {
                     final p = list[index];
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.of(context, rootNavigator: true).pop();
+                        showCRMPropertyDrawer(context, p);
+                      },
                       title: Text(
                         p.title,
                         style: CRMTypography.bodyMedium.copyWith(
@@ -2712,6 +2752,17 @@ class _UsersScreenState extends State<UsersScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            TextButton.icon(
+              icon: const Icon(Icons.open_in_new, size: 14),
+              label: Text(
+                isMobile ? "View All" : "Open in Leads Page",
+                style: const TextStyle(fontSize: 12),
+              ),
+              onPressed: () {
+                Navigator.of(context, rootNavigator: true).pop();
+                context.go('/requirements?search=${Uri.encodeComponent(salesman.fullName)}');
+              },
+            ),
           ],
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -2730,6 +2781,10 @@ class _UsersScreenState extends State<UsersScreen> {
                         '${r.propertyTypeName} (${r.configurationName ?? ""})';
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.of(context, rootNavigator: true).pop();
+                        context.go('/requirements?search=${Uri.encodeComponent(r.clientName)}');
+                      },
                       title: Text(
                         r.clientName,
                         style: CRMTypography.bodyMedium.copyWith(

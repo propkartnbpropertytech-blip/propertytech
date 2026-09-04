@@ -8,9 +8,9 @@ import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
-import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/crm_permission_denied.dart';
 import '../../integration/services/integration_service.dart';
+import 'campaign_subshell_header.dart';
 
 class ConnectionsScreen extends StatefulWidget {
   const ConnectionsScreen({super.key});
@@ -66,8 +66,8 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header
-              CRMPageHeader(
-                title: 'Connections',
+              CampaignSubshellHeader(
+                activeTab: 'connections',
                 trailing: CRMButton(
                   label: 'Setup Guides',
                   prefixIcon: Icons.menu_book_rounded,

@@ -5,11 +5,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'bloc/auth_bloc.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/theme_manager.dart';
 import '../../core/design_system/tokens/app_colors.dart';
 import '../../core/design_system/tokens/app_shadows.dart';
 import '../../core/design_system/tokens/app_spacing.dart';
 import '../../core/design_system/tokens/app_typography.dart';
 import '../../core/design_system/widgets/buttons.dart';
+import '../../core/design_system/widgets/crm_brand_lockup.dart';
 import '../../core/api/dio_client.dart';
 import 'package:dio/dio.dart';
 import '../../core/utils/seo_helper.dart';
@@ -138,16 +140,18 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
               ),
-              actionsPadding: const EdgeInsets.only(bottom: 16, right: 16, left: 16),
+              actionsPadding: const EdgeInsets.only(bottom: 16, right: 16),
               actions: [
                 TextButton(
                   style: TextButton.styleFrom(
-                    foregroundColor: CRMColors.textMutedOf(context),
+                    foregroundColor: CRMColors.textSecondaryOf(context),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  onPressed: isSubmitting ? null : () => Navigator.pop(dialogContext),
+                  onPressed: isSubmitting ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancel'),
                 ),
-                const SizedBox(width: 8),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: CRMColors.primaryOf(context),
@@ -159,12 +163,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: isSubmitting
                       ? null
                       : () async {
-                          if (formKey.currentState?.validate() ?? false) {
-                            setState(() {
-                              isSubmitting = true;
-                            });
+                          if (formKey.currentState!.validate()) {
+                            setState(() => isSubmitting = true);
+                            final email = emailController.text.trim();
                             try {
-                              final email = emailController.text.trim();
                               final response = await DioClient.dio.post(
                                 '/auth/forgot-password',
                                 data: {'email': email},
@@ -174,7 +176,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 message: 'Password reset requested for email: $email',
                                 type: 'forgot_password',
                               );
-                              Navigator.pop(dialogContext);
                               
                               showDialog(
                                 context: context,
@@ -256,124 +257,129 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: CRMColors.backgroundOf(context),
-      body: BlocListener<AuthBloc, AuthState>(
-        listener: (context, state) {
-          if (state is AuthError) {
-            _showErrorDialog("Login Failed", state.message);
-          }
-        },
-        child: Stack(
-          children: [
-            SafeArea(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  // Increase breakpoint to 950 to fit 1000px container and prevent test overflows at 800px width
-                  final isDesktop = constraints.maxWidth >= 950;
+    return ListenableBuilder(
+      listenable: ThemeManager(),
+      builder: (context, _) {
+        return Scaffold(
+          backgroundColor: CRMColors.backgroundOf(context),
+          body: BlocListener<AuthBloc, AuthState>(
+            listener: (context, state) {
+              if (state is AuthError) {
+                _showErrorDialog("Login Failed", state.message);
+              }
+            },
+            child: Stack(
+              children: [
+                SafeArea(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Increase breakpoint to 950 to fit 1000px container and prevent test overflows at 800px width
+                      final isDesktop = constraints.maxWidth >= 950;
 
-                  if (isDesktop) {
-                    return Center(
-                      child: SingleChildScrollView(
-                        child: Padding(
-                          padding: const EdgeInsets.all(CRMSpacing.l),
-                          child: SizedBox(
-                            width: 1000,
-                            height: 600,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: CRMColors.cardBgOf(context),
-                                borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                                border: Border.all(color: CRMColors.borderOf(context), width: 1),
-                                boxShadow: CRMShadows.large,
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Expanded(
-                                    flex: 5,
-                                    child: _buildFormContent(isDesktop: true),
+                      if (isDesktop) {
+                        return Center(
+                          child: SingleChildScrollView(
+                            child: Padding(
+                              padding: const EdgeInsets.all(CRMSpacing.l),
+                              child: SizedBox(
+                                width: 1000,
+                                height: 600,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.cardBgOf(context),
+                                    borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                                    border: Border.all(color: CRMColors.borderOf(context), width: 1),
+                                    boxShadow: CRMShadows.large,
                                   ),
-                                  const Expanded(
-                                    flex: 6,
-                                    child: _HeroSection(),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      Expanded(
+                                        flex: 5,
+                                        child: _buildFormContent(isDesktop: true),
+                                      ),
+                                      const Expanded(
+                                        flex: 6,
+                                        child: _HeroSection(),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      // Mobile Layout
+                      return Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 450),
+                            decoration: BoxDecoration(
+                              color: CRMColors.cardBgOf(context),
+                              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                              border: Border.all(color: CRMColors.borderOf(context), width: 1),
+                              boxShadow: CRMShadows.large,
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: _buildFormContent(isDesktop: false),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                BlocBuilder<AuthBloc, AuthState>(
+                  builder: (context, state) {
+                    if (state is AuthLoading) {
+                      return Container(
+                        color: Colors.black.withOpacity(0.6),
+                        child: Center(
+                          child: Card(
+                            color: CRMColors.surfaceElevatedOf(context),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Syncing Data...',
+                                    style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Please wait while we sync listings and profile',
+                                    style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  SizedBox(
+                                    width: 200,
+                                    child: LinearProgressIndicator(
+                                      color: CRMColors.primaryOf(context),
+                                      backgroundColor: CRMColors.borderOf(context).withOpacity(0.2),
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  }
-
-                  // Mobile Layout
-                  return Center(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-                      child: Container(
-                        constraints: const BoxConstraints(maxWidth: 450),
-                        decoration: BoxDecoration(
-                          color: CRMColors.cardBgOf(context),
-                          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                          border: Border.all(color: CRMColors.borderOf(context), width: 1),
-                          boxShadow: CRMShadows.large,
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: _buildFormContent(isDesktop: false),
-                      ),
-                    ),
-                  );
-                },
-              ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+              ],
             ),
-            BlocBuilder<AuthBloc, AuthState>(
-              builder: (context, state) {
-                if (state is AuthLoading) {
-                  return Container(
-                    color: Colors.black.withOpacity(0.6),
-                    child: Center(
-                      child: Card(
-                        color: CRMColors.surfaceElevatedOf(context),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Syncing Data...',
-                                style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Please wait while we sync listings and profile',
-                                style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
-                              ),
-                              const SizedBox(height: 24),
-                              SizedBox(
-                                width: 200,
-                                child: LinearProgressIndicator(
-                                  color: CRMColors.primaryOf(context),
-                                  backgroundColor: CRMColors.borderOf(context).withOpacity(0.2),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -386,35 +392,9 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Brand Logo
-            Row(
-              children: [
-                Image.asset(
-                  'assets/logo.png',
-                  width: 36,
-                  height: 36,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: CRMColors.primaryOf(context).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.apartment_rounded,
-                      color: CRMColors.primaryOf(context),
-                      size: 20,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'PropKart',
-                  style: CRMTypography.sectionTitle.copyWith(
-                    fontSize: 22,
-                    color: CRMColors.primaryOf(context),
-                  ),
-                ),
-              ],
+            CRMBrandLockup(
+              markSize: 40,
+              wordmarkColor: CRMColors.primaryOf(context),
             ),
             const SizedBox(height: 32),
 
@@ -463,27 +443,21 @@ class _LoginScreenState extends State<LoginScreen> {
                     autofillHints: const [AutofillHints.password],
                     textInputAction: TextInputAction.done,
                     onFieldSubmitted: (_) => _submit(),
-                    suffixIcon: Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: IconButton(
-                        icon: Icon(
-                          _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                          color: CRMColors.textMutedOf(context),
-                          size: 20,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        color: CRMColors.textSecondaryOf(context),
+                        size: 20,
                       ),
+                      onPressed: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please enter your password';
-                      }
-                      if (value.length < 6) {
-                        return 'Password must be at least 6 characters';
                       }
                       return null;
                     },
@@ -491,9 +465,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
 
-            // Remember Me & Forgot Password Row
+            // Remember me and Forgot password
             Wrap(
               alignment: WrapAlignment.spaceBetween,
               crossAxisAlignment: WrapCrossAlignment.center,
@@ -566,7 +540,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   width: double.infinity,
                   height: 48,
                   borderRadius: CRMBorderRadius.input,
-                  backgroundColor: CRMColors.terracotta,
+                  backgroundColor: CRMColors.primaryOf(context),
                   foregroundColor: Colors.white,
                 );
               },
@@ -633,11 +607,17 @@ class _HeroSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = ThemeManager().isDarkMode;
+    final theme = ThemeManager().currentTheme;
+    final primaryColor = isDark ? theme.primaryDark : theme.primaryLight;
+    final heroBg = isDark ? const Color(0xFF0F172A) : const Color(0xFF1E293B);
+    final borderLeft = isDark ? const Color(0xFF334155) : const Color(0xFF334155);
+
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF292725),
+      decoration: BoxDecoration(
+        color: heroBg,
         border: Border(
-          left: BorderSide(color: Color(0xFF3A3531), width: 1.0),
+          left: BorderSide(color: borderLeft, width: 1.0),
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 48),
@@ -648,14 +628,16 @@ class _HeroSection extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFF382A26),
+              color: primaryColor.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFC77A64).withValues(alpha: 0.3)),
+              border: Border.all(
+                color: primaryColor.withValues(alpha: 0.4),
+              ),
             ),
             child: Text(
               'REAL ESTATE CRM',
               style: CRMTypography.captionBold.copyWith(
-                color: const Color(0xFFE8A290),
+                color: isDark ? theme.primaryHoverDark : theme.primaryLight,
                 fontSize: 11,
                 letterSpacing: 1.0,
               ),
@@ -667,7 +649,7 @@ class _HeroSection extends StatelessWidget {
             style: CRMTypography.display.copyWith(
               fontSize: 30,
               fontWeight: FontWeight.w600,
-              color: const Color(0xFFF3EEE7),
+              color: const Color(0xFFF8FAFC),
               height: 1.25,
             ),
           ),
@@ -675,7 +657,7 @@ class _HeroSection extends StatelessWidget {
           Text(
             'Manage properties, buyer requirements, and team workflows in one calm, unified workspace.',
             style: CRMTypography.body.copyWith(
-              color: const Color(0xFFB9B0A7),
+              color: const Color(0xFF94A3B8),
               height: 1.5,
             ),
           ),

@@ -20,13 +20,13 @@ class PropertiesRepository {
     String id, {
     bool refreshFromServer = false,
   }) async {
-    final local = await _coordinator.propertyLocal.getPropertyById(id);
+    final local = await _coordinator.propertyLocal.getPropertyByIdOrCode(id);
 
     if (!refreshFromServer) {
       return local?.toModel();
     }
 
-    final fresh = await _fetchAndCachePropertyById(id);
+    final fresh = await _fetchAndCachePropertyById(local?.id ?? id);
     if (fresh != null) return fresh;
     return local?.toModel();
   }

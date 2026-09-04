@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -11,11 +10,9 @@ import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
-import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/theme/theme_manager.dart';
+import '../../../core/theme/theme_presets.dart';
 import '../../auth/bloc/auth_bloc.dart';
-import '../../properties/models/property_model.dart';
-import '../../properties/services/properties_service.dart';
 import 'sync_debug_screen.dart';
 import '../../../core/storage/isar_service.dart';
 import '../../../core/constants/app_constants.dart';
@@ -119,12 +116,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildAppearanceCard(bool isAdminOrSuperAdmin) {
     final isDark = ThemeManager().isDarkMode;
+    final currentTheme = ThemeManager().currentTheme;
     return CRMCard(
       title: 'Appearance',
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.xs),
         child: Column(
           children: [
+            ListTile(
+              title: Text(
+                'Application Theme',
+                style: CRMTypography.bodyMedium.copyWith(
+                  color: CRMColors.text,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              subtitle: Text(
+                '${currentTheme.name}${currentTheme.isDefault ? " (Default)" : ""}',
+                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+              ),
+              leading: Icon(Icons.palette_rounded, color: CRMColors.primary),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: CRMColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.badge),
+                    ),
+                    child: Text(
+                      currentTheme.isDefault ? 'DEFAULT' : 'ACTIVE',
+                      style: CRMTypography.captionBold.copyWith(
+                        fontSize: 10,
+                        color: CRMColors.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.arrow_forward_ios_rounded, size: 14, color: CRMColors.textSecondary),
+                ],
+              ),
+              contentPadding: EdgeInsets.zero,
+              onTap: () {
+                setState(() => _activeSection = 'themes');
+              },
+            ),
+            const Divider(height: CRMSpacing.m),
             SwitchListTile(
               title: Text(
                 'Dark Mode',
@@ -175,6 +213,376 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildThemesSection({bool isSuperAdmin = false}) {
+    final themeManager = ThemeManager();
+    final availableThemes = themeManager.availableThemes;
+    final currentTheme = themeManager.currentTheme;
+    final isDark = themeManager.isDarkMode;
+    final primaryColor = themeManager.primaryColor;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CRMCard(
+          elevated: true,
+          title: 'Themes & Visual Styles',
+          child: Padding(
+            padding: const EdgeInsets.only(top: CRMSpacing.s),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isSuperAdmin) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: primaryColor.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.admin_panel_settings_rounded,
+                          color: primaryColor,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Super Administrator Theme Control',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13.5,
+                                  color: CRMColors.textOf(context),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Select a theme and click "Make it as Default" to make it the default theme for anyone who visits the site or app.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: CRMColors.textSecondaryOf(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: CRMSpacing.m),
+                ],
+                Text(
+                  'Personalize the look and feel of PropKart. As new UI designs are added, they will appear here for one-click switching.',
+                  style: CRMTypography.body.copyWith(
+                    color: CRMColors.textSecondaryOf(context),
+                  ),
+                ),
+                const SizedBox(height: CRMSpacing.l),
+                for (final theme in availableThemes) ...[
+                  _buildThemeCard(
+                    theme,
+                    isSelected: theme.id == currentTheme.id,
+                    isSystemDefault: themeManager.isSystemDefault(theme.id),
+                    isSuperAdmin: isSuperAdmin,
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: CRMSpacing.m),
+                ],
+                _buildUpcomingThemeTeaserCard(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildThemeCard(
+    AppThemePreset theme, {
+    required bool isSelected,
+    required bool isSystemDefault,
+    required bool isSuperAdmin,
+    required bool isDark,
+  }) {
+    final primaryColor = isDark ? theme.primaryDark : theme.primaryLight;
+
+    return InkWell(
+      onTap: () => ThemeManager().setTheme(theme.id),
+      borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(CRMSpacing.m),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? primaryColor.withValues(alpha: isDark ? 0.15 : 0.06)
+              : CRMColors.groupedBackground,
+          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+          border: Border.all(
+            color: isSelected ? primaryColor : CRMColors.borderOf(context),
+            width: isSelected ? 2.0 : 1.0,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: primaryColor,
+                    shape: BoxShape.circle,
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: primaryColor.withValues(alpha: 0.35),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Icon(
+                    isSelected ? Icons.check_rounded : Icons.palette_outlined,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: CRMSpacing.m),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          Text(
+                            theme.name,
+                            style: CRMTypography.bodyMedium.copyWith(
+                              color: CRMColors.textOf(context),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (isSystemDefault)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF159B73).withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(
+                                  CRMBorderRadius.badge,
+                                ),
+                                border: Border.all(
+                                  color: const Color(0xFF159B73).withValues(alpha: 0.4),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.verified_rounded,
+                                    size: 11,
+                                    color: Color(0xFF159B73),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'SYSTEM DEFAULT',
+                                    style: CRMTypography.captionBold.copyWith(
+                                      fontSize: 10,
+                                      letterSpacing: 0.6,
+                                      color: const Color(0xFF159B73),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if (isSelected)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: primaryColor.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(
+                                  CRMBorderRadius.badge,
+                                ),
+                                border: Border.all(
+                                  color: primaryColor.withValues(alpha: 0.4),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                'ACTIVE',
+                                style: CRMTypography.captionBold.copyWith(
+                                  fontSize: 10,
+                                  letterSpacing: 0.6,
+                                  color: primaryColor,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        theme.description,
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            const Divider(height: 1),
+            const SizedBox(height: CRMSpacing.m),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Palette Preview',
+                      style: CRMTypography.captionBold.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Row(
+                      children: [
+                        for (int i = 0; i < theme.previewColors.length; i++) ...[
+                          if (i > 0) const SizedBox(width: 6),
+                          Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: theme.previewColors[i],
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.black.withValues(alpha: 0.1),
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+                if (isSuperAdmin && !isSystemDefault)
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      await ThemeManager().setSystemDefaultTheme(theme.id);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Theme "${theme.name}" is now set as the system default for all visitors!',
+                            ),
+                            backgroundColor: const Color(0xFF159B73),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.star_rounded, size: 14),
+                    label: const Text(
+                      'Make it as default',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      elevation: 1,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUpcomingThemeTeaserCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(CRMSpacing.m),
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(
+          color: CRMColors.borderOf(context),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: CRMColors.textMutedOf(context).withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.add_photo_alternate_outlined,
+              color: CRMColors.textMutedOf(context),
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: CRMSpacing.m),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Ready for Your Next UI Theme',
+                  style: CRMTypography.bodyMedium.copyWith(
+                    color: CRMColors.textOf(context),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Provide your upcoming UI theme and we will gradually register it here for seamless theme switching.',
+                  style: CRMTypography.caption.copyWith(
+                    color: CRMColors.textSecondaryOf(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -341,6 +749,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final sections = <_SettingsNavItem>[
       const _SettingsNavItem(id: 'profile', label: 'Profile', icon: Icons.person_outline_rounded),
+      const _SettingsNavItem(id: 'themes', label: 'Themes', icon: Icons.palette_outlined),
       const _SettingsNavItem(id: 'appearance', label: 'Appearance', icon: Icons.tune_rounded),
       const _SettingsNavItem(id: 'locations', label: 'Locations', icon: Icons.location_city_outlined),
       if (isSuperAdmin)
@@ -356,6 +765,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     Widget sectionContent() {
       switch (_activeSection) {
+        case 'themes':
+          return _buildThemesSection(isSuperAdmin: isSuperAdmin);
         case 'appearance':
           return _buildAppearanceCard(isAdminOrSuperAdmin);
         case 'locations':
@@ -406,12 +817,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   label: Text(item.label),
                                   selected: selected,
                                   onSelected: (_) => setState(() => _activeSection = item.id),
-                                  selectedColor: CRMColors.terracottaSoft,
+                                  selectedColor: CRMColors.primary.withValues(alpha: 0.12),
                                   labelStyle: CRMTypography.captionBold.copyWith(
-                                    color: selected ? CRMColors.terracotta : CRMColors.textSecondaryOf(context),
+                                    color: selected ? CRMColors.primary : CRMColors.textSecondaryOf(context),
                                   ),
                                   side: BorderSide(
-                                    color: selected ? CRMColors.terracotta.withValues(alpha: 0.35) : CRMColors.borderOf(context),
+                                    color: selected ? CRMColors.primary.withValues(alpha: 0.35) : CRMColors.borderOf(context),
                                   ),
                                   backgroundColor: CRMColors.cardBgOf(context),
                                 );
@@ -463,7 +874,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? CRMColors.terracottaSoft : Colors.transparent,
+          color: selected ? CRMColors.primary.withValues(alpha: 0.12) : Colors.transparent,
           borderRadius: BorderRadius.circular(CRMBorderRadius.s),
         ),
         child: Row(
@@ -471,13 +882,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Icon(
               item.icon,
               size: 18,
-              color: selected ? CRMColors.terracotta : CRMColors.textMutedOf(context),
+              color: selected ? CRMColors.primary : CRMColors.textMutedOf(context),
             ),
             const SizedBox(width: CRMSpacing.s),
             Text(
               item.label,
               style: CRMTypography.bodyMedium.copyWith(
-                color: selected ? CRMColors.terracotta : CRMColors.textOf(context),
+                color: selected ? CRMColors.primary : CRMColors.textOf(context),
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
