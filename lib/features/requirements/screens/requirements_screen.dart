@@ -2764,21 +2764,32 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
 
     if (requirements.isEmpty) {
-      return CRMCard(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: CRMSpacing.xl),
-          child: Column(
-            children: [
-              Icon(Icons.folder_open_rounded, size: 48, color: CRMColors.textMuted),
-              const SizedBox(height: CRMSpacing.s),
-              Text('No Requirements Found', style: CRMTypography.cardTitle.copyWith(color: CRMColors.text)),
-              const SizedBox(height: CRMSpacing.xxs),
-              Text(
-                'Try adjusting filters or create a new requirement pipeline.',
-                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
-                textAlign: TextAlign.center,
-              ),
-            ],
+      return SizedBox(
+        width: double.infinity,
+        child: CRMCard(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: CRMSpacing.xl),
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(Icons.folder_open_rounded, size: 48, color: CRMColors.textMuted),
+                const SizedBox(height: CRMSpacing.s),
+                Text(
+                  'No Requirements Found',
+                  style: CRMTypography.cardTitle.copyWith(color: CRMColors.textOf(context)),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: CRMSpacing.xxs),
+                Text(
+                  'Try adjusting filters or create a new requirement pipeline.',
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
       );

@@ -2963,21 +2963,32 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   else ...[
                     _buildHousingStyleResultsHeader(context, properties.length, pageStart, pageEnd),
                     if (pagedProperties.isEmpty)
-                      CRMCard(
-                        child: Padding(
-                          padding: const EdgeInsets.all(CRMSpacing.xl),
-                          child: Column(
-                            children: [
-                              Text('No Properties Found',
-                                  style: CRMTypography.sectionTitle
-                                      .copyWith(color: CRMColors.textOf(context))),
-                              const SizedBox(height: CRMSpacing.s),
-                              Text(_noImagesOnly
-                                  ? 'No properties without images found.'
-                                  : 'No records match your active search terms.',
-                                  style: CRMTypography.body
-                                      .copyWith(color: CRMColors.textSecondaryOf(context))),
-                            ],
+                      SizedBox(
+                        width: double.infinity,
+                        child: CRMCard(
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(CRMSpacing.xl),
+                            alignment: Alignment.center,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'No Properties Found',
+                                  style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: CRMSpacing.s),
+                                Text(
+                                  _noImagesOnly
+                                      ? 'No properties without images found.'
+                                      : 'No records match your active search terms.',
+                                  style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       )
