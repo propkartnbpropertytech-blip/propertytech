@@ -13,6 +13,9 @@ import '../../../core/storage/repository_coordinator.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
+import '../../settings/screens/location_config_screen.dart';
+import '../../properties/services/properties_service.dart';
+import 'package:dio/dio.dart';
 
 class AddEditRequirementScreen extends StatefulWidget {
   final RequirementModel? requirement;
@@ -45,6 +48,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
 
   String? _selectedCategoryId;
   String? _selectedTypeId;
+  final List<String> _selectedTypeIds = [];
+  List<LookupItem> _cities = [];
   String? _selectedConfigId;
   final List<String> _selectedConfigIds = [];
   String? _selectedListingTypeId;
@@ -94,6 +99,32 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     super.dispose();
   }
 
+  Future<void> _refreshLocationMetadata() async {
+    try {
+      final service = PropertiesService();
+      final response = await service.getPropertyMetadata();
+      final data = response['data'] as Map<String, dynamic>? ?? {};
+      final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
+      
+      final oldAreaIds = _areas.map((a) => a.id).toSet();
+      final newAreas = meta.areas;
+      
+      setState(() {
+        _areas = newAreas;
+        
+        // Auto-select the newly created area(s)
+        final addedAreas = newAreas.where((a) => !oldAreaIds.contains(a.id)).toList();
+        for (final area in addedAreas) {
+          if (!_selectedAreaIds.contains(area.id)) {
+            _selectedAreaIds.add(area.id);
+          }
+        }
+      });
+    } catch (_) {
+      // Fail silently
+    }
+  }
+
   Future<void> _loadMetadata() async {
     try {
       final metadata = await _propertiesRepository.getPropertyMetadata();
@@ -105,10 +136,17 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
         _listingTypes = metadata.listingTypes;
         _furnishings = metadata.furnishings;
         _facings = metadata.facings;
+        _cities = metadata.cities;
         
         if (widget.requirement == null) {
-          if (_categories.isNotEmpty) _selectedCategoryId = _categories.first.id;
-          if (_types.isNotEmpty) _selectedTypeId = _types.first.id;
+          if (_categories.isNotEmpty) {
+            _selectedCategoryId = _categories.first.id;
+            final firstCatTypes = _types.where((t) => t.categoryId == _selectedCategoryId && t.name.toLowerCase() != 'apartment').toList();
+            if (firstCatTypes.isNotEmpty) {
+              _selectedTypeId = firstCatTypes.first.id;
+              _selectedTypeIds.add(firstCatTypes.first.id);
+            }
+          }
           if (_listingTypes.isNotEmpty) _selectedListingTypeId = _listingTypes.first.id;
         } else {
           final req = widget.requirement!;
@@ -121,6 +159,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           _remarksController.text = req.remarks ?? '';
           _selectedCategoryId = req.categoryId;
           _selectedTypeId = req.propertyTypeId;
+          _selectedTypeIds.addAll(req.propertyTypeIds);
+          if (_selectedTypeIds.isEmpty && req.propertyTypeId != null && req.propertyTypeId!.isNotEmpty) {
+            _selectedTypeIds.add(req.propertyTypeId!);
+          }
           _selectedConfigId = req.configurationId;
           _selectedConfigIds.addAll(req.configurationIds);
           if (_selectedConfigIds.isEmpty && req.configurationId != null) {
@@ -148,6 +190,138 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     }
   }
 
+  void _showAddAreaDialog() {
+    if (_cities.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No cities available. Please add a city first.')),
+      );
+      return;
+    }
+
+    String? dialogSelectedCityId = _cities.first.id;
+    final nameController = TextEditingController();
+    final pincodeController = TextEditingController();
+    bool isFetching = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          Future<void> lookupPincode(String pincode) async {
+            setState(() => isFetching = true);
+            try {
+              final dio = Dio();
+              final response = await dio.get('https://api.postalpincode.in/pincode/$pincode');
+              if (response.statusCode == 200 && response.data is List && response.data.isNotEmpty) {
+                final data = response.data[0] as Map<String, dynamic>;
+                final status = data['Status']?.toString();
+                final postOffices = data['PostOffice'] as List?;
+                if (status == 'Success' && postOffices != null && postOffices.isNotEmpty) {
+                  final firstOffice = postOffices[0] as Map<String, dynamic>;
+                  final name = firstOffice['Name']?.toString() ?? '';
+                  if (name.isNotEmpty) {
+                    nameController.text = name;
+                  }
+                }
+              }
+            } catch (_) {
+              // Fail silently
+            } finally {
+              setState(() => isFetching = false);
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: CRMColors.cardBgOf(context),
+            title: const Text('Add New Area'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  value: dialogSelectedCityId,
+                  decoration: const InputDecoration(labelText: 'City *'),
+                  items: _cities.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                  onChanged: (v) => setState(() => dialogSelectedCityId = v),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Area Name *'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pincodeController,
+                  decoration: InputDecoration(
+                    labelText: 'Pincode (6 Digits) *',
+                    suffixIcon: isFetching
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: Padding(
+                              padding: EdgeInsets.all(12),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : null,
+                  ),
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (v) {
+                    final pincode = v.trim();
+                    if (pincode.length == 6 && !isFetching) {
+                      lookupPincode(pincode);
+                    }
+                  },
+                  onSubmitted: (v) {
+                    final pincode = v.trim();
+                    if (pincode.length == 6 && !isFetching) {
+                      lookupPincode(pincode);
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                child: const Text('Cancel'),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+              TextButton(
+                child: const Text('Add'),
+                onPressed: () async {
+                  final name = nameController.text.trim();
+                  final pincode = pincodeController.text.trim();
+                  if (name.isNotEmpty && pincode.isNotEmpty && dialogSelectedCityId != null) {
+                    try {
+                      final service = PropertiesService();
+                      final result = await service.createArea(dialogSelectedCityId!, name, pincode);
+                      final AreaLookup newArea = AreaLookup(
+                        id: result['data']['area']['id'],
+                        name: result['data']['area']['area_name'],
+                        cityId: result['data']['area']['city_id'],
+                        pincode: result['data']['area']['pincode'],
+                      );
+                      this.setState(() {
+                        _areas.add(newArea);
+                        _selectedAreaIds.add(newArea.id);
+                      });
+                      if (mounted) Navigator.pop(ctx);
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to add area: $e')),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _saveCurrentDraft() {
     if (widget.requirement != null) return;
     final draftData = {
@@ -156,6 +330,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       'clientMobile': _mobileController.text,
       'category_id': _selectedCategoryId,
       'property_type_id': _selectedTypeId,
+      'property_type_ids': _selectedTypeIds,
       'configuration_id': _selectedConfigId,
       'configuration_ids': _selectedConfigIds,
       'listing_type_id': _selectedListingTypeId,
@@ -197,6 +372,9 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                   _mobileController.text = draft['clientMobile'] ?? '';
                   _selectedCategoryId = draft['category_id'];
                   _selectedTypeId = draft['property_type_id'];
+                  final List<String> types = List<String>.from(draft['property_type_ids'] ?? []);
+                  _selectedTypeIds.clear();
+                  _selectedTypeIds.addAll(types);
                   _selectedConfigId = draft['configuration_id'];
                   final List<String> configs = List<String>.from(draft['configuration_ids'] ?? []);
                   _selectedConfigIds.clear();
@@ -393,6 +571,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       (t) => t.id == _selectedTypeId,
       orElse: () => LookupItem(id: '', name: 'N/A'),
     );
+    final typeNames = _selectedTypeIds.map((id) {
+      final match = _types.firstWhere((t) => t.id == id, orElse: () => LookupItem(id: id, name: id));
+      return match.name;
+    }).where((n) => n.isNotEmpty && n != 'N/A').toList();
     final configNames = _selectedConfigIds.map((id) {
       final match = _configurations.firstWhere((c) => c.id == id, orElse: () => LookupItem(id: id, name: id));
       return match.name;
@@ -417,6 +599,14 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     final minBudget = budgetVal * 0.8;
     final maxBudget = budgetVal * 1.2;
 
+    final userRole = (currentUser?.role ?? '').toLowerCase();
+    final bool isAdminOrTelecaller = userRole == 'admin' || userRole == 'super admin' || userRole == 'telecaller';
+
+    final String? defaultAssignedTo = widget.requirement?.assignedTo ??
+        (!isAdminOrTelecaller && currentUser != null ? currentUser.id : null);
+    final String? defaultAssigneeName = widget.requirement?.assigneeName ??
+        (!isAdminOrTelecaller && currentUser != null ? currentUser.fullName : null);
+
     final req = RequirementModel(
       id: widget.requirement?.id ?? '',
       clientName: _nameController.text.trim(),
@@ -424,7 +614,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       categoryId: _selectedCategoryId ?? '',
       categoryName: cat.name,
       propertyTypeId: _selectedTypeId ?? '',
-      propertyTypeName: type.name,
+      propertyTypeName: typeNames.isNotEmpty ? typeNames.join(', ') : type.name,
+      propertyTypeIds: _selectedTypeIds,
       configurationId: _selectedConfigId,
       configurationIds: _selectedConfigIds,
       configurationName: configNames.isNotEmpty ? configNames.join(', ') : null,
@@ -444,6 +635,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       adminId: widget.requirement?.adminId ?? (currentUser?.role == 'Admin' ? currentUser?.id : currentUser?.adminId),
       creatorName: widget.requirement?.creatorName ?? currentUser?.fullName,
       createdBy: widget.requirement?.createdBy ?? currentUser?.id,
+      assignedTo: defaultAssignedTo,
+      assigneeName: defaultAssigneeName,
     );
 
     _isSaved = true;
@@ -547,7 +740,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  widget.requirement != null ? "Edit Requirement" : "Add Requirement",
+                  widget.requirement != null ? "Edit Lead" : "Add Lead",
                   style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
                 ),
                 IconButton(
@@ -562,7 +755,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "Edit Requirement Details",
+                  "Edit Lead Details",
                   style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context)),
                 ),
                 IconButton(
@@ -853,8 +1046,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
                 DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
                 DropdownMenuItem(value: "Won", child: Text("Won")),
-                DropdownMenuItem(value: "Bin", child: Text("Bin")),
-                DropdownMenuItem(value: "Not Interested", child: Text("Not Interested")),
+                DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
               ],
               onChanged: (val) {
                 if (val != null && _validateStatusTransition(val)) {
@@ -882,30 +1074,45 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
             onChanged: (val) => setState(() {
                _selectedCategoryId = val;
               _selectedTypeId = null;
+              _selectedTypeIds.clear();
               _selectedConfigId = null;
               _selectedConfigIds.clear();
             }),
           ),
           const SizedBox(height: CRMSpacing.m),
-          _buildDropdown(
+          CRMMultiSelectDropdown(
             label: 'Property Type *',
-            value: _selectedTypeId,
-            items: filteredTypes.map((t) => DropdownMenuItem(value: t.id, child: Text(t.name))).toList(),
-            onChanged: (val) => setState(() => _selectedTypeId = val),
+            selectedIds: _selectedTypeIds,
+            items: filteredTypes,
+            onChanged: (vals) => setState(() {
+              _selectedTypeIds.clear();
+              _selectedTypeIds.addAll(vals);
+              if (vals.isNotEmpty) {
+                _selectedTypeId = vals.first;
+              } else {
+                _selectedTypeId = null;
+              }
+            }),
           ),
           const SizedBox(height: CRMSpacing.m),
           CRMMultiSelectDropdown(
             label: 'Furnishing',
             selectedIds: _selectedFurnishingIds,
             items: _furnishings,
-            onChanged: (vals) => setState(() {}),
+            onChanged: (vals) => setState(() {
+              _selectedFurnishingIds.clear();
+              _selectedFurnishingIds.addAll(vals);
+            }),
           ),
           const SizedBox(height: CRMSpacing.m),
           CRMMultiSelectDropdown(
             label: 'Facing',
             selectedIds: _selectedFacingIds,
             items: _facings,
-            onChanged: (vals) => setState(() {}),
+            onChanged: (vals) => setState(() {
+              _selectedFacingIds.clear();
+              _selectedFacingIds.addAll(vals);
+            }),
           ),
           const SizedBox(height: CRMSpacing.m),
           if (filteredConfigs.isNotEmpty) ...[
@@ -950,21 +1157,52 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     final bool isMobile = screenWidth < 500;
 
     final titleWidget = Text("Step 4: Target Area(s) *", style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold));
-    final filterWidget = SizedBox(
-      width: isMobile ? double.infinity : 160,
-      height: 32,
-      child: TextField(
-        style: const TextStyle(fontSize: 12),
-        decoration: InputDecoration(
-          hintText: 'Filter areas...',
-          prefixIcon: const Icon(Icons.search_rounded, size: 14),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          filled: true,
-          fillColor: CRMColors.backgroundOf(context),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+    final filterWidget = Row(
+      children: [
+        if (isMobile)
+          Expanded(
+            child: SizedBox(
+              height: 32,
+              child: TextField(
+                style: const TextStyle(fontSize: 12),
+                decoration: InputDecoration(
+                  hintText: 'Filter areas...',
+                  prefixIcon: const Icon(Icons.search_rounded, size: 14),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  filled: true,
+                  fillColor: CRMColors.backgroundOf(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                ),
+                onChanged: (val) => setState(() => _areaSearchQuery = val.trim()),
+              ),
+            ),
+          )
+        else
+          SizedBox(
+            width: 160,
+            height: 32,
+            child: TextField(
+              style: const TextStyle(fontSize: 12),
+              decoration: InputDecoration(
+                hintText: 'Filter areas...',
+                prefixIcon: const Icon(Icons.search_rounded, size: 14),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                filled: true,
+                fillColor: CRMColors.backgroundOf(context),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+              ),
+              onChanged: (val) => setState(() => _areaSearchQuery = val.trim()),
+            ),
+          ),
+        const SizedBox(width: 8),
+        IconButton(
+          icon: Icon(Icons.add_circle_outline_rounded, color: CRMColors.primaryOf(context), size: 20),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          onPressed: () => _showAddAreaDialog(),
+          tooltip: 'Add New Area',
         ),
-        onChanged: (val) => setState(() => _areaSearchQuery = val.trim()),
-      ),
+      ],
     );
 
     return Column(
@@ -992,7 +1230,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
             builder: (context) {
               final filtered = _areas.where((a) {
                 if (_areaSearchQuery.isEmpty) return true;
-                return a.name.toLowerCase().contains(_areaSearchQuery.toLowerCase());
+                final query = _areaSearchQuery.toLowerCase();
+                return a.name.toLowerCase().contains(query) || a.pincode.contains(query);
               }).toList();
 
               if (filtered.isEmpty) {
@@ -1162,9 +1401,19 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: CRMTypography.caption),
-          Text(value.isNotEmpty ? value : "None", style: CRMTypography.caption.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value.isNotEmpty ? value : "None",
+              style: CRMTypography.caption.copyWith(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.right,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );

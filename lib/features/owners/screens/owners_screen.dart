@@ -26,6 +26,12 @@ class _OwnersScreenState extends State<OwnersScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _triggerFetch();
@@ -131,23 +137,14 @@ class _OwnersScreenState extends State<OwnersScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Owners Directory",
-              style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
-            ),
-            const SizedBox(height: 4.0),
-            Text(
-              "Central registry of property owners, lease managers, and sellers",
-              style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
-            ),
-          ],
+        Text(
+          "Owners",
+          style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
         ),
         CRMButton(
-          label: "Add Owner Contact",
+          label: "Add Owner",
           prefixIcon: Icons.person_add_alt_1_rounded,
+          height: 40,
           onPressed: () => _showAddEditDialog(),
         ),
       ],
@@ -162,38 +159,30 @@ class _OwnersScreenState extends State<OwnersScreen> {
           total = state.owners.length;
         }
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 700;
-            return GridView.count(
-              crossAxisCount: isWide ? 3 : 2,
-              crossAxisSpacing: CRMSpacing.m,
-              mainAxisSpacing: CRMSpacing.m,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: isWide ? 2.5 : 1.5,
-              children: [
-                CRMKPICard(
-                  title: "TOTAL OWNERS",
-                  value: total.toString(),
-                  icon: Icons.contact_phone_rounded,
-                  iconColor: CRMColors.primary,
-                ),
-                CRMKPICard(
-                  title: "CONNECTED LISTINGS",
-                  value: (total * 1.5).toStringAsFixed(0), // Mock listing scale
-                  icon: Icons.home_work_rounded,
-                  iconColor: CRMColors.info,
-                ),
-                CRMKPICard(
-                  title: "VIP PARTNERS",
-                  value: (total > 0) ? "2" : "0",
-                  icon: Icons.star_border_purple500_rounded,
-                  iconColor: CRMColors.warning,
-                ),
-              ],
-            );
-          },
+        return CRMResponsiveKpiRow(
+          children: [
+            CRMKPICard(
+              title: "TOTAL OWNERS",
+              value: total.toString(),
+              icon: Icons.contact_phone_rounded,
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiPlum,
+            ),
+            CRMKPICard(
+              title: "CONNECTED LISTINGS",
+              value: (total * 1.5).toStringAsFixed(0), // Mock listing scale
+              icon: Icons.home_work_rounded,
+              iconColor: CRMColors.text,
+              backgroundColor: CRMColors.kpiSage,
+            ),
+            CRMKPICard(
+              title: "VIP PARTNERS",
+              value: (total > 0) ? "2" : "0",
+              icon: Icons.star_border_purple500_rounded,
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiSand,
+            ),
+          ],
         );
       },
     );
@@ -202,43 +191,70 @@ class _OwnersScreenState extends State<OwnersScreen> {
   Widget _buildSearchCard() {
     return CRMCard(
       elevated: true,
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-              decoration: InputDecoration(
-                hintText: 'Search by owner name, phone number, address details...',
-                hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMutedOf(context)),
-                prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context)),
-                filled: true,
-                fillColor: CRMColors.backgroundOf(context),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                  borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                  borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                  borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked = constraints.maxWidth < 560;
+          final field = TextField(
+            controller: _searchController,
+            style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+            decoration: InputDecoration(
+              hintText: 'Search by owner name, phone number, address details...',
+              hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMutedOf(context)),
+              prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context)),
+              filled: true,
+              fillColor: CRMColors.backgroundOf(context),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
+              ),
+            ),
+            onChanged: (val) => _triggerFetch(),
+          );
+          final actions = Row(
+            children: [
+              Expanded(child: CRMButton(label: "Search", onPressed: _triggerFetch)),
+              const SizedBox(width: CRMSpacing.s),
+              Expanded(
+                child: CRMButton(
+                  label: "Reset",
+                  variant: CRMButtonVariant.outline,
+                  onPressed: _clearFilters,
                 ),
               ),
-              onChanged: (val) => _triggerFetch(),
-            ),
-          ),
-          const SizedBox(width: CRMSpacing.s),
-          CRMButton(label: "Search", onPressed: _triggerFetch),
-          const SizedBox(width: CRMSpacing.s),
-          CRMButton(
-            label: "Reset",
-            variant: CRMButtonVariant.outline,
-            onPressed: _clearFilters,
-          ),
-        ],
+            ],
+          );
+          if (stacked) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                field,
+                const SizedBox(height: CRMSpacing.s),
+                actions,
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: field),
+              const SizedBox(width: CRMSpacing.s),
+              CRMButton(label: "Search", onPressed: _triggerFetch),
+              const SizedBox(width: CRMSpacing.s),
+              CRMButton(
+                label: "Reset",
+                variant: CRMButtonVariant.outline,
+                onPressed: _clearFilters,
+              ),
+            ],
+          );
+        },
       ),
     );
   }

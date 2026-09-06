@@ -44,20 +44,19 @@ class RequirementsRepository {
         requirements = requirements.where((r) =>
           r.createdBy == currentUser.id || r.adminId == currentUser.id
         ).toList();
+      } else if (role == 'Telecaller') {
+        // Telecaller: same leads rights as their supervisor Admin
+        requirements = requirements.where((r) =>
+          r.createdBy == currentUser.id || r.adminId == currentUser.adminId
+        ).toList();
       } else if (role != 'Super Admin') {
-        // Sales and other roles can only see their own requirements (if not assigned to others) or ones assigned to them
+        // Sales: own leads (including ones transferred away) plus leads assigned to them.
         requirements = requirements.where((r) {
           final isCreator = r.createdBy == currentUser.id;
-          final isAssignee = r.assignedTo == currentUser.id;
-          final isAssignedToOther = r.assignedTo != null && r.assignedTo!.isNotEmpty && r.assignedTo != r.createdBy;
-          
-          if (isCreator) {
-            if (isAssignedToOther) {
-              return false;
-            }
-            return true;
-          }
-          return isAssignee;
+          final isAssignee = r.assignedTo != null &&
+              r.assignedTo!.isNotEmpty &&
+              r.assignedTo == currentUser.id;
+          return isCreator || isAssignee;
         }).toList();
       }
     }
@@ -190,6 +189,41 @@ class RequirementsRepository {
 
       _coordinator.refreshRequirements();
       return fresh;
+    }
+  }
+
+  Future<void> updateRequirementFields(String id, Map<String, dynamic> data) async {
+    try {
+      final response = await _requirementsService.updateRequirement(id, data);
+      final respData = response['data'] as Map<String, dynamic>? ?? {};
+      final freshJson = respData['requirement'] as Map<String, dynamic>?;
+      if (freshJson != null) {
+        final fresh = RequirementModel.fromJson(freshJson);
+        await _coordinator.requirementLocal.saveRequirements([fresh.toLocal()]);
+      } else {
+        final existingList = await _coordinator.requirementLocal.getRequirements();
+        final matches = existingList.where((r) => r.id == id).toList();
+        if (matches.isNotEmpty) {
+          final match = matches.first;
+          if (data.containsKey('notes')) {
+            match.notes = data['notes'];
+          }
+          await _coordinator.requirementLocal.saveRequirements([match]);
+        }
+      }
+      _coordinator.refreshRequirements();
+    } catch (e) {
+      print("RequirementsRepository.updateRequirementFields error: $e");
+      final existingList = await _coordinator.requirementLocal.getRequirements();
+      final matches = existingList.where((r) => r.id == id).toList();
+      if (matches.isNotEmpty) {
+        final match = matches.first;
+        if (data.containsKey('notes')) {
+          match.notes = data['notes'];
+        }
+        await _coordinator.requirementLocal.saveRequirements([match]);
+      }
+      _coordinator.refreshRequirements();
     }
   }
 

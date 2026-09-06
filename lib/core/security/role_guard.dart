@@ -8,16 +8,29 @@ class RoleGuard {
 
   static bool isAdmin(String? role) {
     final r = (role ?? '').toLowerCase();
+    return r == 'admin' || r == 'super admin' || r == 'telecaller';
+  }
+
+  static bool canManageEmployees(String? role) {
+    final r = (role ?? '').toLowerCase();
     return r == 'admin' || r == 'super admin';
   }
 
-  static bool canManageEmployees(String? role) => isAdmin(role);
+  /// Campaign & Integration Webhooks — Admin and Super Admin only.
+  static bool canAccessIntegration(String? role) => canAccessCampaign(role);
+  static bool canAccessCampaign(String? role) {
+    final r = (role ?? '').toLowerCase();
+    return r == 'admin' || r == 'super admin';
+  }
 
   /// Audit logs — Super Admin only (defense-in-depth).
   static bool canViewAuditLogs(String? role) => isSuperAdmin(role);
 
   /// Settings mutations that affect org lookups (cities/areas).
-  static bool canManageLookups(String? role) => isSuperAdmin(role);
+  static bool canManageLookups(String? role) {
+    final r = (role ?? '').toLowerCase();
+    return r == 'super admin' || r == 'admin' || r == 'sales';
+  }
 
   /// Only Super Admin may assign/create/update/delete Admin accounts.
   static bool canAssignAdminRole(String? callerRole) => isSuperAdmin(callerRole);
@@ -26,6 +39,7 @@ class RoleGuard {
   static const allowedPostLoginPaths = <String>{
     '/dashboard',
     '/properties',
+    '/search',
     '/requirements',
     '/clients',
     '/owners',
@@ -35,13 +49,20 @@ class RoleGuard {
     '/settings',
     '/settings/audit-logs',
     '/users',
+    '/integration',
+    '/campaign',
+    '/campaign/connections',
+    '/campaign/leads',
   };
 
   static String? sanitizeRedirectPath(String? raw, {String? role}) {
     if (raw == null || raw.isEmpty) return null;
     String path;
     try {
-      path = Uri.decodeComponent(raw);
+      path = Uri.decodeComponent(raw).trim();
+      if (path.startsWith('#')) {
+        path = path.substring(1);
+      }
     } catch (_) {
       return null;
     }
@@ -56,6 +77,9 @@ class RoleGuard {
     if (!allowed) return null;
 
     if (pathOnly.startsWith('/users') && !canManageEmployees(role)) {
+      return '/dashboard';
+    }
+    if ((pathOnly.startsWith('/integration') || pathOnly.startsWith('/campaign')) && !canAccessCampaign(role)) {
       return '/dashboard';
     }
     if (pathOnly.startsWith('/settings/audit-logs') && !canViewAuditLogs(role)) {
@@ -80,18 +104,17 @@ class RoleGuard {
       return 'Super Admin accounts cannot be created or modified from the app.';
     }
 
-    if (target == 'admin') {
-      if (!canAssignAdminRole(callerRole)) {
-        return 'Only Super Admin can create, update, or delete Admin users.';
+    final caller = (callerRole ?? '').toLowerCase();
+    if (caller == 'super admin') {
+      if (target != 'admin') {
+        return 'Super Admin can only manage Admin users.';
       }
-    }
-
-    if (isDelete && target == 'admin' && !canAssignAdminRole(callerRole)) {
-      return 'Only Super Admin can delete Admin users.';
-    }
-
-    if (!isSuperAdmin(callerRole) && target == 'admin') {
-      return 'Admins may only manage Sales users.';
+    } else if (caller == 'admin') {
+      if (target != 'sales' && target != 'telecaller') {
+        return 'Admins can only manage Sales and Telecaller users.';
+      }
+    } else {
+      return 'You do not have permission to manage employees.';
     }
 
     return null;

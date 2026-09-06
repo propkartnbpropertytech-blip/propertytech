@@ -12,19 +12,55 @@ class DashboardRepository {
 
 
 
-  Future<DashboardData> getDashboardData() async {
+  static Future<void>? _refreshInFlight;
+  static DateTime? _lastRefreshAt;
+  static const _minRefreshInterval = Duration(seconds: 45);
+
+  Future<DashboardData> getDashboardData({
+    bool backgroundRefresh = true,
+    bool forceRefresh = false,
+  }) async {
     final start = DateTime.now();
-    
-    // Read from local Isar
-    final localDashboard = await _coordinator.dashboardLocal.getDashboard();
-    final isarReadMs = DateTime.now().difference(start).inMilliseconds;
     
     DashboardData? cachedData;
     int jsonParseMs = 0;
-    if (localDashboard != null) {
-      final parseStart = DateTime.now();
-      cachedData = localDashboard.toModel();
-      jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
+    int isarReadMs = 0;
+
+    if (!forceRefresh) {
+      // Read from local Isar
+      final localDashboard = await _coordinator.dashboardLocal.getDashboard();
+      isarReadMs = DateTime.now().difference(start).inMilliseconds;
+      if (localDashboard != null) {
+        final parseStart = DateTime.now();
+        cachedData = localDashboard.toModel();
+        jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
+      }
+    }
+
+    if (forceRefresh || cachedData == null) {
+      try {
+        final response = await _dashboardService.getDashboardData();
+        final freshData = DashboardData.fromJson(response);
+        await _coordinator.dashboardLocal.saveDashboard(freshData.toLocal());
+        final listData = response['followups'] as List? ?? [];
+        final freshFollowups = listData
+            .map((item) => DashboardFollowup.fromJson(item))
+            .toList();
+        final localEntities = freshFollowups
+            .map((f) => f.toLocal('System'))
+            .toList();
+        await _coordinator.followupLocal.saveFollowups(localEntities);
+        cachedData = freshData;
+      } catch (_) {
+        if (cachedData == null) {
+          final localDashboard = await _coordinator.dashboardLocal.getDashboard();
+          if (localDashboard != null) {
+            cachedData = localDashboard.toModel();
+          }
+        }
+      }
+    } else if (backgroundRefresh) {
+      _triggerBackgroundDashboardRefresh();
     }
 
     final totalMs = DateTime.now().difference(start).inMilliseconds;
@@ -35,9 +71,6 @@ class DashboardRepository {
       totalMs: totalMs,
     );
 
-    // Trigger async background refresh
-    _triggerBackgroundDashboardRefresh();
-
     // Get the dynamic counts of requirements to ensure they are always correct and in sync
     var localReqs = await _coordinator.requirementLocal.getRequirements();
     final currentUser = RoleGuard.currentUser;
@@ -46,6 +79,10 @@ class DashboardRepository {
       if (role == 'Admin') {
         localReqs = localReqs.where((r) =>
           r.createdBy == currentUser.id || r.adminId == currentUser.id
+        ).toList();
+      } else if (role == 'Telecaller') {
+        localReqs = localReqs.where((r) =>
+          r.createdBy == currentUser.id || r.adminId == currentUser.adminId
         ).toList();
       } else if (role != 'Super Admin') {
         localReqs = localReqs.where((r) =>
@@ -92,6 +129,29 @@ class DashboardRepository {
       }
     }
 
+    final allLocalProps = await _coordinator.propertyLocal.getProperties();
+    List<RecentProperty> allRecentPropsFromLocal = [];
+    if (allLocalProps.isNotEmpty) {
+      final sortedProps = List.of(allLocalProps);
+      sortedProps.sort((a, b) {
+        final dtA = DateTime.tryParse(a.createdAt?.toString() ?? '') ?? DateTime(1970);
+        final dtB = DateTime.tryParse(b.createdAt?.toString() ?? '') ?? DateTime(1970);
+        return dtB.compareTo(dtA);
+      });
+      allRecentPropsFromLocal = sortedProps.map((p) => RecentProperty(
+        id: p.id,
+        code: p.propertyCode ?? '',
+        title: p.title ?? '',
+        area: p.areaId ?? '',
+        price: p.price ?? 0.0,
+        status: p.propertyStatusName ?? 'N/A',
+        areaName: p.areaName ?? 'N/A',
+        listingType: p.listingTypeName ?? 'Sale',
+        createdBy: p.createdByName ?? 'System',
+        createdAt: p.createdAt?.toString() ?? '',
+      )).toList();
+    }
+
     final allowedReqIds = localReqs.map((r) => r.id).toSet();
     final allowedClientNames = localReqs.map((r) => r.clientName.toLowerCase()).toSet();
 
@@ -99,6 +159,25 @@ class DashboardRepository {
       if (reqId != null && reqId.isNotEmpty) return allowedReqIds.contains(reqId);
       if (clientName != null && clientName.isNotEmpty) return allowedClientNames.contains(clientName.toLowerCase());
       return false;
+    }
+
+    bool isFollowupAllowedItem(String? reqId, String? clientName) {
+      if (!isAllowedItem(reqId, clientName)) return false;
+      if (reqId != null && reqId.isNotEmpty) {
+        final match = localReqs.where((r) => r.id == reqId).firstOrNull;
+        if (match != null) {
+          final s = match.status ?? '';
+          return s == 'Follow-up' || s == 'Re-Followup';
+        }
+      }
+      if (clientName != null && clientName.isNotEmpty) {
+        final match = localReqs.where((r) => r.clientName.toLowerCase() == clientName.toLowerCase()).firstOrNull;
+        if (match != null) {
+          final s = match.status ?? '';
+          return s == 'Follow-up' || s == 'Re-Followup';
+        }
+      }
+      return true;
     }
 
     if (cachedData != null) {
@@ -129,7 +208,7 @@ class DashboardRepository {
       );
 
       final filteredFollowups = cachedData.followups.where((f) =>
-        isAllowedItem(f.requirementId, f.requirementCustomerName)
+        isFollowupAllowedItem(f.requirementId, f.requirementCustomerName)
       ).toList();
 
       final filteredSiteVisits = cachedData.siteVisits.where((sv) =>
@@ -139,7 +218,7 @@ class DashboardRepository {
       return DashboardData(
         summary: updatedSummary,
         activity: cachedData.activity,
-        recentProperties: cachedData.recentProperties,
+        recentProperties: allRecentPropsFromLocal.isNotEmpty ? allRecentPropsFromLocal : cachedData.recentProperties,
         checklist: cachedData.checklist,
         followups: filteredFollowups,
         siteVisits: filteredSiteVisits,
@@ -188,7 +267,7 @@ class DashboardRepository {
     return DashboardData(
       summary: updatedSummary,
       activity: model.activity,
-      recentProperties: model.recentProperties,
+      recentProperties: allRecentPropsFromLocal.isNotEmpty ? allRecentPropsFromLocal : model.recentProperties,
       checklist: model.checklist,
       followups: filteredFollowups,
       siteVisits: filteredSiteVisits,
@@ -196,8 +275,15 @@ class DashboardRepository {
   }
 
   void _triggerBackgroundDashboardRefresh() {
+    final last = _lastRefreshAt;
+    if (_refreshInFlight != null) return;
+    if (last != null && DateTime.now().difference(last) < _minRefreshInterval) {
+      return;
+    }
+
+    _lastRefreshAt = DateTime.now();
     final start = DateTime.now();
-    _dashboardService.getDashboardData().then((response) async {
+    _refreshInFlight = _dashboardService.getDashboardData().then((response) async {
       final networkMs = DateTime.now().difference(start).inMilliseconds;
 
       final parseStart = DateTime.now();
@@ -225,6 +311,8 @@ class DashboardRepository {
       );
 
       _coordinator.refreshDashboard();
-    }).catchError((_) {});
+    }).catchError((_) {}).whenComplete(() {
+      _refreshInFlight = null;
+    });
   }
 }

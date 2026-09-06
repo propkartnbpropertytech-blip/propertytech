@@ -135,7 +135,13 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
     final roleId = userData['role_id']?.toString() ?? userData['roleId']?.toString();
     if (roleId != null && _cachedRoles.isNotEmpty) {
       for (final r in _cachedRoles) {
-        if (r.id == roleId) return r.name;
+        if (r.id == roleId) {
+          final resolvedName = r.name;
+          if (resolvedName.toLowerCase() == 'admin' && _callerRole?.toLowerCase() == 'admin') {
+            return 'Telecaller';
+          }
+          return resolvedName;
+        }
       }
     }
     return userData['role']?.toString() ?? userData['roleName']?.toString();
@@ -257,7 +263,9 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
         return;
       }
       await _usersRepository.deleteUser(event.id);
+      _cachedUsers.removeWhere((u) => u.id == event.id);
       emit(const UsersOperationSuccess(message: "User deleted successfully."));
+      emit(UsersLoaded(users: List.from(_cachedUsers), roles: _cachedRoles));
     } catch (e) {
       emit(UsersError(message: e.toString()));
       emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));

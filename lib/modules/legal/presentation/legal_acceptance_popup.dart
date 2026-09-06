@@ -96,11 +96,9 @@ class _LegalAcceptancePopupState extends State<LegalAcceptancePopup> {
             Text(
               'We updated our policies',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: CRMTypography.sectionTitle.copyWith(
                 color: Colors.white,
                 fontSize: 18,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Inter',
               ),
             ),
             const SizedBox(height: AppSpacing.s),
@@ -108,11 +106,10 @@ class _LegalAcceptancePopupState extends State<LegalAcceptancePopup> {
             Text(
               'Please review and accept our updated terms and privacy policies to continue using the application.',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: CRMTypography.body.copyWith(
                 color: AppColors.textMuted,
                 fontSize: 13,
                 height: 1.4,
-                fontFamily: 'Inter',
               ),
             ),
             const SizedBox(height: AppSpacing.l),
@@ -185,12 +182,19 @@ class _LegalAcceptancePopupState extends State<LegalAcceptancePopup> {
           children: [
             Text(
               title,
-              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
+              style: CRMTypography.bodyMedium.copyWith(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 2),
             Text(
               'Version $version',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontFamily: 'Inter'),
+              style: CRMTypography.caption.copyWith(
+                color: AppColors.textMuted,
+                fontSize: 11,
+              ),
             ),
           ],
         ),

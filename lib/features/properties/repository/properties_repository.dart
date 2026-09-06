@@ -16,12 +16,31 @@ class PropertiesRepository {
     _coordinator.refreshProperties();
   }
 
-  Future<PropertyModel?> getPropertyById(String id) async {
-    final local = await _coordinator.propertyLocal.getPropertyById(id);
-    if (local != null) {
-      return local.toModel();
+  Future<PropertyModel?> getPropertyById(
+    String id, {
+    bool refreshFromServer = false,
+  }) async {
+    final local = await _coordinator.propertyLocal.getPropertyByIdOrCode(id);
+
+    if (!refreshFromServer) {
+      return local?.toModel();
     }
-    return null;
+
+    final fresh = await _fetchAndCachePropertyById(local?.id ?? id);
+    if (fresh != null) return fresh;
+    return local?.toModel();
+  }
+
+  Future<PropertyModel?> _fetchAndCachePropertyById(String id) async {
+    try {
+      final json = await _propertiesService.getPropertyById(id);
+      if (json == null) return null;
+      final model = PropertyModel.fromJson(json);
+      await _coordinator.propertyLocal.saveProperties([model.toLocal()]);
+      return model;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<PropertyModel>> getProperties({
@@ -102,7 +121,7 @@ class PropertiesRepository {
 
       final writeStart = DateTime.now();
       final localEntities = freshList.map((p) => p.toLocal()).toList();
-      await _coordinator.propertyLocal.saveProperties(localEntities);
+      await _coordinator.propertyLocal.saveProperties(localEntities, clearExisting: true);
       final isarWriteMs = DateTime.now().difference(writeStart).inMilliseconds;
 
       final totalMs = DateTime.now().difference(start).inMilliseconds;
@@ -417,21 +436,6 @@ class PropertiesRepository {
   }
 
   Future<PropertyModel> softDeleteProperty(String id) async {
-    // Load property details to get media links before deletion
-    final property = await getPropertyById(id);
-    if (property != null) {
-      for (final imgUrl in property.images) {
-        if (imgUrl.contains('cloudinary.com')) {
-          await CloudinaryUploader.delete(url: imgUrl, resourceType: 'image');
-        }
-      }
-      for (final vidUrl in property.videos) {
-        if (vidUrl.contains('cloudinary.com')) {
-          await CloudinaryUploader.delete(url: vidUrl, resourceType: 'video');
-        }
-      }
-    }
-
     try {
       final response = await _propertiesService.softDeleteProperty(id);
       final data = response['data'] as Map<String, dynamic>? ?? {};

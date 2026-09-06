@@ -106,7 +106,11 @@ class CRMDataTable<T> extends StatelessWidget {
                     return DataColumn(
                       label: Text(
                         c.label,
-                        style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                        style: CRMTypography.captionBold.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       onSort: c.sortable && onSort != null
                           ? (index, ascending) {

@@ -8,16 +8,25 @@ import '../../../../core/design_system/tokens/app_shadows.dart';
 import '../../../../core/design_system/widgets/buttons.dart';
 import '../../../../core/design_system/widgets/cards.dart';
 import 'package:go_router/go_router.dart';
+import '../../properties/models/property_model.dart';
 
 import '../../../../core/utils/currency.dart';
+import '../../../../core/utils/seo_helper.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color _kWhatsAppGreen = Color(0xFF25D366);
 
 class SharePropertiesPage extends StatefulWidget {
   final String sessionId;
+  final String? agentName;
+  final String? agentMobile;
 
-  const SharePropertiesPage({super.key, required this.sessionId});
+  const SharePropertiesPage({
+    super.key,
+    required this.sessionId,
+    this.agentName,
+    this.agentMobile,
+  });
 
   @override
   State<SharePropertiesPage> createState() => _SharePropertiesPageState();
@@ -26,7 +35,6 @@ class SharePropertiesPage extends StatefulWidget {
 class _SharePropertiesPageState extends State<SharePropertiesPage> {
   bool _isLoading = true;
   String? _errorMessage;
-  Map<String, dynamic>? _session;
   Map<String, dynamic>? _agent;
   List<dynamic> _properties = [];
 
@@ -42,11 +50,30 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
       if (response.data != null && response.data['success'] == true) {
         final data = response.data['data'];
         setState(() {
-          _session = data['session'];
           _agent = data['agent'];
           _properties = data['properties'] ?? [];
           _isLoading = false;
         });
+
+        // Dynamic SEO Update
+        final agentName = _agent?['full_name'] ?? 'Agent';
+        String? firstImage;
+        if (_properties.isNotEmpty) {
+          try {
+            final prop = PropertyModel.fromJson(Map<String, dynamic>.from(_properties.first as Map));
+            if (prop.images.isNotEmpty) {
+              firstImage = prop.images.first;
+            }
+          } catch (e) {
+            debugPrint("Error parsing first property for SEO: $e");
+          }
+        }
+        SeoHelper.updateTags(
+          title: 'Shortlisted Properties for You | Shared by $agentName - PropKart',
+          description: 'Explore this curated list of shortlisted properties handpicked for your requirements by agent $agentName on PropKart.',
+          canonicalUrl: 'https://propkart.nbpropertytech.com/share/${widget.sessionId}',
+          imageUrl: firstImage ?? 'https://propkart.nbpropertytech.com/assets/logo.png',
+        );
       } else {
         setState(() {
           _errorMessage = response.data['message'] ?? "Failed to load collection details.";
@@ -87,6 +114,88 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  String _shareLocationLabel(PropertyModel prop, Map<String, dynamic> raw) {
+    final nestedArea = raw['area'];
+    final nestedCity = raw['city'];
+    final candidates = <String>[
+      prop.areaName,
+      if (nestedArea is Map) ...[
+        '${nestedArea['area_name'] ?? ''}',
+        '${nestedArea['name'] ?? ''}',
+        '${nestedArea['locality'] ?? ''}',
+        '${nestedArea['location'] ?? ''}',
+      ],
+      '${raw['area_name'] ?? ''}',
+      '${raw['areaName'] ?? ''}',
+      '${raw['locality'] ?? ''}',
+      '${raw['location'] ?? ''}',
+      '${raw['sub_location'] ?? ''}',
+      '${raw['sub_locality'] ?? ''}',
+      '${raw['society'] ?? ''}',
+      if (nestedArea is String) nestedArea,
+      prop.cityName,
+      if (nestedCity is Map) ...[
+        '${nestedCity['city_name'] ?? ''}',
+        '${nestedCity['name'] ?? ''}',
+      ],
+      '${raw['city_name'] ?? ''}',
+      '${raw['cityName'] ?? ''}',
+      if (nestedCity is String) nestedCity,
+      prop.landmark ?? '',
+      '${raw['landmark'] ?? ''}',
+      prop.address,
+      '${raw['address'] ?? ''}',
+    ];
+    for (final candidate in candidates) {
+      final value = candidate.trim();
+      if (value.isEmpty || value.toUpperCase() == 'N/A') continue;
+      if (RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(value)) continue;
+      return value;
+    }
+    return '';
+  }
+
+  bool _isRentProperty(Map<String, dynamic> p) {
+    try {
+      final prop = PropertyModel.fromJson(p);
+      final typeName = prop.listingTypeName.toLowerCase();
+      if (typeName.contains('resale') || typeName.contains('re-sale') || typeName.contains('sale')) {
+        return false;
+      }
+      if (typeName.contains('rent') || typeName.contains('rental')) {
+        return true;
+      }
+    } catch (_) {}
+
+    final listingType = p['listing_type'];
+    String name = '';
+    if (listingType is Map) {
+      name = (listingType['name'] ?? '').toString().toLowerCase();
+    } else if (listingType != null) {
+      name = listingType.toString().toLowerCase();
+    }
+    if (name.contains('resale') || name.contains('re-sale') || name.contains('sale')) {
+      return false;
+    }
+    return true;
+  }
+
+  bool get _isRentCollection {
+    if (_properties.isEmpty) return true;
+    int rentCount = 0;
+    int resaleCount = 0;
+    for (var p in _properties) {
+      if (p is Map<String, dynamic>) {
+        if (_isRentProperty(p)) {
+          rentCount++;
+        } else {
+          resaleCount++;
+        }
+      }
+    }
+    return rentCount >= resaleCount;
   }
 
   @override
@@ -147,15 +256,18 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
     }
 
     final isDesktop = MediaQuery.of(context).size.width >= 900;
-    final agentName = _agent?['full_name'] ?? 'Agent';
-    final agentMobile = _agent?['mobile'] ?? '';
+    final agentName = _agent?['full_name'] ?? widget.agentName ?? 'Agent';
+    final agentMobile = _agent?['mobile'] ?? widget.agentMobile ?? '';
+
+    final isRentColl = _isRentCollection;
+    final gradientColors = CRMColors.getGradientPrimaryColor(false, isRentColl);
 
     final headerBlock = Container(
       width: double.infinity,
       padding: const EdgeInsets.all(CRMSpacing.l),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [CRMColors.primary.withValues(alpha: 0.85), CRMColors.primaryHover],
+          colors: gradientColors,
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -281,17 +393,21 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
   }
 
   Widget _buildPropertyItem(BuildContext context, Map<String, dynamic> p, String agentMobile) {
-    final double? priceVal = p['price'] != null ? double.tryParse(p['price'].toString()) : null;
-    final price = priceVal != null
+    final prop = PropertyModel.fromJson(p);
+    final isRentProp = _isRentProperty(p);
+    final propPrimary = CRMColors.getPrimaryColor(false, isRentProp);
+
+    final double priceVal = prop.price;
+    final price = priceVal > 0
         ? '${CRMCurrencyFormatter.format(priceVal)} (${CRMCurrencyFormatter.formatWords(priceVal).replaceAll('₹', '')})'
         : 'Price N/A';
-    final config = p['configuration_name'] ?? '${p['bedrooms'] ?? "-"} BHK';
-    final area = p['area_name'] ?? '';
-    final title = '$config in $area';
-    final imageUrls = p['images'] as List<dynamic>? ?? [];
+    final config = prop.configurationName ?? '${prop.bedrooms > 0 ? prop.bedrooms : "-"} BHK';
+    final area = _shareLocationLabel(prop, p);
+    final title = (area.isNotEmpty && area.toUpperCase() != 'N/A') ? '$config in $area' : config;
+    final imageUrls = prop.images;
     final hasImage = imageUrls.isNotEmpty;
-    final areaSqft = p['super_builtup_area'] != null ? '${p['super_builtup_area']} sqft' : '';
-    final bedrooms = p['bedrooms'] != null ? '${p['bedrooms']}' : '';
+    final areaSqft = prop.superBuiltupArea != null ? '${prop.superBuiltupArea!.toStringAsFixed(0)} sqft' : '';
+    final bedrooms = prop.bedrooms > 0 ? '${prop.bedrooms}' : '';
 
     return Container(
       decoration: BoxDecoration(
@@ -316,6 +432,8 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                         Image.network(
                           imageUrls.first.toString(),
                           fit: BoxFit.cover,
+                          cacheWidth: 800,
+                          gaplessPlayback: true,
                           errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
                         ),
                         Container(
@@ -324,6 +442,8 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                         Image.network(
                           imageUrls.first.toString(),
                           fit: BoxFit.contain,
+                          cacheWidth: 800,
+                          gaplessPlayback: true,
                           errorBuilder: (context, error, stackTrace) => Container(
                             color: CRMColors.skeletonBase,
                             child: Icon(Icons.image_not_supported_rounded, size: 48, color: CRMColors.textMuted),
@@ -356,7 +476,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                 Text(
                   price,
                   style: CRMTypography.cardTitle.copyWith(
-                    color: CRMColors.primary,
+                    color: propPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -374,16 +494,16 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: CRMColors.primary.withValues(alpha: 0.08),
+                          color: propPrimary.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.bed_rounded, size: 14, color: CRMColors.primary),
+                            Icon(Icons.bed_rounded, size: 14, color: propPrimary),
                             const SizedBox(width: 4),
                             Text(
                               bedrooms,
-                              style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
+                              style: CRMTypography.captionBold.copyWith(color: propPrimary),
                             ),
                           ],
                         ),
@@ -394,16 +514,16 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: CRMColors.primary.withValues(alpha: 0.08),
+                          color: propPrimary.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.square_foot_rounded, size: 14, color: CRMColors.primary),
+                            Icon(Icons.square_foot_rounded, size: 14, color: propPrimary),
                             const SizedBox(width: 4),
                             Text(
                               areaSqft,
-                              style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
+                              style: CRMTypography.captionBold.copyWith(color: propPrimary),
                             ),
                           ],
                         ),
@@ -414,7 +534,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                 const SizedBox(height: CRMSpacing.m),
                 
                 Text(
-                  p['description'] ?? '',
+                  prop.description ?? '',
                   style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -430,34 +550,38 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                   children: [
                     CRMButton(
                       label: "View Details",
-                      onPressed: () => context.push('/share/${widget.sessionId}/property/${p['id']}'),
+                      backgroundColor: propPrimary,
+                      onPressed: () => context.push('/share/${widget.sessionId}/property/${prop.id}'),
                       height: 36,
                       padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
                     ),
                     if (agentMobile.isNotEmpty) ...[
                       CRMButton(
                         label: "Call Agent",
+                        backgroundColor: propPrimary,
                         prefixIcon: Icons.phone_rounded,
-                        onPressed: () => _launchUrlHelper("tel:$agentMobile", p['id'], "Call"),
+                        onPressed: () => _launchUrlHelper("tel:$agentMobile", prop.id, "Call"),
                         height: 36,
                         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
                       ),
                       CRMButton(
                         label: "Interested",
+                        backgroundColor: propPrimary,
                         prefixIcon: Icons.star_rounded,
                         onPressed: () {
-                          final text = Uri.encodeComponent("Hi, I am interested in property ${p['property_code']} from your shortlisted share.");
-                          _launchUrlHelper("https://wa.me/$agentMobile?text=$text", p['id'], "Interested");
+                          final text = Uri.encodeComponent("Hi, I am interested in property ${prop.propertyCode} from your shortlisted share.");
+                          _launchUrlHelper("https://wa.me/$agentMobile?text=$text", prop.id, "Interested");
                         },
                         height: 36,
                         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
                       ),
                       CRMButton(
                         label: "Schedule Visit",
+                        backgroundColor: propPrimary,
                         prefixIcon: Icons.calendar_today_rounded,
                         onPressed: () {
-                          final text = Uri.encodeComponent("Hi, I would like to schedule a visit for property ${p['property_code']} from your shortlisted share.");
-                          _launchUrlHelper("https://wa.me/$agentMobile?text=$text", p['id'], "Schedule");
+                          final text = Uri.encodeComponent("Hi, I would like to schedule a visit for property ${prop.propertyCode} from your shortlisted share.");
+                          _launchUrlHelper("https://wa.me/$agentMobile?text=$text", prop.id, "Schedule");
                         },
                         height: 36,
                         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),

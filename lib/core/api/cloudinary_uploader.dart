@@ -1,85 +1,39 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http_parser/http_parser.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide MultipartFile;
 import 'package:crypto/crypto.dart';
 import '../api/api_constants.dart';
 import 'dio_client.dart';
 
 class CloudinaryUploader {
-  /// Uploads a file directly to Cloudinary using a signed signature from Supabase Edge Functions.
-  /// If the signature request fails or Cloudinary fails, it falls back to direct upload to Supabase Storage.
+  /// Uploads a file directly to Cloudinary using a signed signature from the Node backend.
+  ///
+  /// For PDFs, prefer [resourceType] `image` (not `raw`) so Cloudinary allows public CDN delivery.
   static Future<String> upload({
     required List<int> bytes,
     required String filename,
     required String mimeType,
-    required String resourceType, // 'image' or 'video'
+    required String resourceType, // 'image', 'video', or 'raw'
     String folder = 'properties',
     String fallbackEndpoint = '/properties/upload-media',
+    bool skipTransformation = false,
   }) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        // Calculate signature directly on the client side to avoid Edge Function fetch block/CORS issues
-        final int timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-        const String transformation = 'q_70';
-        
-        // Alphabetical order: folder, timestamp, transformation
-        final String toSign = 'folder=$folder&timestamp=$timestamp&transformation=$transformation${ApiConstants.cloudinaryApiSecret}';
-        final List<int> bytesToSign = utf8.encode(toSign);
-        final String signature = sha1.convert(bytesToSign).toString();
+    final bool isPdf = mimeType.toLowerCase().contains('pdf') ||
+        filename.toLowerCase().endsWith('.pdf');
+    // PDFs must not use image quality transforms — they break the file.
+    final bool applyTransformation =
+        resourceType == 'image' && !skipTransformation && !isPdf;
 
-        final String apiKey = ApiConstants.cloudinaryApiKey;
-        final String cloudName = ApiConstants.cloudinaryCloudName;
-        final String targetFolder = folder;
-
-        // 2. Upload directly to Cloudinary
-        final cloudinaryUrl = 'https://api.cloudinary.com/v1_1/$cloudName/$resourceType/upload';
-          
-          final multipartFile = MultipartFile.fromBytes(
-            bytes,
-            filename: filename,
-            contentType: MediaType.parse(mimeType),
-          );
-
-          final formData = FormData.fromMap({
-            'file': multipartFile,
-            'api_key': apiKey,
-            'timestamp': timestamp,
-            'signature': signature,
-            'folder': targetFolder,
-            'transformation': transformation,
-          });
-
-          final cleanDio = Dio();
-          final cloudResponse = await cleanDio.post(
-            cloudinaryUrl,
-            data: formData,
-          );
-
-          if (cloudResponse.statusCode == 200 || cloudResponse.statusCode == 201) {
-            final secureUrl = cloudResponse.data['secure_url'] as String?;
-            if (secureUrl != null && secureUrl.isNotEmpty) {
-              return secureUrl;
-            }
-          }
-          throw Exception('Cloudinary upload returned status ${cloudResponse.statusCode}');
-      } catch (e) {
-        if (kDebugMode) {
-          print('⚠️ Cloudinary Direct Upload failed: $e');
-        }
-        rethrow;
-      }
-    } else {
-      // Original Node.js REST API Upload logic (Backward compatible)
-      try {
-        final sigResponse = await DioClient.dio.post(
-          '/properties/cloudinary-signature',
-          data: {
-            'resource_type': resourceType,
-            'folder': folder,
-          },
-        );
+    try {
+      final sigResponse = await DioClient.dio.post(
+        '/properties/cloudinary-signature',
+        data: {
+          'resource_type': resourceType,
+          'folder': folder,
+        },
+      );
 
         if (sigResponse.data != null && sigResponse.data['success'] == true) {
           final data = sigResponse.data['data'] as Map<String, dynamic>;
@@ -91,9 +45,10 @@ class CloudinaryUploader {
           final String transformation = data['transformation'] ?? 'q_70';
 
           final cloudinaryUrl = 'https://api.cloudinary.com/v1_1/$cloudName/$resourceType/upload';
-          
+          final uploadBytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+
           final multipartFile = MultipartFile.fromBytes(
-            bytes,
+            uploadBytes,
             filename: filename,
             contentType: MediaType.parse(mimeType),
           );
@@ -104,10 +59,16 @@ class CloudinaryUploader {
             'timestamp': timestamp,
             'signature': signature,
             'folder': targetFolder,
-            'transformation': transformation,
+            if (applyTransformation) 'transformation': transformation,
           });
 
-          final cleanDio = Dio();
+          final cleanDio = Dio(
+            BaseOptions(
+              connectTimeout: const Duration(minutes: 10),
+              receiveTimeout: const Duration(minutes: 10),
+              sendTimeout: const Duration(minutes: 10),
+            ),
+          );
           final cloudResponse = await cleanDio.post(
             cloudinaryUrl,
             data: formData,
@@ -126,9 +87,10 @@ class CloudinaryUploader {
         if (kDebugMode) {
           print('⚠️ Cloudinary Signed Upload failed, falling back to direct backend upload: $e');
         }
-        
+
+        final uploadBytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
         final multipartFile = MultipartFile.fromBytes(
-          bytes,
+          uploadBytes,
           filename: filename,
           contentType: MediaType.parse(mimeType),
         );
@@ -147,7 +109,74 @@ class CloudinaryUploader {
         }
         throw Exception(response.data?['message'] ?? 'Upload failed.');
       }
+  }
+
+  /// Uploads a service-agent document into Cloudinary folder `library_docs` only.
+  /// Returns a Cloudinary `res.cloudinary.com` URL.
+  static Future<String> uploadServiceAgentPdf({
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    if (bytes.isEmpty) {
+      throw Exception('Empty file — cannot upload to Cloudinary.');
     }
+
+    final uploadBytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    final safeName = filename.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    final lower = safeName.toLowerCase();
+    final isPdf = lower.endsWith('.pdf');
+    final isImage = lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.webp');
+
+    final String mimeType;
+    final String uploadName;
+    if (isPdf) {
+      mimeType = 'application/pdf';
+      uploadName = safeName;
+    } else if (isImage) {
+      mimeType = lower.endsWith('.png')
+          ? 'image/png'
+          : (lower.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+      uploadName = safeName;
+    } else {
+      // Default documents to PDF naming for library_docs
+      mimeType = 'application/pdf';
+      uploadName = safeName.endsWith('.pdf') ? safeName : '$safeName.pdf';
+    }
+
+    final cloudinaryUrl = await upload(
+      bytes: uploadBytes,
+      filename: uploadName,
+      mimeType: mimeType,
+      resourceType: 'image',
+      folder: 'library_docs',
+      skipTransformation: true,
+    );
+
+    if (cloudinaryUrl.isEmpty ||
+        !cloudinaryUrl.startsWith('http') ||
+        !cloudinaryUrl.contains('res.cloudinary.com') ||
+        !cloudinaryUrl.contains(ApiConstants.cloudinaryCloudName)) {
+      throw Exception(
+        'Cloudinary upload failed — expected ${ApiConstants.cloudinaryCloudName}/library_docs URL, got: $cloudinaryUrl',
+      );
+    }
+
+    if (kDebugMode) {
+      print('✅ Cloudinary library_docs only: $cloudinaryUrl (${uploadBytes.length} bytes)');
+    }
+
+    return cloudinaryUrl;
+  }
+
+  /// Converts a Cloudinary PDF URL into a publicly deliverable image preview URL.
+  /// Free Cloudinary plans often block direct PDF delivery with 401 ACL errors.
+  static String toPublicPreviewUrl(String cloudinaryUrl) {
+    if (!cloudinaryUrl.contains('res.cloudinary.com')) return cloudinaryUrl;
+    if (cloudinaryUrl.contains('/upload/f_')) return cloudinaryUrl;
+    return cloudinaryUrl.replaceFirst('/upload/', '/upload/f_jpg/');
   }
 
   /// Extracts the folder and public ID from a Cloudinary URL

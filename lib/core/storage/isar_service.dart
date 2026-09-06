@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
@@ -32,22 +33,112 @@ class IsarService {
       return;
     }
 
-    final dir = await getApplicationDocumentsDirectory();
-    _isar = await Isar.open(
-      [
-        LookupItemLocalSchema,
-        PropertyLocalSchema,
-        RequirementLocalSchema,
-        FollowupLocalSchema,
-        BuilderLocalSchema,
-        OwnerLocalSchema,
-        ClientLocalSchema,
-        OutboxLocalSchema,
-        DashboardLocalSchema,
-      ],
-      directory: dir.path,
-    );
-    await _migrateRequirements();
+    Directory dir;
+    try {
+      dir = await getApplicationSupportDirectory();
+    } catch (e) {
+      print("⚠️ [ISAR INIT] getApplicationSupportDirectory failed: $e. Falling back to getApplicationDocumentsDirectory...");
+      dir = await getApplicationDocumentsDirectory();
+    }
+
+    final schemas = [
+      LookupItemLocalSchema,
+      PropertyLocalSchema,
+      RequirementLocalSchema,
+      FollowupLocalSchema,
+      BuilderLocalSchema,
+      OwnerLocalSchema,
+      ClientLocalSchema,
+      OutboxLocalSchema,
+      DashboardLocalSchema,
+    ];
+
+    try {
+      print("📁 [ISAR INIT] Opening Isar in directory: ${dir.path}");
+      
+      // Ensure any stale instance from a failed run or previous crash is closed
+      final existing = Isar.getInstance();
+      if (existing != null) {
+        await existing.close();
+      }
+
+      _isar = await Isar.open(
+        schemas,
+        directory: dir.path,
+      );
+    } catch (e) {
+      print("⚠️ [ISAR INIT WARNING] Failed to open Isar in support dir: $e. Attempting to close instance, clear database files, and retry...");
+      try {
+        // Cleanly close the instance so the name is released
+        final existing = Isar.getInstance();
+        if (existing != null) {
+          await existing.close();
+        }
+
+        // Delete support directory database files safely
+        try {
+          final isarFile = File('${dir.path}/default.isar');
+          if (await isarFile.exists()) {
+            await isarFile.delete();
+          }
+        } catch (delError) {
+          print("⚠️ [ISAR INIT] Failed to delete default.isar: $delError");
+        }
+
+        try {
+          final lockFile = File('${dir.path}/default.isar.lock');
+          if (await lockFile.exists()) {
+            await lockFile.delete();
+          }
+        } catch (delError) {
+          print("⚠️ [ISAR INIT] Failed to delete default.isar.lock: $delError");
+        }
+
+        // Delete documents directory database files safely in case they exist
+        try {
+          final docDir = await getApplicationDocumentsDirectory();
+          final docIsarFile = File('${docDir.path}/default.isar');
+          if (await docIsarFile.exists()) {
+            await docIsarFile.delete();
+          }
+          final docLockFile = File('${docDir.path}/default.isar.lock');
+          if (await docLockFile.exists()) {
+            await docLockFile.delete();
+          }
+        } catch (_) {}
+
+        print("📁 [ISAR INIT] Retrying open after database files clear...");
+        _isar = await Isar.open(
+          schemas,
+          directory: dir.path,
+        );
+      } catch (retryError) {
+        print("❌ [ISAR FATAL ERROR] Failed to open Isar after clear/retry: $retryError");
+        
+        // Final fallback: If both fail, try a custom instance name so the app runs successfully
+        try {
+          print("📁 [ISAR INIT] Fallback: Opening Isar with custom instance name 'propkart_db'...");
+          final existing = Isar.getInstance('propkart_db');
+          if (existing != null) {
+            await existing.close();
+          }
+          _isar = await Isar.open(
+            schemas,
+            directory: dir.path,
+            name: 'propkart_db',
+          );
+        } catch (fallbackError) {
+          print("❌ [ISAR ABSOLUTE FATAL] Fallback open failed: $fallbackError");
+          rethrow;
+        }
+      }
+    }
+    
+    try {
+      await _migrateRequirements();
+    } catch (migError) {
+      print("⚠️ [ISAR INIT WARNING] Requirements migration failed: $migError. Database is initialized, continuing...");
+    }
   }
 
   Future<void> _migrateRequirements() async {

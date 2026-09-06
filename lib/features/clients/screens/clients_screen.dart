@@ -32,6 +32,12 @@ class _ClientsScreenState extends State<ClientsScreen> {
     _triggerFetch();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   void _triggerFetch() {
     context.read<ClientsBloc>().add(
           FetchClientsEvent(
@@ -129,23 +135,14 @@ class _ClientsScreenState extends State<ClientsScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Clients & Leads",
-              style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
-            ),
-            const SizedBox(height: 4.0),
-            Text(
-              "Track pipeline stages, target source channels, and conversions",
-              style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
-            ),
-          ],
+        Text(
+          "Clients",
+          style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
         ),
         CRMButton(
           label: "Add Client",
           prefixIcon: Icons.person_add_rounded,
+          height: 40,
           onPressed: () => _showAddEditDialog(),
         ),
       ],
@@ -165,38 +162,30 @@ class _ClientsScreenState extends State<ClientsScreen> {
           won = state.clients.where((c) => c.stage == 'Won').length;
         }
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 700;
-            return GridView.count(
-              crossAxisCount: isWide ? 3 : 2,
-              crossAxisSpacing: CRMSpacing.m,
-              mainAxisSpacing: CRMSpacing.m,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: isWide ? 2.5 : 1.5,
-              children: [
-                CRMKPICard(
-                  title: "TOTAL CUSTOMERS",
-                  value: total.toString(),
-                  icon: Icons.people_rounded,
-                  iconColor: CRMColors.primary,
-                ),
-                CRMKPICard(
-                  title: "ACTIVE PIPELINE DEALS",
-                  value: pipeline.toString(),
-                  icon: Icons.bubble_chart_rounded,
-                  iconColor: CRMColors.info,
-                ),
-                CRMKPICard(
-                  title: "DEALS CONVERTED (WON)",
-                  value: won.toString(),
-                  icon: Icons.check_circle_outline_rounded,
-                  iconColor: CRMColors.success,
-                ),
-              ],
-            );
-          },
+        return CRMResponsiveKpiRow(
+          children: [
+            CRMKPICard(
+              title: "Total Clients",
+              value: total.toString(),
+              icon: Icons.people_rounded,
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiPlum,
+            ),
+            CRMKPICard(
+              title: "Active Pipeline",
+              value: pipeline.toString(),
+              icon: Icons.bubble_chart_rounded,
+              iconColor: CRMColors.text,
+              backgroundColor: CRMColors.kpiSage,
+            ),
+            CRMKPICard(
+              title: "Won Deals",
+              value: won.toString(),
+              icon: Icons.verified_rounded,
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiRose,
+            ),
+          ],
         );
       },
     );

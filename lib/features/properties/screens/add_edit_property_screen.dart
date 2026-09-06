@@ -13,6 +13,8 @@ import '../repository/properties_repository.dart';
 import '../../../core/storage/crm_draft_repository.dart';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/design_system/widgets/form/crm_video_picker.dart';
+import 'package:dio/dio.dart';
+import '../../settings/screens/location_config_screen.dart';
 
 class AddEditPropertyScreen extends StatefulWidget {
   final PropertyMetadataModel metadata;
@@ -97,6 +99,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   List<LookupItem> _localAmenities = [];
   final List<String> _depositMonthOptions = ['1 Month', '2 Month', '3 Month', '4 Month', '5 Month', '6 Month'];
   String? _selectedDepositMonth;
+  final FocusNode _titleFocusNode = FocusNode();
+  List<String> _propertyNameSuggestions = [];
+  double _titleFieldWidth = 360;
 
   @override
   void initState() {
@@ -105,6 +110,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     _priceController.addListener(_onPriceChanged);
     _remarksController.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadPropertyNameSuggestions();
       if (widget.property == null && CRMDraftRepository().hasDraft('property')) {
         _showRestoreDraftDialog();
       }
@@ -114,6 +120,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   @override
   void dispose() {
     _priceController.removeListener(_onPriceChanged);
+    _titleFocusNode.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
     _addressController.dispose();
@@ -443,61 +450,147 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   void _showAddAreaDialog({String? initialName, String? initialPincode}) {
     final nameController = TextEditingController(text: initialName);
     final pincodeController = TextEditingController(text: initialPincode);
+    bool isFetching = false;
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add New Area'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Area Name'),
-            ),
-            TextField(
-              controller: pincodeController,
-              decoration: const InputDecoration(labelText: 'Pincode'),
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            child: const Text('Cancel'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-          TextButton(
-            child: const Text('Add'),
-            onPressed: () async {
-              final name = nameController.text.trim();
-              final pincode = pincodeController.text.trim();
-              if (name.isNotEmpty && pincode.isNotEmpty && _selectedCity != null) {
-                try {
-                  final service = PropertiesService();
-                  final result = await service.createArea(_selectedCity!, name, pincode);
-                  final AreaLookup newArea = AreaLookup(
-                    id: result['data']['area']['id'],
-                    name: result['data']['area']['area_name'],
-                    cityId: result['data']['area']['city_id'],
-                    pincode: result['data']['area']['pincode'],
-                  );
-                  setState(() {
-                    _areas.add(newArea);
-                    _filteredAreas.add(newArea);
-                    _selectedArea = newArea.id;
-                  });
-                  if (mounted) Navigator.pop(ctx);
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to add area: $e')),
-                  );
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          Future<void> lookupPincode(String pincode) async {
+            setState(() => isFetching = true);
+            try {
+              final dio = Dio();
+              final response = await dio.get('https://api.postalpincode.in/pincode/$pincode');
+              if (response.statusCode == 200 && response.data is List && response.data.isNotEmpty) {
+                final data = response.data[0] as Map<String, dynamic>;
+                final status = data['Status']?.toString();
+                final postOffices = data['PostOffice'] as List?;
+                if (status == 'Success' && postOffices != null && postOffices.isNotEmpty) {
+                  final firstOffice = postOffices[0] as Map<String, dynamic>;
+                  final name = firstOffice['Name']?.toString() ?? '';
+                  if (name.isNotEmpty) {
+                    nameController.text = name;
+                  }
                 }
               }
-            },
-          ),
-        ],
+            } catch (_) {
+              // Fail silently
+            } finally {
+              setState(() => isFetching = false);
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Add New Area'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Area Name *'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pincodeController,
+                  decoration: InputDecoration(
+                    labelText: 'Pincode (6 Digits) *',
+                    suffixIcon: isFetching
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: Padding(
+                              padding: EdgeInsets.all(12),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : null,
+                  ),
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (v) {
+                    final pincode = v.trim();
+                    if (pincode.length == 6 && !isFetching) {
+                      lookupPincode(pincode);
+                    }
+                  },
+                  onSubmitted: (v) {
+                    final pincode = v.trim();
+                    if (pincode.length == 6 && !isFetching) {
+                      lookupPincode(pincode);
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                child: const Text('Cancel'),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+              TextButton(
+                child: const Text('Add'),
+                onPressed: () async {
+                  final name = nameController.text.trim();
+                  final pincode = pincodeController.text.trim();
+                  if (name.isNotEmpty && pincode.isNotEmpty && _selectedCity != null) {
+                    try {
+                      final service = PropertiesService();
+                      final result = await service.createArea(_selectedCity!, name, pincode);
+                      final AreaLookup newArea = AreaLookup(
+                        id: result['data']['area']['id'],
+                        name: result['data']['area']['area_name'],
+                        cityId: result['data']['area']['city_id'],
+                        pincode: result['data']['area']['pincode'],
+                      );
+                      this.setState(() {
+                        _areas.add(newArea);
+                        _filteredAreas.add(newArea);
+                        _selectedArea = newArea.id;
+                      });
+                      if (mounted) Navigator.pop(ctx);
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to add area: $e')),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
+  }
+
+  Future<void> _refreshLocationMetadata() async {
+    try {
+      final service = PropertiesService();
+      final response = await service.getPropertyMetadata();
+      final data = response['data'] as Map<String, dynamic>? ?? {};
+      final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
+      
+      final oldAreaIds = _areas.map((a) => a.id).toSet();
+      final newAreas = meta.areas;
+      
+      setState(() {
+        _areas = newAreas;
+        if (_selectedCity != null) {
+          _filteredAreas = _areas.where((a) => a.cityId == _selectedCity).toList();
+          
+          // Auto-select the newly created area if it belongs to the current city
+          final addedArea = newAreas.firstWhere(
+            (a) => !oldAreaIds.contains(a.id) && a.cityId == _selectedCity,
+            orElse: () => AreaLookup(id: '', name: '', cityId: '', pincode: ''),
+          );
+          if (addedArea.id.isNotEmpty) {
+            _selectedArea = addedArea.id;
+          }
+        }
+      });
+    } catch (_) {
+      // Fail silently
+    }
   }
 
   void _showAddBrokerageDialog() {
@@ -1262,13 +1355,13 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildStepNode(0, 'Basic Info', isMobile),
+          _buildStepNode(0, 'Basic', isMobile),
           _buildStepDivider(),
           _buildStepNode(1, 'Location', isMobile),
           _buildStepDivider(),
-          _buildStepNode(2, 'Pricing', isMobile),
+          _buildStepNode(2, 'Price', isMobile),
           _buildStepDivider(),
-          _buildStepNode(3, 'Contacts', isMobile),
+          _buildStepNode(3, 'Owner & Media', isMobile),
         ],
       ),
     );
@@ -1335,6 +1428,169 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     }
   }
 
+  String _compactPropertyName(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  List<String> _propertyNameTokens(String value) {
+    return value
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((token) => token.isNotEmpty)
+        .toList();
+  }
+
+  bool _propertyNameMatchesQuery(String propertyName, String query) {
+    final trimmedQuery = query.trim();
+    if (trimmedQuery.isEmpty) return false;
+
+    final compactName = _compactPropertyName(propertyName);
+    final compactQuery = _compactPropertyName(trimmedQuery);
+    if (compactQuery.isEmpty) return false;
+    if (compactName.contains(compactQuery)) return true;
+
+    final nameTokens = _propertyNameTokens(propertyName);
+    final queryTokens = _propertyNameTokens(trimmedQuery);
+    if (nameTokens.isEmpty || queryTokens.isEmpty) return false;
+
+    final wordsMatch = queryTokens.every(
+      (queryToken) => nameTokens.any((nameToken) => nameToken.contains(queryToken)),
+    );
+    if (wordsMatch) return true;
+
+    final sortedName = ([...nameTokens]..sort()).join();
+    final sortedQuery = ([...queryTokens]..sort()).join();
+    return sortedName.contains(sortedQuery);
+  }
+
+  int _propertyNameMatchRank(String propertyName, String query) {
+    final compactName = _compactPropertyName(propertyName);
+    final compactQuery = _compactPropertyName(query);
+    if (compactName == compactQuery) return 0;
+    if (compactName.startsWith(compactQuery)) return 1;
+    if (compactName.contains(compactQuery)) return 2;
+    return 3;
+  }
+
+  void _setPropertyNameSuggestions(Iterable<String> titles) {
+    final unique = <String, String>{};
+    for (final title in titles) {
+      final trimmed = title.trim();
+      if (trimmed.isEmpty) continue;
+      unique.putIfAbsent(trimmed.toLowerCase(), () => trimmed);
+    }
+    _propertyNameSuggestions = unique.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  Future<void> _loadPropertyNameSuggestions() async {
+    try {
+      final blocState = context.read<PropertiesBloc>().state;
+      if (blocState is PropertiesLoaded) {
+        _setPropertyNameSuggestions(blocState.properties.map((p) => p.title));
+        if (mounted) setState(() {});
+      }
+
+      final titles = await PropertiesService().getDistinctPropertyTitles();
+      if (!mounted) return;
+      setState(() => _setPropertyNameSuggestions(titles));
+    } catch (_) {}
+  }
+
+  Iterable<String> _matchingPropertyNames(String query) {
+    final matches = _propertyNameSuggestions
+        .where((name) => _propertyNameMatchesQuery(name, query))
+        .toList()
+      ..sort((a, b) {
+        final rank = _propertyNameMatchRank(a, query).compareTo(_propertyNameMatchRank(b, query));
+        if (rank != 0) return rank;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+    if (matches.length <= 12) return matches;
+    return matches.take(12);
+  }
+
+  Widget _buildPropertyNameField() {
+    return RawAutocomplete<String>(
+      textEditingController: _titleController,
+      focusNode: _titleFocusNode,
+      optionsBuilder: (textEditingValue) {
+        return _matchingPropertyNames(textEditingValue.text);
+      },
+      displayStringForOption: (option) => option,
+      onSelected: (selection) {
+        _titleController.value = TextEditingValue(
+          text: selection,
+          selection: TextSelection.collapsed(offset: selection.length),
+        );
+      },
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth.isFinite && constraints.maxWidth > 0) {
+              _titleFieldWidth = constraints.maxWidth;
+            }
+            return TextFormField(
+              controller: controller,
+              focusNode: focusNode,
+              style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+              decoration: InputDecoration(
+                labelText: 'Location / Property Name *',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                suffixIcon: IconButton(
+                  icon: Icon(Icons.search, color: CRMColors.primaryOf(context)),
+                  onPressed: _showSearchPropertyDialog,
+                  tooltip: 'Search existing properties',
+                ),
+              ),
+              validator: (v) => v!.isEmpty ? 'Location / Property Name is required' : null,
+              onFieldSubmitted: (_) => onFieldSubmitted(),
+            );
+          },
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        final fieldWidth = _titleFieldWidth;
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 6,
+            color: CRMColors.cardBgOf(context),
+            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+            child: SizedBox(
+              width: fieldWidth,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 240),
+                child: ListView.separated(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  separatorBuilder: (_, __) => Divider(
+                    height: 1,
+                    color: CRMColors.borderOf(context).withValues(alpha: 0.5),
+                  ),
+                  itemBuilder: (context, index) {
+                    final option = options.elementAt(index);
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        option,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
+                      ),
+                      onTap: () => onSelected(option),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildBasicStep(bool isMobile) {
     final selectedCategoryItem = widget.metadata.categories.firstWhere(
       (c) => c.id == _selectedCategory,
@@ -1386,20 +1642,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       padding: isMobile ? const EdgeInsets.all(CRMSpacing.s) : const EdgeInsets.all(CRMSpacing.m),
       child: Column(
         children: [
-          TextFormField(
-            controller: _titleController,
-            style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-            decoration: InputDecoration(
-              labelText: 'Location / Property Name *',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
-              suffixIcon: IconButton(
-                icon: Icon(Icons.search, color: CRMColors.primaryOf(context)),
-                onPressed: _showSearchPropertyDialog,
-                tooltip: 'Search existing properties',
-              ),
-            ),
-            validator: (v) => v!.isEmpty ? 'Location / Property Name is required' : null,
-          ),
+          _buildPropertyNameField(),
           const SizedBox(height: CRMSpacing.m),
 
           if (isMobile) ...[
@@ -1408,7 +1651,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: _selectedCategory,
+                    value: widget.metadata.categories.any((c) => c.id == _selectedCategory) ? _selectedCategory : null,
                     decoration: InputDecoration(
                       labelText: 'Category *',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1437,7 +1680,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: _selectedListingType,
+                    value: widget.metadata.listingTypes.any((l) => l.id == _selectedListingType) ? _selectedListingType : null,
                     decoration: InputDecoration(
                       labelText: 'Listing Type *',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1479,7 +1722,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           isExpanded: true,
-                          value: _selectedCategory,
+                          value: widget.metadata.categories.any((c) => c.id == _selectedCategory) ? _selectedCategory : null,
                           decoration: InputDecoration(
                             labelText: 'Category *',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1510,7 +1753,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           isExpanded: true,
-                          value: _selectedListingType,
+                          value: widget.metadata.listingTypes.any((l) => l.id == _selectedListingType) ? _selectedListingType : null,
                           decoration: InputDecoration(
                             labelText: 'Listing Type *',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1554,7 +1797,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: _selectedType,
+                    value: filteredTypes.any((t) => t.id == _selectedType) ? _selectedType : null,
                     decoration: InputDecoration(
                       labelText: 'Property Type *',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1578,7 +1821,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       isExpanded: true,
-                      value: _selectedConfig,
+                      value: (_selectedConfig != null && filteredConfigs.any((c) => c.id == _selectedConfig)) ? _selectedConfig : null,
                       decoration: InputDecoration(
                         labelText: 'Configuration',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1608,7 +1851,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           isExpanded: true,
-                          value: _selectedType,
+                          value: filteredTypes.any((t) => t.id == _selectedType) ? _selectedType : null,
                           decoration: InputDecoration(
                             labelText: 'Property Type *',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1634,7 +1877,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 isExpanded: true,
-                                value: _selectedConfig,
+                                value: (_selectedConfig != null && filteredConfigs.any((c) => c.id == _selectedConfig)) ? _selectedConfig : null,
                                 decoration: InputDecoration(
                                   labelText: 'Configuration',
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1663,7 +1906,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           if (isMobile && toBeAvailableId.isNotEmpty && _selectedStatus == toBeAvailableId) ...[
             DropdownButtonFormField<String>(
               isExpanded: true,
-              value: _selectedStatus,
+              value: filteredStatuses.any((s) => s.id == _selectedStatus) ? _selectedStatus : null,
               decoration: InputDecoration(
                 labelText: 'Property Status *',
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1695,7 +1938,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: _selectedStatus,
+                    value: filteredStatuses.any((s) => s.id == _selectedStatus) ? _selectedStatus : null,
                     decoration: InputDecoration(
                       labelText: 'Property Status *',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1790,7 +2033,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         Expanded(
           child: DropdownButtonFormField<String>(
             isExpanded: true,
-            value: _selectedCity,
+            value: _cities.any((c) => c.id == _selectedCity) ? _selectedCity : null,
             decoration: InputDecoration(
               labelText: 'City *',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1815,7 +2058,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         Expanded(
           child: DropdownButtonFormField<String>(
             isExpanded: true,
-            value: _selectedArea,
+            value: _filteredAreas.any((a) => a.id == _selectedArea) ? _selectedArea : null,
             decoration: InputDecoration(
               labelText: 'Area *',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1826,7 +2069,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         ),
         IconButton(
           icon: Icon(Icons.add_circle_outline_rounded, color: CRMColors.primaryOf(context)),
-          onPressed: _selectedCity == null ? null : _showAddAreaDialog,
+          onPressed: _selectedCity == null
+              ? null
+              : () => _showAddAreaDialog(),
           tooltip: 'Add New Area',
         ),
       ],
@@ -2018,9 +2263,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         Text('Land Details', style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context))),
         const SizedBox(height: CRMSpacing.s),
         if (isMobile) ...[
-          _buildCustomTextField(label: 'Plot Length (Ft)', key: 'plot_length', isNumeric: true, isRequired: isLand),
+          _buildCustomTextField(label: 'Plot Length (Ft)', key: 'plot_length', isNumeric: true, isRequired: false),
           const SizedBox(height: CRMSpacing.m),
-          _buildCustomTextField(label: 'Plot Width (Ft)', key: 'plot_width', isNumeric: true, isRequired: isLand),
+          _buildCustomTextField(label: 'Plot Width (Ft)', key: 'plot_width', isNumeric: true, isRequired: false),
           const SizedBox(height: CRMSpacing.m),
           _buildCustomTextField(label: 'Frontage (Ft)', key: 'frontage', isNumeric: true, isRequired: false),
           const SizedBox(height: CRMSpacing.m),
@@ -2036,9 +2281,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         ] else ...[
           Row(
             children: [
-              Expanded(child: _buildCustomTextField(label: 'Plot Length (Ft)', key: 'plot_length', isNumeric: true, isRequired: isLand)),
+              Expanded(child: _buildCustomTextField(label: 'Plot Length (Ft)', key: 'plot_length', isNumeric: true, isRequired: false)),
               const SizedBox(width: CRMSpacing.s),
-              Expanded(child: _buildCustomTextField(label: 'Plot Width (Ft)', key: 'plot_width', isNumeric: true, isRequired: isLand)),
+              Expanded(child: _buildCustomTextField(label: 'Plot Width (Ft)', key: 'plot_width', isNumeric: true, isRequired: false)),
             ],
           ),
           const SizedBox(height: CRMSpacing.m),
@@ -2511,7 +2756,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       children: [
         DropdownButtonFormField<String>(
           isExpanded: true,
-          value: _selectedParkingType,
+          value: ['Allocated', 'Open'].contains(_selectedParkingType) ? _selectedParkingType : 'Open',
           decoration: InputDecoration(
             labelText: 'Parking',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2544,7 +2789,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           const SizedBox(height: CRMSpacing.s),
           DropdownButtonFormField<String>(
             isExpanded: true,
-            value: _selectedParkingOption,
+            value: ['Basement 1', 'Basement 2', 'Ground Floor'].contains(_selectedParkingOption) ? _selectedParkingOption : null,
             decoration: InputDecoration(
               labelText: 'Parking Option',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2566,7 +2811,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           const SizedBox(height: CRMSpacing.s),
           DropdownButtonFormField<String>(
             isExpanded: true,
-            value: _selectedParkingSlot,
+            value: ['1', '2', '3', '4', '5'].contains(_selectedParkingSlot) ? _selectedParkingSlot : null,
             decoration: InputDecoration(
               labelText: 'Parking Slot',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2612,7 +2857,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
     final totalFloorField = DropdownButtonFormField<String>(
       isExpanded: true,
-      value: _totalFloorController.text.isEmpty ? null : _totalFloorController.text,
+      value: List.generate(50, (index) => (index + 1).toString()).contains(_totalFloorController.text.trim()) ? _totalFloorController.text.trim() : null,
       decoration: InputDecoration(
         labelText: 'Total Floors',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2679,7 +2924,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
     final furnishingField = DropdownButtonFormField<String>(
       isExpanded: true,
-      value: _selectedFurnishing,
+      value: widget.metadata.furnishings.any((f) => f.id == _selectedFurnishing) ? _selectedFurnishing : null,
       decoration: InputDecoration(
         labelText: 'Furnishing',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2744,7 +2989,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         Expanded(
           child: DropdownButtonFormField<String>(
             isExpanded: true,
-            value: _selectedDepositMonth,
+            value: _depositMonthOptions.contains(_selectedDepositMonth) ? _selectedDepositMonth : null,
             decoration: InputDecoration(
               labelText: 'Deposit Months *',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -3350,7 +3595,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
     final nextButton = _currentStep < 3
         ? CRMButton(
-            label: 'Next Step',
+            label: 'Next',
             variant: CRMButtonVariant.primary,
             onPressed: () {
               if (_formKey.currentState!.validate()) {
@@ -3359,7 +3604,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
             },
           )
         : CRMButton(
-            label: isEdit ? 'Save Changes' : 'Publish Property',
+            label: isEdit ? 'Save Changes' : 'Save Property',
             variant: CRMButtonVariant.primary,
             onPressed: _submitForm,
           );
@@ -3384,18 +3629,22 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                cancelButton,
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (backButton != null) ...[
-                      backButton,
-                      const SizedBox(width: CRMSpacing.s),
-                    ],
-                    nextButton,
-                  ],
+                Expanded(
+                  flex: 3,
+                  child: cancelButton,
+                ),
+                const SizedBox(width: CRMSpacing.s),
+                if (backButton != null) ...[
+                  Expanded(
+                    flex: 2,
+                    child: backButton,
+                  ),
+                  const SizedBox(width: CRMSpacing.s),
+                ],
+                Expanded(
+                  flex: 4,
+                  child: nextButton,
                 ),
               ],
             ),

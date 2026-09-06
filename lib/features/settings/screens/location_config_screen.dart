@@ -10,6 +10,7 @@ import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../properties/models/property_model.dart';
 import '../../properties/services/properties_service.dart';
+import '../../../core/storage/local_repositories.dart';
 
 class LocationConfigScreen extends StatefulWidget {
   const LocationConfigScreen({super.key});
@@ -44,10 +45,15 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   String? _areaSelectedCityId;
   bool _areaIsActive = true;
   bool _isFetchingPincode = false;
+  bool _isSavingArea = false;
+  bool _areaFormIsModal = false;
+  List<String> _pincodeAreaSuggestions = [];
+  bool _showAreaSuggestions = false;
 
   // Search filters
   String _citySearchQuery = '';
   String _areaSearchQuery = '';
+  final _areaSearchController = TextEditingController();
 
   @override
   void initState() {
@@ -65,6 +71,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
     _cityCountryController.dispose();
     _areaNameController.dispose();
     _areaPincodeController.dispose();
+    _areaSearchController.dispose();
     super.dispose();
   }
 
@@ -75,8 +82,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       final data = response['data'] as Map<String, dynamic>? ?? {};
       final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
       setState(() {
-        _cities = meta.cities;
-        _areas = meta.areas;
+        _cities = meta.cities..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
         _isLoading = false;
       });
     } catch (e) {
@@ -105,7 +112,11 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   }
 
   Future<void> _lookupPincode(String pincode) async {
-    setState(() => _isFetchingPincode = true);
+    setState(() {
+      _isFetchingPincode = true;
+      _pincodeAreaSuggestions.clear();
+      _showAreaSuggestions = false;
+    });
     try {
       final dio = Dio();
       final response = await dio.get('https://api.postalpincode.in/pincode/$pincode');
@@ -127,15 +138,36 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
             }
           }
           
+          final Set<String> suggestionSet = {};
+          for (final po in postOffices) {
+            final name = po['Name']?.toString().trim();
+            if (name != null && name.isNotEmpty) {
+              suggestionSet.add(name);
+            }
+          }
+          for (final a in _areas) {
+            if (a.pincode == pincode && a.name.trim().isNotEmpty) {
+              suggestionSet.add(a.name.trim());
+            }
+          }
+
+          final suggestionsList = suggestionSet.toList();
+
           if (matchedCity != null) {
             setState(() {
               _areaSelectedCityId = matchedCity!.id;
-              if (_areaNameController.text.isEmpty && postOffices.isNotEmpty) {
-                _areaNameController.text = postOffices[0]['Name']?.toString() ?? '';
+              _pincodeAreaSuggestions = suggestionsList;
+              _showAreaSuggestions = suggestionsList.isNotEmpty;
+              if (_areaNameController.text.isEmpty && suggestionsList.isNotEmpty) {
+                _areaNameController.text = suggestionsList.first;
               }
             });
-            _showSnackBar('City auto-resolved to: ${matchedCity.name}');
+            _showSnackBar('City auto-resolved to: ${matchedCity.name} (${suggestionsList.length} areas found)');
           } else if (districtName.isNotEmpty) {
+            setState(() {
+              _pincodeAreaSuggestions = suggestionsList;
+              _showAreaSuggestions = suggestionsList.isNotEmpty;
+            });
             _showCityAutoAddDialog(districtName, postOffices);
           }
         }
@@ -205,8 +237,37 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
         _cityCountryController.text = 'India';
         _cityIsActive = true;
       }
-      _isCityFormOpen = true;
     });
+
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+    if (isMobile) {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (ctx) {
+          return Container(
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(CRMBorderRadius.l)),
+            ),
+            padding: EdgeInsets.only(
+              left: CRMSpacing.m,
+              right: CRMSpacing.m,
+              top: CRMSpacing.m,
+              bottom: MediaQuery.of(context).viewInsets.bottom + CRMSpacing.m,
+            ),
+            child: SingleChildScrollView(
+              child: _buildCityFormPanel(),
+            ),
+          );
+        },
+      );
+    } else {
+      setState(() {
+        _isCityFormOpen = true;
+      });
+    }
   }
 
   void _closeCityForm() {
@@ -215,6 +276,9 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       _editingCity = null;
       _cityNameController.clear();
     });
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _saveCity() async {
@@ -288,6 +352,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   void _openAreaForm([AreaLookup? area]) {
     setState(() {
       _editingArea = area;
+      _pincodeAreaSuggestions.clear();
+      _showAreaSuggestions = false;
       if (area != null) {
         _areaNameController.text = area.name;
         _areaPincodeController.text = area.pincode;
@@ -299,20 +365,61 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
         _areaSelectedCityId = _cities.isNotEmpty ? _cities.first.id : null;
         _areaIsActive = true;
       }
-      _isAreaFormOpen = true;
     });
+
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+    if (isMobile) {
+      _areaFormIsModal = true;
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (ctx) {
+          return Container(
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(CRMBorderRadius.l)),
+            ),
+            padding: EdgeInsets.only(
+              left: CRMSpacing.m,
+              right: CRMSpacing.m,
+              top: CRMSpacing.m,
+              bottom: MediaQuery.of(context).viewInsets.bottom + CRMSpacing.m,
+            ),
+            child: SingleChildScrollView(
+              child: _buildAreaFormPanel(),
+            ),
+          );
+        },
+      ).whenComplete(() {
+        _areaFormIsModal = false;
+      });
+    } else {
+      _areaFormIsModal = false;
+      setState(() {
+        _isAreaFormOpen = true;
+      });
+    }
   }
 
   void _closeAreaForm() {
+    final shouldPopModal = _areaFormIsModal;
     setState(() {
       _isAreaFormOpen = false;
       _editingArea = null;
       _areaNameController.clear();
       _areaPincodeController.clear();
+      _pincodeAreaSuggestions.clear();
+      _showAreaSuggestions = false;
+      _isSavingArea = false;
     });
+    if (shouldPopModal && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _saveArea() async {
+    if (_isSavingArea) return;
     if (!_areaFormKey.currentState!.validate()) return;
     if (_areaSelectedCityId == null) {
       _showSnackBar('Please select an associated city.', isError: true);
@@ -334,22 +441,40 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() => _isSavingArea = true);
     try {
       if (_editingArea == null) {
-        // Create new
-        await _propertiesService.createArea(_areaSelectedCityId!, name, pincode);
+        final response = await _propertiesService.createArea(_areaSelectedCityId!, name, pincode);
+        final data = response['data'] as Map<String, dynamic>? ?? {};
+        final areaJson = data['area'] as Map<String, dynamic>? ?? {};
+        if (areaJson['id'] != null) {
+          final created = AreaLookup.fromJson(areaJson);
+          setState(() {
+            _areas = [..._areas, created];
+          });
+        }
         _showSnackBar('Area created successfully!');
       } else {
-        // Edit existing
-        await _propertiesService.updateArea(_editingArea!.id, _areaSelectedCityId!, name, pincode);
+        final editingId = _editingArea!.id;
+        await _propertiesService.updateArea(editingId, _areaSelectedCityId!, name, pincode);
+        setState(() {
+          _areas = _areas
+              .map((a) => a.id == editingId
+                  ? AreaLookup(
+                      id: a.id,
+                      name: name,
+                      cityId: _areaSelectedCityId!,
+                      pincode: pincode,
+                    )
+                  : a)
+              .toList();
+        });
         _showSnackBar('Area updated successfully!');
       }
       _closeAreaForm();
-      await _loadData();
     } catch (e) {
+      if (mounted) setState(() => _isSavingArea = false);
       _showSnackBar('Operation failed: $e', isError: true);
-      setState(() => _isLoading = false);
     }
   }
 
@@ -362,14 +487,18 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
 
     if (confirm != true) return;
 
-    setState(() => _isLoading = true);
     try {
       await _propertiesService.deleteArea(area.id);
+      try {
+        await LookupLocalRepository().deleteSingleLookup(area.id);
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _areas = _areas.where((a) => a.id != area.id).toList();
+      });
       _showSnackBar('Area configuration deleted.');
-      await _loadData();
     } catch (e) {
       _showSnackBar('Failed to delete area: $e', isError: true);
-      setState(() => _isLoading = false);
     }
   }
 
@@ -379,61 +508,89 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       if (_citySearchQuery.isEmpty) return true;
       return c.name.toLowerCase().contains(_citySearchQuery.toLowerCase()) ||
           (c.state ?? '').toLowerCase().contains(_citySearchQuery.toLowerCase());
-    }).toList();
+    }).toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Title and Add button
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Title and Add button
+          if (isMobile)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('City Records', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-                Text('${filtered.length} active cities configured', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                const SizedBox(height: CRMSpacing.xxs),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${filtered.length} active cities configured',
+                        style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                      ),
+                    ),
+                    CRMButton(
+                      label: 'Add New City',
+                      prefixIcon: Icons.add_rounded,
+                      onPressed: () => _openCityForm(),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('City Records', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                    Text('${filtered.length} active cities configured', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                  ],
+                ),
+                CRMButton(
+                  label: 'Add New City',
+                  prefixIcon: Icons.add_rounded,
+                  onPressed: () => _openCityForm(),
+                ),
               ],
             ),
-            CRMButton(
-              label: 'Add New City',
-              prefixIcon: Icons.add_rounded,
-              onPressed: () => _openCityForm(),
-            ),
-          ],
-        ),
-        const SizedBox(height: CRMSpacing.m),
-
-        // Inline Form Editor Panel
-        if (_isCityFormOpen) ...[
-          _buildCityFormPanel(),
           const SizedBox(height: CRMSpacing.m),
-        ],
 
-        // Search bar
-        TextField(
-          style: TextStyle(color: CRMColors.textOf(context)),
-          decoration: InputDecoration(
-            hintText: 'Search cities...',
-            prefixIcon: const Icon(Icons.search_rounded),
-            filled: true,
-            fillColor: CRMColors.cardBgOf(context),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+          // Inline Form Editor Panel
+          if (_isCityFormOpen) ...[
+            _buildCityFormPanel(),
+            const SizedBox(height: CRMSpacing.m),
+          ],
+
+          // Search bar
+          TextField(
+            style: TextStyle(color: CRMColors.textOf(context)),
+            decoration: InputDecoration(
+              hintText: 'Search cities...',
+              prefixIcon: const Icon(Icons.search_rounded),
+              filled: true,
+              fillColor: CRMColors.cardBgOf(context),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+              ),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
-            ),
+            onChanged: (val) => setState(() => _citySearchQuery = val),
           ),
-          onChanged: (val) => setState(() => _citySearchQuery = val),
-        ),
-        const SizedBox(height: CRMSpacing.m),
+          const SizedBox(height: CRMSpacing.m),
 
-        // Structured List Table
-        Expanded(
-          child: Container(
+          // Structured List Table
+          Container(
             decoration: BoxDecoration(
               color: CRMColors.cardBgOf(context),
               borderRadius: BorderRadius.circular(CRMBorderRadius.m),
@@ -441,12 +598,121 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
             ),
             clipBehavior: Clip.antiAlias,
             child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               itemCount: filtered.length,
               separatorBuilder: (_, __) => Divider(color: CRMColors.borderOf(context).withOpacity(0.3), height: 1),
               itemBuilder: (context, index) {
                 final city = filtered[index];
+                if (isMobile) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.m),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: CRMColors.primary.withValues(alpha: 0.08),
+                          child: Icon(Icons.location_city_outlined, color: CRMColors.primary, size: 20),
+                        ),
+                        const SizedBox(width: CRMSpacing.m),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                city.name,
+                                style: CRMTypography.bodyMedium.copyWith(
+                                  color: CRMColors.textOf(context),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${city.state ?? 'Gujarat'}, ${city.country ?? 'India'}',
+                                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: CRMSpacing.s),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: CRMColors.success.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Active',
+                                style: CRMTypography.captionBold.copyWith(
+                                  color: CRMColors.success,
+                                  fontSize: 9,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, size: 16),
+                                  color: CRMColors.primary,
+                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  padding: EdgeInsets.zero,
+                                  tooltip: 'Edit City',
+                                  onPressed: () => _openCityForm(city),
+                                ),
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 16),
+                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  padding: EdgeInsets.zero,
+                                  tooltip: 'Delete City',
+                                  onPressed: () => _deleteCity(city),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }
                 return ListTile(
-                  title: Text(city.name, style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
+                  title: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          city.name,
+                          style: CRMTypography.bodyMedium.copyWith(
+                            color: CRMColors.textOf(context),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Status Chip inline
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: CRMColors.success.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Active',
+                          style: CRMTypography.captionBold.copyWith(
+                            color: CRMColors.success,
+                            fontSize: 9,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   subtitle: Text('${city.state ?? 'Gujarat'}, ${city.country ?? 'India'}', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
                   leading: CircleAvatar(
                     backgroundColor: CRMColors.primary.withOpacity(0.08),
@@ -455,27 +721,19 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Status Chip
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: CRMColors.success.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          'Active',
-                          style: CRMTypography.captionBold.copyWith(color: CRMColors.success, fontSize: 10),
-                        ),
-                      ),
-                      const SizedBox(width: CRMSpacing.s),
                       IconButton(
-                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        icon: const Icon(Icons.edit_outlined, size: 16),
                         color: CRMColors.primary,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        padding: EdgeInsets.zero,
                         tooltip: 'Edit City',
                         onPressed: () => _openCityForm(city),
                       ),
+                      const SizedBox(width: 4),
                       IconButton(
-                        icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18),
+                        icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 16),
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        padding: EdgeInsets.zero,
                         tooltip: 'Delete City',
                         onPressed: () => _deleteCity(city),
                       ),
@@ -485,19 +743,22 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
               },
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildCityFormPanel() {
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
     return Container(
-      padding: const EdgeInsets.all(CRMSpacing.m),
-      decoration: BoxDecoration(
-        color: CRMColors.primary.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-        border: Border.all(color: CRMColors.primary.withOpacity(0.15), width: 1.5),
-      ),
+      padding: isMobile ? EdgeInsets.zero : const EdgeInsets.all(CRMSpacing.m),
+      decoration: isMobile
+          ? null
+          : BoxDecoration(
+              color: CRMColors.primary.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+              border: Border.all(color: CRMColors.primary.withOpacity(0.15), width: 1.5),
+            ),
       child: Form(
         key: _cityFormKey,
         child: Column(
@@ -508,72 +769,123 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
               style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: CRMSpacing.m),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _cityNameController,
-                    style: TextStyle(color: CRMColors.textOf(context)),
-                    decoration: InputDecoration(
-                      labelText: 'City Name *',
-                      labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
-                      filled: true,
-                      fillColor: CRMColors.cardBgOf(context),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
-                    ),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+            if (isMobile) ...[
+              TextFormField(
+                controller: _cityNameController,
+                style: TextStyle(color: CRMColors.textOf(context)),
+                decoration: InputDecoration(
+                  labelText: 'City Name *',
+                  labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                  filled: true,
+                  fillColor: CRMColors.cardBgOf(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+              const SizedBox(height: CRMSpacing.s),
+              TextFormField(
+                controller: _cityStateController,
+                style: TextStyle(color: CRMColors.textOf(context)),
+                decoration: InputDecoration(
+                  labelText: 'State Name',
+                  labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                  filled: true,
+                  fillColor: CRMColors.cardBgOf(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                ),
+              ),
+              const SizedBox(height: CRMSpacing.s),
+              TextFormField(
+                controller: _cityCountryController,
+                style: TextStyle(color: CRMColors.textOf(context)),
+                decoration: InputDecoration(
+                  labelText: 'Country',
+                  labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                  filled: true,
+                  fillColor: CRMColors.cardBgOf(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                ),
+              ),
+              const SizedBox(height: CRMSpacing.s),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Status: ', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                  Switch(
+                    value: _cityIsActive,
+                    activeColor: CRMColors.success,
+                    onChanged: (val) => setState(() => _cityIsActive = val),
                   ),
-                ),
-                const SizedBox(width: CRMSpacing.s),
-                Expanded(
-                  child: TextFormField(
-                    controller: _cityStateController,
-                    style: TextStyle(color: CRMColors.textOf(context)),
-                    decoration: InputDecoration(
-                      labelText: 'State Name',
-                      labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
-                      filled: true,
-                      fillColor: CRMColors.cardBgOf(context),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                  Text(_cityIsActive ? 'Active' : 'Inactive', style: CRMTypography.captionBold.copyWith(color: _cityIsActive ? CRMColors.success : CRMColors.textSecondaryOf(context))),
+                ],
+              ),
+            ] else ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _cityNameController,
+                      style: TextStyle(color: CRMColors.textOf(context)),
+                      decoration: InputDecoration(
+                        labelText: 'City Name *',
+                        labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                        filled: true,
+                        fillColor: CRMColors.cardBgOf(context),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: CRMSpacing.s),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _cityCountryController,
-                    style: TextStyle(color: CRMColors.textOf(context)),
-                    decoration: InputDecoration(
-                      labelText: 'Country',
-                      labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
-                      filled: true,
-                      fillColor: CRMColors.cardBgOf(context),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                  const SizedBox(width: CRMSpacing.s),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _cityStateController,
+                      style: TextStyle(color: CRMColors.textOf(context)),
+                      decoration: InputDecoration(
+                        labelText: 'State Name',
+                        labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                        filled: true,
+                        fillColor: CRMColors.cardBgOf(context),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: CRMSpacing.m),
-                // Visual Status toggle
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Status: ', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-                    Switch(
-                      value: _cityIsActive,
-                      activeColor: CRMColors.success,
-                      onChanged: (val) => setState(() => _cityIsActive = val),
+                ],
+              ),
+              const SizedBox(height: CRMSpacing.s),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _cityCountryController,
+                      style: TextStyle(color: CRMColors.textOf(context)),
+                      decoration: InputDecoration(
+                        labelText: 'Country',
+                        labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                        filled: true,
+                        fillColor: CRMColors.cardBgOf(context),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                      ),
                     ),
-                    Text(_cityIsActive ? 'Active' : 'Inactive', style: CRMTypography.captionBold.copyWith(color: _cityIsActive ? CRMColors.success : CRMColors.textSecondaryOf(context))),
-                  ],
-                ),
-              ],
-            ),
+                  ),
+                  const SizedBox(width: CRMSpacing.m),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Status: ', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                      Switch(
+                        value: _cityIsActive,
+                        activeColor: CRMColors.success,
+                        onChanged: (val) => setState(() => _cityIsActive = val),
+                      ),
+                      Text(_cityIsActive ? 'Active' : 'Inactive', style: CRMTypography.captionBold.copyWith(color: _cityIsActive ? CRMColors.success : CRMColors.textSecondaryOf(context))),
+                    ],
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: CRMSpacing.m),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -606,61 +918,90 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       return a.name.toLowerCase().contains(_areaSearchQuery.toLowerCase()) ||
           a.pincode.contains(_areaSearchQuery) ||
           city.toLowerCase().contains(_areaSearchQuery.toLowerCase());
-    }).toList();
+    }).toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Title and Add button
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Title and Add button
+          if (isMobile)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Area Mapping & Postal Config', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-                Text('${filtered.length} areas mapped to active cities', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                const SizedBox(height: CRMSpacing.xxs),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${filtered.length} areas mapped to active cities',
+                        style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                      ),
+                    ),
+                    CRMButton(
+                      label: 'Add New Area',
+                      prefixIcon: Icons.add_rounded,
+                      onPressed: () => _openAreaForm(),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Area Mapping & Postal Config', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                    Text('${filtered.length} areas mapped to active cities', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                  ],
+                ),
+                CRMButton(
+                  label: 'Add New Area',
+                  prefixIcon: Icons.add_rounded,
+                  onPressed: () => _openAreaForm(),
+                ),
               ],
             ),
-            CRMButton(
-              label: 'Add New Area',
-              prefixIcon: Icons.add_rounded,
-              onPressed: () => _openAreaForm(),
-            ),
-          ],
-        ),
-        const SizedBox(height: CRMSpacing.m),
-
-        // Inline Form Editor Panel
-        if (_isAreaFormOpen) ...[
-          _buildAreaFormPanel(),
           const SizedBox(height: CRMSpacing.m),
-        ],
 
-        // Search bar
-        TextField(
-          style: TextStyle(color: CRMColors.textOf(context)),
-          decoration: InputDecoration(
-            hintText: 'Search areas, pincodes, or cities...',
-            prefixIcon: const Icon(Icons.search_rounded),
-            filled: true,
-            fillColor: CRMColors.cardBgOf(context),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+          // Inline Form Editor Panel
+          if (_isAreaFormOpen) ...[
+            _buildAreaFormPanel(),
+            const SizedBox(height: CRMSpacing.m),
+          ],
+
+          // Search bar
+          TextField(
+            controller: _areaSearchController,
+            style: TextStyle(color: CRMColors.textOf(context)),
+            decoration: InputDecoration(
+              hintText: 'Search areas, pincodes, or cities...',
+              prefixIcon: const Icon(Icons.search_rounded),
+              filled: true,
+              fillColor: CRMColors.cardBgOf(context),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
+              ),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.4)),
-            ),
+            onChanged: (val) => setState(() => _areaSearchQuery = val),
           ),
-          onChanged: (val) => setState(() => _areaSearchQuery = val),
-        ),
-        const SizedBox(height: CRMSpacing.m),
+          const SizedBox(height: CRMSpacing.m),
 
-        // Structured List Table
-        Expanded(
-          child: Container(
+          // Structured List Table
+          Container(
             decoration: BoxDecoration(
               color: CRMColors.cardBgOf(context),
               borderRadius: BorderRadius.circular(CRMBorderRadius.m),
@@ -668,13 +1009,122 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
             ),
             clipBehavior: Clip.antiAlias,
             child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               itemCount: filtered.length,
               separatorBuilder: (_, __) => Divider(color: CRMColors.borderOf(context).withOpacity(0.3), height: 1),
               itemBuilder: (context, index) {
                 final area = filtered[index];
                 final cityName = _cities.firstWhere((c) => c.id == area.cityId, orElse: () => LookupItem(id: '', name: 'Unknown')).name;
+                if (isMobile) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.m),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: CRMColors.primary.withValues(alpha: 0.08),
+                          child: Icon(Icons.map_outlined, color: CRMColors.primary, size: 20),
+                        ),
+                        const SizedBox(width: CRMSpacing.m),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                area.name,
+                                style: CRMTypography.bodyMedium.copyWith(
+                                  color: CRMColors.textOf(context),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'City: $cityName | Pincode: ${area.pincode}',
+                                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: CRMSpacing.s),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: CRMColors.success.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Active',
+                                style: CRMTypography.captionBold.copyWith(
+                                  color: CRMColors.success,
+                                  fontSize: 9,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, size: 16),
+                                  color: CRMColors.primary,
+                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  padding: EdgeInsets.zero,
+                                  tooltip: 'Edit Area Mapping',
+                                  onPressed: () => _openAreaForm(area),
+                                ),
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 16),
+                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  padding: EdgeInsets.zero,
+                                  tooltip: 'Delete Area Mapping',
+                                  onPressed: () => _deleteArea(area),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }
                 return ListTile(
-                  title: Text(area.name, style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
+                  title: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          area.name,
+                          style: CRMTypography.bodyMedium.copyWith(
+                            color: CRMColors.textOf(context),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Status Chip inline
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: CRMColors.success.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Active',
+                          style: CRMTypography.captionBold.copyWith(
+                            color: CRMColors.success,
+                            fontSize: 9,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   subtitle: Text('City: $cityName | Pincode: ${area.pincode}', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
                   leading: CircleAvatar(
                     backgroundColor: CRMColors.primary.withOpacity(0.08),
@@ -683,27 +1133,19 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Status Chip
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: CRMColors.success.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          'Active',
-                          style: CRMTypography.captionBold.copyWith(color: CRMColors.success, fontSize: 10),
-                        ),
-                      ),
-                      const SizedBox(width: CRMSpacing.s),
                       IconButton(
-                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        icon: const Icon(Icons.edit_outlined, size: 16),
                         color: CRMColors.primary,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        padding: EdgeInsets.zero,
                         tooltip: 'Edit Area Mapping',
                         onPressed: () => _openAreaForm(area),
                       ),
+                      const SizedBox(width: 4),
                       IconButton(
-                        icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18),
+                        icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 16),
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        padding: EdgeInsets.zero,
                         tooltip: 'Delete Area Mapping',
                         onPressed: () => _deleteArea(area),
                       ),
@@ -713,19 +1155,145 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPincodeAreaSuggestions() {
+    if (!_showAreaSuggestions || _pincodeAreaSuggestions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final pincode = _areaPincodeController.text.trim();
+
+    return Container(
+      margin: const EdgeInsets.only(top: CRMSpacing.s, bottom: CRMSpacing.m),
+      padding: const EdgeInsets.all(CRMSpacing.m),
+      decoration: BoxDecoration(
+        color: CRMColors.primary.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(
+          color: CRMColors.primary.withOpacity(0.25),
+          width: 1.2,
         ),
-      ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.location_on_rounded, size: 16, color: CRMColors.primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Areas found for Pincode $pincode (${_pincodeAreaSuggestions.length}):',
+                    style: CRMTypography.captionBold.copyWith(
+                      color: CRMColors.primary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              InkWell(
+                onTap: () => setState(() => _showAreaSuggestions = false),
+                child: Icon(Icons.close_rounded, size: 16, color: CRMColors.textSecondaryOf(context)),
+              ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.s),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _pincodeAreaSuggestions.map((areaName) {
+              final isSelected = _areaNameController.text.trim().toLowerCase() == areaName.toLowerCase();
+
+              // Check if this suggested area is ALREADY saved in the system list below
+              AreaLookup? existingArea;
+              for (final a in _areas) {
+                if (a.name.trim().toLowerCase() == areaName.trim().toLowerCase() &&
+                    (pincode.isEmpty || a.pincode == pincode)) {
+                  existingArea = a;
+                  break;
+                }
+              }
+              final isAlreadySaved = existingArea != null;
+
+              return ChoiceChip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(areaName),
+                    if (isAlreadySaved) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.check_circle_rounded, size: 13, color: CRMColors.success),
+                    ],
+                  ],
+                ),
+                selected: isSelected,
+                selectedColor: isAlreadySaved
+                    ? CRMColors.success.withValues(alpha: 0.2)
+                    : CRMColors.primary.withValues(alpha: 0.25),
+                backgroundColor: CRMColors.cardBgOf(context),
+                labelStyle: TextStyle(
+                  color: isSelected
+                      ? (isAlreadySaved ? CRMColors.success : CRMColors.primary)
+                      : CRMColors.textOf(context),
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 12,
+                ),
+                side: BorderSide(
+                  color: isSelected
+                      ? (isAlreadySaved ? CRMColors.success : CRMColors.primary)
+                      : (isAlreadySaved
+                          ? CRMColors.success.withValues(alpha: 0.5)
+                          : CRMColors.borderOf(context)),
+                  width: isSelected ? 1.5 : 1.0,
+                ),
+                onSelected: (selected) {
+                  if (selected) {
+                    setState(() {
+                      _areaNameController.text = areaName;
+
+                      if (isAlreadySaved) {
+                        // Filter the areas list below to show the existing saved area mapping
+                        _areaSearchQuery = areaName;
+                        _areaSearchController.text = areaName;
+                      } else {
+                        // Reset filter so admin can review and save new area
+                        _areaSearchQuery = '';
+                        _areaSearchController.text = '';
+                      }
+                    });
+
+                    if (isAlreadySaved) {
+                      _showSnackBar('"$areaName" is already saved in the system list below.');
+                    } else {
+                      _showSnackBar('"$areaName" selected. Click "Save Configuration" to save it.');
+                    }
+                  }
+                },
+              );
+            }).toList(),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildAreaFormPanel() {
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
     return Container(
-      padding: const EdgeInsets.all(CRMSpacing.m),
-      decoration: BoxDecoration(
-        color: CRMColors.primary.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-        border: Border.all(color: CRMColors.primary.withOpacity(0.15), width: 1.5),
-      ),
+      padding: isMobile ? EdgeInsets.zero : const EdgeInsets.all(CRMSpacing.m),
+      decoration: isMobile
+          ? null
+          : BoxDecoration(
+              color: CRMColors.primary.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+              border: Border.all(color: CRMColors.primary.withOpacity(0.15), width: 1.5),
+            ),
       child: Form(
         key: _areaFormKey,
         child: Column(
@@ -736,96 +1304,198 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
               style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: CRMSpacing.m),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _areaPincodeController,
-                    style: TextStyle(color: CRMColors.textOf(context)),
-                    decoration: InputDecoration(
-                      labelText: 'Pincode (6 Digits) *',
-                      labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
-                      filled: true,
-                      fillColor: CRMColors.cardBgOf(context),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
-                      suffixIcon: _isFetchingPincode
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: Padding(
-                                padding: EdgeInsets.all(12),
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            )
-                          : null,
-                    ),
-                    keyboardType: TextInputType.number,
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) return 'Required';
-                      if (v.trim().length != 6 || int.tryParse(v) == null) {
-                        return 'Enter a valid 6-digit number';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(width: CRMSpacing.s),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _areaSelectedCityId,
-                    dropdownColor: CRMColors.cardBgOf(context),
-                    style: TextStyle(color: CRMColors.textOf(context)),
-                    decoration: InputDecoration(
-                      labelText: 'Select City *',
-                      labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
-                      filled: true,
-                      fillColor: CRMColors.cardBgOf(context),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
-                    ),
-                    items: _cities.map((c) {
-                      return DropdownMenuItem(value: c.id, child: Text(c.name, style: TextStyle(color: CRMColors.textOf(context))));
-                    }).toList(),
-                    onChanged: (v) => setState(() => _areaSelectedCityId = v),
-                    validator: (v) => v == null ? 'Required' : null,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: CRMSpacing.s),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _areaNameController,
-                    style: TextStyle(color: CRMColors.textOf(context)),
-                    decoration: InputDecoration(
-                      labelText: 'Area Name *',
-                      labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
-                      filled: true,
-                      fillColor: CRMColors.cardBgOf(context),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
-                    ),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  ),
-                ),
-                const SizedBox(width: CRMSpacing.m),
-                // Status toggle
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+            Builder(builder: (context) {
+              final bool isMobile = MediaQuery.of(context).size.width < 600;
+              if (isMobile) {
+                return Column(
                   children: [
-                    Text('Status: ', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-                    Switch(
-                      value: _areaIsActive,
-                      activeColor: CRMColors.success,
-                      onChanged: (val) => setState(() => _areaIsActive = val),
+                    TextFormField(
+                      controller: _areaPincodeController,
+                      style: TextStyle(color: CRMColors.textOf(context)),
+                      decoration: InputDecoration(
+                        labelText: 'Pincode (6 Digits) *',
+                        labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                        filled: true,
+                        fillColor: CRMColors.cardBgOf(context),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                        suffixIcon: _isFetchingPincode
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              )
+                            : null,
+                      ),
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (v) {
+                        final pincode = v.trim();
+                        if (pincode.length == 6 && !_isFetchingPincode) {
+                          _lookupPincode(pincode);
+                        }
+                      },
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) return 'Required';
+                        if (v.trim().length != 6 || int.tryParse(v) == null) {
+                          return 'Enter a valid 6-digit number';
+                        }
+                        return null;
+                      },
                     ),
-                    Text(_areaIsActive ? 'Active' : 'Inactive', style: CRMTypography.captionBold.copyWith(color: _areaIsActive ? CRMColors.success : CRMColors.textSecondaryOf(context))),
+                    _buildPincodeAreaSuggestions(),
+                    const SizedBox(height: CRMSpacing.s),
+                    DropdownButtonFormField<String>(
+                      value: _areaSelectedCityId,
+                      dropdownColor: CRMColors.cardBgOf(context),
+                      style: TextStyle(color: CRMColors.textOf(context)),
+                      decoration: InputDecoration(
+                        labelText: 'Select City *',
+                        labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                        filled: true,
+                        fillColor: CRMColors.cardBgOf(context),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                      ),
+                      items: _cities.map((c) {
+                        return DropdownMenuItem(value: c.id, child: Text(c.name, style: TextStyle(color: CRMColors.textOf(context))));
+                      }).toList(),
+                      onChanged: (v) => setState(() => _areaSelectedCityId = v),
+                      validator: (v) => v == null ? 'Required' : null,
+                    ),
+                    const SizedBox(height: CRMSpacing.s),
+                    TextFormField(
+                      controller: _areaNameController,
+                      style: TextStyle(color: CRMColors.textOf(context)),
+                      decoration: InputDecoration(
+                        labelText: 'Area Name *',
+                        labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                        filled: true,
+                        fillColor: CRMColors.cardBgOf(context),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    ),
+                    const SizedBox(height: CRMSpacing.s),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Status: ', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                        Switch(
+                          value: _areaIsActive,
+                          activeColor: CRMColors.success,
+                          onChanged: (val) => setState(() => _areaIsActive = val),
+                        ),
+                        Text(_areaIsActive ? 'Active' : 'Inactive', style: CRMTypography.captionBold.copyWith(color: _areaIsActive ? CRMColors.success : CRMColors.textSecondaryOf(context))),
+                      ],
+                    ),
                   ],
-                ),
-              ],
-            ),
+                );
+              } else {
+                return Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _areaPincodeController,
+                            style: TextStyle(color: CRMColors.textOf(context)),
+                            decoration: InputDecoration(
+                              labelText: 'Pincode (6 Digits) *',
+                              labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                              filled: true,
+                              fillColor: CRMColors.cardBgOf(context),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                              suffixIcon: _isFetchingPincode
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            keyboardType: TextInputType.number,
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: (v) {
+                              final pincode = v.trim();
+                              if (pincode.length == 6 && !_isFetchingPincode) {
+                                _lookupPincode(pincode);
+                              }
+                            },
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) return 'Required';
+                              if (v.trim().length != 6 || int.tryParse(v) == null) {
+                                return 'Enter a valid 6-digit number';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: CRMSpacing.s),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _areaSelectedCityId,
+                            dropdownColor: CRMColors.cardBgOf(context),
+                            style: TextStyle(color: CRMColors.textOf(context)),
+                            decoration: InputDecoration(
+                              labelText: 'Select City *',
+                              labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                              filled: true,
+                              fillColor: CRMColors.cardBgOf(context),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                            ),
+                            items: _cities.map((c) {
+                              return DropdownMenuItem(value: c.id, child: Text(c.name, style: TextStyle(color: CRMColors.textOf(context))));
+                            }).toList(),
+                            onChanged: (v) => setState(() => _areaSelectedCityId = v),
+                            validator: (v) => v == null ? 'Required' : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                    _buildPincodeAreaSuggestions(),
+                    const SizedBox(height: CRMSpacing.s),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _areaNameController,
+                            style: TextStyle(color: CRMColors.textOf(context)),
+                            decoration: InputDecoration(
+                              labelText: 'Area Name *',
+                              labelStyle: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                              filled: true,
+                              fillColor: CRMColors.cardBgOf(context),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                            ),
+                            validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                          ),
+                        ),
+                        const SizedBox(width: CRMSpacing.m),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('Status: ', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                            Switch(
+                              value: _areaIsActive,
+                              activeColor: CRMColors.success,
+                              onChanged: (val) => setState(() => _areaIsActive = val),
+                            ),
+                            Text(_areaIsActive ? 'Active' : 'Inactive', style: CRMTypography.captionBold.copyWith(color: _areaIsActive ? CRMColors.success : CRMColors.textSecondaryOf(context))),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }
+            }),
             const SizedBox(height: CRMSpacing.m),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -840,8 +1510,14 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                     backgroundColor: CRMColors.primary,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
                   ),
-                  onPressed: _saveArea,
-                  child: Text('Save Configuration', style: CRMTypography.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
+                  onPressed: _isSavingArea ? null : _saveArea,
+                  child: _isSavingArea
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text('Save Configuration', style: CRMTypography.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -864,7 +1540,13 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
         elevation: 0.5,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_rounded, color: CRMColors.textOf(context)),
-          onPressed: () => context.go('/settings'),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              context.go('/settings');
+            }
+          },
         ),
         bottom: TabBar(
           controller: _tabController,

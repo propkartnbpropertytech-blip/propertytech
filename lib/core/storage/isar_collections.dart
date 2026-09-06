@@ -1,4 +1,5 @@
 import 'package:isar/isar.dart';
+import 'isar_hash.dart';
 
 part 'isar_collections.g.dart';
 
@@ -103,6 +104,8 @@ class RequirementLocal {
   String? configurationName;
   List<String>? configurationIds;
   List<String>? propertyTypeIds;
+  List<String>? furnishingIds;
+  List<String>? facingIds;
   late double minBudget;
   late double maxBudget;
   double? minArea;
@@ -110,6 +113,7 @@ class RequirementLocal {
   late List<String> areaIds;
   late List<String> areaNames;
   String? remarks;
+  String? notes;
   late String status;
   late DateTime createdAt;
   double? budget;

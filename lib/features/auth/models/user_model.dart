@@ -38,7 +38,10 @@ class UserModel extends Equatable {
   factory UserModel.fromJson(Map<String, dynamic> json) {
     final dataMap = json['data'] is Map<String, dynamic> ? json['data'] as Map<String, dynamic> : json;
     final userMap = dataMap['user'] is Map<String, dynamic> ? dataMap['user'] as Map<String, dynamic> : dataMap;
-    final token = json['token'] as String? ?? json['accessToken'] as String? ?? dataMap['token'] as String?;
+    final token = json['token'] as String? ??
+        json['accessToken'] as String? ??
+        dataMap['token'] as String? ??
+        dataMap['accessToken'] as String?;
     
     String role = 'Sales';
     if (userMap['roles'] is Map) {
@@ -75,6 +78,26 @@ class UserModel extends Equatable {
       adminName = userMap['admin_name']?.toString() ?? userMap['adminName']?.toString();
       adminEmail = userMap['admin_email']?.toString() ?? userMap['adminEmail']?.toString();
       adminRole = userMap['admin_role']?.toString() ?? userMap['adminRole']?.toString();
+    }
+
+    // If they have Admin role, but are managed by an Admin, they are a Telecaller
+    if (role == 'Admin' && adminId != null) {
+      role = 'Telecaller';
+    }
+
+    // Hierarchy guard: ensure we don't display invalid hierarchy relationships (e.g. Sales as Admin's creator)
+    if (role == 'Admin' && (adminRole == 'Sales' || adminRole == 'Telecaller')) {
+      adminName = null;
+      adminEmail = null;
+      adminRole = null;
+    } else {
+      final isEmployee = role == 'Sales' || role == 'Telecaller';
+      final hasSalesOrTelecallerCreator = adminRole == 'Sales' || adminRole == 'Telecaller';
+      if (isEmployee && hasSalesOrTelecallerCreator) {
+        adminName = null;
+        adminEmail = null;
+        adminRole = null;
+      }
     }
 
     return UserModel(

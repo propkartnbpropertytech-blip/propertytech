@@ -64,6 +64,12 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
   ];
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _allDocuments = ResaleDocument.getMockData();
@@ -444,7 +450,7 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                   const SizedBox(height: CRMSpacing.m),
                   ListTile(
                     leading: const CircleAvatar(
-                      backgroundColor: Colors.blueAccent,
+                      backgroundColor: CRMColors.info,
                       child: Icon(Icons.link_rounded, color: Colors.white),
                     ),
                     title: const Text('Copy Access Link'),
@@ -807,7 +813,7 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                           DragDropUploadZone(
                             initialFileName: localFileName,
                             initialFileSize: localFileSize,
-                            onFileSelected: (name, ext, size) {
+                            onFileSelected: (name, ext, size, fileUrl) {
                               setModalState(() {
                                 localFileName = name;
                                 localFileExt = ext;
@@ -1084,7 +1090,9 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                         title: 'Total Documents',
                         value: '$_totalCount',
                         icon: Icons.folder_rounded,
-                        iconColor: CRMColors.primaryOf(context),
+                        iconColor: CRMColors.terracotta,
+                        backgroundColor: CRMColors.kpiPlum,
+                        benefit: 'All sale paperwork in one searchable vault',
                       ),
                     ),
                     SizedBox(
@@ -1093,7 +1101,9 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                         title: 'Active Documents',
                         value: '$_activeCount',
                         icon: Icons.check_circle_rounded,
-                        iconColor: CRMColors.success,
+                        iconColor: CRMColors.text,
+                        backgroundColor: CRMColors.kpiSage,
+                        benefit: 'Live deal files ready for closing',
                       ),
                     ),
                     SizedBox(
@@ -1102,7 +1112,9 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                         title: 'Sold Properties Docs',
                         value: '$_soldCount',
                         icon: Icons.home_filled,
-                        iconColor: Colors.teal,
+                        iconColor: CRMColors.terracotta,
+                        backgroundColor: CRMColors.kpiTerracotta,
+                        benefit: 'Closed deals retained for compliance',
                       ),
                     ),
                     SizedBox(
@@ -1111,7 +1123,9 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
                         title: 'Recent Uploads (7d)',
                         value: '$_recentCount',
                         icon: Icons.cloud_done_rounded,
-                        iconColor: Colors.blue,
+                        iconColor: CRMColors.terracotta,
+                        backgroundColor: CRMColors.kpiSand,
+                        benefit: 'New files keep transactions moving',
                       ),
                     ),
                   ],

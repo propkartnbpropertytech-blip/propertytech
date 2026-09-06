@@ -2,8 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Apple-inspired typography scale.
-/// SF Pro on Apple platforms (system default); Inter elsewhere via google_fonts.
+import 'dart:ui' as ui;
+
+/// PropKart typography — Single unified DM Sans font across entire UI chrome.
 class CRMTypography {
   static bool get _useSystemSf {
     if (kIsWeb) return false;
@@ -11,12 +12,12 @@ class CRMTypography {
         defaultTargetPlatform == TargetPlatform.macOS;
   }
 
-  static String? get fontFamily => _useSystemSf ? null : 'Inter';
+  static String? get fontFamily => _useSystemSf ? null : 'DM Sans';
 
   static TextStyle _base({
     required double fontSize,
     required FontWeight fontWeight,
-    double height = 1.3,
+    double height = 1.35,
     double letterSpacing = 0,
     Color? color,
   }) {
@@ -29,7 +30,7 @@ class CRMTypography {
         color: color,
       );
     }
-    return GoogleFonts.inter(
+    return GoogleFonts.dmSans(
       fontSize: fontSize,
       fontWeight: fontWeight,
       height: height,
@@ -38,50 +39,71 @@ class CRMTypography {
     );
   }
 
+  /// Brand wordmark / greeting name
+  static TextStyle get brandMark => _base(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.2,
+      );
+
+  static TextStyle get greetingName => _base(
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.3,
+      );
+
+  static TextStyle get clockDisplay => _base(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.1,
+      ).copyWith(
+        fontFeatures: const [ui.FontFeature.tabularFigures()],
+      );
+
   static TextStyle get largeDisplay => _base(
-        fontSize: 40,
-        fontWeight: FontWeight.bold,
-        height: 1.15,
-        letterSpacing: -1.0,
+        fontSize: 28,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+        letterSpacing: -0.5,
       );
 
   static TextStyle get largeTitle => _base(
-        fontSize: 34,
-        fontWeight: FontWeight.bold,
-        height: 1.18,
-        letterSpacing: -0.8,
+        fontSize: 28,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+        letterSpacing: -0.5,
       );
 
   static TextStyle get display => _base(
-        fontSize: 32,
-        fontWeight: FontWeight.bold,
+        fontSize: 26,
+        fontWeight: FontWeight.w700,
         height: 1.2,
-        letterSpacing: -0.8,
+        letterSpacing: -0.4,
       );
 
   static TextStyle get title => _base(
-        fontSize: 28,
-        fontWeight: FontWeight.bold,
-        height: 1.2,
-        letterSpacing: -0.6,
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        height: 1.3,
+        letterSpacing: -0.3,
       );
 
   static TextStyle get pageTitle => _base(
-        fontSize: 24,
-        fontWeight: FontWeight.bold,
-        height: 1.25,
+        fontSize: 28,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
         letterSpacing: -0.5,
       );
 
   static TextStyle get navigationTitle => _base(
-        fontSize: 17,
+        fontSize: 16,
         fontWeight: FontWeight.w600,
-        height: 1.25,
+        height: 1.3,
         letterSpacing: -0.2,
       );
 
   static TextStyle get headline => _base(
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: FontWeight.w600,
         height: 1.3,
         letterSpacing: -0.3,
@@ -95,38 +117,38 @@ class CRMTypography {
       );
 
   static TextStyle get sectionHeader => _base(
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: FontWeight.w600,
         height: 1.3,
         letterSpacing: 0.2,
       );
 
   static TextStyle get cardTitle => _base(
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: FontWeight.w600,
         height: 1.35,
       );
 
   static TextStyle get body => _base(
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: FontWeight.normal,
         height: 1.45,
       );
 
   static TextStyle get bodyMedium => _base(
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: FontWeight.w500,
         height: 1.45,
       );
 
   static TextStyle get subheadline => _base(
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: FontWeight.normal,
         height: 1.4,
       );
 
   static TextStyle get label => _base(
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: FontWeight.w500,
         height: 1.35,
       );
@@ -150,16 +172,29 @@ class CRMTypography {
       );
 
   static TextStyle get button => _base(
-        fontSize: 15,
-        fontWeight: FontWeight.w600,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
         height: 1.2,
       );
 
   static TextStyle get statistics => _base(
         fontSize: 28,
-        fontWeight: FontWeight.bold,
+        fontWeight: FontWeight.w700,
         height: 1.15,
         letterSpacing: -0.6,
+      );
+
+  static TextStyle get heroStatistic => _base(
+        fontSize: 40,
+        fontWeight: FontWeight.w700,
+        height: 1.1,
+        letterSpacing: -0.8,
+      );
+
+  static TextStyle get benefit => _base(
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        height: 1.35,
       );
 
   static TextStyle get chartLabel => _base(
@@ -173,5 +208,11 @@ class CRMTypography {
         fontWeight: FontWeight.w600,
         height: 1.3,
         letterSpacing: 0.2,
+      );
+
+  static TextStyle get tableCell => _base(
+        fontSize: 13,
+        fontWeight: FontWeight.normal,
+        height: 1.35,
       );
 }

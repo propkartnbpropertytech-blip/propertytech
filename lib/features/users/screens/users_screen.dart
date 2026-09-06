@@ -12,10 +12,11 @@ import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
-import '../../../core/design_system/widgets/data_table.dart';
+import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/api/cloudinary_uploader.dart';
 import 'package:dio/dio.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
@@ -25,6 +26,8 @@ import '../../../core/utils/budget_formatter.dart';
 import '../../../core/security/role_guard.dart';
 import '../../properties/repository/properties_repository.dart';
 import '../../requirements/repository/requirements_repository.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/design_system/widgets/drawers.dart';
 import '../../properties/models/property_model.dart';
 import '../../requirements/models/requirement_model.dart';
 
@@ -50,6 +53,12 @@ class _UsersScreenState extends State<UsersScreen> {
     super.initState();
     _triggerFetch();
     _fetchPasswordResets();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchPasswordResets() async {
@@ -115,13 +124,26 @@ class _UsersScreenState extends State<UsersScreen> {
         final usersState = context.read<UsersBloc>().state;
         List<RoleModel> roles = [];
         if (usersState is UsersLoaded) {
-          roles = usersState.roles;
-          if (callerRole == 'Admin') {
-            roles = roles
-                .where((r) => r.name.toLowerCase() == 'sales')
-                .toList();
+          if (callerRole == 'Admin' || callerRole == 'Telecaller') {
+            final salesRole = usersState.roles.firstWhere(
+              (r) => r.name.toLowerCase() == 'sales',
+              orElse: () => const RoleModel(id: '', name: 'Sales', description: ''),
+            );
+            final adminRole = usersState.roles.firstWhere(
+              (r) => r.name.toLowerCase() == 'admin',
+              orElse: () => const RoleModel(id: '', name: 'Admin', description: ''),
+            );
+            roles = [
+              if (salesRole.id.isNotEmpty) salesRole,
+              if (adminRole.id.isNotEmpty)
+                RoleModel(
+                  id: adminRole.id,
+                  name: 'Telecaller',
+                  description: 'Telecaller with Admin privileges',
+                ),
+            ];
           } else if (callerRole == 'Super Admin') {
-            roles = roles
+            roles = usersState.roles
                 .where((r) => r.name.toLowerCase() != 'super admin')
                 .toList();
           }
@@ -610,7 +632,7 @@ class _UsersScreenState extends State<UsersScreen> {
       context,
       title: "Confirm Deletion",
       content:
-          "Are you sure you want to delete ${user.fullName}? This operation will perform a soft delete.",
+          "Are you sure you want to delete ${user.fullName}? This user will be permanently removed from the system.",
     );
     if (confirmed == true && mounted) {
       context.read<UsersBloc>().add(DeleteUserRequested(id: user.id));
@@ -623,9 +645,22 @@ class _UsersScreenState extends State<UsersScreen> {
     final bool isMobile = screenWidth < 768;
 
     final authState = context.watch<AuthBloc>().state;
+    if (authState is AuthInitial || authState is AuthLoading) {
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     bool hasAccess = false;
     if (authState is Authenticated) {
-      hasAccess = authState.user.permissions.contains("users.read");
+      hasAccess = authState.user.permissions.contains("users.read") ||
+          authState.user.role.toLowerCase() == 'admin' ||
+          authState.user.role.toLowerCase() == 'super admin' ||
+          authState.user.role.toLowerCase() == 'telecaller' ||
+          authState.user.role.toLowerCase() == 'sales';
     }
 
     if (!hasAccess) {
@@ -692,6 +727,7 @@ class _UsersScreenState extends State<UsersScreen> {
           }
         },
         child: SingleChildScrollView(
+          clipBehavior: Clip.hardEdge,
           padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.l),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -704,24 +740,21 @@ class _UsersScreenState extends State<UsersScreen> {
               _buildStatisticsRow(),
               const SizedBox(height: CRMSpacing.l),
 
-              // Reset Requests Section (if any requests exist)
-              _buildPasswordResetsSection(),
-              if (_passwordResets.isNotEmpty)
-                const SizedBox(height: CRMSpacing.l),
-
-              // 3. Search and Filters Card
-              _buildSearchAndFiltersCard(),
-              const SizedBox(height: CRMSpacing.l),
-
-              // TabBar for Super Admin
+              // TabBar for Admin & Super Admin
               if (authState is Authenticated &&
-                  authState.user.role == 'Super Admin') ...[
+                  (authState.user.role == 'Super Admin' || authState.user.role == 'Admin')) ...[
                 _buildTabBar(),
                 const SizedBox(height: CRMSpacing.m),
               ],
 
-              // 4. Employees Data Table
-              _buildEmployeesTable(),
+              // Content based on active tab
+              if (_activeTabIndex == 1)
+                _buildPasswordResetsTabContent()
+              else ...[
+                _buildSearchAndFiltersCard(),
+                const SizedBox(height: CRMSpacing.l),
+                _buildEmployeesTable(),
+              ],
             ],
           ),
         ),
@@ -730,59 +763,14 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Widget _buildPageHeader() {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 600;
-
-    final textColumn = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "User Management",
-          style: CRMTypography.pageTitle.copyWith(
-            color: CRMColors.text,
-            fontSize: isMobile ? 22 : 28,
-          ),
-        ),
-        const SizedBox(height: 4.0),
-        Text(
-          "Configure workspace permissions, logins, and enterprise roles",
-          style: CRMTypography.body.copyWith(
-            color: CRMColors.textSecondary,
-            fontSize: isMobile ? 13 : 14,
-          ),
-        ),
-      ],
-    );
-
-    if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          textColumn,
-          const SizedBox(height: CRMSpacing.m),
-          SizedBox(
-            width: double.infinity,
-            child: CRMButton(
-              label: "Add Employee",
-              prefixIcon: Icons.add_rounded,
-              onPressed: () => _showAddEditUserDialog(),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(child: textColumn),
-        const SizedBox(width: CRMSpacing.m),
-        CRMButton(
-          label: "Add Employee",
-          prefixIcon: Icons.add_rounded,
-          onPressed: () => _showAddEditUserDialog(),
-        ),
-      ],
+    return CRMPageHeader(
+      title: "Employees",
+      trailing: CRMButton(
+        label: "Add Employee",
+        prefixIcon: Icons.add_rounded,
+        height: 40,
+        onPressed: () => _showAddEditUserDialog(),
+      ),
     );
   }
 
@@ -809,35 +797,28 @@ class _UsersScreenState extends State<UsersScreen> {
               .length;
         }
 
-        final double screenWidth = MediaQuery.of(context).size.width;
-        final int crossAxisCount = screenWidth >= 1000 ? 3 : 2;
-        final double childAspectRatio = screenWidth >= 1000 ? 2.5 : 1.5;
-
-        return GridView.count(
-          crossAxisCount: crossAxisCount,
-          crossAxisSpacing: CRMSpacing.m,
-          mainAxisSpacing: CRMSpacing.m,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: childAspectRatio,
+        return CRMResponsiveKpiRow(
           children: [
             CRMKPICard(
               title: "TOTAL EMPLOYEES",
               value: total.toString(),
               icon: Icons.people_rounded,
-              iconColor: CRMColors.primary,
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiPlum,
             ),
             CRMKPICard(
               title: "ACTIVE SYSTEM USERS",
               value: active.toString(),
               icon: Icons.check_circle_outline_rounded,
-              iconColor: CRMColors.success,
+              iconColor: CRMColors.text,
+              backgroundColor: CRMColors.kpiSage,
             ),
             CRMKPICard(
               title: "ADMINISTRATORS",
               value: admins.toString(),
               icon: Icons.admin_panel_settings_rounded,
-              iconColor: CRMColors.info,
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiRose,
             ),
           ],
         );
@@ -1067,17 +1048,20 @@ class _UsersScreenState extends State<UsersScreen> {
           final isSuperAdmin =
               currentUser != null && currentUser.role == 'Super Admin';
           if (isSuperAdmin) {
-            final targetRole = _activeTabIndex == 0 ? 'Admin' : 'Sales';
+            if (_activeTabIndex == 2) {
+              users = users
+                  .where((u) => u.roleName.toLowerCase() == 'admin')
+                  .toList();
+            } else {
+              users = users
+                  .where((u) => u.roleName.toLowerCase() == 'sales' || u.roleName.toLowerCase() == 'telecaller')
+                  .toList();
+            }
+          } else if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Telecaller')) {
+            // Admins and Telecallers can see and manage Sales and Telecaller users
             users = users
                 .where(
-                  (u) => u.roleName.toLowerCase() == targetRole.toLowerCase(),
-                )
-                .toList();
-          } else if (currentUser != null && currentUser.role == 'Admin') {
-            // Regular Admins can only see and manage Sales users
-            users = users
-                .where(
-                  (u) => u.roleName.toLowerCase() == 'sales',
+                  (u) => u.roleName.toLowerCase() == 'sales' || u.roleName.toLowerCase() == 'telecaller',
                 )
                 .toList();
           }
@@ -1133,149 +1117,266 @@ class _UsersScreenState extends State<UsersScreen> {
           );
         }
 
-        final isInactiveFilter = _selectedStatus.toLowerCase() == 'inactive';
-        return CRMDataTable(
-          isLoading: isLoading,
-          emptyTitle: isInactiveFilter
-              ? 'No Inactive Employees Found'
-              : 'No Employees Found',
-          emptyDescription:
-              'Try adjusting your filters or add a new employee profile.',
-          dataRowMinHeight: 52.0,
-          dataRowMaxHeight: 60.0,
-          showCheckboxColumn: false,
-          columns: const [
-            DataColumn(label: Text('Full Name')),
-            DataColumn(label: Text('Role')),
-            DataColumn(label: Text('Email Address')),
-            DataColumn(label: Text('Mobile')),
-            DataColumn(label: Text('Active Logins')),
-            DataColumn(label: Text('Actions')),
-          ],
-          rows: users.map((user) {
-            final isAdmin = user.roleName.toLowerCase() == 'admin';
+        return _buildFullWidthEmployeesTable(
+          users: users,
+          isCurrentUserAdmin: isCurrentUserAdmin,
+        );
+      },
+    );
+  }
 
-            return DataRow(
-              onSelectChanged:
-                  (isCurrentUserAdmin && user.roleName.toLowerCase() == 'sales')
-                  ? (selected) {
-                      _showSalesmanDetails(user);
-                    }
-                  : null,
-              cells: [
-                DataCell(
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: isAdmin
-                            ? CRMColors.info.withOpacity(0.1)
-                            : CRMColors.primary.withOpacity(0.1),
-                        radius: 16,
-                        child: Icon(
-                          isAdmin
-                              ? Icons.admin_panel_settings_rounded
-                              : Icons.person_rounded,
-                          color: isAdmin ? CRMColors.info : CRMColors.primary,
-                          size: 16,
+  Widget _buildFullWidthEmployeesTable({
+    required List<UserModel> users,
+    required bool isCurrentUserAdmin,
+  }) {
+    Widget headerCell(String label, {TextAlign align = TextAlign.left}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: CRMSpacing.s,
+          vertical: CRMSpacing.s,
+        ),
+        child: Text(
+          label,
+          textAlign: align,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: CRMTypography.captionBold.copyWith(
+            color: CRMColors.textSecondaryOf(context),
+          ),
+        ),
+      );
+    }
+
+    Widget bodyCell(Widget child) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: CRMSpacing.s,
+          vertical: CRMSpacing.xs,
+        ),
+        child: child,
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(
+          color: CRMColors.borderOf(context).withOpacity(0.55),
+          width: 0.5,
+        ),
+        boxShadow: CRMShadows.soft,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Table(
+        columnWidths: const {
+          0: FlexColumnWidth(2.4),
+          1: FlexColumnWidth(1.1),
+          2: FlexColumnWidth(2.4),
+          3: FlexColumnWidth(1.4),
+          4: FlexColumnWidth(1.3),
+          5: FlexColumnWidth(1.1),
+        },
+        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        children: [
+          TableRow(
+            decoration: BoxDecoration(
+              color: CRMColors.sidebarBgOf(context),
+            ),
+            children: [
+              headerCell('Full Name'),
+              headerCell('Role'),
+              headerCell('Email Address'),
+              headerCell('Mobile'),
+              headerCell('Active Logins'),
+              headerCell('Actions'),
+            ],
+          ),
+          ...users.map((user) {
+            final isAdmin = user.roleName.toLowerCase() == 'admin' ||
+                user.roleName.toLowerCase() == 'telecaller';
+            final isClickable = isCurrentUserAdmin &&
+                (user.roleName.toLowerCase() == 'sales' ||
+                    user.roleName.toLowerCase() == 'telecaller');
+
+            return TableRow(
+              decoration: BoxDecoration(
+                color: CRMColors.cardBgOf(context),
+                border: Border(
+                  top: BorderSide(
+                    color: CRMColors.borderOf(context).withOpacity(0.5),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              children: [
+                bodyCell(
+                  InkWell(
+                    onTap: isClickable ? () => _showSalesmanDetails(user) : null,
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: isAdmin
+                              ? CRMColors.info.withOpacity(0.1)
+                              : CRMColors.primary.withOpacity(0.1),
+                          radius: 16,
+                          backgroundImage: (user.profilePhoto != null &&
+                                  user.profilePhoto!.isNotEmpty)
+                              ? NetworkImage(user.profilePhoto!)
+                              : null,
+                          child: (user.profilePhoto != null &&
+                                  user.profilePhoto!.isNotEmpty)
+                              ? null
+                              : Icon(
+                                  isAdmin
+                                      ? Icons.admin_panel_settings_rounded
+                                      : Icons.person_rounded,
+                                  color: isAdmin
+                                      ? CRMColors.info
+                                      : CRMColors.primary,
+                                  size: 16,
+                                ),
                         ),
-                      ),
-                      const SizedBox(width: CRMSpacing.s),
-                      Text(
-                        user.fullName,
-                        style: CRMTypography.bodyMedium.copyWith(
-                          color: CRMColors.text,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: CRMSpacing.s,
-                      vertical: CRMSpacing.xxs,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isAdmin
-                          ? CRMColors.info.withOpacity(0.12)
-                          : CRMColors.primary.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(
-                        CRMBorderRadius.round,
-                      ),
-                    ),
-                    child: Text(
-                      user.roleName,
-                      style: CRMTypography.captionBold.copyWith(
-                        color: isAdmin ? CRMColors.info : CRMColors.primary,
-                      ),
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    user.email,
-                    style: CRMTypography.body.copyWith(
-                      color: CRMColors.textSecondary,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    user.mobile ?? '-',
-                    style: CRMTypography.body.copyWith(
-                      color: CRMColors.textSecondary,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Switch(
-                    value: user.isActive,
-                    activeColor: CRMColors.primary,
-                    onChanged: (val) {
-                      context.read<UsersBloc>().add(
-                        ToggleUserStatusRequested(id: user.id, isActive: val),
-                      );
-                    },
-                  ),
-                ),
-                DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isAdmin) ...[
-                        IconButton(
-                          icon: const Icon(
-                            Icons.analytics_outlined,
-                            color: CRMColors.warning,
-                            size: 18,
+                        const SizedBox(width: CRMSpacing.s),
+                        Expanded(
+                          child: Text(
+                            user.fullName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: CRMTypography.bodyMedium.copyWith(
+                              color: CRMColors.text,
+                            ),
                           ),
-                          onPressed: () => _showAdminStatsDialog(user),
                         ),
                       ],
-                      IconButton(
-                        icon: Icon(
-                          Icons.edit_outlined,
-                          color: CRMColors.primary,
-                          size: 18,
-                        ),
-                        onPressed: () => _showAddEditUserDialog(user),
+                    ),
+                  ),
+                ),
+                bodyCell(
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: CRMSpacing.s,
+                        vertical: CRMSpacing.xxs,
                       ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.delete_outline_rounded,
-                          color: CRMColors.danger,
-                          size: 18,
+                      decoration: BoxDecoration(
+                        color: isAdmin
+                            ? CRMColors.info.withOpacity(0.12)
+                            : CRMColors.primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(
+                          CRMBorderRadius.round,
                         ),
-                        onPressed: () => _showDeleteConfirmDialog(user),
                       ),
-                    ],
+                      child: Text(
+                        user.roleName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CRMTypography.captionBold.copyWith(
+                          color: isAdmin ? CRMColors.info : CRMColors.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                bodyCell(
+                  Text(
+                    user.email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: CRMTypography.body.copyWith(
+                      color: CRMColors.textSecondary,
+                    ),
+                  ),
+                ),
+                bodyCell(
+                  Text(
+                    user.mobile ?? '-',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: CRMTypography.body.copyWith(
+                      color: CRMColors.textSecondary,
+                    ),
+                  ),
+                ),
+                bodyCell(
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Switch(
+                      value: user.isActive,
+                      activeColor: CRMColors.primary,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (val) {
+                        context.read<UsersBloc>().add(
+                          ToggleUserStatusRequested(id: user.id, isActive: val),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                bodyCell(
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isAdmin)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.analytics_outlined,
+                                color: CRMColors.warning,
+                                size: 18,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              onPressed: () => _showAdminStatsDialog(user),
+                            ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.edit_outlined,
+                              color: CRMColors.primary,
+                              size: 18,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            onPressed: () => _showAddEditUserDialog(user),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.delete_outline_rounded,
+                              color: CRMColors.danger,
+                              size: 18,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            onPressed: () => _showDeleteConfirmDialog(user),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],
             );
-          }).toList(),
-        );
-      },
+          }),
+        ],
+      ),
     );
   }
 
@@ -1292,7 +1393,7 @@ class _UsersScreenState extends State<UsersScreen> {
             currentUser.role == 'Super Admin' ||
             RoleGuard.isAdmin(currentUser.role));
     final bool isClickable =
-        isCurrentUserAdmin && user.roleName.toLowerCase() == 'sales';
+        isCurrentUserAdmin && (user.roleName.toLowerCase() == 'sales' || user.roleName.toLowerCase() == 'telecaller');
 
     final cardContent = Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.s),
@@ -1316,13 +1417,18 @@ class _UsersScreenState extends State<UsersScreen> {
                     ? CRMColors.info.withOpacity(0.1)
                     : CRMColors.primary.withOpacity(0.1),
                 radius: 18,
-                child: Icon(
-                  isAdmin
-                      ? Icons.admin_panel_settings_rounded
-                      : Icons.person_rounded,
-                  color: isAdmin ? CRMColors.info : CRMColors.primary,
-                  size: 18,
-                ),
+                backgroundImage: (user.profilePhoto != null && user.profilePhoto!.isNotEmpty)
+                    ? NetworkImage(user.profilePhoto!)
+                    : null,
+                child: (user.profilePhoto != null && user.profilePhoto!.isNotEmpty)
+                    ? null
+                    : Icon(
+                        isAdmin
+                            ? Icons.admin_panel_settings_rounded
+                            : Icons.person_rounded,
+                        color: isAdmin ? CRMColors.info : CRMColors.primary,
+                        size: 18,
+                      ),
               ),
               const SizedBox(width: CRMSpacing.s),
               Expanded(
@@ -1702,7 +1808,11 @@ class _UsersScreenState extends State<UsersScreen> {
                                               passwordController.text;
                                           await DioClient.dio.post(
                                             '/users/password-resets/${request['id']}/resolve',
-                                            data: {'newPassword': newPassword},
+                                            data: {
+                                              'newPassword': newPassword,
+                                              'userId': request['userId'],
+                                              'email': request['userEmail'],
+                                            },
                                           );
 
                                           Navigator.pop(dialogContext);
@@ -1764,6 +1874,9 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Widget _buildTabBar() {
+    final authState = context.read<AuthBloc>().state;
+    final isSuperAdmin = authState is Authenticated && authState.user.role == 'Super Admin';
+
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -1777,23 +1890,33 @@ class _UsersScreenState extends State<UsersScreen> {
           ),
           boxShadow: CRMShadows.soft,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildTabItem(
-              0,
-              "Administrators",
-              Icons.admin_panel_settings_rounded,
-            ),
-            const SizedBox(width: 4),
-            _buildTabItem(1, "Sales Representatives", Icons.person_rounded),
-          ],
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildTabItem(0, "Employees", Icons.people_rounded),
+              const SizedBox(width: 4),
+              _buildTabItem(
+                1,
+                _passwordResets.isNotEmpty
+                    ? "Password Requests (${_passwordResets.length})"
+                    : "Password Requests",
+                Icons.vpn_key_rounded,
+                badgeCount: _passwordResets.length,
+              ),
+              if (isSuperAdmin) ...[
+                const SizedBox(width: 4),
+                _buildTabItem(2, "Administrators", Icons.admin_panel_settings_rounded),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildTabItem(int index, String label, IconData icon) {
+  Widget _buildTabItem(int index, String label, IconData icon, {int badgeCount = 0}) {
     final isSelected = _activeTabIndex == index;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -1840,9 +1963,193 @@ class _UsersScreenState extends State<UsersScreen> {
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 ),
               ),
+              if (badgeCount > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: CRMColors.warning,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$badgeCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPasswordResetsTabContent() {
+    return CRMCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.vpn_key_rounded,
+                    color: CRMColors.warning,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    "Pending Password Reset Requests (${_passwordResets.length})",
+                    style: CRMTypography.sectionTitle.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+                tooltip: 'Refresh Requests',
+                onPressed: _fetchPasswordResets,
+              ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.m),
+          if (_isLoadingResets)
+            const Padding(
+              padding: EdgeInsets.all(32.0),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_passwordResets.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40.0),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.check_circle_outline_rounded,
+                        size: 48, color: CRMColors.success.withOpacity(0.8)),
+                    const SizedBox(height: 12),
+                    Text(
+                      "No Pending Password Reset Requests",
+                      style: CRMTypography.bodyMedium.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "Requests submitted by salespeople will appear here.",
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textMutedOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _passwordResets.length,
+              separatorBuilder: (context, index) =>
+                  Divider(color: CRMColors.borderOf(context).withOpacity(0.5)),
+              itemBuilder: (context, index) {
+                final r = _passwordResets[index];
+                final userName = r['userName'] ?? '';
+                final userEmail = r['userEmail'] ?? '';
+                final roleName = r['roleName'] ?? 'Sales';
+                final createdAtStr = r['createdAt'] ?? '';
+
+                String timeDisplay = 'recently';
+                try {
+                  final dt = DateTime.parse(createdAtStr);
+                  final diff = DateTime.now().difference(dt);
+                  if (diff.inMinutes < 60) {
+                    timeDisplay = '${diff.inMinutes}m ago';
+                  } else if (diff.inHours < 24) {
+                    timeDisplay = '${diff.inHours}h ago';
+                  } else {
+                    timeDisplay = '${diff.inDays}d ago';
+                  }
+                } catch (_) {}
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: CRMColors.warning.withOpacity(0.15),
+                        child: Text(
+                          userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                          style: const TextStyle(
+                            color: CRMColors.warning,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  userName,
+                                  style: CRMTypography.bodyMedium.copyWith(
+                                    color: CRMColors.textOf(context),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.warning.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    roleName,
+                                    style: CRMTypography.caption.copyWith(
+                                      color: CRMColors.warning,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "$userEmail • Requested $timeDisplay",
+                              style: CRMTypography.caption.copyWith(
+                                color: CRMColors.textSecondaryOf(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      CRMButton(
+                        label: "Reset Password",
+                        variant: CRMButtonVariant.primary,
+                        onPressed: () => _showResetPasswordDialog(r),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
       ),
     );
   }
@@ -1895,9 +2202,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.l),
                 child: FutureBuilder<List<dynamic>>(
                   future: Future.wait([
-                    PropertiesRepository().getProperties(
-                      createdBy: salesman.id,
-                    ),
+                    PropertiesRepository().getProperties(),
                     RequirementsRepository().getRequirements(),
                   ]),
                   builder: (context, snapshot) {
@@ -1928,17 +2233,42 @@ class _UsersScreenState extends State<UsersScreen> {
                       );
                     }
 
-                    final properties =
+                    final allProps =
                         (snapshot.data?[0] as List<PropertyModel>?) ?? [];
                     final allReqs =
                         (snapshot.data?[1] as List<RequirementModel>?) ?? [];
-                    final requirements = allReqs
-                        .where((r) => r.adminId == salesman.id)
-                        .toList();
+
+                    final sId = salesman.id;
+                    final sName = salesman.fullName.toLowerCase().trim();
+
+                    final salesmanProps = allProps.where((p) {
+                      final pAdminId = p.adminId ?? '';
+                      final pCreatedBy = p.createdBy;
+                      final pCreatedByName = p.createdByName.toLowerCase().trim();
+
+                      return pAdminId == sId ||
+                             pCreatedBy == sId ||
+                             (pCreatedByName.isNotEmpty && pCreatedByName == sName) ||
+                             (pCreatedBy.toLowerCase().trim() == sName);
+                    }).toList();
+
+                    final salesmanReqs = allReqs.where((r) {
+                      final rAdminId = r.adminId ?? '';
+                      final rAssignedTo = r.assignedTo ?? '';
+                      final rCreatedBy = r.createdBy ?? '';
+                      final rCreatorName = (r.creatorName ?? '').toLowerCase().trim();
+                      final rAssigneeName = (r.assigneeName ?? '').toLowerCase().trim();
+
+                      return rAdminId == sId ||
+                             rAssignedTo == sId ||
+                             rCreatedBy == sId ||
+                             (rCreatorName.isNotEmpty && rCreatorName == sName) ||
+                             (rAssigneeName.isNotEmpty && rAssigneeName == sName);
+                    }).toList();
 
                     // Filter helper functions
                     List<PropertyModel> getFilteredProperties() {
-                      return properties.where((p) {
+                      return salesmanProps.where((p) {
                         final ltName = p.listingTypeName.toLowerCase();
                         final matchesListing = activeTab == 'Rent'
                             ? ltName.contains('rent')
@@ -1950,7 +2280,7 @@ class _UsersScreenState extends State<UsersScreen> {
                     }
 
                     List<RequirementModel> getFilteredRequirements() {
-                      return requirements.where((r) {
+                      return salesmanReqs.where((r) {
                         final matchesListing =
                             _getListingTypeLabelForSalesman(r) == activeTab;
                         return matchesListing;
@@ -1993,15 +2323,19 @@ class _UsersScreenState extends State<UsersScreen> {
                             Row(
                               children: [
                                 CircleAvatar(
-                                  backgroundColor: const Color(
-                                    0xFF64826F,
-                                  ).withOpacity(0.1),
+                                  backgroundColor:
+                                      CRMColors.primary.withOpacity(0.1),
                                   radius: 20,
-                                  child: const Icon(
-                                    Icons.person_rounded,
-                                    color: Color(0xFF64826F),
-                                    size: 20,
-                                  ),
+                                  backgroundImage: (salesman.profilePhoto != null && salesman.profilePhoto!.isNotEmpty)
+                                      ? NetworkImage(salesman.profilePhoto!)
+                                      : null,
+                                  child: (salesman.profilePhoto != null && salesman.profilePhoto!.isNotEmpty)
+                                      ? null
+                                      : Icon(
+                                          Icons.person_rounded,
+                                          color: CRMColors.primary,
+                                          size: 20,
+                                        ),
                                 ),
                                 const SizedBox(width: CRMSpacing.m),
                                 Column(
@@ -2108,7 +2442,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
                                         color: activeTab == 'Rent'
-                                            ? const Color(0xFF64826F)
+                                            ? CRMColors.primary
                                             : Colors.transparent,
                                         borderRadius: BorderRadius.circular(20),
                                       ),
@@ -2135,7 +2469,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
                                         color: activeTab == 'Re-Sale'
-                                            ? const Color(0xFF64826F)
+                                            ? CRMColors.primary
                                             : Colors.transparent,
                                         borderRadius: BorderRadius.circular(20),
                                       ),
@@ -2167,7 +2501,7 @@ class _UsersScreenState extends State<UsersScreen> {
                               "Properties Added",
                               filteredProps.length.toString(),
                               Icons.home_work_outlined,
-                              const Color(0xFF64826F),
+                              CRMColors.primary,
                               isMobile,
                             ),
                             _buildDialogStatCard(
@@ -2206,10 +2540,10 @@ class _UsersScreenState extends State<UsersScreen> {
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
                                   ),
-                                  side: const BorderSide(
-                                    color: Color(0xFF64826F),
+                                  side: BorderSide(
+                                    color: CRMColors.primary,
                                   ),
-                                  foregroundColor: const Color(0xFF64826F),
+                                  foregroundColor: CRMColors.primary,
                                 ),
                                 onPressed: () => setDialogState(
                                   () => currentView = 'properties',
@@ -2232,7 +2566,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
                                   ),
-                                  backgroundColor: const Color(0xFF64826F),
+                                  backgroundColor: CRMColors.primary,
                                   foregroundColor: Colors.white,
                                 ),
                                 onPressed: () => setDialogState(
@@ -2336,6 +2670,17 @@ class _UsersScreenState extends State<UsersScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            TextButton.icon(
+              icon: const Icon(Icons.open_in_new, size: 14),
+              label: Text(
+                isMobile ? "View All" : "Open in Properties Page",
+                style: const TextStyle(fontSize: 12),
+              ),
+              onPressed: () {
+                Navigator.of(context, rootNavigator: true).pop();
+                context.go('/properties?search=${Uri.encodeComponent(salesman.fullName)}');
+              },
+            ),
           ],
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -2352,6 +2697,10 @@ class _UsersScreenState extends State<UsersScreen> {
                     final p = list[index];
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.of(context, rootNavigator: true).pop();
+                        showCRMPropertyDrawer(context, p);
+                      },
                       title: Text(
                         p.title,
                         style: CRMTypography.bodyMedium.copyWith(
@@ -2368,7 +2717,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       trailing: Text(
                         BudgetFormatter.format(p.price),
                         style: CRMTypography.bodyMedium.copyWith(
-                          color: const Color(0xFF64826F),
+                          color: CRMColors.primary,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -2404,6 +2753,17 @@ class _UsersScreenState extends State<UsersScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            TextButton.icon(
+              icon: const Icon(Icons.open_in_new, size: 14),
+              label: Text(
+                isMobile ? "View All" : "Open in Leads Page",
+                style: const TextStyle(fontSize: 12),
+              ),
+              onPressed: () {
+                Navigator.of(context, rootNavigator: true).pop();
+                context.go('/requirements?search=${Uri.encodeComponent(salesman.fullName)}');
+              },
+            ),
           ],
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -2422,6 +2782,10 @@ class _UsersScreenState extends State<UsersScreen> {
                         '${r.propertyTypeName} (${r.configurationName ?? ""})';
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.of(context, rootNavigator: true).pop();
+                        context.go('/requirements?search=${Uri.encodeComponent(r.clientName)}');
+                      },
                       title: Text(
                         r.clientName,
                         style: CRMTypography.bodyMedium.copyWith(
@@ -2442,7 +2806,7 @@ class _UsersScreenState extends State<UsersScreen> {
                           Text(
                             "₹${BudgetFormatter.format(r.minBudget)} - ₹${BudgetFormatter.format(r.maxBudget)}",
                             style: CRMTypography.bodyMedium.copyWith(
-                              color: const Color(0xFF64826F),
+                              color: CRMColors.primary,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -2481,6 +2845,8 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   void _showAdminStatsDialog(UserModel user) {
+    // Capture once so dialog rebuilds do not re-fire the network call.
+    final statsFuture = DioClient.dio.get('/users/admins/${user.id}/stats');
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -2498,7 +2864,7 @@ class _UsersScreenState extends State<UsersScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 550),
             child: FutureBuilder<Response>(
-              future: DioClient.dio.get('/users/admins/${user.id}/stats'),
+              future: statsFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return SizedBox(
@@ -2771,7 +3137,12 @@ class _UsersScreenState extends State<UsersScreen> {
     Function(String) onUploaded,
   ) async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 85,
+    );
     if (pickedFile == null) return;
 
     dialogSetState(() {
@@ -2779,97 +3150,88 @@ class _UsersScreenState extends State<UsersScreen> {
     });
 
     try {
-      MultipartFile multipartFile;
+      final String fileExt = pickedFile.name.contains('.')
+          ? pickedFile.name.split('.').last.toLowerCase()
+          : 'jpg';
+      String mimeType = 'image/jpeg';
+      if (fileExt == 'png') {
+        mimeType = 'image/png';
+      } else if (fileExt == 'webp') {
+        mimeType = 'image/webp';
+      } else if (fileExt == 'gif') {
+        mimeType = 'image/gif';
+      } else if (fileExt == 'bmp') {
+        mimeType = 'image/bmp';
+      } else if (fileExt == 'heic') {
+        mimeType = 'image/heic';
+      } else if (fileExt == 'avif') {
+        mimeType = 'image/avif';
+      }
 
-      if (kIsWeb) {
-        final bytes = await pickedFile.readAsBytes();
-        if (bytes.length > 2 * 1024 * 1024) {
-          throw Exception("Image size must be less than 2 MB.");
-        }
-        multipartFile = MultipartFile.fromBytes(
-          bytes,
-          filename: pickedFile.name,
-          contentType: MediaType('image', 'jpeg'),
+      final bytes = await pickedFile.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        throw Exception("Image size must be less than 5 MB.");
+      }
+
+      String? uploadedUrl;
+      final String filename = pickedFile.name.isNotEmpty
+          ? pickedFile.name
+          : 'profile_photo.$fileExt';
+
+      // 1. Try Cloudinary direct signed upload
+      try {
+        uploadedUrl = await CloudinaryUploader.upload(
+          bytes: bytes,
+          filename: filename,
+          mimeType: mimeType,
+          resourceType: 'image',
+          folder: 'profiles',
+          fallbackEndpoint: '/users/upload-profile?updateSelf=false',
         );
-      } else {
-        final File file = File(pickedFile.path);
-        final int sizeInBytes = await file.length();
+      } catch (cloudErr) {
+        if (kDebugMode) {
+          print('⚠️ Cloudinary direct upload failed, attempting direct backend upload: $cloudErr');
+        }
+      }
 
-        File uploadFile = file;
+      // 2. Fallback to direct backend upload if needed
+      if (uploadedUrl == null || uploadedUrl.isEmpty) {
+        final multipartFile = MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+          contentType: MediaType.parse(mimeType),
+        );
 
-        // Deterministic compression pipeline
-        if (sizeInBytes > 0) {
-          final String targetPath =
-              "${Directory.systemTemp.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg";
+        final formData = FormData.fromMap({'file': multipartFile});
 
-          // Step 1: Compress with 80% quality and resize max 800x800 px
-          XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
-            file.absolute.path,
-            targetPath,
-            quality: 80,
-            minWidth: 800,
-            minHeight: 800,
-          );
-
-          if (compressedFile != null) {
-            uploadFile = File(compressedFile.path);
-            int compressedSize = await uploadFile.length();
-
-            // Step 2: If size exceeds 500 KB limit, re-compress with 70% quality
-            if (compressedSize > 500 * 1024) {
-              final String secondPath =
-                  "${Directory.systemTemp.path}/compressed_70_${DateTime.now().millisecondsSinceEpoch}.jpg";
-              final XFile? secondCompressed =
-                  await FlutterImageCompress.compressAndGetFile(
-                    file.absolute.path,
-                    secondPath,
-                    quality: 70,
-                    minWidth: 800,
-                    minHeight: 800,
-                  );
-              if (secondCompressed != null) {
-                uploadFile = File(secondCompressed.path);
-                compressedSize = await uploadFile.length();
-              }
-            }
-
-            // Step 3: Assert ultimate limit of 2 MB
-            if (compressedSize > 2 * 1024 * 1024) {
-              throw Exception(
-                "Compressed image size exceeds the required 2 MB limit.",
-              );
-            }
+        Response? response;
+        int retries = 3;
+        while (retries > 0) {
+          try {
+            response = await DioClient.dio.post(
+              '/users/upload-profile?updateSelf=false',
+              data: formData,
+            );
+            break;
+          } catch (e) {
+            retries--;
+            if (retries == 0) rethrow;
+            await Future.delayed(const Duration(milliseconds: 500));
           }
         }
 
-        multipartFile = await MultipartFile.fromFile(
-          uploadFile.path,
-          filename: 'profile_photo.jpg',
-          contentType: MediaType('image', 'jpeg'),
-        );
-      }
-
-      final formData = FormData.fromMap({'file': multipartFile});
-
-      Response? response;
-      int retries = 3;
-      while (retries > 0) {
-        try {
-          response = await DioClient.dio.post(
-            '/users/upload-profile?updateSelf=false',
-            data: formData,
-          );
-          break;
-        } catch (e) {
-          retries--;
-          if (retries == 0) rethrow;
-          await Future.delayed(const Duration(milliseconds: 500));
+        if (response != null && response.data != null) {
+          final data = response.data['data'];
+          if (data is Map) {
+            uploadedUrl = data['url'] ?? data['publicUrl'];
+          }
         }
       }
 
-      if (response != null && response.data != null) {
-        final publicUrl = response.data['data']['publicUrl'];
-        onUploaded(publicUrl);
+      if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
+        onUploaded(uploadedUrl);
+      } else {
+        throw Exception("Upload succeeded but failed to retrieve image URL.");
       }
     } catch (e) {
       String errorMsg = 'Failed to upload photo.';
@@ -2878,13 +3240,15 @@ class _UsersScreenState extends State<UsersScreen> {
       } else if (e is Exception) {
         errorMsg = e.toString().replaceAll("Exception: ", "");
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(errorMsg),
-          backgroundColor: CRMColors.danger,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMsg),
+            backgroundColor: CRMColors.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } finally {
       dialogSetState(() {
         _isUploadingPhoto = false;

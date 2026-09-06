@@ -273,6 +273,7 @@ class DashboardSiteVisit {
   final String visitDate;
   final String? remarks;
   final String status;
+  final String? propertyId;
   final String? propertyCode;
   final String? propertyTitle;
   final String? requirementCustomerName;
@@ -284,6 +285,7 @@ class DashboardSiteVisit {
     required this.visitDate,
     this.remarks,
     required this.status,
+    this.propertyId,
     this.propertyCode,
     this.propertyTitle,
     this.requirementCustomerName,
@@ -295,11 +297,13 @@ class DashboardSiteVisit {
     final property = json['property'] as Map<String, dynamic>?;
     final requirement = json['requirement'] as Map<String, dynamic>?;
     final creator = json['creator'] as Map<String, dynamic>?;
+    final propertyId = (json['property_id'] ?? property?['id'])?.toString();
     return DashboardSiteVisit(
       id: json['id'] ?? '',
       visitDate: json['visit_date'] ?? '',
       remarks: json['remarks'],
       status: json['status'] ?? 'Pending',
+      propertyId: (propertyId != null && propertyId.isNotEmpty) ? propertyId : null,
       propertyCode: property?['property_code'],
       propertyTitle: property?['title'],
       requirementCustomerName: requirement?['customer_name'],

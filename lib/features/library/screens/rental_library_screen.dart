@@ -65,6 +65,12 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
   ];
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _allDocuments = RentalDocument.getMockData();
@@ -445,7 +451,7 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                   const SizedBox(height: CRMSpacing.m),
                   ListTile(
                     leading: const CircleAvatar(
-                      backgroundColor: Colors.blueAccent,
+                      backgroundColor: CRMColors.info,
                       child: Icon(Icons.link_rounded, color: Colors.white),
                     ),
                     title: const Text('Copy Access Link'),
@@ -808,7 +814,7 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                           DragDropUploadZone(
                             initialFileName: localFileName,
                             initialFileSize: localFileSize,
-                            onFileSelected: (name, ext, size) {
+                            onFileSelected: (name, ext, size, fileUrl) {
                               setModalState(() {
                                 localFileName = name;
                                 localFileExt = ext;
@@ -1085,7 +1091,9 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                         title: 'Total Documents',
                         value: '$_totalCount',
                         icon: Icons.folder_rounded,
-                        iconColor: CRMColors.primaryOf(context),
+                        iconColor: CRMColors.terracotta,
+                        backgroundColor: CRMColors.kpiPlum,
+                        benefit: 'Complete lease paper trail in one vault',
                       ),
                     ),
                     SizedBox(
@@ -1094,7 +1102,9 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                         title: 'Active Documents',
                         value: '$_activeCount',
                         icon: Icons.check_circle_rounded,
-                        iconColor: CRMColors.success,
+                        iconColor: CRMColors.text,
+                        backgroundColor: CRMColors.kpiSage,
+                        benefit: 'Current agreements ready for renewals',
                       ),
                     ),
                     SizedBox(
@@ -1103,7 +1113,9 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                         title: 'Expired Documents',
                         value: '$_expiredCount',
                         icon: Icons.history_rounded,
-                        iconColor: CRMColors.danger,
+                        iconColor: CRMColors.terracotta,
+                        backgroundColor: CRMColors.kpiTerracotta,
+                        benefit: 'Flag outdated files before disputes',
                       ),
                     ),
                     SizedBox(
@@ -1112,7 +1124,9 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
                         title: 'Recent Uploads (7d)',
                         value: '$_recentCount',
                         icon: Icons.cloud_done_rounded,
-                        iconColor: Colors.blue,
+                        iconColor: CRMColors.terracotta,
+                        backgroundColor: CRMColors.kpiSand,
+                        benefit: 'Fresh uploads keep records audit-ready',
                       ),
                     ),
                   ],

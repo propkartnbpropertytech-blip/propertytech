@@ -23,6 +23,7 @@ class RequirementModel {
   final List<dynamic>? rawSiteVisits;
   final List<dynamic>? rawShareSessions;
   final String? remarks;
+  final String? notes;
   final String status; // 'Active', 'Closed', 'Suspended'
   final DateTime createdAt;
   final String? adminId;
@@ -60,6 +61,7 @@ class RequirementModel {
     this.rawSiteVisits,
     this.rawShareSessions,
     this.remarks,
+    this.notes,
     required this.status,
     required this.createdAt,
     this.adminId,
@@ -110,29 +112,31 @@ class RequirementModel {
     } else if (json['property_type'] != null && json['property_type'] is Map) {
       typeName = json['property_type']['name'] ?? '';
     }
-    if (typeName.isEmpty && propTypeIds.isNotEmpty) {
+    if (propTypeIds.isNotEmpty) {
       final names = propTypeIds
           .map((id) => LookupLocalRepository.getLookupNameSync(id))
           .whereType<String>()
+          .where((n) => n.isNotEmpty && n != 'N/A')
           .toList();
-      if (names.isNotEmpty) {
+      if (names.isNotEmpty && (names.length > 1 || typeName.isEmpty)) {
         typeName = names.join(', ');
       }
     }
 
-    // Handle configuration name from joined object
+    // Handle configuration name from joined object or multi-select configIds
     String? configName;
     if (json['configurationName'] != null) {
       configName = json['configurationName'];
     } else if (json['configuration'] != null && json['configuration'] is Map) {
       configName = json['configuration']['name'];
     }
-    if (configName == null && configIds.isNotEmpty) {
+    if (configIds.isNotEmpty) {
       final names = configIds
           .map((id) => LookupLocalRepository.getLookupNameSync(id))
           .whereType<String>()
+          .where((n) => n.isNotEmpty && n != 'N/A')
           .toList();
-      if (names.isNotEmpty) {
+      if (names.isNotEmpty && (names.length > 1 || configName == null || configName.isEmpty)) {
         configName = names.join(', ');
       }
     }
@@ -187,6 +191,7 @@ class RequirementModel {
       rawSiteVisits: json['site_visits'] as List<dynamic>?,
       rawShareSessions: json['share_sessions'] as List<dynamic>?,
       remarks: json['remarks'],
+      notes: json['notes'] as String?,
       status: json['status'] ?? 'Active',
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
@@ -297,7 +302,10 @@ class RequirementModel {
       'configuration_ids': configurationIds.isNotEmpty ? configurationIds : (configurationId != null ? [configurationId!] : null),
       'property_type_ids': propertyTypeIds.isNotEmpty ? propertyTypeIds : [propertyTypeId],
       'remarks': remarks,
+      'notes': notes,
       'status': status,
+      'next_followup_date': nextFollowupDate,
+      'nextFollowupDate': nextFollowupDate,
       'assigned_to': (assignedTo == null || assignedTo!.isEmpty) ? null : assignedTo,
       'furnishing_type_ids': furnishingIds,
       'facing_type_ids': facingIds,
@@ -414,6 +422,7 @@ class RequirementModel {
     List<dynamic>? rawSiteVisits,
     List<dynamic>? rawShareSessions,
     String? remarks,
+    String? notes,
     String? status,
     DateTime? createdAt,
     String? adminId,
@@ -451,6 +460,7 @@ class RequirementModel {
       rawSiteVisits: rawSiteVisits ?? this.rawSiteVisits,
       rawShareSessions: rawShareSessions ?? this.rawShareSessions,
       remarks: remarks ?? this.remarks,
+      notes: notes ?? this.notes,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       adminId: adminId ?? this.adminId,
