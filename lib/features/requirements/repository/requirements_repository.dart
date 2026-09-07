@@ -16,12 +16,17 @@ class RequirementsRepository {
     _coordinator.refreshRequirements();
   }
 
+  static Future<void>? _refreshInFlight;
+  static DateTime? _lastRefreshAt;
+  static const _minRefreshInterval = Duration(seconds: 45);
+
   Future<List<RequirementModel>> getRequirements({
     String? search,
     String? configurationId,
     String? propertyTypeId,
     String? status,
     String? listingTypeId,
+    bool refreshFromServer = true,
   }) async {
     final start = DateTime.now();
 
@@ -74,13 +79,15 @@ class RequirementsRepository {
       totalMs: totalMs,
     );
 
-    _triggerBackgroundRequirementsRefresh(
-      search: search,
-      configurationId: configurationId,
-      propertyTypeId: propertyTypeId,
-      status: status,
-      listingTypeId: listingTypeId,
-    );
+    if (refreshFromServer) {
+      _triggerBackgroundRequirementsRefresh(
+        search: search,
+        configurationId: configurationId,
+        propertyTypeId: propertyTypeId,
+        status: status,
+        listingTypeId: listingTypeId,
+      );
+    }
 
     return requirements;
   }
@@ -92,14 +99,20 @@ class RequirementsRepository {
     String? status,
     String? listingTypeId,
   }) {
+    if (_refreshInFlight != null) return;
+    if (_lastRefreshAt != null && DateTime.now().difference(_lastRefreshAt!) < _minRefreshInterval) {
+      return;
+    }
+
     final start = DateTime.now();
-    _requirementsService.getRequirements(
+    _refreshInFlight = _requirementsService.getRequirements(
       search: search,
       configurationId: configurationId,
       propertyTypeId: propertyTypeId,
       status: status,
       listingTypeId: listingTypeId,
     ).then((response) async {
+      _lastRefreshAt = DateTime.now();
       final networkMs = DateTime.now().difference(start).inMilliseconds;
 
       final parseStart = DateTime.now();
@@ -121,19 +134,44 @@ class RequirementsRepository {
         isarWriteMs: isarWriteMs,
         totalMs: totalMs,
       );
-
-      _coordinator.refreshRequirements();
-    }).catchError((_) {});
+    }).catchError((_) {}).whenComplete(() {
+      _refreshInFlight = null;
+    });
   }
 
-  Future<RequirementModel> createRequirement(RequirementModel req) async {
+  Future<List<RequirementModel>> createRequirementsBulk(List<RequirementModel> reqs) async {
+    if (reqs.isEmpty) return [];
+    try {
+      final payload = reqs.map((r) => r.toBackendJson()).toList();
+      final response = await _requirementsService.createRequirementsBulk(payload);
+      final data = response['data'] as Map<String, dynamic>? ?? {};
+      final list = data['requirements'] as List? ?? [];
+      final freshList = list.map((item) => RequirementModel.fromJson(item)).toList();
+
+      final localEntities = freshList.map((r) => r.toLocal()).toList();
+      await _coordinator.requirementLocal.saveRequirements(localEntities);
+      _coordinator.refreshRequirements();
+      return freshList;
+    } catch (e) {
+      final created = <RequirementModel>[];
+      for (final r in reqs) {
+        try {
+          created.add(await createRequirement(r, notify: false));
+        } catch (_) {}
+      }
+      _coordinator.refreshRequirements();
+      return created;
+    }
+  }
+
+  Future<RequirementModel> createRequirement(RequirementModel req, {bool notify = true}) async {
     try {
       final response = await _requirementsService.createRequirement(req.toBackendJson());
       final data = response['data'] as Map<String, dynamic>? ?? {};
       final fresh = RequirementModel.fromJson(data['requirement'] ?? {});
 
       await _coordinator.requirementLocal.saveRequirements([fresh.toLocal()]);
-      _coordinator.refreshRequirements();
+      if (notify) _coordinator.refreshRequirements();
       return fresh;
     } catch (e) {
       print("RequirementsRepository.createRequirement error: $e");
@@ -155,7 +193,7 @@ class RequirementsRepository {
         ..deviceId = 'device_crm_123';
       await _coordinator.outboxLocal.queueRequest(outboxItem);
 
-      _coordinator.refreshRequirements();
+      if (notify) _coordinator.refreshRequirements();
       return fresh;
     }
   }

@@ -21,21 +21,59 @@ class ConnectionsScreen extends StatefulWidget {
 
 class _ConnectionsScreenState extends State<ConnectionsScreen> {
   final IntegrationService _service = IntegrationService();
+  final TextEditingController _sheetUrlController = TextEditingController();
+  bool _isSyncing = false;
 
   @override
   void initState() {
     super.initState();
     _service.addListener(_onServiceUpdate);
+    _service.watchCampaignUi();
+    _service.ensureLoaded().then((_) {
+      if (!mounted) return;
+      _sheetUrlController.text = _service.googleSheetUrl;
+    });
   }
 
   @override
   void dispose() {
+    _service.unwatchCampaignUi();
     _service.removeListener(_onServiceUpdate);
+    _sheetUrlController.dispose();
     super.dispose();
   }
 
   void _onServiceUpdate() {
     if (mounted) setState(() {});
+  }
+
+  Future<void> _syncSheetToLeads(BuildContext context) async {
+    setState(() => _isSyncing = true);
+    try {
+      await _service.setGoogleSheetUrl(_sheetUrlController.text);
+      final count = await _service.syncGoogleSheet();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            count == 0
+                ? 'No new sheet rows found. Check sharing is set to Anyone with the link.'
+                : 'Synced $count row(s) into Campaign Leads only. Open Campaign Leads to filter, delete fakes, then Move to Leads page.',
+          ),
+          backgroundColor: count == 0 ? null : CRMColors.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_service.lastSyncError ?? e.toString()),
+          backgroundColor: CRMColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
   }
 
   @override
@@ -427,16 +465,56 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
           const SizedBox(height: CRMSpacing.m),
 
           Text(
-            'Spreadsheet columns (e.g. Name, Phone, City, Budget, Campaign) are dynamically parsed and automatically mapped into the Ingestion Grid.',
+            'Keep row 1 as plain headers. A Name dropdown with only a few options (projects/properties) is treated as a tag, not as the person. Each sheet row becomes its own campaign lead using phone/email. Clean them here, then Move to Leads page.',
             style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 13),
           ),
 
           const SizedBox(height: CRMSpacing.l),
 
-          OutlinedButton.icon(
-            icon: const Icon(Icons.table_chart_rounded, color: CRMColors.sage, size: 16),
-            label: const Text('Google Sheets Apps Script Guide'),
-            onPressed: () => _showGoogleSheetsSetupGuide(context),
+          Text(
+            'GOOGLE SHEET LINK (REQUIRED TO LOAD ALL ROWS)',
+            style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+          ),
+          const SizedBox(height: CRMSpacing.xs),
+          TextField(
+            controller: _sheetUrlController,
+            decoration: InputDecoration(
+              hintText: 'https://docs.google.com/spreadsheets/d/...',
+              prefixIcon: const Icon(Icons.link_rounded, size: 18),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+          ),
+          const SizedBox(height: CRMSpacing.s),
+          Text(
+            'In Google Sheets: Share → Anyone with the link (Viewer), then Sync. Use a Property Name dropdown for inventory; keep Client Name as a separate column when the Name dropdown is a property list.',
+            style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 13),
+          ),
+          if (_service.lastSyncError != null) ...[
+            const SizedBox(height: CRMSpacing.s),
+            Text(
+              _service.lastSyncError!,
+              style: CRMTypography.caption.copyWith(color: CRMColors.danger),
+            ),
+          ],
+          const SizedBox(height: CRMSpacing.m),
+          Wrap(
+            spacing: CRMSpacing.s,
+            runSpacing: CRMSpacing.s,
+            children: [
+              CRMButton(
+                label: _isSyncing ? 'Syncing...' : 'Sync to Campaign inbox',
+                prefixIcon: Icons.sync_rounded,
+                height: 40,
+                isLoading: _isSyncing,
+                onPressed: _isSyncing ? null : () => _syncSheetToLeads(context),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.table_chart_rounded, color: CRMColors.sage, size: 16),
+                label: const Text('Google Sheets Apps Script Guide'),
+                onPressed: () => _showGoogleSheetsSetupGuide(context),
+              ),
+            ],
           ),
         ],
       ),
@@ -704,10 +782,10 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('To send new rows directly from Google Sheets to this CRM:'),
+                const Text('To send every spreadsheet row into PropKart Leads:'),
                 const SizedBox(height: CRMSpacing.m),
-                _buildGuideStep('1', 'Open your Google Sheet > Extensions > Apps Script.'),
-                _buildGuideStep('2', 'Paste the webhook trigger function:'),
+                _buildGuideStep('1', 'Share the sheet: Anyone with the link (Viewer), paste the URL here, and click Sync to Campaign inbox. Rows stay on Campaign Leads until you move them.'),
+                _buildGuideStep('2', 'Also open Extensions > Apps Script, replace the code with this (sends new rows as they are added):'),
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -715,23 +793,13 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: SelectableText(
-                    '''function onFormSubmit(e) {
-  var url = "${_service.webhookUrl}";
-  var payload = JSON.stringify({
-    source: "Google Sheets",
-    data: e.namedValues
-  });
-  UrlFetchApp.fetch(url, {
-    method: "post",
-    contentType: "application/json",
-    payload: payload
-  });
-}''',
+                    IntegrationService.appsScriptSnippet(_service.webhookUrl),
                     style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
                   ),
                 ),
                 const SizedBox(height: CRMSpacing.m),
-                _buildGuideStep('3', 'Set up an "On form submit" or "On change" trigger in Apps Script.'),
+                _buildGuideStep('3', 'Click Run on syncAllRows once (authorize Google when asked). Keep your On change / On form submit trigger for new rows.'),
+                _buildGuideStep('4', 'Keep headers as plain text. Put dropdowns in data rows. Recommended columns: Client Name, Phone, Property Name (dropdown of inventory), City, Budget, Configuration, Campaign Name. If Name is a property dropdown, add a separate Client Name column.'),
               ],
             ),
           ),

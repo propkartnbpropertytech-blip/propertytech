@@ -50,6 +50,8 @@ class PropertiesService {
     String? createdBy,
     bool? isVerified,
     bool? includeDeleted,
+    int? page,
+    int? limit,
   }) async {
     try {
       final Map<String, dynamic> queryParameters = {};
@@ -73,6 +75,12 @@ class PropertiesService {
       }
       if (includeDeleted != null) {
         queryParameters['includeDeleted'] = includeDeleted.toString();
+      }
+      if (page != null) {
+        queryParameters['page'] = page;
+      }
+      if (limit != null) {
+        queryParameters['limit'] = limit;
       }
 
       final response = await _apiClient.get(

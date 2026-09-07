@@ -42,27 +42,47 @@ class RepositoryCoordinator {
   Timer? _ownersTimer;
   Timer? _clientsTimer;
   Timer? _lookupsTimer;
+  int _bulkDepth = 0;
+  bool _bulkNeedsRequirementsRefresh = false;
+
+  void beginBulkMutation() {
+    _bulkDepth++;
+  }
+
+  void endBulkMutation() {
+    if (_bulkDepth > 0) _bulkDepth--;
+    if (_bulkDepth == 0 && _bulkNeedsRequirementsRefresh) {
+      _bulkNeedsRequirementsRefresh = false;
+      refreshRequirements();
+    }
+  }
 
   // Typed Debounced Broadcasters
   void refreshProperties() {
+    if (_bulkDepth > 0) return;
     _propertiesTimer?.cancel();
-    _propertiesTimer = Timer(const Duration(milliseconds: 300), () {
+    _propertiesTimer = Timer(const Duration(milliseconds: 400), () {
       _propertiesController.add(null);
       refreshDashboard();
     });
   }
 
   void refreshRequirements() {
+    if (_bulkDepth > 0) {
+      _bulkNeedsRequirementsRefresh = true;
+      return;
+    }
     _requirementsTimer?.cancel();
-    _requirementsTimer = Timer(const Duration(milliseconds: 300), () {
+    _requirementsTimer = Timer(const Duration(milliseconds: 600), () {
       _requirementsController.add(null);
       refreshDashboard();
     });
   }
 
   void refreshDashboard() {
+    if (_bulkDepth > 0) return;
     _dashboardTimer?.cancel();
-    _dashboardTimer = Timer(const Duration(milliseconds: 300), () {
+    _dashboardTimer = Timer(const Duration(milliseconds: 800), () {
       _dashboardController.add(null);
     });
   }

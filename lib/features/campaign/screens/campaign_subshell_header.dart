@@ -76,7 +76,13 @@ class CampaignSubshellHeader extends StatelessWidget {
                     ),
                   ],
                 ),
-                ?trailing,
+                if (trailing != null)
+                  Flexible(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: trailing!,
+                    ),
+                  ),
               ],
             ),
           ],

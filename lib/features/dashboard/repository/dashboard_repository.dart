@@ -138,7 +138,7 @@ class DashboardRepository {
         final dtB = DateTime.tryParse(b.createdAt?.toString() ?? '') ?? DateTime(1970);
         return dtB.compareTo(dtA);
       });
-      allRecentPropsFromLocal = sortedProps.map((p) => RecentProperty(
+      allRecentPropsFromLocal = sortedProps.take(8).map((p) => RecentProperty(
         id: p.id,
         code: p.propertyCode ?? '',
         title: p.title ?? '',
@@ -152,8 +152,18 @@ class DashboardRepository {
       )).toList();
     }
 
-    final allowedReqIds = localReqs.map((r) => r.id).toSet();
-    final allowedClientNames = localReqs.map((r) => r.clientName.toLowerCase()).toSet();
+    final allowedReqIds = <String>{};
+    final allowedClientNames = <String>{};
+    final reqStatusById = <String, String>{};
+    final reqStatusByName = <String, String>{};
+    for (final r in localReqs) {
+      allowedReqIds.add(r.id);
+      final name = (r.clientName ?? '').toLowerCase();
+      if (name.isNotEmpty) allowedClientNames.add(name);
+      final status = r.status ?? '';
+      reqStatusById[r.id] = status;
+      if (name.isNotEmpty) reqStatusByName[name] = status;
+    }
 
     bool isAllowedItem(String? reqId, String? clientName) {
       if (reqId != null && reqId.isNotEmpty) return allowedReqIds.contains(reqId);
@@ -164,18 +174,12 @@ class DashboardRepository {
     bool isFollowupAllowedItem(String? reqId, String? clientName) {
       if (!isAllowedItem(reqId, clientName)) return false;
       if (reqId != null && reqId.isNotEmpty) {
-        final match = localReqs.where((r) => r.id == reqId).firstOrNull;
-        if (match != null) {
-          final s = match.status ?? '';
-          return s == 'Follow-up' || s == 'Re-Followup';
-        }
+        final s = reqStatusById[reqId] ?? '';
+        return s == 'Follow-up' || s == 'Re-Followup';
       }
       if (clientName != null && clientName.isNotEmpty) {
-        final match = localReqs.where((r) => r.clientName.toLowerCase() == clientName.toLowerCase()).firstOrNull;
-        if (match != null) {
-          final s = match.status ?? '';
-          return s == 'Follow-up' || s == 'Re-Followup';
-        }
+        final s = reqStatusByName[clientName.toLowerCase()] ?? '';
+        return s == 'Follow-up' || s == 'Re-Followup';
       }
       return true;
     }

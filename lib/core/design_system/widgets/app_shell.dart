@@ -18,8 +18,6 @@ import '../../utils/budget_formatter.dart';
 import '../../network/sync_manager.dart';
 import 'dart:async';
 import '../../../core/storage/repository_coordinator.dart';
-import '../../../features/properties/services/properties_service.dart';
-import '../../../features/properties/models/property_model.dart';
 import '../../navigation/mobile_system_back_handler.dart';
 import '../../../../features/shell/widgets/sidebar.dart';
 import '../../../../features/shell/widgets/top_bar.dart';
@@ -456,70 +454,7 @@ class _CRMAppShellState extends State<CRMAppShell>
           )
           .toList();
 
-      // 1b. Recycle Bin / Deleted Properties
-      List<Map<String, dynamic>> matchedBinProps = [];
-      try {
-        final binRes = await PropertiesService().getBinProperties();
-        final binData = binRes['data'] as Map<String, dynamic>? ?? {};
-        final binList = binData['properties'] as List? ?? [];
-        final binProps = binList.map((p) => PropertyModel.fromJson(p)).toList();
-
-        matchedBinProps = binProps
-            .where((p) {
-              final code = (p.propertyCode ?? '').toLowerCase();
-              final name = (p.title ?? '').toLowerCase();
-              final ownerName = (p.ownerName ?? '').toLowerCase();
-              final ownerMobile = (p.ownerMobile ?? '').toLowerCase();
-              final area = (p.areaName ?? '').toLowerCase();
-              final bhk = (p.configurationName ?? '').toLowerCase();
-              final bhkNormalized = bhk.replaceAll(' ', '');
-              final date = p.createdAt.toString().toLowerCase();
-              final status = (p.propertyStatusName ?? '').toLowerCase();
-              final superBuiltup = (p.superBuiltupArea?.toString() ?? '')
-                  .toLowerCase();
-              final type = (p.propertyTypeName ?? '').toLowerCase();
-              final category = (p.categoryName ?? '').toLowerCase();
-              final remarks = (p.remarks ?? '').toLowerCase();
-              final description = (p.description ?? '').toLowerCase();
-              final salesman = (p.createdByName ?? '').toLowerCase();
-
-              final matchesGeneral =
-                  code.contains(queryLower) ||
-                  name.contains(queryLower) ||
-                  ownerName.contains(queryLower) ||
-                  ownerMobile.contains(queryLower) ||
-                  area.contains(queryLower) ||
-                  bhk.contains(queryLower) ||
-                  (bhkNormalized.isNotEmpty &&
-                      bhkNormalized.contains(queryNormalized)) ||
-                  date.contains(queryLower) ||
-                  status.contains(queryLower) ||
-                  superBuiltup.contains(queryLower) ||
-                  type.contains(queryLower) ||
-                  category.contains(queryLower) ||
-                  remarks.contains(queryLower) ||
-                  description.contains(queryLower);
-
-              final matchesSalesman =
-                  isUserAdminOrSuperAdmin && salesman.contains(queryLower);
-
-              return matchesGeneral || matchesSalesman;
-            })
-            .map(
-              (p) => {
-                'id': p.id,
-                'title': '[In Recycle Bin] ${p.title}',
-                'property_code': p.propertyCode,
-                'price': p.price,
-                'is_recycle_bin': true,
-              },
-            )
-            .toList();
-      } catch (_) {
-        // fail silently if bin fetch fails
-      }
-
-      final allMatchedProps = [...matchedProps, ...matchedBinProps];
+      final allMatchedProps = matchedProps.take(12).toList();
 
       // 2. Requirements
       final reqs = await RepositoryCoordinator().requirementLocal
@@ -564,6 +499,7 @@ class _CRMAppShellState extends State<CRMAppShell>
               'mobile': r.clientMobile,
             },
           )
+          .take(12)
           .toList();
 
       // 3. Owners
@@ -576,6 +512,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                 (o.email?.toLowerCase().contains(queryLower) ?? false),
           )
           .map((o) => {'id': o.id, 'name': o.name, 'mobile': o.mobile})
+          .take(8)
           .toList();
 
       // 4. Builders
@@ -597,6 +534,7 @@ class _CRMAppShellState extends State<CRMAppShell>
               'mobile': b.mobile,
             },
           )
+          .take(8)
           .toList();
 
       // 5. Clients
@@ -610,6 +548,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                 (c.remarks?.toLowerCase().contains(queryLower) ?? false),
           )
           .map((c) => {'id': c.id, 'name': c.name, 'mobile': c.mobile})
+          .take(8)
           .toList();
 
       setState(() {

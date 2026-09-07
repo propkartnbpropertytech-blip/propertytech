@@ -143,7 +143,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   void _refreshFollowupsFuture() {
     _followupsFuture = Future.wait([
       DashboardRepository().getDashboardData(backgroundRefresh: false),
-      RequirementsRepository().getRequirements(),
+      RequirementsRepository().getRequirements(refreshFromServer: false),
     ]);
   }
 

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../auth/bloc/auth_bloc.dart';
@@ -29,26 +31,80 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   String _selectedDuplicateFilter = 'All';
   final Set<String> _selectedLeadIds = {};
   bool _isImporting = false;
+  bool _isSyncingSheet = false;
+  int _currentPage = 1;
+  int _pageSize = 50;
+  String _searchQuery = '';
+  Timer? _searchDebounce;
+  Timer? _uiDebounce;
 
   @override
   void initState() {
     super.initState();
     _service.addListener(_onServiceUpdate);
+    _service.watchCampaignUi();
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _uiDebounce?.cancel();
+    _service.unwatchCampaignUi();
     _service.removeListener(_onServiceUpdate);
     _searchController.dispose();
     super.dispose();
   }
 
+  List<IntegrationLeadModel>? _cachedFilteredLeads;
+  int _cachedUniqueLeads = 0;
+  int _cachedDupLeads = 0;
+  int _cachedMetaResponsesSent = 0;
+  List<IntegrationLeadModel>? _lastServiceLeadsRef;
+  String? _lastSourceFilter;
+  String? _lastDuplicateFilter;
+  String? _lastSearchQuery;
+
   void _onServiceUpdate() {
-    if (mounted) setState(() {});
+    _uiDebounce?.cancel();
+    _uiDebounce = Timer(const Duration(milliseconds: 80), () {
+      if (mounted) {
+        _cachedFilteredLeads = null;
+        setState(() {});
+      }
+    });
   }
 
-  List<IntegrationLeadModel> get _filteredLeads {
-    var list = _service.leads;
+  void _recomputeFilteredLeadsIfNeeded() {
+    final currentLeads = _service.leads;
+    if (_cachedFilteredLeads != null &&
+        identical(_lastServiceLeadsRef, currentLeads) &&
+        _lastSourceFilter == _selectedSourceFilter &&
+        _lastDuplicateFilter == _selectedDuplicateFilter &&
+        _lastSearchQuery == _searchQuery) {
+      return;
+    }
+
+    _lastServiceLeadsRef = currentLeads;
+    _lastSourceFilter = _selectedSourceFilter;
+    _lastDuplicateFilter = _selectedDuplicateFilter;
+    _lastSearchQuery = _searchQuery;
+
+    var u = 0;
+    var d = 0;
+    var m = 0;
+    for (final lead in currentLeads) {
+      if (lead.isDuplicate) {
+        d++;
+      } else {
+        u++;
+      }
+      if (lead.metaFeedbackEventId != null) m++;
+    }
+    _cachedUniqueLeads = u;
+    _cachedDupLeads = d;
+    _cachedMetaResponsesSent = m;
+
+    var list = currentLeads;
 
     // Filter by Source
     if (_selectedSourceFilter != 'All') {
@@ -63,7 +119,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     }
 
     // Search query across all cell values
-    final query = _searchController.text.trim().toLowerCase();
+    final query = _searchQuery;
     if (query.isNotEmpty) {
       list = list.where((lead) {
         if (lead.source.toLowerCase().contains(query)) return true;
@@ -77,7 +133,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       }).toList();
     }
 
-    return list;
+    _cachedFilteredLeads = list;
+  }
+
+  List<IntegrationLeadModel> get _filteredLeads {
+    _recomputeFilteredLeadsIfNeeded();
+    return _cachedFilteredLeads!;
   }
 
   @override
@@ -100,13 +161,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       );
     }
 
+    final leads = _filteredLeads;
     final allDetectedHeaders = _service.getDetectedHeaders();
     final visibleHeaders = _service.getActiveVisibleHeaders();
-    final leads = _filteredLeads;
+    final uniqueLeads = _cachedUniqueLeads;
+    final dupLeads = _cachedDupLeads;
+    final metaResponsesSent = _cachedMetaResponsesSent;
     final totalLeads = _service.leads.length;
-    final uniqueLeads = _service.leads.where((l) => !l.isDuplicate).length;
-    final dupLeads = _service.leads.where((l) => l.isDuplicate).length;
-    final metaResponsesSent = _service.leads.where((l) => l.metaFeedbackEventId != null).length;
+    final totalPages = leads.isEmpty ? 1 : (leads.length / _pageSize).ceil();
+    final currentPage = _currentPage.clamp(1, totalPages);
+    final startIndex = (currentPage - 1) * _pageSize;
+    final endIndex = (startIndex + _pageSize).clamp(0, leads.length);
+    final pageLeads = leads.isEmpty ? const <IntegrationLeadModel>[] : leads.sublist(startIndex, endIndex);
 
     return Scaffold(
       backgroundColor: CRMColors.backgroundOf(context),
@@ -119,12 +185,41 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               // Page Header
               CampaignSubshellHeader(
                 activeTab: 'leads',
-                trailing: CRMButton(
-                  label: 'Paste JSON Payload',
-                  prefixIcon: Icons.code_rounded,
-                  variant: CRMButtonVariant.outline,
-                  height: 40,
-                  onPressed: () => _showPasteJsonDialog(context),
+                trailing: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    CRMButton(
+                      label: _isSyncingSheet ? 'Syncing...' : 'Sync Google Sheet',
+                      prefixIcon: Icons.sync_rounded,
+                      variant: CRMButtonVariant.outline,
+                      height: 40,
+                      isLoading: _isSyncingSheet,
+                      onPressed: _isSyncingSheet ? null : () => _syncGoogleSheet(context),
+                    ),
+                    CRMButton(
+                      label: 'Import CSV',
+                      prefixIcon: Icons.upload_file_rounded,
+                      variant: CRMButtonVariant.outline,
+                      height: 40,
+                      onPressed: () => _importCsvFile(context),
+                    ),
+                    CRMButton(
+                      label: _isImporting ? 'Moving...' : 'Move to Leads page',
+                      prefixIcon: Icons.drive_file_move_rounded,
+                      height: 40,
+                      isLoading: _isImporting,
+                      onPressed: _isImporting ? null : () => _moveSelectedToLeadsPage(context),
+                    ),
+                    CRMButton(
+                      label: 'Paste JSON',
+                      prefixIcon: Icons.code_rounded,
+                      variant: CRMButtonVariant.outline,
+                      height: 40,
+                      onPressed: () => _showPasteJsonDialog(context),
+                    ),
+                  ],
                 ),
               ),
 
@@ -142,7 +237,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ],
 
               // Excel-like Interactive Spreadsheet Section
-              _buildExcelSpreadsheetCard(context, allDetectedHeaders, visibleHeaders, leads),
+              _buildExcelSpreadsheetCard(context, allDetectedHeaders, visibleHeaders, leads, pageLeads, startIndex, currentPage, totalPages),
             ],
           ),
         ),
@@ -338,14 +433,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ),
           const SizedBox(width: CRMSpacing.s),
 
-          // Bulk Import to CRM
+          // Move cleaned campaign leads to the main Leads page
           CRMButton(
-            label: _isImporting ? 'Importing...' : 'Import to CRM ($count)',
-            prefixIcon: Icons.cloud_upload_rounded,
+            label: _isImporting ? 'Moving...' : 'Move to Leads page ($count)',
+            prefixIcon: Icons.drive_file_move_rounded,
             variant: CRMButtonVariant.primary,
             height: 36,
             isLoading: _isImporting,
-            onPressed: () => _importSelectedLeadsToCrm(),
+            onPressed: () => _moveSelectedToLeadsPage(context),
           ),
 
           const Spacer(),
@@ -367,6 +462,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     List<String> allDetectedHeaders,
     List<String> visibleHeaders,
     List<IntegrationLeadModel> leads,
+    List<IntegrationLeadModel> pageLeads,
+    int startIndex,
+    int currentPage,
+    int totalPages,
   ) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 700;
@@ -408,8 +507,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Removed all duplicate lead entries.')),
           );
-        } else if (action == 'json') {
+        } else         if (action == 'json') {
           _showPasteJsonDialog(context);
+        } else if (action == 'csv') {
+          _importCsvFile(context);
+        } else if (action == 'sheet') {
+          _syncGoogleSheet(context);
         } else if (action == 'clear') {
           _confirmClearAllLeadsDialog(context);
         }
@@ -446,6 +549,26 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ],
             ),
           ),
+        const PopupMenuItem(
+          value: 'csv',
+          child: Row(
+            children: [
+              Icon(Icons.upload_file_rounded, size: 18),
+              SizedBox(width: 10),
+              Text('Import CSV / Google Sheet export'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'sheet',
+          child: Row(
+            children: [
+              Icon(Icons.sync_rounded, size: 18),
+              SizedBox(width: 10),
+              Text('Sync connected Google Sheet'),
+            ],
+          ),
+        ),
         const PopupMenuItem(
           value: 'json',
           child: Row(
@@ -497,7 +620,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       height: 38,
       child: TextField(
         controller: _searchController,
-        onChanged: (_) => setState(() {}),
+        onChanged: (value) {
+          _searchDebounce?.cancel();
+          _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+            if (!mounted) return;
+            setState(() {
+              _searchQuery = value.trim().toLowerCase();
+              _currentPage = 1;
+            });
+          });
+        },
         decoration: InputDecoration(
           hintText: 'Search cell data, names, phone, email...',
           hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
@@ -532,7 +664,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             DropdownMenuItem(value: 'Webhook API', child: Text('Webhook API ')),
           ],
           onChanged: (val) {
-            if (val != null) setState(() => _selectedSourceFilter = val);
+            if (val != null) setState(() {
+              _selectedSourceFilter = val;
+              _currentPage = 1;
+            });
           },
         ),
       ),
@@ -556,7 +691,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             DropdownMenuItem(value: 'Unique Only', child: Text('Unique Leads Only ')),
           ],
           onChanged: (val) {
-            if (val != null) setState(() => _selectedDuplicateFilter = val);
+            if (val != null) setState(() {
+              _selectedDuplicateFilter = val;
+              _currentPage = 1;
+            });
           },
         ),
       ),
@@ -643,7 +781,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       ),
                       const SizedBox(height: CRMSpacing.xs),
                       Text(
-                        'Your Webhook is live. New leads from Meta Lead Ads and Google Sheets will automatically appear in this table.',
+                        'Connect your Google Sheet, then Sync or Import CSV. Leads stay here until you filter, delete fakes, and click Move to Leads page.',
                         style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 13),
                         textAlign: TextAlign.center,
                       ),
@@ -670,7 +808,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   ),
                 ),
               )
-            else
+            else ...[
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -684,16 +822,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       scrollDirection: Axis.horizontal,
                       child: ConstrainedBox(
                         constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.vertical,
-                          child: DataTable(
+                        child: DataTable(
                       showCheckboxColumn: true,
                       onSelectAll: (val) {
                         setState(() {
                           if (val == true) {
-                            _selectedLeadIds.addAll(leads.map((l) => l.id));
+                            _selectedLeadIds.addAll(pageLeads.map((l) => l.id));
                           } else {
-                            _selectedLeadIds.clear();
+                            for (final lead in pageLeads) {
+                              _selectedLeadIds.remove(lead.id);
+                            }
                           }
                         });
                       },
@@ -746,7 +884,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
                         const DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
                       ],
-                      rows: leads.asMap().entries.map((entry) {
+                      rows: pageLeads.asMap().entries.map((entry) {
                         final index = entry.key;
                         final lead = entry.value;
                         final isSelected = _selectedLeadIds.contains(lead.id);
@@ -773,7 +911,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           }),
                           cells: [
                             // Row Index
-                            DataCell(Text('${index + 1}')),
+                            DataCell(Text('${startIndex + index + 1}')),
 
                             // Source Badge
                             DataCell(
@@ -882,13 +1020,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             ...visibleHeaders.map((header) {
                               final val = lead.getStringValue(header);
                               return DataCell(
-                                Tooltip(
-                                  message: val,
-                                  child: Text(
-                                    val.isEmpty ? '-' : val,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                                Text(
+                                  val.isEmpty ? '-' : val,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               );
                             }),
@@ -920,12 +1055,66 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ),
             ),
           ),
+        const SizedBox(height: CRMSpacing.s),
+        _buildCampaignPager(context, leads.length, startIndex, currentPage, totalPages),
+            ],
+          ],
         ),
-        ],
       ),
-    ),
-  );
-}
+    );
+  }
+
+  Widget _buildCampaignPager(
+    BuildContext context,
+    int totalFiltered,
+    int startIndex,
+    int currentPage,
+    int totalPages,
+  ) {
+    final from = totalFiltered == 0 ? 0 : startIndex + 1;
+    final to = (startIndex + _pageSize).clamp(0, totalFiltered);
+    return Row(
+      children: [
+        Text(
+          'Showing $from–$to of $totalFiltered',
+          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+        ),
+        const Spacer(),
+        DropdownButtonHideUnderline(
+          child: DropdownButton<int>(
+            value: _pageSize,
+            items: const [
+              DropdownMenuItem(value: 25, child: Text('25 / page')),
+              DropdownMenuItem(value: 50, child: Text('50 / page')),
+              DropdownMenuItem(value: 100, child: Text('100 / page')),
+            ],
+            onChanged: (val) {
+              if (val == null) return;
+              setState(() {
+                _pageSize = val;
+                _currentPage = 1;
+              });
+            },
+          ),
+        ),
+        IconButton(
+          tooltip: 'Previous page',
+          onPressed: currentPage <= 1
+              ? null
+              : () => setState(() => _currentPage = currentPage - 1),
+          icon: const Icon(Icons.chevron_left_rounded),
+        ),
+        Text('$currentPage / $totalPages', style: CRMTypography.caption),
+        IconButton(
+          tooltip: 'Next page',
+          onPressed: currentPage >= totalPages
+              ? null
+              : () => setState(() => _currentPage = currentPage + 1),
+          icon: const Icon(Icons.chevron_right_rounded),
+        ),
+      ],
+    );
+  }
 
   // --- DIALOGS & ACTIONS ---
 
@@ -1652,20 +1841,128 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     );
   }
 
-  Future<void> _importSelectedLeadsToCrm() async {
-    setState(() => _isImporting = true);
-    final count = await _service.importLeadsToCrm(_selectedLeadIds.toList());
-    if (mounted) {
-      setState(() {
-        _isImporting = false;
-        _selectedLeadIds.clear();
-      });
+  Future<void> _syncGoogleSheet(BuildContext context) async {
+    if (_service.googleSheetUrl.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Paste your Google Sheet link on Campaign → Connections first.')),
+      );
+      return;
+    }
+    setState(() => _isSyncingSheet = true);
+    try {
+      final count = await _service.syncGoogleSheet();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Successfully imported $count lead(s) into PropKart CRM clients database!'),
+          content: Text(
+            count == 0
+                ? (_service.lastSyncError ?? 'No new rows found in the Google Sheet.')
+                : 'Synced $count row(s) into Campaign Leads. Filter and clean them here, then click Move to Leads page.',
+          ),
+          backgroundColor: count == 0 ? null : CRMColors.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_service.lastSyncError ?? e.toString()),
+          backgroundColor: CRMColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncingSheet = false);
+    }
+  }
+
+  Future<void> _importCsvFile(BuildContext context) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['csv', 'txt'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.single;
+    if (file.bytes == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not read that file. Try exporting the sheet as CSV again.')),
+      );
+      return;
+    }
+    final csv = utf8.decode(file.bytes!);
+    setState(() => _isSyncingSheet = true);
+    try {
+      final count = await _service.ingestCsv(csv);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Imported $count row(s) into Campaign Leads. Clean them here, then click Move to Leads page.'),
           backgroundColor: CRMColors.success,
         ),
       );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('CSV import failed: $e'), backgroundColor: CRMColors.danger),
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncingSheet = false);
     }
+  }
+
+  Future<void> _moveSelectedToLeadsPage(BuildContext context) async {
+    final selected = _selectedLeadIds.toList();
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select the leads you want to move after filtering and deleting fakes.')),
+      );
+      return;
+    }
+
+    final pendingIds = _service.leads
+        .where((l) => selected.contains(l.id) && l.importStatus != 'Imported')
+        .map((l) => l.id)
+        .toList();
+
+    if (pendingIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Those campaign leads were already moved to the Leads page.')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Move to Leads page?'),
+        content: Text(
+          'Move ${pendingIds.length} cleaned campaign lead(s) to the main Leads page? They will not be copied until you confirm.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Move to Leads page')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isImporting = true);
+    final count = await _service.importLeadsToCrm(pendingIds);
+    if (!mounted) return;
+    setState(() {
+      _isImporting = false;
+      _selectedLeadIds.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          count == 0
+              ? 'No leads were moved. Check for missing names/phones or duplicates already on the Leads page.'
+              : 'Moved $count lead(s) to the Leads page.',
+        ),
+        backgroundColor: count == 0 ? null : CRMColors.success,
+      ),
+    );
   }
 }

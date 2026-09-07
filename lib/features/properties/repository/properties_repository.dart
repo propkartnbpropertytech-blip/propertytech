@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:propkart/features/properties/models/property_model.dart';
 import 'package:propkart/features/properties/services/properties_service.dart';
 import 'package:propkart/core/storage/repository_coordinator.dart';
-import 'package:propkart/core/api/cloudinary_uploader.dart';
 import 'package:propkart/core/storage/isar_collections.dart';
 import 'package:propkart/core/storage/model_mappers.dart';
 import 'package:propkart/core/storage/performance_logger.dart';
@@ -92,6 +91,10 @@ class PropertiesRepository {
     return properties;
   }
 
+  static Future<void>? _refreshInFlight;
+  static DateTime? _lastRefreshAt;
+  static const _minRefreshInterval = Duration(seconds: 45);
+
   void _triggerBackgroundPropertiesRefresh({
     String? search,
     String? categoryId,
@@ -101,8 +104,13 @@ class PropertiesRepository {
     bool? isVerified,
     bool? includeDeleted,
   }) {
+    if (_refreshInFlight != null) return;
+    if (_lastRefreshAt != null && DateTime.now().difference(_lastRefreshAt!) < _minRefreshInterval) {
+      return;
+    }
+
     final start = DateTime.now();
-    _propertiesService.getProperties(
+    _refreshInFlight = _propertiesService.getProperties(
       search: search,
       categoryId: categoryId,
       areaId: areaId,
@@ -111,6 +119,7 @@ class PropertiesRepository {
       isVerified: isVerified,
       includeDeleted: includeDeleted,
     ).then((response) async {
+      _lastRefreshAt = DateTime.now();
       final networkMs = DateTime.now().difference(start).inMilliseconds;
 
       final parseStart = DateTime.now();
@@ -134,7 +143,9 @@ class PropertiesRepository {
       );
 
       _coordinator.refreshProperties();
-    }).catchError((_) {});
+    }).catchError((_) {}).whenComplete(() {
+      _refreshInFlight = null;
+    });
   }
 
   Future<PropertyMetadataModel> getPropertyMetadata() async {

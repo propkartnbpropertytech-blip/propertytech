@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,6 +32,20 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
   final Set<String> _selectedLeadIds = {};
   bool _isImporting = false;
   bool _showWebhookConfig = false;
+  int _currentPage = 1;
+  int _pageSize = 50;
+  String _searchQuery = '';
+  Timer? _searchDebounce;
+  Timer? _uiDebounce;
+
+  List<IntegrationLeadModel>? _cachedFilteredLeads;
+  int _cachedUniqueLeads = 0;
+  int _cachedDupLeads = 0;
+  int _cachedMetaResponsesSent = 0;
+  List<IntegrationLeadModel>? _lastServiceLeadsRef;
+  String? _lastSourceFilter;
+  String? _lastDuplicateFilter;
+  String? _lastSearchQuery;
 
   @override
   void initState() {
@@ -40,17 +55,54 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _uiDebounce?.cancel();
     _service.removeListener(_onServiceUpdate);
     _searchController.dispose();
     super.dispose();
   }
 
   void _onServiceUpdate() {
-    if (mounted) setState(() {});
+    _uiDebounce?.cancel();
+    _uiDebounce = Timer(const Duration(milliseconds: 80), () {
+      if (mounted) {
+        _cachedFilteredLeads = null;
+        setState(() {});
+      }
+    });
   }
 
-  List<IntegrationLeadModel> get _filteredLeads {
-    var list = _service.leads;
+  void _recomputeFilteredLeadsIfNeeded() {
+    final currentLeads = _service.leads;
+    if (_cachedFilteredLeads != null &&
+        identical(_lastServiceLeadsRef, currentLeads) &&
+        _lastSourceFilter == _selectedSourceFilter &&
+        _lastDuplicateFilter == _selectedDuplicateFilter &&
+        _lastSearchQuery == _searchQuery) {
+      return;
+    }
+
+    _lastServiceLeadsRef = currentLeads;
+    _lastSourceFilter = _selectedSourceFilter;
+    _lastDuplicateFilter = _selectedDuplicateFilter;
+    _lastSearchQuery = _searchQuery;
+
+    var u = 0;
+    var d = 0;
+    var m = 0;
+    for (final lead in currentLeads) {
+      if (lead.isDuplicate) {
+        d++;
+      } else {
+        u++;
+      }
+      if (lead.metaFeedbackEventId != null) m++;
+    }
+    _cachedUniqueLeads = u;
+    _cachedDupLeads = d;
+    _cachedMetaResponsesSent = m;
+
+    var list = currentLeads;
 
     // Filter by Source
     if (_selectedSourceFilter != 'All') {
@@ -65,7 +117,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
     }
 
     // Search query across all cell values
-    final query = _searchController.text.trim().toLowerCase();
+    final query = _searchQuery;
     if (query.isNotEmpty) {
       list = list.where((lead) {
         if (lead.source.toLowerCase().contains(query)) return true;
@@ -79,7 +131,12 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
       }).toList();
     }
 
-    return list;
+    _cachedFilteredLeads = list;
+  }
+
+  List<IntegrationLeadModel> get _filteredLeads {
+    _recomputeFilteredLeadsIfNeeded();
+    return _cachedFilteredLeads!;
   }
 
   @override
@@ -106,9 +163,14 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
     final visibleHeaders = _service.getActiveVisibleHeaders();
     final leads = _filteredLeads;
     final totalLeads = _service.leads.length;
-    final uniqueLeads = _service.leads.where((l) => !l.isDuplicate).length;
-    final dupLeads = _service.leads.where((l) => l.isDuplicate).length;
-    final metaResponsesSent = _service.leads.where((l) => l.metaFeedbackEventId != null).length;
+    final uniqueLeads = _cachedUniqueLeads;
+    final dupLeads = _cachedDupLeads;
+    final metaResponsesSent = _cachedMetaResponsesSent;
+    final totalPages = leads.isEmpty ? 1 : (leads.length / _pageSize).ceil();
+    final currentPage = _currentPage.clamp(1, totalPages);
+    final startIndex = (currentPage - 1) * _pageSize;
+    final endIndex = (startIndex + _pageSize).clamp(0, leads.length);
+    final pageLeads = leads.isEmpty ? const <IntegrationLeadModel>[] : leads.sublist(startIndex, endIndex);
 
     return Scaffold(
       backgroundColor: CRMColors.backgroundOf(context),
@@ -143,7 +205,16 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
               const SizedBox(height: CRMSpacing.m),
 
               // Excel-like Interactive Spreadsheet Section
-              _buildExcelSpreadsheetCard(context, allDetectedHeaders, visibleHeaders, leads),
+              _buildExcelSpreadsheetCard(
+                context,
+                allDetectedHeaders,
+                visibleHeaders,
+                leads,
+                pageLeads,
+                startIndex,
+                currentPage,
+                totalPages,
+              ),
             ],
           ),
         ),
@@ -550,6 +621,10 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
     List<String> allDetectedHeaders,
     List<String> visibleHeaders,
     List<IntegrationLeadModel> leads,
+    List<IntegrationLeadModel> pageLeads,
+    int startIndex,
+    int currentPage,
+    int totalPages,
   ) {
     return CRMCard(
       elevated: true,
@@ -686,7 +761,16 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
                   height: 38,
                   child: TextField(
                     controller: _searchController,
-                    onChanged: (_) => setState(() {}),
+                    onChanged: (value) {
+                      _searchDebounce?.cancel();
+                      _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+                        if (!mounted) return;
+                        setState(() {
+                          _searchQuery = value.trim().toLowerCase();
+                          _currentPage = 1;
+                        });
+                      });
+                    },
                     decoration: InputDecoration(
                       hintText: 'Search cell data, names, phone, email...',
                       hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
@@ -887,7 +971,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
 
                         const DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
                       ],
-                      rows: leads.asMap().entries.map((entry) {
+                      rows: pageLeads.asMap().entries.map((entry) {
                         final index = entry.key;
                         final lead = entry.value;
                         final isSelected = _selectedLeadIds.contains(lead.id);
@@ -914,7 +998,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
                           }),
                           cells: [
                             // Row Index
-                            DataCell(Text('${index + 1}')),
+                            DataCell(Text('${startIndex + index + 1}')),
 
                             // Source Badge
                             DataCell(
@@ -1060,8 +1144,62 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: CRMSpacing.m),
+            _buildPaginationControls(context, leads.length, startIndex, currentPage, totalPages),
         ],
       ),
+    );
+  }
+
+  Widget _buildPaginationControls(
+    BuildContext context,
+    int totalFiltered,
+    int startIndex,
+    int currentPage,
+    int totalPages,
+  ) {
+    final from = totalFiltered == 0 ? 0 : startIndex + 1;
+    final to = (startIndex + _pageSize).clamp(0, totalFiltered);
+    return Row(
+      children: [
+        Text(
+          'Showing $from–$to of $totalFiltered',
+          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+        ),
+        const Spacer(),
+        DropdownButtonHideUnderline(
+          child: DropdownButton<int>(
+            value: _pageSize,
+            items: const [
+              DropdownMenuItem(value: 25, child: Text('25 / page')),
+              DropdownMenuItem(value: 50, child: Text('50 / page')),
+              DropdownMenuItem(value: 100, child: Text('100 / page')),
+            ],
+            onChanged: (val) {
+              if (val == null) return;
+              setState(() {
+                _pageSize = val;
+                _currentPage = 1;
+              });
+            },
+          ),
+        ),
+        IconButton(
+          tooltip: 'Previous page',
+          onPressed: currentPage <= 1
+              ? null
+              : () => setState(() => _currentPage = currentPage - 1),
+          icon: const Icon(Icons.chevron_left_rounded),
+        ),
+        Text('$currentPage / $totalPages', style: CRMTypography.caption),
+        IconButton(
+          tooltip: 'Next page',
+          onPressed: currentPage >= totalPages
+              ? null
+              : () => setState(() => _currentPage = currentPage + 1),
+          icon: const Icon(Icons.chevron_right_rounded),
+        ),
+      ],
     );
   }
 

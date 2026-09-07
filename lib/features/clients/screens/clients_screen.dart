@@ -25,6 +25,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
   String _selectedStage = "All";
   String _selectedSource = "All";
   bool _isPipelineView = true; // Board vs Table toggle
+  int _currentPage = 1;
+  final int _pageSize = 25;
 
   @override
   void initState() {
@@ -39,6 +41,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 
   void _triggerFetch() {
+    _currentPage = 1;
     context.read<ClientsBloc>().add(
           FetchClientsEvent(
             search: _searchController.text.trim(),
@@ -53,6 +56,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
       _searchController.clear();
       _selectedStage = "All";
       _selectedSource = "All";
+      _currentPage = 1;
     });
     _triggerFetch();
   }
@@ -540,7 +544,16 @@ class _ClientsScreenState extends State<ClientsScreen> {
           clients = state.clients;
         }
 
-        return CRMDataTable(
+        final totalPages = clients.isEmpty ? 1 : (clients.length / _pageSize).ceil();
+        final currentPage = _currentPage.clamp(1, totalPages);
+        final start = (currentPage - 1) * _pageSize;
+        final end = (start + _pageSize).clamp(0, clients.length);
+        final pageClients = clients.isEmpty ? const <ClientModel>[] : clients.sublist(start, end);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+        CRMDataTable(
           isLoading: isLoading,
           emptyTitle: 'No Clients Profile Found',
           emptyDescription: 'Adjust search filter parameters or add a new customer.',
@@ -553,7 +566,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
             DataColumn(label: Text('Assigned Representative')),
             DataColumn(label: Text('Actions')),
           ],
-          rows: clients.map((c) {
+          rows: pageClients.map((c) {
             return DataRow(
               cells: [
                 DataCell(Text(c.name, style: CRMTypography.bodyMedium.copyWith(color: CRMColors.text))),
@@ -592,6 +605,35 @@ class _ClientsScreenState extends State<ClientsScreen> {
               ],
             );
           }).toList(),
+        ),
+        if (!isLoading && clients.isNotEmpty) ...[
+          const SizedBox(height: CRMSpacing.s),
+          Row(
+            children: [
+              Text(
+                'Showing ${clients.isEmpty ? 0 : start + 1}–$end of ${clients.length}',
+                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Previous page',
+                onPressed: currentPage <= 1
+                    ? null
+                    : () => setState(() => _currentPage = currentPage - 1),
+                icon: const Icon(Icons.chevron_left_rounded),
+              ),
+              Text('$currentPage / $totalPages', style: CRMTypography.caption),
+              IconButton(
+                tooltip: 'Next page',
+                onPressed: currentPage >= totalPages
+                    ? null
+                    : () => setState(() => _currentPage = currentPage + 1),
+                icon: const Icon(Icons.chevron_right_rounded),
+              ),
+            ],
+          ),
+        ],
+          ],
         );
       },
     );
