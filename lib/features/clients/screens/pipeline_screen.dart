@@ -144,42 +144,30 @@ class _PipelineScreenState extends State<PipelineScreen> {
               ),
               const SizedBox(height: CRMSpacing.l),
 
-              // KPI Metric Cards Row
-              SizedBox(
-                height: 130,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: CRMKPICard(
-                        title: 'Total Active Deals',
-                        value: '$totalActive',
-                        icon: Icons.handshake_rounded,
-                        iconColor: CRMColors.info,
-                        benefit: 'Live deals still moving through your funnel',
-                      ),
-                    ),
-                    const SizedBox(width: CRMSpacing.m),
-                    Expanded(
-                      child: CRMKPICard(
-                        title: 'Site Visit Ratio',
-                        value: '${conversionRate.toStringAsFixed(1)}%',
-                        icon: Icons.directions_walk_rounded,
-                        iconColor: CRMColors.success,
-                        benefit: 'How often leads turn into real site visits',
-                      ),
-                    ),
-                    const SizedBox(width: CRMSpacing.m),
-                    Expanded(
-                      child: CRMKPICard(
-                        title: 'Pipeline Volume',
-                        value: '${_requirements.length} Leads',
-                        icon: Icons.analytics_rounded,
-                        iconColor: CRMColors.warning,
-                        benefit: 'Total demand load across every stage',
-                      ),
-                    ),
-                  ],
-                ),
+              CRMResponsiveKpiRow(
+                children: [
+                  CRMKPICard(
+                    title: 'Total Active Deals',
+                    value: '$totalActive',
+                    icon: Icons.handshake_rounded,
+                    iconColor: CRMColors.terracotta,
+                    benefit: 'Live deals still moving through your funnel',
+                  ),
+                  CRMKPICard(
+                    title: 'Site Visit Ratio',
+                    value: '${conversionRate.toStringAsFixed(1)}%',
+                    icon: Icons.directions_walk_rounded,
+                    iconColor: CRMColors.text,
+                    benefit: 'How often leads turn into real site visits',
+                  ),
+                  CRMKPICard(
+                    title: 'Pipeline Volume',
+                    value: '${_requirements.length} Leads',
+                    icon: Icons.analytics_rounded,
+                    iconColor: CRMColors.terracotta,
+                    benefit: 'Total demand load across every stage',
+                  ),
+                ],
               ),
               const SizedBox(height: CRMSpacing.l),
 

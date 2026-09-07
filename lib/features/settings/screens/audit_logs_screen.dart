@@ -34,7 +34,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
       _errorMessage = null;
     });
     try {
-      final data = await _repository.getDashboardData();
+      final data = await _repository.getDashboardData(backgroundRefresh: false);
       setState(() {
         _allActivities = data.activity;
         _isLoading = false;

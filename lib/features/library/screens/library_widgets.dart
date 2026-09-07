@@ -324,8 +324,8 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
         }
 
         try {
-          // CLOUDINARY_ONLY_V4 — upload straight to ujn8lj3r/library_docs (never Supabase Storage)
-          debugPrint("[CLOUDINARY_ONLY_V4] Uploading $name (${bytes.length} bytes) → library_docs");
+          // CLOUDINARY_ONLY — upload straight to library_docs
+          debugPrint("[CLOUDINARY] Uploading $name (${bytes.length} bytes) → library_docs");
           final uploadBytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
 
           final int timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -361,10 +361,8 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
 
           if (uploadedUrl.isEmpty ||
               !uploadedUrl.contains('res.cloudinary.com') ||
-              !uploadedUrl.contains(ApiConstants.cloudinaryCloudName) ||
-              uploadedUrl.contains('supabase.co') ||
-              uploadedUrl.contains('storage/v1')) {
-            throw Exception('Cloudinary-only required. Got: $uploadedUrl');
+              !uploadedUrl.contains(ApiConstants.cloudinaryCloudName)) {
+            throw Exception('Cloudinary upload failed. Got: $uploadedUrl');
           }
 
           if (!mounted) return;
@@ -960,22 +958,22 @@ class FileIconHelper {
 
     if (ext == 'pdf') {
       icon = Icons.picture_as_pdf_rounded;
-      color = const Color(0xFFEF4444); // red
+      color = CRMColors.terracotta;
     } else if (ext == 'doc' || ext == 'docx') {
       icon = Icons.description_rounded;
-      color = const Color(0xFF3B82F6); // blue
+      color = CRMColors.sage;
     } else if (ext == 'xls' || ext == 'xlsx' || ext == 'csv') {
       icon = Icons.table_chart_rounded;
-      color = const Color(0xFF10B981); // green
+      color = CRMColors.sand;
     } else if (ext == 'jpg' || ext == 'jpeg' || ext == 'png' || ext == 'gif' || ext == 'webp') {
       icon = Icons.image_rounded;
-      color = const Color(0xFFF59E0B); // amber/orange
+      color = CRMColors.rose;
     } else if (ext == 'mp4' || ext == 'avi' || ext == 'mov' || ext == 'mkv') {
       icon = Icons.video_library_rounded;
-      color = const Color(0xFF8B5CF6); // purple
+      color = CRMColors.plum;
     } else {
       icon = Icons.insert_drive_file_rounded;
-      color = const Color(0xFF6B7280); // gray
+      color = CRMColors.textMuted;
     }
 
     return Container(

@@ -6,4 +6,8 @@ abstract class FileDownloader {
   static Future<void> download(List<int> bytes, String filename) {
     return downloadFile(bytes, filename);
   }
+
+  static Future<void> downloadUrl(String url, String filename) {
+    return downloadFromUrl(url, filename);
+  }
 }

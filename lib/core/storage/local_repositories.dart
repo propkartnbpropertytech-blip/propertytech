@@ -17,6 +17,21 @@ class PropertyLocalRepository {
     return await _isar.propertyLocals.filter().idEqualTo(id).findFirst();
   }
 
+  Future<PropertyLocal?> getPropertyByIdOrCode(String idOrCode) async {
+    final byId = await getPropertyById(idOrCode);
+    if (byId != null) return byId;
+    if (kIsWeb) {
+      for (final p in inMemory.values) {
+        if (p.propertyCode == idOrCode) return p;
+      }
+      return null;
+    }
+    return await _isar.propertyLocals
+        .filter()
+        .propertyCodeEqualTo(idOrCode)
+        .findFirst();
+  }
+
   Future<List<PropertyLocal>> getProperties({
     String? search,
     String? categoryId,
@@ -213,8 +228,11 @@ class PropertyLocalRepository {
     }
   }
 
-  Future<void> saveProperties(List<PropertyLocal> properties) async {
+  Future<void> saveProperties(List<PropertyLocal> properties, {bool clearExisting = false}) async {
     if (kIsWeb) {
+      if (clearExisting) {
+        inMemory.clear();
+      }
       for (final p in properties) {
         inMemory[p.id] = p;
       }
@@ -223,6 +241,9 @@ class PropertyLocalRepository {
     }
 
     await _isar.writeTxn(() async {
+      if (clearExisting) {
+        await _isar.propertyLocals.clear();
+      }
       await _isar.propertyLocals.putAll(properties);
     });
   }
@@ -263,7 +284,20 @@ class RequirementLocalRepository {
       }
       if (configurationId != null) list = list.where((r) => r.configurationId == configurationId).toList();
       if (propertyTypeId != null) list = list.where((r) => r.propertyTypeId == propertyTypeId).toList();
-      if (status != null && status != 'All') list = list.where((r) => r.status == status).toList();
+      if (status != null && status != 'All') {
+        if (status == 'Rejected') {
+          list = list.where((r) =>
+            r.status == 'Rejected' ||
+            r.status.startsWith('Rejected') ||
+            r.status == 'Suspended' ||
+            r.status == 'Dead' ||
+            r.status == 'Not Interested' ||
+            r.status == 'Bin'
+          ).toList();
+        } else {
+          list = list.where((r) => r.status == status).toList();
+        }
+      }
       return list;
     }
 
@@ -311,6 +345,7 @@ class RequirementLocalRepository {
             ..areaIds = List<String>.from(map['areaIds'] ?? [])
             ..areaNames = List<String>.from(map['areaNames'] ?? [])
             ..remarks = map['remarks']
+            ..notes = map['notes']
             ..status = map['status'] ?? 'Active'
             ..createdAt = DateTime.tryParse(map['createdAt'] ?? '') ?? DateTime.now()
             ..budget = map['budget'] != null ? double.tryParse(map['budget'].toString()) : null
@@ -345,6 +380,7 @@ class RequirementLocalRepository {
         'areaIds': item.areaIds,
         'areaNames': item.areaNames,
         'remarks': item.remarks,
+        'notes': item.notes,
         'status': item.status,
         'createdAt': item.createdAt.toIso8601String(),
         'budget': item.budget,

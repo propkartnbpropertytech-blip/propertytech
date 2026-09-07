@@ -113,6 +113,7 @@ class RequirementLocal {
   late List<String> areaIds;
   late List<String> areaNames;
   String? remarks;
+  String? notes;
   late String status;
   late DateTime createdAt;
   double? budget;

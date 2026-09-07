@@ -8,10 +8,10 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http_parser/http_parser.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide MultipartFile;
 
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
@@ -112,14 +112,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _healDatabaseHierarchy(UserModel user) async {
     try {
-      if (ApiConstants.useSupabaseDirect) {
-        await Supabase.instance.client
-            .from('users')
-            .update({'admin_id': null})
-            .eq('id', user.id);
-      } else {
-        await DioClient.dio.put('/users/${user.id}', data: {'admin_id': null});
-      }
+      await DioClient.dio.put('/users/${user.id}', data: {'admin_id': null});
       if (mounted) {
         context.read<AuthBloc>().add(AuthCheckStatus());
       }
@@ -162,7 +155,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _pickAndUploadPhoto(UserModel user) async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 85,
+    );
     if (pickedFile == null) return;
 
     setState(() {
@@ -170,73 +168,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
 
     try {
-      final String fileExt = pickedFile.name.split('.').last.toLowerCase();
-      final bool isPng = fileExt == 'png';
-      MultipartFile multipartFile;
-
-      if (kIsWeb) {
-        final bytes = await pickedFile.readAsBytes();
-        if (bytes.length > 2 * 1024 * 1024) {
-          throw Exception("Image size must be less than 2 MB.");
-        }
-        multipartFile = MultipartFile.fromBytes(
-          bytes,
-          filename: pickedFile.name,
-          contentType: MediaType('image', isPng ? 'png' : 'jpeg'),
-        );
-      } else {
-        final File file = File(pickedFile.path);
-        final int sizeInBytes = await file.length();
-        File uploadFile = file;
-
-        if (sizeInBytes > 0) {
-          final String targetPath =
-              "${Directory.systemTemp.path}/profile_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
-
-          XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
-            file.absolute.path,
-            targetPath,
-            quality: 80,
-            format: isPng ? CompressFormat.png : CompressFormat.jpeg,
-            minWidth: 800,
-            minHeight: 800,
-          );
-
-          if (compressedFile != null) {
-            uploadFile = File(compressedFile.path);
-            int compressedSize = await uploadFile.length();
-
-            if (compressedSize > 500 * 1024) {
-              final String secondPath =
-                  "${Directory.systemTemp.path}/profile_70_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
-              final XFile? secondCompressed = await FlutterImageCompress.compressAndGetFile(
-                file.absolute.path,
-                secondPath,
-                quality: 70,
-                format: isPng ? CompressFormat.png : CompressFormat.jpeg,
-                minWidth: 800,
-                minHeight: 800,
-              );
-              if (secondCompressed != null) {
-                uploadFile = File(secondCompressed.path);
-              }
-            }
-          }
-        }
-
-        multipartFile = await MultipartFile.fromFile(
-          uploadFile.path,
-          filename: isPng ? 'profile_photo.png' : 'profile_photo.jpg',
-          contentType: MediaType('image', isPng ? 'png' : 'jpeg'),
-        );
+      final String fileExt = pickedFile.name.contains('.')
+          ? pickedFile.name.split('.').last.toLowerCase()
+          : 'jpg';
+      String mimeType = 'image/jpeg';
+      if (fileExt == 'png') {
+        mimeType = 'image/png';
+      } else if (fileExt == 'webp') {
+        mimeType = 'image/webp';
+      } else if (fileExt == 'gif') {
+        mimeType = 'image/gif';
+      } else if (fileExt == 'bmp') {
+        mimeType = 'image/bmp';
+      } else if (fileExt == 'heic') {
+        mimeType = 'image/heic';
+      } else if (fileExt == 'avif') {
+        mimeType = 'image/avif';
       }
 
-      final formData = FormData.fromMap({'file': multipartFile});
-      final response = await DioClient.dio.post('/users/upload-profile', data: formData);
+      final bytes = await pickedFile.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        throw Exception("Image size must be less than 5 MB.");
+      }
 
-      if (response.data != null && response.data['data'] != null) {
-        final publicUrl = response.data['data']['publicUrl'];
+      String? publicUrl;
+      final String filename = pickedFile.name.isNotEmpty
+          ? pickedFile.name
+          : 'profile_photo.$fileExt';
 
+      // 1. Try Cloudinary direct signed upload
+      try {
+        publicUrl = await CloudinaryUploader.upload(
+          bytes: bytes,
+          filename: filename,
+          mimeType: mimeType,
+          resourceType: 'image',
+          folder: 'profiles',
+          fallbackEndpoint: '/users/upload-profile',
+        );
+      } catch (cloudErr) {
+        if (kDebugMode) {
+          print('⚠️ Cloudinary direct upload failed, attempting direct backend upload: $cloudErr');
+        }
+      }
+
+      // 2. Fallback to direct backend upload if needed
+      if (publicUrl == null || publicUrl.isEmpty) {
+        final multipartFile = MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+          contentType: MediaType.parse(mimeType),
+        );
+
+        final formData = FormData.fromMap({'file': multipartFile});
+        final response = await DioClient.dio.post('/users/upload-profile', data: formData);
+
+        if (response.data != null && response.data['data'] != null) {
+          final data = response.data['data'];
+          if (data is Map) {
+            publicUrl = data['url'] ?? data['publicUrl'];
+          }
+        }
+      }
+
+      if (publicUrl != null && publicUrl.isNotEmpty) {
         // Save updated profile photo to user profile
         try {
           await DioClient.dio.put('/users/${user.id}', data: {'profile_photo': publicUrl});
@@ -254,6 +249,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           );
         }
+      } else {
+        throw Exception("Upload succeeded but failed to retrieve image URL.");
       }
     } catch (e) {
       String errorMsg = 'Failed to upload photo.';
@@ -417,10 +414,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 const Expanded(
                   child: CRMPageHeader(
-                    eyebrow: 'Account',
-                    title: 'My Profile',
-                    benefit:
-                        'Keep your credentials, role, and photo current so teammates always reach the right you',
+                    title: 'Profile',
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -428,6 +422,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   label: 'Logout',
                   prefixIcon: Icons.logout_rounded,
                   variant: CRMButtonVariant.danger,
+                  height: 40,
                   onPressed: () {
                     RoleGuard.currentUser = null;
                     context.read<AuthBloc>().add(LogoutRequested());

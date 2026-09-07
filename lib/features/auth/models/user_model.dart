@@ -38,7 +38,10 @@ class UserModel extends Equatable {
   factory UserModel.fromJson(Map<String, dynamic> json) {
     final dataMap = json['data'] is Map<String, dynamic> ? json['data'] as Map<String, dynamic> : json;
     final userMap = dataMap['user'] is Map<String, dynamic> ? dataMap['user'] as Map<String, dynamic> : dataMap;
-    final token = json['token'] as String? ?? json['accessToken'] as String? ?? dataMap['token'] as String?;
+    final token = json['token'] as String? ??
+        json['accessToken'] as String? ??
+        dataMap['token'] as String? ??
+        dataMap['accessToken'] as String?;
     
     String role = 'Sales';
     if (userMap['roles'] is Map) {

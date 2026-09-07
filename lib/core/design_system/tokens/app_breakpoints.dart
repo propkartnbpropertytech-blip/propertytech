@@ -28,13 +28,13 @@ class CRMBreakpoints {
     return desktop;
   }
 
-  /// Width/height for KPI cells — tuned for 2-up mobile without overflow.
+  /// Width/height for KPI cells — taller than before so labels never clip.
   static double kpiAspectRatio(BuildContext context) {
     final w = widthOf(context);
-    if (w < 600) return 1.35;
-    if (w < tablet) return 1.6;
-    if (w < desktop) return 1.9;
-    return 2.2;
+    if (w < 600) return 1.25;
+    if (w < tablet) return 1.45;
+    if (w < desktop) return 1.7;
+    return 1.85;
   }
 
   /// Horizontal page padding that scales with viewport.

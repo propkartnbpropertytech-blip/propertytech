@@ -6,16 +6,17 @@ import '../models/user_model.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart' as auth_model;
 import '../../../core/design_system/tokens/app_colors.dart';
-import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
+import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/api/cloudinary_uploader.dart';
 import 'package:dio/dio.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
@@ -25,6 +26,8 @@ import '../../../core/utils/budget_formatter.dart';
 import '../../../core/security/role_guard.dart';
 import '../../properties/repository/properties_repository.dart';
 import '../../requirements/repository/requirements_repository.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/design_system/widgets/drawers.dart';
 import '../../properties/models/property_model.dart';
 import '../../requirements/models/requirement_model.dart';
 
@@ -760,59 +763,14 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Widget _buildPageHeader() {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 600;
-
-    final textColumn = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "User Management",
-          style: CRMTypography.pageTitle.copyWith(
-            color: CRMColors.text,
-            fontSize: isMobile ? 22 : 28,
-          ),
-        ),
-        const SizedBox(height: 4.0),
-        Text(
-          "Configure workspace permissions, logins, and enterprise roles",
-          style: CRMTypography.benefit.copyWith(
-            color: CRMColors.textSecondary,
-            fontSize: isMobile ? 12 : 13,
-          ),
-        ),
-      ],
-    );
-
-    if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          textColumn,
-          const SizedBox(height: CRMSpacing.m),
-          SizedBox(
-            width: double.infinity,
-            child: CRMButton(
-              label: "Add Employee",
-              prefixIcon: Icons.add_rounded,
-              onPressed: () => _showAddEditUserDialog(),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(child: textColumn),
-        const SizedBox(width: CRMSpacing.m),
-        CRMButton(
-          label: "Add Employee",
-          prefixIcon: Icons.add_rounded,
-          onPressed: () => _showAddEditUserDialog(),
-        ),
-      ],
+    return CRMPageHeader(
+      title: "Employees",
+      trailing: CRMButton(
+        label: "Add Employee",
+        prefixIcon: Icons.add_rounded,
+        height: 40,
+        onPressed: () => _showAddEditUserDialog(),
+      ),
     );
   }
 
@@ -839,68 +797,28 @@ class _UsersScreenState extends State<UsersScreen> {
               .length;
         }
 
-        if (MediaQuery.of(context).size.width < 600) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              CRMKPICard(
-                title: "TOTAL EMPLOYEES",
-                value: total.toString(),
-                icon: Icons.people_rounded,
-                iconColor: CRMColors.primary,
-                benefit: 'Everyone with CRM access in one place',
-              ),
-              const SizedBox(height: CRMSpacing.m),
-              CRMKPICard(
-                title: "ACTIVE SYSTEM USERS",
-                value: active.toString(),
-                icon: Icons.check_circle_outline_rounded,
-                iconColor: CRMColors.success,
-                benefit: 'Logins that can work the pipeline today',
-              ),
-              const SizedBox(height: CRMSpacing.m),
-              CRMKPICard(
-                title: "ADMINISTRATORS",
-                value: admins.toString(),
-                icon: Icons.admin_panel_settings_rounded,
-                iconColor: CRMColors.info,
-                benefit: 'Roles that control workspace security',
-              ),
-            ],
-          );
-        }
-
-        final int crossAxisCount = CRMBreakpoints.kpiColumns(context, desktop: 3);
-        final double childAspectRatio = CRMBreakpoints.kpiAspectRatio(context);
-
-        return GridView.count(
-          crossAxisCount: crossAxisCount,
-          crossAxisSpacing: CRMSpacing.m,
-          mainAxisSpacing: CRMSpacing.m,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: childAspectRatio,
+        return CRMResponsiveKpiRow(
           children: [
             CRMKPICard(
               title: "TOTAL EMPLOYEES",
               value: total.toString(),
               icon: Icons.people_rounded,
-              iconColor: CRMColors.primary,
-              benefit: 'Everyone with CRM access in one place',
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiPlum,
             ),
             CRMKPICard(
               title: "ACTIVE SYSTEM USERS",
               value: active.toString(),
               icon: Icons.check_circle_outline_rounded,
-              iconColor: CRMColors.success,
-              benefit: 'Logins that can work the pipeline today',
+              iconColor: CRMColors.text,
+              backgroundColor: CRMColors.kpiSage,
             ),
             CRMKPICard(
               title: "ADMINISTRATORS",
               value: admins.toString(),
               icon: Icons.admin_panel_settings_rounded,
-              iconColor: CRMColors.info,
-              benefit: 'Roles that control workspace security',
+              iconColor: CRMColors.terracotta,
+              backgroundColor: CRMColors.kpiRose,
             ),
           ],
         );
@@ -2284,9 +2202,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.l),
                 child: FutureBuilder<List<dynamic>>(
                   future: Future.wait([
-                    PropertiesRepository().getProperties(
-                      createdBy: salesman.id,
-                    ),
+                    PropertiesRepository().getProperties(),
                     RequirementsRepository().getRequirements(),
                   ]),
                   builder: (context, snapshot) {
@@ -2317,17 +2233,42 @@ class _UsersScreenState extends State<UsersScreen> {
                       );
                     }
 
-                    final properties =
+                    final allProps =
                         (snapshot.data?[0] as List<PropertyModel>?) ?? [];
                     final allReqs =
                         (snapshot.data?[1] as List<RequirementModel>?) ?? [];
-                    final requirements = allReqs
-                        .where((r) => r.adminId == salesman.id)
-                        .toList();
+
+                    final sId = salesman.id;
+                    final sName = salesman.fullName.toLowerCase().trim();
+
+                    final salesmanProps = allProps.where((p) {
+                      final pAdminId = p.adminId ?? '';
+                      final pCreatedBy = p.createdBy;
+                      final pCreatedByName = p.createdByName.toLowerCase().trim();
+
+                      return pAdminId == sId ||
+                             pCreatedBy == sId ||
+                             (pCreatedByName.isNotEmpty && pCreatedByName == sName) ||
+                             (pCreatedBy.toLowerCase().trim() == sName);
+                    }).toList();
+
+                    final salesmanReqs = allReqs.where((r) {
+                      final rAdminId = r.adminId ?? '';
+                      final rAssignedTo = r.assignedTo ?? '';
+                      final rCreatedBy = r.createdBy ?? '';
+                      final rCreatorName = (r.creatorName ?? '').toLowerCase().trim();
+                      final rAssigneeName = (r.assigneeName ?? '').toLowerCase().trim();
+
+                      return rAdminId == sId ||
+                             rAssignedTo == sId ||
+                             rCreatedBy == sId ||
+                             (rCreatorName.isNotEmpty && rCreatorName == sName) ||
+                             (rAssigneeName.isNotEmpty && rAssigneeName == sName);
+                    }).toList();
 
                     // Filter helper functions
                     List<PropertyModel> getFilteredProperties() {
-                      return properties.where((p) {
+                      return salesmanProps.where((p) {
                         final ltName = p.listingTypeName.toLowerCase();
                         final matchesListing = activeTab == 'Rent'
                             ? ltName.contains('rent')
@@ -2339,7 +2280,7 @@ class _UsersScreenState extends State<UsersScreen> {
                     }
 
                     List<RequirementModel> getFilteredRequirements() {
-                      return requirements.where((r) {
+                      return salesmanReqs.where((r) {
                         final matchesListing =
                             _getListingTypeLabelForSalesman(r) == activeTab;
                         return matchesListing;
@@ -2729,6 +2670,17 @@ class _UsersScreenState extends State<UsersScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            TextButton.icon(
+              icon: const Icon(Icons.open_in_new, size: 14),
+              label: Text(
+                isMobile ? "View All" : "Open in Properties Page",
+                style: const TextStyle(fontSize: 12),
+              ),
+              onPressed: () {
+                Navigator.of(context, rootNavigator: true).pop();
+                context.go('/properties?search=${Uri.encodeComponent(salesman.fullName)}');
+              },
+            ),
           ],
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -2745,6 +2697,10 @@ class _UsersScreenState extends State<UsersScreen> {
                     final p = list[index];
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.of(context, rootNavigator: true).pop();
+                        showCRMPropertyDrawer(context, p);
+                      },
                       title: Text(
                         p.title,
                         style: CRMTypography.bodyMedium.copyWith(
@@ -2797,6 +2753,17 @@ class _UsersScreenState extends State<UsersScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            TextButton.icon(
+              icon: const Icon(Icons.open_in_new, size: 14),
+              label: Text(
+                isMobile ? "View All" : "Open in Leads Page",
+                style: const TextStyle(fontSize: 12),
+              ),
+              onPressed: () {
+                Navigator.of(context, rootNavigator: true).pop();
+                context.go('/requirements?search=${Uri.encodeComponent(salesman.fullName)}');
+              },
+            ),
           ],
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -2815,6 +2782,10 @@ class _UsersScreenState extends State<UsersScreen> {
                         '${r.propertyTypeName} (${r.configurationName ?? ""})';
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.of(context, rootNavigator: true).pop();
+                        context.go('/requirements?search=${Uri.encodeComponent(r.clientName)}');
+                      },
                       title: Text(
                         r.clientName,
                         style: CRMTypography.bodyMedium.copyWith(
@@ -3166,7 +3137,12 @@ class _UsersScreenState extends State<UsersScreen> {
     Function(String) onUploaded,
   ) async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 85,
+    );
     if (pickedFile == null) return;
 
     dialogSetState(() {
@@ -3174,101 +3150,88 @@ class _UsersScreenState extends State<UsersScreen> {
     });
 
     try {
-      final String fileExt = pickedFile.name.split('.').last.toLowerCase();
-      final bool isPng = fileExt == 'png';
-      MultipartFile multipartFile;
+      final String fileExt = pickedFile.name.contains('.')
+          ? pickedFile.name.split('.').last.toLowerCase()
+          : 'jpg';
+      String mimeType = 'image/jpeg';
+      if (fileExt == 'png') {
+        mimeType = 'image/png';
+      } else if (fileExt == 'webp') {
+        mimeType = 'image/webp';
+      } else if (fileExt == 'gif') {
+        mimeType = 'image/gif';
+      } else if (fileExt == 'bmp') {
+        mimeType = 'image/bmp';
+      } else if (fileExt == 'heic') {
+        mimeType = 'image/heic';
+      } else if (fileExt == 'avif') {
+        mimeType = 'image/avif';
+      }
 
-      if (kIsWeb) {
-        final bytes = await pickedFile.readAsBytes();
-        if (bytes.length > 2 * 1024 * 1024) {
-          throw Exception("Image size must be less than 2 MB.");
-        }
-        multipartFile = MultipartFile.fromBytes(
-          bytes,
-          filename: pickedFile.name,
-          contentType: MediaType('image', isPng ? 'png' : 'jpeg'),
+      final bytes = await pickedFile.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        throw Exception("Image size must be less than 5 MB.");
+      }
+
+      String? uploadedUrl;
+      final String filename = pickedFile.name.isNotEmpty
+          ? pickedFile.name
+          : 'profile_photo.$fileExt';
+
+      // 1. Try Cloudinary direct signed upload
+      try {
+        uploadedUrl = await CloudinaryUploader.upload(
+          bytes: bytes,
+          filename: filename,
+          mimeType: mimeType,
+          resourceType: 'image',
+          folder: 'profiles',
+          fallbackEndpoint: '/users/upload-profile?updateSelf=false',
         );
-      } else {
-        final File file = File(pickedFile.path);
-        final int sizeInBytes = await file.length();
+      } catch (cloudErr) {
+        if (kDebugMode) {
+          print('⚠️ Cloudinary direct upload failed, attempting direct backend upload: $cloudErr');
+        }
+      }
 
-        File uploadFile = file;
+      // 2. Fallback to direct backend upload if needed
+      if (uploadedUrl == null || uploadedUrl.isEmpty) {
+        final multipartFile = MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+          contentType: MediaType.parse(mimeType),
+        );
 
-        // Deterministic compression pipeline
-        if (sizeInBytes > 0) {
-          final String targetPath =
-              "${Directory.systemTemp.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
+        final formData = FormData.fromMap({'file': multipartFile});
 
-          // Step 1: Compress with 80% quality and resize max 800x800 px
-          XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
-            file.absolute.path,
-            targetPath,
-            quality: 80,
-            format: isPng ? CompressFormat.png : CompressFormat.jpeg,
-            minWidth: 800,
-            minHeight: 800,
-          );
-
-          if (compressedFile != null) {
-            uploadFile = File(compressedFile.path);
-            int compressedSize = await uploadFile.length();
-
-            // Step 2: If size exceeds 500 KB limit, re-compress with 70% quality
-            if (compressedSize > 500 * 1024) {
-              final String secondPath =
-                  "${Directory.systemTemp.path}/compressed_70_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
-              final XFile? secondCompressed =
-                  await FlutterImageCompress.compressAndGetFile(
-                    file.absolute.path,
-                    secondPath,
-                    quality: 70,
-                    format: isPng ? CompressFormat.png : CompressFormat.jpeg,
-                    minWidth: 800,
-                    minHeight: 800,
-                  );
-              if (secondCompressed != null) {
-                uploadFile = File(secondCompressed.path);
-                compressedSize = await uploadFile.length();
-              }
-            }
-
-            // Step 3: Assert ultimate limit of 2 MB
-            if (compressedSize > 2 * 1024 * 1024) {
-              throw Exception(
-                "Compressed image size exceeds the required 2 MB limit.",
-              );
-            }
+        Response? response;
+        int retries = 3;
+        while (retries > 0) {
+          try {
+            response = await DioClient.dio.post(
+              '/users/upload-profile?updateSelf=false',
+              data: formData,
+            );
+            break;
+          } catch (e) {
+            retries--;
+            if (retries == 0) rethrow;
+            await Future.delayed(const Duration(milliseconds: 500));
           }
         }
 
-        multipartFile = await MultipartFile.fromFile(
-          uploadFile.path,
-          filename: isPng ? 'profile_photo.png' : 'profile_photo.jpg',
-          contentType: MediaType('image', isPng ? 'png' : 'jpeg'),
-        );
-      }
-
-      final formData = FormData.fromMap({'file': multipartFile});
-
-      Response? response;
-      int retries = 3;
-      while (retries > 0) {
-        try {
-          response = await DioClient.dio.post(
-            '/users/upload-profile?updateSelf=false',
-            data: formData,
-          );
-          break;
-        } catch (e) {
-          retries--;
-          if (retries == 0) rethrow;
-          await Future.delayed(const Duration(milliseconds: 500));
+        if (response != null && response.data != null) {
+          final data = response.data['data'];
+          if (data is Map) {
+            uploadedUrl = data['url'] ?? data['publicUrl'];
+          }
         }
       }
 
-      if (response != null && response.data != null) {
-        final publicUrl = response.data['data']['publicUrl'];
-        onUploaded(publicUrl);
+      if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
+        onUploaded(uploadedUrl);
+      } else {
+        throw Exception("Upload succeeded but failed to retrieve image URL.");
       }
     } catch (e) {
       String errorMsg = 'Failed to upload photo.';
@@ -3277,13 +3240,15 @@ class _UsersScreenState extends State<UsersScreen> {
       } else if (e is Exception) {
         errorMsg = e.toString().replaceAll("Exception: ", "");
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(errorMsg),
-          backgroundColor: CRMColors.danger,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMsg),
+            backgroundColor: CRMColors.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } finally {
       dialogSetState(() {
         _isUploadingPhoto = false;

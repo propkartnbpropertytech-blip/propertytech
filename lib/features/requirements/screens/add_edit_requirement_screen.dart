@@ -55,7 +55,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
   String? _selectedListingTypeId;
   final List<String> _selectedFurnishingIds = [];
   final List<String> _selectedFacingIds = [];
-  String _selectedStatus = "Not Started";
+  String _selectedStatus = "New";
   final List<String> _selectedAreaIds = [];
   String _areaSearchQuery = '';
   String? _customerFoundMessage;
@@ -173,6 +173,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           _selectedFacingIds.addAll(req.facingIds);
           
           String statusVal = req.status;
+          if (statusVal == 'Not Started') statusVal = 'New';
           if (statusVal == 'Active' || statusVal == 'Live') statusVal = 'Interested';
           if (statusVal == 'Closed' || statusVal == 'Won') statusVal = 'Won';
           if (statusVal == 'Suspended' || statusVal == 'Dead') statusVal = 'Not Interested';
@@ -384,7 +385,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                   _minAreaController.text = draft['minArea'] ?? '';
                   _maxAreaController.text = draft['maxArea'] ?? '';
                   _remarksController.text = draft['remarks'] ?? '';
-                  _selectedStatus = draft['status'] ?? 'Not Started';
+                  _selectedStatus = draft['status'] ?? 'New';
                   
                   final List<String> areas = List<String>.from(draft['areaIds'] ?? []);
                   _selectedAreaIds.clear();
@@ -599,6 +600,14 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     final minBudget = budgetVal * 0.8;
     final maxBudget = budgetVal * 1.2;
 
+    final userRole = (currentUser?.role ?? '').toLowerCase();
+    final bool isAdminOrTelecaller = userRole == 'admin' || userRole == 'super admin' || userRole == 'telecaller';
+
+    final String? defaultAssignedTo = widget.requirement?.assignedTo ??
+        (!isAdminOrTelecaller && currentUser != null ? currentUser.id : null);
+    final String? defaultAssigneeName = widget.requirement?.assigneeName ??
+        (!isAdminOrTelecaller && currentUser != null ? currentUser.fullName : null);
+
     final req = RequirementModel(
       id: widget.requirement?.id ?? '',
       clientName: _nameController.text.trim(),
@@ -627,6 +636,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       adminId: widget.requirement?.adminId ?? (currentUser?.role == 'Admin' ? currentUser?.id : currentUser?.adminId),
       creatorName: widget.requirement?.creatorName ?? currentUser?.fullName,
       createdBy: widget.requirement?.createdBy ?? currentUser?.id,
+      assignedTo: defaultAssignedTo,
+      assigneeName: defaultAssigneeName,
     );
 
     _isSaved = true;
@@ -730,7 +741,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  widget.requirement != null ? "Edit Requirement" : "Add Requirement",
+                  widget.requirement != null ? "Edit Lead" : "Add Lead",
                   style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
                 ),
                 IconButton(
@@ -745,7 +756,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "Edit Requirement Details",
+                  "Edit Lead Details",
                   style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context)),
                 ),
                 IconButton(
@@ -1029,6 +1040,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               label: 'Pipeline Status Stage *',
               value: _selectedStatus,
               items: const [
+                DropdownMenuItem(value: "New", child: Text("New")),
                 DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
                 DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
                 DropdownMenuItem(value: "Interested", child: Text("Interested")),
@@ -1036,8 +1048,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
                 DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
                 DropdownMenuItem(value: "Won", child: Text("Won")),
-                DropdownMenuItem(value: "Bin", child: Text("Bin")),
-                DropdownMenuItem(value: "Not Interested", child: Text("Not Interested")),
+                DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
               ],
               onChanged: (val) {
                 if (val != null && _validateStatusTransition(val)) {
@@ -1392,9 +1403,19 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: CRMTypography.caption),
-          Text(value.isNotEmpty ? value : "None", style: CRMTypography.caption.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value.isNotEmpty ? value : "None",
+              style: CRMTypography.caption.copyWith(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.right,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );

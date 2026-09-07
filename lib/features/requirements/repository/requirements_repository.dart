@@ -192,6 +192,41 @@ class RequirementsRepository {
     }
   }
 
+  Future<void> updateRequirementFields(String id, Map<String, dynamic> data) async {
+    try {
+      final response = await _requirementsService.updateRequirement(id, data);
+      final respData = response['data'] as Map<String, dynamic>? ?? {};
+      final freshJson = respData['requirement'] as Map<String, dynamic>?;
+      if (freshJson != null) {
+        final fresh = RequirementModel.fromJson(freshJson);
+        await _coordinator.requirementLocal.saveRequirements([fresh.toLocal()]);
+      } else {
+        final existingList = await _coordinator.requirementLocal.getRequirements();
+        final matches = existingList.where((r) => r.id == id).toList();
+        if (matches.isNotEmpty) {
+          final match = matches.first;
+          if (data.containsKey('notes')) {
+            match.notes = data['notes'];
+          }
+          await _coordinator.requirementLocal.saveRequirements([match]);
+        }
+      }
+      _coordinator.refreshRequirements();
+    } catch (e) {
+      print("RequirementsRepository.updateRequirementFields error: $e");
+      final existingList = await _coordinator.requirementLocal.getRequirements();
+      final matches = existingList.where((r) => r.id == id).toList();
+      if (matches.isNotEmpty) {
+        final match = matches.first;
+        if (data.containsKey('notes')) {
+          match.notes = data['notes'];
+        }
+        await _coordinator.requirementLocal.saveRequirements([match]);
+      }
+      _coordinator.refreshRequirements();
+    }
+  }
+
   Future<void> deleteRequirement(String id) async {
     try {
       await _requirementsService.deleteRequirement(id);

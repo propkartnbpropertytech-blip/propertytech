@@ -20,13 +20,13 @@ class PropertiesRepository {
     String id, {
     bool refreshFromServer = false,
   }) async {
-    final local = await _coordinator.propertyLocal.getPropertyById(id);
+    final local = await _coordinator.propertyLocal.getPropertyByIdOrCode(id);
 
     if (!refreshFromServer) {
       return local?.toModel();
     }
 
-    final fresh = await _fetchAndCachePropertyById(id);
+    final fresh = await _fetchAndCachePropertyById(local?.id ?? id);
     if (fresh != null) return fresh;
     return local?.toModel();
   }
@@ -121,7 +121,7 @@ class PropertiesRepository {
 
       final writeStart = DateTime.now();
       final localEntities = freshList.map((p) => p.toLocal()).toList();
-      await _coordinator.propertyLocal.saveProperties(localEntities);
+      await _coordinator.propertyLocal.saveProperties(localEntities, clearExisting: true);
       final isarWriteMs = DateTime.now().difference(writeStart).inMilliseconds;
 
       final totalMs = DateTime.now().difference(start).inMilliseconds;

@@ -50,15 +50,16 @@ class CRMPageHeader extends StatelessWidget {
           style: CRMTypography.pageTitle.copyWith(
             color: CRMColors.textOf(context),
             fontSize: isMobile ? 22 : 28,
+            fontWeight: FontWeight.w700,
           ),
         ),
         if (benefit != null && benefit!.isNotEmpty) ...[
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             benefit!,
-            style: CRMTypography.benefit.copyWith(
+            style: CRMTypography.caption.copyWith(
               color: CRMColors.textSecondaryOf(context),
-              fontSize: isMobile ? 12 : 13,
+              fontSize: 12,
             ),
           ),
         ],
@@ -88,7 +89,12 @@ class CRMPageHeader extends StatelessWidget {
       children: [
         Expanded(child: titleBlock),
         const SizedBox(width: CRMSpacing.s),
-        trailing!,
+        Flexible(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: trailing!,
+          ),
+        ),
       ],
     );
   }

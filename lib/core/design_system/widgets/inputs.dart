@@ -79,15 +79,11 @@ class CRMTextField extends StatelessWidget {
             fillColor: CRMColors.cardBgOf(context),
             border: OutlineInputBorder(
               borderRadius: radius,
-              borderSide: BorderSide(
-                color: CRMColors.borderOf(context).withOpacity(0.8),
-              ),
+              borderSide: BorderSide(color: CRMColors.inputBorder),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: radius,
-              borderSide: BorderSide(
-                color: CRMColors.borderOf(context).withOpacity(0.8),
-              ),
+              borderSide: BorderSide(color: CRMColors.inputBorder),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: radius,

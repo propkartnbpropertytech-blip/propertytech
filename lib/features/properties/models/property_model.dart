@@ -468,17 +468,22 @@ class PropertyMetadataModel {
       return (raw as List<dynamic>).map((item) => parser(item as Map<String, dynamic>)).toList();
     }
 
-    return PropertyMetadataModel(
-      cities: parseList(
-        meta['cities'],
-        (j) => LookupItem(
-          id: (j['id'] ?? '').toString(),
-          name: (j['city_name'] ?? j['name'] ?? '').toString(),
-          state: j['state']?.toString(),
-          country: j['country']?.toString(),
-        ),
+    final citiesList = parseList(
+      meta['cities'],
+      (j) => LookupItem(
+        id: (j['id'] ?? '').toString(),
+        name: (j['city_name'] ?? j['name'] ?? '').toString(),
+        state: j['state']?.toString(),
+        country: j['country']?.toString(),
       ),
-      areas: parseList(meta['areas'], AreaLookup.fromJson),
+    )..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    final areasList = parseList(meta['areas'], AreaLookup.fromJson)
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    return PropertyMetadataModel(
+      cities: citiesList,
+      areas: areasList,
       categories: parseList(meta['categories'], LookupItem.fromJson),
       types: parseList(meta['types'], LookupItem.fromJson),
       configurations: parseList(meta['configurations'], LookupItem.fromJson),

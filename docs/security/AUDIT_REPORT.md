@@ -1,7 +1,7 @@
 # PropKart Security Audit Report
 
 **Date:** 2026-07-25  
-**Scope:** Flutter client (`C:\NB\propkart`). Backend is external (`prop-kart-backend.vercel.app`) — server RBAC must be verified separately.  
+**Scope:** Flutter client (`C:\NB\propkart`). Backend is external (`api-propkart.nbpropertytech.com`) - server RBAC must be verified separately.  
 **Algorithm note:** Migrating HS256→RS256 is **not** required for this client. User JWTs are opaque Bearer tokens; algorithm choice is a **server** concern. Prefer RS256 only if multiple services must verify tokens without sharing a secret.
 
 ---
