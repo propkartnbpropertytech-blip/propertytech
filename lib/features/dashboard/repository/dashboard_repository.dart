@@ -185,15 +185,41 @@ class DashboardRepository {
     }
 
     if (cachedData != null) {
+      int localRentalAvail = 0;
+      int localResaleAvail = 0;
+      for (final p in allLocalProps) {
+        final st = (p.propertyStatusName ?? '').trim().toLowerCase();
+        if (st == 'available' || st == 'to be available') {
+          final lt = (p.listingTypeName ?? '').trim().toLowerCase();
+          if (lt.contains('rent')) {
+            localRentalAvail++;
+          } else {
+            localResaleAvail++;
+          }
+        }
+      }
+
+      final rentalAvail = cachedData.summary.rentalAvailable > 0
+          ? cachedData.summary.rentalAvailable
+          : localRentalAvail;
+      final resaleAvail = cachedData.summary.resaleAvailable > 0
+          ? cachedData.summary.resaleAvailable
+          : localResaleAvail;
+      final totalAvail = cachedData.summary.available > 0
+          ? cachedData.summary.available
+          : (rentalAvail + resaleAvail);
+
       final updatedSummary = DashboardSummary(
-        totalProperties: cachedData.summary.totalProperties,
-        available: cachedData.summary.available,
+        totalProperties: cachedData.summary.totalProperties > 0
+            ? cachedData.summary.totalProperties
+            : allLocalProps.length,
+        available: totalAvail,
         sold: resaleSiteVisits,
         rented: rentalSiteVisits,
         requirements: rentalReqs + resaleReqs,
         users: cachedData.summary.users,
-        rentalAvailable: cachedData.summary.rentalAvailable,
-        resaleAvailable: cachedData.summary.resaleAvailable,
+        rentalAvailable: rentalAvail,
+        resaleAvailable: resaleAvail,
         rentalRented: rentalSiteVisits,
         resaleSold: resaleSiteVisits,
         rentalRequirements: rentalReqs,

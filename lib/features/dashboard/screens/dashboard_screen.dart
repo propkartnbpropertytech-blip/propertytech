@@ -500,14 +500,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     final themeManager = ThemeManager();
     final primaryColor = themeManager.primaryColor;
 
-    final filteredAvailable = data.recentProperties.where((p) {
-      final isType = _isRent ? p.listingType.toLowerCase().contains('rent') : !p.listingType.toLowerCase().contains('rent');
-      final isAvailable = p.status.toLowerCase() == 'available';
-      return isType && isAvailable;
-    }).toList();
-    final availableCount = data.recentProperties.isNotEmpty
-        ? filteredAvailable.length
-        : (_isRent ? data.summary.rentalAvailable : data.summary.resaleAvailable);
+    final availableCount = _isRent
+        ? data.summary.rentalAvailable
+        : data.summary.resaleAvailable;
     final siteVisitsCount = _isRent
         ? data.summary.rentalRented
         : data.summary.resaleSold;
