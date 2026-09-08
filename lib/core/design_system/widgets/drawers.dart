@@ -979,10 +979,8 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
             ),
             Divider(color: CRMColors.borderOf(context).withOpacity(0.6), height: 1, thickness: 0.5),
 
-            // Sticky Touchable Section Navigation Bar (Matching Image 1)
             _buildSectionNavBar(context),
 
-            // Main Details Body (Full-width outer SingleChildScrollView!)
             Expanded(
               child: SingleChildScrollView(
                 controller: _scrollController,
@@ -991,7 +989,6 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // FULL-WIDTH Property Images Slider at Top (Matching Image 3)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1005,82 +1002,84 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                       ),
                       const SizedBox(height: CRMSpacing.l),
 
-                      // 2-Column Section Layout Below Images
-                      if (isDesktop)
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // LEFT COLUMN: All Details Sections Stacked 1-by-1 (72% width)
-                            Expanded(
-                              flex: 72,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  KeyedSubtree(key: _overviewKey, child: _buildOverviewCard(context, property)),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  KeyedSubtree(key: _detailsKey, child: _buildResponsiveDetailCard(context, 'Basic Details', basicItems)),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  KeyedSubtree(key: _specsKey, child: _buildResponsiveDetailCard(context, 'Specifications & Floor Details', specsItems)),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  KeyedSubtree(key: _locationKey, child: _buildResponsiveDetailCard(context, 'Location & Address', locationItems)),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  _buildDescriptionRemarksCard(context, property),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  KeyedSubtree(key: _amenitiesKey, child: _buildAmenitiesCard(context, property.amenities)),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  KeyedSubtree(key: _contactsKey, child: _buildResponsiveDetailCard(context, 'Contacts & Key Management', contactsItems)),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  KeyedSubtree(key: _investKey, child: _buildInvestmentOptionsCard(context, property)),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  KeyedSubtree(key: _similarKey, child: _buildSimilarPropertiesSection(context, property)),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: CRMSpacing.l),
+                      Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1240),
+                          child: isDesktop
+                              ? Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      flex: 68,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          KeyedSubtree(key: _overviewKey, child: _buildOverviewCard(context, property)),
+                                          const SizedBox(height: CRMSpacing.m),
+                                          KeyedSubtree(key: _detailsKey, child: _buildResponsiveDetailCard(context, 'Basic Details', basicItems)),
+                                          const SizedBox(height: CRMSpacing.m),
+                                          KeyedSubtree(key: _specsKey, child: _buildResponsiveDetailCard(context, 'Specifications & Floor Details', specsItems)),
+                                          const SizedBox(height: CRMSpacing.m),
+                                          KeyedSubtree(key: _locationKey, child: _buildResponsiveDetailCard(context, 'Location & Address', locationItems)),
+                                          const SizedBox(height: CRMSpacing.m),
+                                          _buildDescriptionRemarksCard(context, property),
+                                          const SizedBox(height: CRMSpacing.m),
+                                          KeyedSubtree(key: _amenitiesKey, child: _buildAmenitiesCard(context, property.amenities)),
+                                          const SizedBox(height: CRMSpacing.m),
+                                          KeyedSubtree(key: _contactsKey, child: _buildResponsiveDetailCard(context, 'Contacts & Key Management', contactsItems)),
+                                          const SizedBox(height: CRMSpacing.m),
+                                          KeyedSubtree(key: _investKey, child: _buildInvestmentOptionsCard(context, property)),
+                                          const SizedBox(height: CRMSpacing.m),
+                                          KeyedSubtree(key: _similarKey, child: _buildSimilarPropertiesSection(context, property)),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: CRMSpacing.l),
 
-                            // RIGHT COLUMN: STICKY Contact Seller Card (28% width)
-                            Expanded(
-                              flex: 28,
-                              child: AnimatedBuilder(
-                                animation: _scrollController,
-                                builder: (context, child) {
-                                  final double scrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
-                                  final double stickyOffset = (scrollOffset - 430.0).clamp(0.0, 4000.0);
-                                  return Transform.translate(
-                                    offset: Offset(0, stickyOffset),
-                                    child: child,
-                                  );
-                                },
-                                child: _buildRightContactSellerCard(context, property, currentUser),
-                              ),
-                            ),
-                          ],
-                        )
-                      else
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            KeyedSubtree(key: _overviewKey, child: _buildOverviewCard(context, property)),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _detailsKey, child: _buildResponsiveDetailCard(context, 'Basic Details', basicItems)),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _specsKey, child: _buildResponsiveDetailCard(context, 'Specifications & Floor Details', specsItems)),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _locationKey, child: _buildResponsiveDetailCard(context, 'Location & Address', locationItems)),
-                            const SizedBox(height: CRMSpacing.m),
-                            _buildDescriptionRemarksCard(context, property),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _amenitiesKey, child: _buildAmenitiesCard(context, property.amenities)),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _contactsKey, child: _buildResponsiveDetailCard(context, 'Contacts & Key Management', contactsItems)),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _investKey, child: _buildInvestmentOptionsCard(context, property)),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _similarKey, child: _buildSimilarPropertiesSection(context, property)),
-                            const SizedBox(height: CRMSpacing.l),
-                            _buildRightContactSellerCard(context, property, currentUser),
-                          ],
+                                    Expanded(
+                                      flex: 32,
+                                      child: AnimatedBuilder(
+                                        animation: _scrollController,
+                                        builder: (context, child) {
+                                          final double scrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
+                                          final double stickyOffset = (scrollOffset - 430.0).clamp(0.0, 4000.0);
+                                          return Transform.translate(
+                                            offset: Offset(0, stickyOffset),
+                                            child: child,
+                                          );
+                                        },
+                                        child: _buildRightContactSellerCard(context, property, currentUser),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    KeyedSubtree(key: _overviewKey, child: _buildOverviewCard(context, property)),
+                                    const SizedBox(height: CRMSpacing.m),
+                                    KeyedSubtree(key: _detailsKey, child: _buildResponsiveDetailCard(context, 'Basic Details', basicItems)),
+                                    const SizedBox(height: CRMSpacing.m),
+                                    KeyedSubtree(key: _specsKey, child: _buildResponsiveDetailCard(context, 'Specifications & Floor Details', specsItems)),
+                                    const SizedBox(height: CRMSpacing.m),
+                                    KeyedSubtree(key: _locationKey, child: _buildResponsiveDetailCard(context, 'Location & Address', locationItems)),
+                                    const SizedBox(height: CRMSpacing.m),
+                                    _buildDescriptionRemarksCard(context, property),
+                                    const SizedBox(height: CRMSpacing.m),
+                                    KeyedSubtree(key: _amenitiesKey, child: _buildAmenitiesCard(context, property.amenities)),
+                                    const SizedBox(height: CRMSpacing.m),
+                                    KeyedSubtree(key: _contactsKey, child: _buildResponsiveDetailCard(context, 'Contacts & Key Management', contactsItems)),
+                                    const SizedBox(height: CRMSpacing.m),
+                                    KeyedSubtree(key: _investKey, child: _buildInvestmentOptionsCard(context, property)),
+                                    const SizedBox(height: CRMSpacing.m),
+                                    KeyedSubtree(key: _similarKey, child: _buildSimilarPropertiesSection(context, property)),
+                                    const SizedBox(height: CRMSpacing.l),
+                                    _buildRightContactSellerCard(context, property, currentUser),
+                                  ],
+                                ),
                         ),
+                      ),
                     ],
                   ),
                 ),
