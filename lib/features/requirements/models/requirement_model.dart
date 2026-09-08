@@ -37,6 +37,8 @@ class RequirementModel {
   final String? createdBy;
   final String? creatorMobile;
   final String? creatorEmail;
+  final String? leadSource;
+  final String? referralName;
 
   RequirementModel({
     required this.id,
@@ -75,7 +77,23 @@ class RequirementModel {
     this.createdBy,
     this.creatorMobile,
     this.creatorEmail,
+    this.leadSource,
+    this.referralName,
   });
+
+  String? get leadSourceDisplay {
+    final src = (leadSource != null && leadSource!.trim().isNotEmpty)
+        ? leadSource!.trim()
+        : null;
+    if (src == null) return null;
+    if (src.toLowerCase() == 'referral' || src.toLowerCase() == 'referrel') {
+      if (referralName != null && referralName!.trim().isNotEmpty) {
+        return 'Referral (${referralName!.trim()})';
+      }
+      return 'Referral';
+    }
+    return src;
+  }
 
   factory RequirementModel.fromJson(Map<String, dynamic> json) {
     // Handle category name from joined category object
@@ -168,6 +186,18 @@ class RequirementModel {
       aNames = [json['area']['area_name']?.toString() ?? ''];
     }
 
+    // Extract lead source and referral name
+    String? parsedLeadSource = (json['leadSource'] ?? json['lead_source'] ?? json['source']) as String?;
+    String? parsedReferralName = (json['referralName'] ?? json['referral_name'] ?? json['referred_by']) as String?;
+
+    if (parsedLeadSource != null && parsedLeadSource.startsWith('Referral (')) {
+      final match = RegExp(r'^Referral\s*\((.*?)\)$', caseSensitive: false).firstMatch(parsedLeadSource);
+      if (match != null) {
+        parsedReferralName = match.group(1);
+        parsedLeadSource = 'Referral';
+      }
+    }
+
     return RequirementModel(
       id: json['id'] ?? '',
       clientName: json['clientName'] ?? json['customer_name'] ?? '',
@@ -242,6 +272,8 @@ class RequirementModel {
       createdBy: (json['created_by'] ?? json['createdBy']) as String?,
       creatorMobile: (json['creatorMobile'] ?? json['creator_mobile']) as String?,
       creatorEmail: (json['creatorEmail'] ?? json['creator_email']) as String?,
+      leadSource: parsedLeadSource,
+      referralName: parsedReferralName,
     );
   }
 
@@ -280,10 +312,16 @@ class RequirementModel {
       'createdBy': createdBy,
       'creatorMobile': creatorMobile,
       'creatorEmail': creatorEmail,
+      'leadSource': leadSource,
+      'referralName': referralName,
     };
   }
 
   Map<String, dynamic> toBackendJson() {
+    final String? formattedSource = leadSource != null && leadSource!.toLowerCase() == 'referral' && referralName != null && referralName!.isNotEmpty
+        ? 'Referral ($referralName)'
+        : leadSource;
+
     return {
       'customer_name': clientName,
       'mobile': clientMobile,
@@ -311,6 +349,9 @@ class RequirementModel {
       'facing_type_ids': facingIds,
       'furnishing_type_id': furnishingIds.isNotEmpty ? furnishingIds.first : null,
       'facing_type_id': facingIds.isNotEmpty ? facingIds.first : null,
+      'lead_source': leadSource,
+      'referral_name': referralName,
+      'source': formattedSource,
     };
   }
 
@@ -436,6 +477,8 @@ class RequirementModel {
     String? createdBy,
     String? creatorMobile,
     String? creatorEmail,
+    String? leadSource,
+    String? referralName,
   }) {
     return RequirementModel(
       id: id ?? this.id,
@@ -474,6 +517,8 @@ class RequirementModel {
       createdBy: createdBy ?? this.createdBy,
       creatorMobile: creatorMobile ?? this.creatorMobile,
       creatorEmail: creatorEmail ?? this.creatorEmail,
+      leadSource: leadSource ?? this.leadSource,
+      referralName: referralName ?? this.referralName,
     );
   }
 }

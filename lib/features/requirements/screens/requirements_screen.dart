@@ -1791,6 +1791,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String displayStatusLabel(String status) {
     if (status == 'New') return 'New';
     if (status == 'Not Started') return 'Not Started';
+    if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) return 'Call Attempted';
     if (status == 'Not Interested') return 'Not Interested';
     if (status == 'Active' || status == 'Live') return 'Interested';
     if (status == 'Closed' || status == 'Won') return 'Won';
@@ -1944,6 +1945,104 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     overlay.insert(_rejectionOverlayEntry!);
   }
 
+  OverlayEntry? _callAttemptedOverlayEntry;
+
+  void _removeCallAttemptedOverlay() {
+    if (_callAttemptedOverlayEntry != null) {
+      _callAttemptedOverlayEntry?.remove();
+      _callAttemptedOverlayEntry = null;
+    }
+  }
+
+  void _showCallAttemptedOverlayAtContext(BuildContext itemContext, RequirementModel req) {
+    if (_callAttemptedOverlayEntry != null) return;
+
+    final RenderBox? renderBox = itemContext.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final Offset itemGlobalOffset = renderBox.localToGlobal(Offset.zero);
+    final overlay = Overlay.of(itemContext);
+    final size = MediaQuery.of(itemContext).size;
+
+    double left = (itemGlobalOffset.dx - 172).clamp(10.0, size.width - 180.0);
+    double top = (itemGlobalOffset.dy - 30).clamp(40.0, size.height - 380.0);
+
+    final List<String> options = [
+      'Picked Up',
+      'Open',
+    ];
+
+    _callAttemptedOverlayEntry = OverlayEntry(
+      builder: (overlayContext) {
+        return Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(8),
+            color: CRMColors.cardBgOf(context),
+            child: Container(
+              width: 170,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              decoration: BoxDecoration(
+                color: CRMColors.cardBgOf(context),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: options.map((opt) {
+                  final String fullStatus = 'Call Attempted ($opt)';
+                  final bool isSelected = req.status == fullStatus || req.status == 'Call Attempted - $opt';
+                  return InkWell(
+                    onTap: () {
+                      _removeCallAttemptedOverlay();
+                      _removeRejectionOverlay();
+                      Navigator.of(context, rootNavigator: true).maybePop();
+                      _changeStatus(req, fullStatus);
+                    },
+                    hoverColor: CRMColors.backgroundOf(context),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            opt,
+                            style: TextStyle(
+                              color: CRMColors.textOf(context),
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              fontSize: 13,
+                            ),
+                          ),
+                          if (isSelected)
+                            const Icon(
+                              Icons.check_rounded,
+                              size: 16,
+                              color: Color(0xFF0288D1),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_callAttemptedOverlayEntry!);
+  }
+
   Widget _buildStatusControl(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
     if (_isLeadTransferredAway(req, currentUser)) {
       return Container(
@@ -1982,6 +2081,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     } else if (currentStatus.startsWith('Rejected: ')) {
       mainLabel = 'Rejected';
       subReason = currentStatus.replaceFirst('Rejected: ', '').trim();
+    } else if (currentStatus.startsWith('Call Attempted') || currentStatus.startsWith('Call attempted')) {
+      mainLabel = 'Call Attempted';
+      if (currentStatus.contains('(') && currentStatus.contains(')')) {
+        subReason = currentStatus.substring(currentStatus.indexOf('(') + 1, currentStatus.indexOf(')')).trim();
+      } else if (currentStatus.contains('-')) {
+        subReason = currentStatus.split('-').last.trim();
+      }
     }
 
     return GestureDetector(
@@ -1992,12 +2098,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         tooltip: 'Change Status',
         onCanceled: () {
           _removeRejectionOverlay();
+          _removeCallAttemptedOverlay();
         },
         onSelected: (String newStatus) {
-          if (newStatus == 'Rejected') {
+          if (newStatus == 'Rejected' || newStatus == 'Call Attempted') {
             // Handled via overlay
           } else {
             _removeRejectionOverlay();
+            _removeCallAttemptedOverlay();
             _changeStatus(req, newStatus);
           }
         },
@@ -2005,6 +2113,60 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           return [
             _buildStatusMenuItem('New', 'New', currentStatus),
             _buildStatusMenuItem('Not Started', 'Not Started', currentStatus),
+            PopupMenuItem<String>(
+              value: 'Call Attempted',
+              child: Builder(
+                builder: (itemContext) {
+                  return StatefulBuilder(
+                    builder: (context, setItemState) {
+                      final bool isOpen = _callAttemptedOverlayEntry != null;
+                      final bool isCallAttemptedActive = currentStatus.startsWith('Call Attempted') || currentStatus.startsWith('Call attempted');
+                      return MouseRegion(
+                        onEnter: (_) {
+                          _removeRejectionOverlay();
+                          setItemState(() {});
+                          _showCallAttemptedOverlayAtContext(itemContext, req);
+                        },
+                        onExit: (_) {
+                          setItemState(() {});
+                        },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  isOpen ? '>  ' : '<  ',
+                                  style: const TextStyle(
+                                    color: Color(0xFF0288D1),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                Text(
+                                  'Call Attempted',
+                                  style: TextStyle(
+                                    color: CRMColors.textOf(context),
+                                    fontWeight: isCallAttemptedActive ? FontWeight.bold : FontWeight.normal,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (isCallAttemptedActive)
+                              const Icon(
+                                Icons.check_rounded,
+                                size: 16,
+                                color: Color(0xFF5C6BC0),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
             _buildStatusMenuItem(followupValue, followupLabel, currentStatus),
             _buildStatusMenuItem('Interested', 'Interested', currentStatus),
             _buildStatusMenuItem('Site Visit', 'Site Visit Sche.', currentStatus),
@@ -3284,6 +3446,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           ),
                         ],
                       ),
+                      if (req.leadSourceDisplay != null && req.leadSourceDisplay!.isNotEmpty)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.hub_outlined, size: 13, color: CRMColors.textMutedOf(context)),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Source: ${req.leadSourceDisplay}',
+                              style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -3366,6 +3540,44 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 ),
                               ],
                             ),
+                             if (req.remarks != null && req.remarks!.trim().isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.notes_rounded,
+                                    size: 14,
+                                    color: CRMColors.primaryOf(context),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: RichText(
+                                      text: TextSpan(
+                                        children: [
+                                          TextSpan(
+                                            text: 'Internal CRM Remarks: ',
+                                            style: TextStyle(
+                                              color: CRMColors.textSecondaryOf(context),
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          TextSpan(
+                                            text: req.remarks!.trim(),
+                                            style: TextStyle(
+                                              color: CRMColors.textOf(context),
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                             if (hasNotes) ...[
                               const SizedBox(height: 8),
                               Row(
@@ -3632,6 +3844,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   Color _getStatusColor(String status) {
     if (status.startsWith('Rejected')) return CRMColors.danger;
+    if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) return const Color(0xFF0288D1);
     switch (status) {
       case 'Won':
         return CRMColors.success;

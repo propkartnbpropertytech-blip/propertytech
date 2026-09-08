@@ -12,24 +12,19 @@ class PropertyLocalRepository {
 
   Future<PropertyLocal?> getPropertyById(String id) async {
     if (kIsWeb) {
-      return inMemory[id];
-    }
-    return await _isar.propertyLocals.filter().idEqualTo(id).findFirst();
-  }
-
-  Future<PropertyLocal?> getPropertyByIdOrCode(String idOrCode) async {
-    final byId = await getPropertyById(idOrCode);
-    if (byId != null) return byId;
-    if (kIsWeb) {
+      if (inMemory.containsKey(id)) return inMemory[id];
       for (final p in inMemory.values) {
-        if (p.propertyCode == idOrCode) return p;
+        if (p.id == id || p.propertyCode == id) return p;
       }
       return null;
     }
-    return await _isar.propertyLocals
-        .filter()
-        .propertyCodeEqualTo(idOrCode)
-        .findFirst();
+    final byId = await _isar.propertyLocals.filter().idEqualTo(id).findFirst();
+    if (byId != null) return byId;
+    return await _isar.propertyLocals.filter().propertyCodeEqualTo(id).findFirst();
+  }
+
+  Future<PropertyLocal?> getPropertyByIdOrCode(String idOrCode) async {
+    return getPropertyById(idOrCode);
   }
 
   Future<List<PropertyLocal>> getProperties({
@@ -147,7 +142,8 @@ class PropertyLocalRepository {
             ..images = List<String>.from(map['images'] ?? [])
             ..amenities = List<String>.from(map['amenities'] ?? [])
             ..adminId = map['adminId']
-            ..organizationId = map['organizationId'];
+            ..organizationId = map['organizationId']
+            ..portalStatus = map['portalStatus'] ?? 'None';
           inMemory[p.id] = p;
         }
         print("Loaded ${inMemory.length} properties from local storage cache.");
@@ -221,6 +217,7 @@ class PropertyLocalRepository {
         'amenities': item.amenities,
         'adminId': item.adminId,
         'organizationId': item.organizationId,
+        'portalStatus': item.portalStatus,
       })).toList();
       await prefs.setStringList('cached_properties', jsonList);
     } catch (e) {
@@ -350,7 +347,9 @@ class RequirementLocalRepository {
             ..createdAt = DateTime.tryParse(map['createdAt'] ?? '') ?? DateTime.now()
             ..budget = map['budget'] != null ? double.tryParse(map['budget'].toString()) : null
             ..adminId = map['adminId']
-            ..organizationId = map['organizationId'];
+            ..organizationId = map['organizationId']
+            ..leadSource = map['leadSource']
+            ..referralName = map['referralName'];
           inMemory[r.id] = r;
         }
         print("Loaded ${inMemory.length} requirements from local storage cache.");
@@ -386,6 +385,8 @@ class RequirementLocalRepository {
         'budget': item.budget,
         'adminId': item.adminId,
         'organizationId': item.organizationId,
+        'leadSource': item.leadSource,
+        'referralName': item.referralName,
       })).toList();
       await prefs.setStringList('cached_requirements', jsonList);
     } catch (e) {

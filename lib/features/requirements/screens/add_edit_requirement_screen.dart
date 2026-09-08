@@ -45,8 +45,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
   final _minAreaController = TextEditingController();
   final _maxAreaController = TextEditingController();
   final _remarksController = TextEditingController();
+  final _referralNameController = TextEditingController();
 
   String? _selectedCategoryId;
+  String? _selectedLeadSource;
   String? _selectedTypeId;
   final List<String> _selectedTypeIds = [];
   List<LookupItem> _cities = [];
@@ -92,6 +94,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     _minAreaController.dispose();
     _maxAreaController.dispose();
     _remarksController.dispose();
+    _referralNameController.dispose();
     _pageController.dispose();
     if (!_isSaved && widget.requirement == null) {
       _saveCurrentDraft();
@@ -180,6 +183,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           _selectedStatus = statusVal;
 
           _selectedAreaIds.addAll(req.areaIds);
+          _selectedLeadSource = req.leadSource;
+          _referralNameController.text = req.referralName ?? '';
         }
         
         _isLoadingMetadata = false;
@@ -339,6 +344,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       'minArea': _minAreaController.text,
       'maxArea': _maxAreaController.text,
       'remarks': _remarksController.text,
+      'leadSource': _selectedLeadSource,
+      'referralName': _referralNameController.text,
       'status': _selectedStatus,
       'areaIds': _selectedAreaIds,
       'furnishings': _selectedFurnishingIds,
@@ -385,6 +392,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                   _minAreaController.text = draft['minArea'] ?? '';
                   _maxAreaController.text = draft['maxArea'] ?? '';
                   _remarksController.text = draft['remarks'] ?? '';
+                  _selectedLeadSource = draft['leadSource'];
+                  _referralNameController.text = draft['referralName'] ?? '';
                   _selectedStatus = draft['status'] ?? 'New';
                   
                   final List<String> areas = List<String>.from(draft['areaIds'] ?? []);
@@ -629,6 +638,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       areaIds: _selectedAreaIds,
       areaNames: areaNames,
       remarks: _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
+      leadSource: _selectedLeadSource,
+      referralName: _selectedLeadSource?.toLowerCase() == 'referral' ? _referralNameController.text.trim() : null,
       status: _selectedStatus,
       createdAt: widget.requirement?.createdAt ?? DateTime.now(),
       furnishingIds: _selectedFurnishingIds,
@@ -1325,6 +1336,32 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
             prefixIcon: Icons.chat_bubble_outline_rounded,
             maxLines: 4,
           ),
+          const SizedBox(height: CRMSpacing.m),
+          _buildDropdown<String?>(
+            label: 'Lead Source',
+            value: _selectedLeadSource,
+            items: const [
+              DropdownMenuItem<String?>(value: 'Social Media', child: Text('Social Media')),
+              DropdownMenuItem<String?>(value: 'MagicBricks', child: Text('MagicBricks')),
+              DropdownMenuItem<String?>(value: '99acres', child: Text('99acres')),
+              DropdownMenuItem<String?>(value: 'housing.com', child: Text('housing.com')),
+              DropdownMenuItem<String?>(value: 'WhatsApp', child: Text('WhatsApp')),
+              DropdownMenuItem<String?>(value: 'Direct', child: Text('Direct')),
+              DropdownMenuItem<String?>(value: 'Referral', child: Text('Referral')),
+            ],
+            onChanged: (val) => setState(() {
+              _selectedLeadSource = val;
+            }),
+          ),
+          if (_selectedLeadSource?.toLowerCase() == 'referral') ...[
+            const SizedBox(height: CRMSpacing.m),
+            CRMTextField(
+              controller: _referralNameController,
+              labelText: 'Referral Name',
+              hintText: 'Enter referrer name...',
+              prefixIcon: Icons.person_outline_rounded,
+            ),
+          ],
         ],
       ),
     );
@@ -1357,6 +1394,12 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     if (_selectedConfigIds.isEmpty) warnings.add("Missing Configuration");
     if (_budgetController.text.isEmpty) warnings.add("Missing Budget");
     if (_selectedAreaIds.isEmpty) warnings.add("Missing Target Area");
+
+    final leadSourceDisplay = (_selectedLeadSource == null || _selectedLeadSource!.isEmpty)
+        ? "None"
+        : (_selectedLeadSource!.toLowerCase() == 'referral' && _referralNameController.text.trim().isNotEmpty
+            ? "${_selectedLeadSource!} (${_referralNameController.text.trim()})"
+            : _selectedLeadSource!);
 
     return SingleChildScrollView(
       child: Column(
@@ -1392,6 +1435,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           _buildSummaryRow("Configuration", configDisplayStr),
           _buildSummaryRow("Target Areas", "${_selectedAreaIds.length} Selected"),
           _buildSummaryRow("Budget", _budgetController.text),
+          _buildSummaryRow("Lead Source", leadSourceDisplay),
           _buildSummaryRow("Pipeline Status", _selectedStatus),
         ],
       ),
