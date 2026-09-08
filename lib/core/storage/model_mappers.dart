@@ -83,8 +83,10 @@ extension PropertyLocalExtensions on PropertyLocal {
       videos: safeVideos,
       googlePlaceId: googlePlaceId,
       brokerageTypeId: brokerageTypeId,
+      brokerageTypeName: brokerageTypeName,
       adminId: adminId,
       organizationId: organizationId,
+      portalStatus: portalStatus ?? 'None',
     );
   }
 }
@@ -152,7 +154,8 @@ extension PropertyModelExtensions on PropertyModel {
       ..brokerageTypeId = brokerageTypeId
       ..brokerageTypeName = brokerageTypeName
       ..adminId = adminId
-      ..organizationId = organizationId;
+      ..organizationId = organizationId
+      ..portalStatus = portalStatus;
   }
 }
 
@@ -227,6 +230,8 @@ extension RequirementLocalExtensions on RequirementLocal {
       assigneeName: assigneeName,
       createdBy: createdBy,
       assignedTo: assignedTo,
+      leadSource: leadSource,
+      referralName: referralName,
     );
   }
 }
@@ -265,7 +270,9 @@ extension RequirementModelExtensions on RequirementModel {
       ..listingTypeName = listingTypeName
       ..creatorName = creatorName
       ..assigneeName = assigneeName
-      ..createdBy = createdBy;
+      ..createdBy = createdBy
+      ..leadSource = leadSource
+      ..referralName = referralName;
   }
 }
 

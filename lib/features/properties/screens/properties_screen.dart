@@ -1648,11 +1648,185 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       context.read<PropertiesBloc>().add(
             UpdatePropertyEvent(
               p.id,
-              {'property_status_id': statusId},
+              {
+                'property_status_id': statusId,
+              },
               activeTab: _activeTab,
             ),
           );
     }
+  }
+
+  Widget _buildCardPortalBadge(PropertyModel p) {
+    final rawPortalText = (p.portalStatus != null && p.portalStatus!.isNotEmpty)
+        ? p.portalStatus!
+        : 'None';
+    final isNone = rawPortalText.toLowerCase() == 'none';
+    final displayPortalText = "Listed On: $rawPortalText";
+
+    final badgeColor = isNone
+        ? CRMColors.primaryOf(context).withOpacity(0.08)
+        : CRMColors.primaryOf(context);
+
+    final textColor = isNone
+        ? CRMColors.primaryOf(context)
+        : Colors.white;
+
+    return PopupMenuButton<String>(
+      tooltip: 'Listed On Portal',
+      onSelected: (String choice) {
+        if (choice == 'Other') {
+          _showOtherPortalDialog(context, p);
+        } else {
+          _updatePortalStatus(context, p, choice);
+        }
+      },
+      itemBuilder: (BuildContext context) {
+        return <PopupMenuEntry<String>>[
+          PopupMenuItem<String>(
+            value: 'None',
+            child: Row(
+              children: [
+                Icon(Icons.block_outlined, color: CRMColors.textMutedOf(context), size: 16),
+                const SizedBox(width: 8),
+                const Text('None'),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'MagicBricks',
+            child: Row(
+              children: [
+                Icon(Icons.language_rounded, color: CRMColors.primaryOf(context), size: 16),
+                const SizedBox(width: 8),
+                const Text('MagicBricks'),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: '99acres',
+            child: Row(
+              children: [
+                Icon(Icons.language_rounded, color: CRMColors.primaryOf(context), size: 16),
+                const SizedBox(width: 8),
+                const Text('99acres'),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'housing.com',
+            child: Row(
+              children: [
+                Icon(Icons.language_rounded, color: CRMColors.primaryOf(context), size: 16),
+                const SizedBox(width: 8),
+                const Text('housing.com'),
+              ],
+            ),
+          ),
+          const PopupMenuDivider(),
+          PopupMenuItem<String>(
+            value: 'Other',
+            child: Row(
+              children: [
+                Icon(Icons.edit_note_rounded, color: CRMColors.primaryOf(context), size: 16),
+                const SizedBox(width: 8),
+                const Text('Other...'),
+              ],
+            ),
+          ),
+        ];
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: badgeColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: CRMColors.primaryOf(context).withOpacity(0.25),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              displayPortalText,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.arrow_drop_down, color: textColor, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _updatePortalStatus(BuildContext context, PropertyModel p, String portalStatus) {
+    context.read<PropertiesBloc>().add(
+      UpdatePropertyEvent(
+        p.id,
+        {
+          'portal_status': portalStatus,
+        },
+        activeTab: _activeTab,
+      ),
+    );
+  }
+
+  void _showOtherPortalDialog(BuildContext context, PropertyModel p) {
+    final textController = TextEditingController(
+      text: (p.portalStatus != null && p.portalStatus!.toLowerCase() != 'none' &&
+              p.portalStatus! != 'MagicBricks' &&
+              p.portalStatus! != '99acres' &&
+              p.portalStatus! != 'housing.com')
+          ? p.portalStatus
+          : '',
+    );
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: const Text('Enter Custom Portal Name', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: textController,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'e.g. OLX, NoBroker, etc.',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final customVal = textController.text.trim();
+                Navigator.pop(dialogContext);
+                if (customVal.isNotEmpty) {
+                  _updatePortalStatus(context, p, customVal);
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildCardStatusBadge(
@@ -2103,6 +2277,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            // Portal Status Toggle Button
+                            _buildCardPortalBadge(p),
+                            const SizedBox(width: 8),
                             // Interactive Status Dropdown Toggle Button
                             _buildCardStatusBadge(p, metadata),
                             const SizedBox(width: 8),

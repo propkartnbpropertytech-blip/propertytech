@@ -315,11 +315,13 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
       for (final amName in p.amenities) {
         final matched = widget.metadata.amenities.firstWhere(
-          (a) => a.name.toLowerCase() == amName.toLowerCase(),
+          (a) => a.name.toLowerCase() == amName.toLowerCase() || a.id == amName,
           orElse: () => LookupItem(id: '', name: ''),
         );
         if (matched.id.isNotEmpty) {
-          _selectedAmenities.add(matched.id);
+          if (!_selectedAmenities.contains(matched.id)) {
+            _selectedAmenities.add(matched.id);
+          }
         }
       }
     } else {

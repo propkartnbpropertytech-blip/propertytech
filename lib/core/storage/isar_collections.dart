@@ -85,6 +85,7 @@ class PropertyLocal {
   late List<String> videos;
   String? adminId;
   String? organizationId;
+  String? portalStatus;
 }
 
 @collection
@@ -125,6 +126,8 @@ class RequirementLocal {
   String? creatorName;
   String? assigneeName;
   String? createdBy;
+  String? leadSource;
+  String? referralName;
 }
 
 @collection
