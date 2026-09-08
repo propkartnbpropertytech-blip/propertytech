@@ -53,6 +53,12 @@ class RoleGuard {
     '/campaign',
     '/campaign/connections',
     '/campaign/leads',
+    '/reports',
+    '/reports/leads/overall-business-insight',
+    '/reports/leads/telecaller',
+    '/reports/leads/sales',
+    '/reports/leads/metrics',
+    '/reports/properties',
   };
 
   static String? sanitizeRedirectPath(String? raw, {String? role}) {

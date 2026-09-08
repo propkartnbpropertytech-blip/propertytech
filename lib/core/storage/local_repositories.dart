@@ -432,6 +432,13 @@ class FollowupLocalRepository {
 
   static final Map<String, FollowupLocal> inMemory = {};
 
+  Future<List<FollowupLocal>> getAllFollowups() async {
+    if (kIsWeb) {
+      return inMemory.values.toList();
+    }
+    return await _isar.followupLocals.where().findAll();
+  }
+
   Future<List<FollowupLocal>> getFollowupsByClient(String clientName) async {
     if (kIsWeb) {
       return inMemory.values.where((f) => f.clientName == clientName).toList();

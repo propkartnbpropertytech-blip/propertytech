@@ -134,6 +134,13 @@ class _ModernSidebarState extends State<ModernSidebar> {
                       route: '/users',
                       isActive: currentPath.startsWith('/users'),
                     ),
+                  _buildNavItem(
+                    context,
+                    title: 'Reports',
+                    icon: Icons.bar_chart_rounded,
+                    route: '/reports/leads/overall-business-insight',
+                    isActive: currentPath.startsWith('/reports'),
+                  ),
                   if (widget.userRole.isEmpty ||
                       RoleGuard.canAccessCampaign(widget.userRole))
                     _buildCampaignTreeItem(
