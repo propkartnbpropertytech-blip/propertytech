@@ -16,11 +16,11 @@ class RoleGuard {
     return r == 'admin' || r == 'super admin';
   }
 
-  /// Campaign & Integration Webhooks — Admin and Super Admin only.
+  /// Campaign & Integration Webhooks — Admin, Super Admin, and Telecaller.
   static bool canAccessIntegration(String? role) => canAccessCampaign(role);
   static bool canAccessCampaign(String? role) {
-    final r = (role ?? '').toLowerCase();
-    return r == 'admin' || r == 'super admin';
+    final r = (role ?? '').toLowerCase().replaceAll(' ', '').replaceAll('_', '').replaceAll('-', '');
+    return r == 'admin' || r == 'superadmin' || r == 'telecaller';
   }
 
   /// Audit logs — Super Admin only (defense-in-depth).
