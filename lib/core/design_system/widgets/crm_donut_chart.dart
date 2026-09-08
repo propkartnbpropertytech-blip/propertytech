@@ -63,6 +63,10 @@ class DonutChart3DPainter extends CustomPainter {
 
     for (final sector in sectors) {
       final sweepAngle = (sector.value / total) * animatedSweepTotal;
+      if (total <= 0 || sweepAngle <= 0.0001) {
+        startAngle += sweepAngle;
+        continue;
+      }
       final midAngle = startAngle + sweepAngle / 2;
 
       final arcPaint = Paint()
@@ -73,13 +77,14 @@ class DonutChart3DPainter extends CustomPainter {
 
       final darkerColor = Color.lerp(sector.color, Colors.black, 0.25)!;
       final lighterColor = Color.lerp(sector.color, Colors.white, 0.2)!;
+      final endAngle = math.max(startAngle + sweepAngle, startAngle + 0.001);
       arcPaint.shader = ui.Gradient.sweep(
         center,
         [lighterColor, sector.color, darkerColor, sector.color],
         [0.0, 0.3, 0.7, 1.0],
         TileMode.clamp,
         startAngle,
-        startAngle + sweepAngle,
+        endAngle,
       );
 
       final arcRect =

@@ -24,6 +24,9 @@ import '../../../../features/users/repository/users_repository.dart';
 import '../../../../features/users/models/user_model.dart';
 import '../../../../features/properties/repository/properties_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio/dio.dart';
+import '../../utils/file_downloader.dart';
+import '../../../../core/api/dio_client.dart';
 
 Future<void> showCRMPropertyDrawer(BuildContext context, PropertyModel property) async {
   await showGeneralDialog(
@@ -137,6 +140,123 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
           duration: const Duration(seconds: 2),
         ),
       );
+    }
+  }
+
+  Widget _buildDownloadImagesHeaderButton(BuildContext context) {
+    final imagesCount = widget.property.images.length;
+    return Tooltip(
+      message: imagesCount > 0 ? 'Download all $imagesCount property images' : 'No images available to download',
+      child: InkWell(
+        onTap: () => _downloadAllPropertyImages(context),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: CRMColors.primaryOf(context).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: CRMColors.primaryOf(context).withOpacity(0.3),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.download_rounded,
+                size: 18,
+                color: CRMColors.primaryOf(context),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Images Download',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: CRMColors.primaryOf(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadAllPropertyImages(BuildContext context) async {
+    final images = widget.property.images;
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No images available for this property.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Downloading ${images.length} image(s) to Downloads folder...'),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    int successCount = 0;
+    final code = widget.property.propertyCode.isNotEmpty ? widget.property.propertyCode : 'property';
+
+    for (int i = 0; i < images.length; i++) {
+      final imgUrl = images[i].trim();
+      if (imgUrl.isEmpty) continue;
+      final ext = imgUrl.split('.').last.split('?').first.toLowerCase();
+      final validExt = (ext.length > 4 || ext.isEmpty || !['jpg', 'jpeg', 'png', 'webp'].contains(ext))
+          ? 'jpg'
+          : ext;
+      final filename = '${code}_image_${i + 1}.$validExt';
+
+      try {
+        if (kIsWeb) {
+          await FileDownloader.downloadUrl(imgUrl, filename);
+          successCount++;
+          await Future.delayed(const Duration(milliseconds: 350));
+        } else {
+          final response = await DioClient.dio.get<List<int>>(
+            imgUrl,
+            options: Options(responseType: ResponseType.bytes),
+          );
+          if (response.data != null && response.data!.isNotEmpty) {
+            await FileDownloader.download(response.data!, filename);
+            successCount++;
+          }
+        }
+      } catch (e) {
+        try {
+          final uri = Uri.parse(imgUrl);
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          successCount++;
+        } catch (_) {}
+      }
+    }
+
+    if (mounted) {
+      if (successCount > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$successCount image(s) downloaded to your PC Downloads folder!'),
+            backgroundColor: CRMColors.success,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to download property images.'),
+            backgroundColor: CRMColors.danger,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
@@ -292,6 +412,7 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
       padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 6),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
         child: Row(
           children: navItems.map((item) {
             final label = item['label'] as String;
@@ -838,6 +959,8 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        _buildDownloadImagesHeaderButton(context),
+                        const SizedBox(width: 8),
                         _buildShortlistedHeaderIconButton(context),
                         if (showHeaderClose) ...[
                           const SizedBox(width: 12),
@@ -1905,38 +2028,48 @@ Widget _buildOverviewCard(BuildContext context, PropertyModel p) {
 
   return CRMCard(
     padding: const EdgeInsets.all(CRMSpacing.m),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Overview',
-          style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        const SizedBox(height: CRMSpacing.m),
-        Wrap(
-          spacing: 20,
-          runSpacing: 16,
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 500;
+        final tileSpacing = isNarrow ? 12.0 : 20.0;
+        final tileWidth = isNarrow
+            ? ((constraints.maxWidth - tileSpacing) / 2).floorToDouble()
+            : 200.0;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildOverviewTile(context, 'Project / Title', p.title.isNotEmpty ? p.title : p.propertyCode, Icons.business_rounded),
-            _buildOverviewTile(context, 'Security Deposit', p.deposit > 0 ? '₹${BudgetFormatter.format(p.deposit)}' : 'N/A', Icons.account_balance_wallet_outlined),
-            _buildOverviewTile(context, 'Built Up Area', areaStr, Icons.square_foot_outlined),
-            _buildOverviewTile(context, 'Furnishing', p.furnishingTypeName ?? 'Unfurnished', Icons.chair_outlined),
-            _buildOverviewTile(context, 'Bathrooms', p.bathrooms > 0 ? '${p.bathrooms}' : 'N/A', Icons.bathtub_outlined),
-            _buildOverviewTile(context, 'Balcony', p.balconies > 0 ? '${p.balconies}' : 'N/A', Icons.balcony_outlined),
-            _buildOverviewTile(context, 'Available From', p.availableFromFormatted ?? 'Available Now', Icons.event_available_rounded),
-            _buildOverviewTile(context, 'Floor Number', floorStr, Icons.layers_outlined),
-            _buildOverviewTile(context, 'Age of Property', p.ageOfProperty != null ? '${p.ageOfProperty} years' : 'N/A', Icons.hourglass_empty_rounded),
-            _buildOverviewTile(context, 'Parking Info', p.parking > 0 ? _getParkingDisplay(p.parking) : 'None', Icons.local_parking_rounded),
+            Text(
+              'Overview',
+              style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            Wrap(
+              spacing: tileSpacing,
+              runSpacing: 16,
+              children: [
+                _buildOverviewTile(context, 'Project / Title', p.title.isNotEmpty ? p.title : p.propertyCode, Icons.business_rounded, tileWidth),
+                _buildOverviewTile(context, 'Security Deposit', p.deposit > 0 ? '₹${BudgetFormatter.format(p.deposit)}' : 'N/A', Icons.account_balance_wallet_outlined, tileWidth),
+                _buildOverviewTile(context, 'Built Up Area', areaStr, Icons.square_foot_outlined, tileWidth),
+                _buildOverviewTile(context, 'Furnishing', p.furnishingTypeName ?? 'Unfurnished', Icons.chair_outlined, tileWidth),
+                _buildOverviewTile(context, 'Bathrooms', p.bathrooms > 0 ? '${p.bathrooms}' : 'N/A', Icons.bathtub_outlined, tileWidth),
+                _buildOverviewTile(context, 'Balcony', p.balconies > 0 ? '${p.balconies}' : 'N/A', Icons.balcony_outlined, tileWidth),
+                _buildOverviewTile(context, 'Available From', p.availableFromFormatted ?? 'Available Now', Icons.event_available_rounded, tileWidth),
+                _buildOverviewTile(context, 'Floor Number', floorStr, Icons.layers_outlined, tileWidth),
+                _buildOverviewTile(context, 'Age of Property', p.ageOfProperty != null ? '${p.ageOfProperty} years' : 'N/A', Icons.hourglass_empty_rounded, tileWidth),
+                _buildOverviewTile(context, 'Parking Info', p.parking > 0 ? _getParkingDisplay(p.parking) : 'None', Icons.local_parking_rounded, tileWidth),
+              ],
+            ),
           ],
-        ),
-      ],
+        );
+      },
     ),
   );
 }
 
-Widget _buildOverviewTile(BuildContext context, String label, String value, IconData icon) {
+Widget _buildOverviewTile(BuildContext context, String label, String value, IconData icon, [double tileWidth = 200.0]) {
   return SizedBox(
-    width: 200,
+    width: tileWidth,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

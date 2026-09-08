@@ -3,17 +3,255 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../models/dashboard_summary.dart';
 
-class TodaysScheduleCard extends StatelessWidget {
+class TodaysScheduleCard extends StatefulWidget {
   final List<DashboardSiteVisit> siteVisits;
   final VoidCallback? onViewCalendar;
   final Function(DashboardSiteVisit)? onSiteVisitTap;
+  final Function(DashboardSiteVisit)? onAddVisit;
 
   const TodaysScheduleCard({
     super.key,
     required this.siteVisits,
     this.onViewCalendar,
     this.onSiteVisitTap,
+    this.onAddVisit,
   });
+
+  @override
+  State<TodaysScheduleCard> createState() => _TodaysScheduleCardState();
+}
+
+class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
+  late List<DashboardSiteVisit> _allSiteVisits;
+
+  @override
+  void initState() {
+    super.initState();
+    _allSiteVisits = List.from(widget.siteVisits);
+  }
+
+  @override
+  void didUpdateWidget(covariant TodaysScheduleCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.siteVisits != widget.siteVisits) {
+      _allSiteVisits = List.from(widget.siteVisits);
+    }
+  }
+
+  void _showAddSiteVisitDialog(BuildContext context) {
+    final nameController = TextEditingController();
+    final propertyController = TextEditingController();
+    final remarksController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final isDark = ThemeManager().isDarkMode;
+            final primaryColor = ThemeManager().primaryColor;
+
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+              child: Container(
+                width: 440,
+                padding: const EdgeInsets.all(20),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.calendar_month_rounded,
+                                color: primaryColor,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Add Site Visit',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFF14213D),
+                                ),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Client / Customer Name',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: nameController,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'e.g. Akshay Bhai',
+                          hintStyle: TextStyle(
+                            fontSize: 12.5,
+                            color: isDark
+                                ? const Color(0xFF64748B)
+                                : const Color(0xFF94A3B8),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Property Title / Location',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: propertyController,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'e.g. Amne Pearl Height',
+                          hintStyle: TextStyle(
+                            fontSize: 12.5,
+                            color: isDark
+                                ? const Color(0xFF64748B)
+                                : const Color(0xFF94A3B8),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Note / Remarks',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: remarksController,
+                        maxLines: 2,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                        decoration: InputDecoration(
+                          hintText:
+                              'e.g. amne pearl height and pasifica visit ma avse',
+                          hintStyle: TextStyle(
+                            fontSize: 12.5,
+                            color: isDark
+                                ? const Color(0xFF64748B)
+                                : const Color(0xFF94A3B8),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Cancel'),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: () {
+                              final name = nameController.text.trim();
+                              final prop = propertyController.text.trim();
+                              final rem = remarksController.text.trim();
+                              final newVisit = DashboardSiteVisit(
+                                id: DateTime.now()
+                                    .millisecondsSinceEpoch
+                                    .toString(),
+                                visitDate: DateTime.now().toIso8601String(),
+                                requirementCustomerName:
+                                    name.isNotEmpty ? name : null,
+                                propertyTitle: prop.isNotEmpty ? prop : null,
+                                remarks: rem.isNotEmpty ? rem : null,
+                                status: 'Pending',
+                              );
+                              setState(() {
+                                _allSiteVisits.insert(0, newVisit);
+                              });
+                              widget.onAddVisit?.call(newVisit);
+                              Navigator.pop(ctx);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryColor,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text('Add Visit'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +301,7 @@ class TodaysScheduleCard extends StatelessWidget {
                         letterSpacing: -0.2,
                       ),
                     ),
-                    if (siteVisits.isNotEmpty) ...[
+                    if (_allSiteVisits.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -77,7 +315,7 @@ class TodaysScheduleCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          '${siteVisits.length}',
+                          '${_allSiteVisits.length}',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -90,24 +328,67 @@ class TodaysScheduleCard extends StatelessWidget {
                     ],
                   ],
                 ),
-                TextButton(
-                  onPressed:
-                      onViewCalendar ??
-                      () {
-                        _showSiteVisitsCalendarDialog(context, siteVisits);
-                      },
-                  style: TextButton.styleFrom(
-                    foregroundColor: ThemeManager().primaryColor,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed:
+                          widget.onViewCalendar ??
+                          () {
+                            _showSiteVisitsCalendarDialog(
+                              context,
+                              _allSiteVisits,
+                            );
+                          },
+                      style: TextButton.styleFrom(
+                        foregroundColor: ThemeManager().primaryColor,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      child: const Text('View Calendar'),
                     ),
-                    textStyle: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () => _showAddSiteVisitDialog(context),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: ThemeManager().primaryColor.withValues(
+                            alpha: 0.1,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.add_rounded,
+                              size: 14,
+                              color: ThemeManager().primaryColor,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Add',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: ThemeManager().primaryColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                  child: const Text('View Calendar'),
+                  ],
                 ),
               ],
             ),
@@ -119,18 +400,18 @@ class TodaysScheduleCard extends StatelessWidget {
           ),
 
           // ── Schedule Item List ───────────────────────────────
-          if (siteVisits.isNotEmpty)
+          if (_allSiteVisits.isNotEmpty)
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: siteVisits.length.clamp(0, 4),
+              itemCount: _allSiteVisits.length.clamp(0, 4),
               separatorBuilder: (_, _) => Divider(
                 height: 1,
                 color:
                     isDark ? const Color(0xFF334155) : const Color(0xFFE8ECF2),
               ),
               itemBuilder: (context, index) {
-                final visit = siteVisits[index];
+                final visit = _allSiteVisits[index];
                 final parsed = DateTime.tryParse(visit.visitDate);
                 final timeStr = parsed != null
                     ? '${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}'
@@ -147,11 +428,10 @@ class TodaysScheduleCard extends StatelessWidget {
                       visit.propertyTitle!.isNotEmpty &&
                       visit.requirementCustomerName != null)
                     visit.propertyTitle!,
-                  if (visit.creatorName != null &&
-                      visit.creatorName!.isNotEmpty)
-                    'Agent: ${visit.creatorName}',
                   if (visit.remarks != null && visit.remarks!.isNotEmpty)
-                    visit.remarks!,
+                    visit.remarks!.toLowerCase().startsWith('note:')
+                        ? visit.remarks!
+                        : 'Note: ${visit.remarks}',
                 ];
                 final subtitle = detailsList.isNotEmpty
                     ? detailsList.join(' · ')
@@ -164,7 +444,7 @@ class TodaysScheduleCard extends StatelessWidget {
                       : 'Site Visit',
                   time: timeStr,
                   locationAndPhone: subtitle,
-                  onTap: () => onSiteVisitTap?.call(visit),
+                  onTap: () => widget.onSiteVisitTap?.call(visit),
                 );
               },
             )

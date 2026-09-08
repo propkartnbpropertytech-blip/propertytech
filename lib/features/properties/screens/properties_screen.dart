@@ -78,6 +78,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   String? _selectedStatusFilter;
   bool _isMobileFiltersExpanded = false;
   bool _noImagesOnly = false;
+  String? _imageFilter; // null, 'with_images', 'no_images'
   bool _isTableView = false;
   final Set<String> _selectedPropertyIds = {};
 
@@ -2831,7 +2832,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 }
               }
 
-              final matchesNoImages = !_noImagesOnly || p.images.isEmpty;
+              bool matchesNoImages = true;
+              if (_imageFilter == 'with_images') {
+                matchesNoImages = p.images.isNotEmpty;
+              } else if (_imageFilter == 'no_images' || _noImagesOnly) {
+                matchesNoImages = p.images.isEmpty;
+              }
 
               return matchesListing &&
                   matchesCategory &&
@@ -3808,6 +3814,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             return Padding(
               padding: const EdgeInsets.only(right: CRMSpacing.s),
               child: ChoiceChip(
+                showCheckmark: false,
                 label: Text(
                   cat,
                   style: TextStyle(
@@ -4895,6 +4902,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
 
   Widget _buildActionToolbar(List<PropertyModel> allProperties, List<PropertyModel> pagedProperties) {
+    final int withImagesCount =
+        allProperties.where((p) => p.images.isNotEmpty).length;
     final int noImagesCount =
         allProperties.where((p) => p.images.isEmpty).length;
     final authState = context.read<AuthBloc>().state;
@@ -4964,36 +4973,71 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               ],
               FilterChip(
                 avatar: Icon(
-                  _noImagesOnly
-                      ? Icons.no_photography_rounded
-                      : Icons.image_not_supported_outlined,
+                  Icons.image_rounded,
                   size: 16,
-                  color: _noImagesOnly
+                  color: _imageFilter == 'with_images'
+                      ? Colors.white
+                      : const Color(0xFF2E7D32),
+                ),
+                label: Text(
+                  'With Photos ($withImagesCount)',
+                  style: TextStyle(
+                    color: _imageFilter == 'with_images'
+                        ? Colors.white
+                        : CRMColors.textOf(context),
+                    fontWeight:
+                        _imageFilter == 'with_images' ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 12,
+                  ),
+                ),
+                selected: _imageFilter == 'with_images',
+                selectedColor: const Color(0xFF2E7D32),
+                backgroundColor:
+                    const Color(0xFF2E7D32).withOpacity(0.08),
+                side: BorderSide(
+                  color: _imageFilter == 'with_images'
+                      ? const Color(0xFF2E7D32)
+                      : CRMColors.borderOf(context).withOpacity(0.6),
+                ),
+                onSelected: (bool selected) {
+                  setState(() {
+                    _imageFilter = selected ? 'with_images' : null;
+                    _noImagesOnly = false;
+                  });
+                },
+              ),
+              const SizedBox(width: 8),
+              FilterChip(
+                avatar: Icon(
+                  Icons.no_photography_rounded,
+                  size: 16,
+                  color: (_imageFilter == 'no_images' || _noImagesOnly)
                       ? Colors.white
                       : CRMColors.primaryOf(context),
                 ),
                 label: Text(
                   'No Photos ($noImagesCount)',
                   style: TextStyle(
-                    color: _noImagesOnly
+                    color: (_imageFilter == 'no_images' || _noImagesOnly)
                         ? Colors.white
                         : CRMColors.textOf(context),
                     fontWeight:
-                        _noImagesOnly ? FontWeight.bold : FontWeight.normal,
+                        (_imageFilter == 'no_images' || _noImagesOnly) ? FontWeight.bold : FontWeight.normal,
                     fontSize: 12,
                   ),
                 ),
-                selected: _noImagesOnly,
+                selected: _imageFilter == 'no_images' || _noImagesOnly,
                 selectedColor: CRMColors.primaryOf(context),
                 backgroundColor:
                     CRMColors.primaryOf(context).withOpacity(0.08),
                 side: BorderSide(
-                  color: _noImagesOnly
+                  color: (_imageFilter == 'no_images' || _noImagesOnly)
                       ? CRMColors.primaryOf(context)
                       : CRMColors.borderOf(context).withOpacity(0.6),
                 ),
                 onSelected: (bool selected) {
                   setState(() {
+                    _imageFilter = selected ? 'no_images' : null;
                     _noImagesOnly = selected;
                   });
                 },
@@ -5670,6 +5714,10 @@ class DonutChart3DPainter extends CustomPainter {
 
     for (final sector in sectors) {
       final sweepAngle = (sector.value / total) * animatedSweepTotal;
+      if (total <= 0 || sweepAngle <= 0.0001) {
+        startAngle += sweepAngle;
+        continue;
+      }
       final midAngle = startAngle + sweepAngle / 2;
 
       // Gradient arc paint
@@ -5682,13 +5730,14 @@ class DonutChart3DPainter extends CustomPainter {
       // Create a sweep gradient for the sector for a richer look
       final darkerColor = Color.lerp(sector.color, Colors.black, 0.25)!;
       final lighterColor = Color.lerp(sector.color, Colors.white, 0.2)!;
+      final endAngle = math.max(startAngle + sweepAngle, startAngle + 0.001);
       arcPaint.shader = ui.Gradient.sweep(
         center,
         [lighterColor, sector.color, darkerColor, sector.color],
         [0.0, 0.3, 0.7, 1.0],
         TileMode.clamp,
         startAngle,
-        startAngle + sweepAngle,
+        endAngle,
       );
 
       final arcRect = Rect.fromCircle(center: center, radius: outerRadius - strokeWidth / 2);

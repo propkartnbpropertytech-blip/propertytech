@@ -138,7 +138,9 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     return Scaffold(
       backgroundColor: CRMColors.backgroundOf(context),
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(64),
+        preferredSize: Size.fromHeight(
+          MediaQuery.of(context).size.width < 600 ? 110 : 64,
+        ),
         child: Container(
           decoration: BoxDecoration(
             color: CRMColors.cardBgOf(context),
@@ -147,10 +149,12 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
           ),
           child: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.l),
-              child: Row(
-                children: [
-                  InkWell(
+              padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.l, vertical: 6),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isMobile = constraints.maxWidth < 600;
+
+                  final logoWidget = InkWell(
                     onTap: () {
                       if (kIsWeb) {
                         context.go('/dashboard');
@@ -160,6 +164,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                     },
                     borderRadius: BorderRadius.circular(8),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Container(
                           padding: const EdgeInsets.all(6),
@@ -181,61 +186,58 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: Container(
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: CRMColors.backgroundOf(context),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                      ),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 12),
-                          Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context), size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              style: TextStyle(color: CRMColors.textOf(context), fontSize: 13.5),
-                              decoration: InputDecoration(
-                                hintText: 'Search city, locality, project or property type...',
-                                hintStyle: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 13),
-                                border: InputBorder.none,
-                                isDense: true,
-                              ),
-                              onSubmitted: (_) => setState(() {}),
-                            ),
-                          ),
-                          if (_searchController.text.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.close_rounded, size: 16),
-                              onPressed: () {
-                                setState(() {
-                                  _searchController.clear();
-                                });
-                              },
-                            ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: CRMColors.primaryOf(context),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              padding: const EdgeInsets.symmetric(horizontal: 18),
-                            ),
-                            onPressed: () => setState(() {}),
-                            child: const Text('Search', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
-                          ),
-                          const SizedBox(width: 4),
-                        ],
-                      ),
+                  );
+
+                  final searchBoxWidget = Container(
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: CRMColors.backgroundOf(context),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6)),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  // Shortlisted Heart Icon Button on Top Right Header
-                  Tooltip(
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 12),
+                        Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context), size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            style: TextStyle(color: CRMColors.textOf(context), fontSize: 13.5),
+                            decoration: InputDecoration(
+                              hintText: 'Search city, locality, project or property type...',
+                              hintStyle: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 13),
+                              border: InputBorder.none,
+                              isDense: true,
+                            ),
+                            onSubmitted: (_) => setState(() {}),
+                          ),
+                        ),
+                        if (_searchController.text.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 16),
+                            onPressed: () {
+                              setState(() {
+                                _searchController.clear();
+                              });
+                            },
+                          ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: CRMColors.primaryOf(context),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            padding: const EdgeInsets.symmetric(horizontal: 18),
+                          ),
+                          onPressed: () => setState(() {}),
+                          child: const Text('Search', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    ),
+                  );
+
+                  final shortlistWidget = Tooltip(
                     message: _activeCategoryTab == 'Shortlisted' ? 'Show All Properties' : 'View Shortlisted Properties',
                     child: InkWell(
                       onTap: () {
@@ -300,8 +302,35 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                         ],
                       ),
                     ),
-                  ),
-                ],
+                  );
+
+                  if (isMobile) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            logoWidget,
+                            shortlistWidget,
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        searchBoxWidget,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      logoWidget,
+                      const SizedBox(width: 24),
+                      Expanded(child: searchBoxWidget),
+                      const SizedBox(width: 10),
+                      shortlistWidget,
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -318,6 +347,19 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
           if (state is PropertiesLoaded) {
             allProps = state.properties;
             metadata = state.metadata;
+          }
+
+          // Auto-sync search query with active BHK filter chip if explicit BHK is typed
+          final searchText = _searchController.text.trim();
+          if (searchText.isNotEmpty) {
+            final bhkMatch = RegExp(r'(\d+\+?)\s*-?\s*BHK', caseSensitive: false).firstMatch(searchText);
+            if (bhkMatch != null) {
+              final bhkVal = bhkMatch.group(1)!;
+              final extractedFilter = bhkVal == '5' ? '5+ BHK' : '$bhkVal BHK';
+              if (_activeBhkFilter != extractedFilter) {
+                _activeBhkFilter = extractedFilter;
+              }
+            }
           }
 
           // Filtering
@@ -358,33 +400,66 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
             // BHK filter
             bool matchesBhk = true;
             if (_activeBhkFilter != null && _activeBhkFilter != 'All BHK') {
+              final titleLower = p.title.toLowerCase();
+              final descLower = (p.description ?? '').toLowerCase();
+              final configName = (p.configurationName ?? '').toLowerCase();
+              final pTypeName = p.propertyTypeName.toLowerCase();
+
               if (_activeBhkFilter == '1 BHK') {
-                matchesBhk = p.bedrooms == 1 || (p.configurationName?.contains('1') ?? false);
+                matchesBhk = p.bedrooms == 1 ||
+                    configName.contains('1') ||
+                    titleLower.contains('1 bhk') || titleLower.contains('1bhk') ||
+                    descLower.contains('1 bhk') || descLower.contains('1bhk') ||
+                    pTypeName.contains('1 bhk') || pTypeName.contains('1bhk');
               } else if (_activeBhkFilter == '2 BHK') {
-                matchesBhk = p.bedrooms == 2 || (p.configurationName?.contains('2') ?? false);
+                matchesBhk = p.bedrooms == 2 ||
+                    configName.contains('2') ||
+                    titleLower.contains('2 bhk') || titleLower.contains('2bhk') ||
+                    descLower.contains('2 bhk') || descLower.contains('2bhk') ||
+                    pTypeName.contains('2 bhk') || pTypeName.contains('2bhk');
               } else if (_activeBhkFilter == '3 BHK') {
-                matchesBhk = p.bedrooms == 3 || (p.configurationName?.contains('3') ?? false);
+                matchesBhk = p.bedrooms == 3 ||
+                    configName.contains('3') ||
+                    titleLower.contains('3 bhk') || titleLower.contains('3bhk') ||
+                    descLower.contains('3 bhk') || descLower.contains('3bhk') ||
+                    pTypeName.contains('3 bhk') || pTypeName.contains('3bhk');
               } else if (_activeBhkFilter == '4 BHK') {
-                matchesBhk = p.bedrooms == 4 || (p.configurationName?.contains('4') ?? false);
+                matchesBhk = p.bedrooms == 4 ||
+                    configName.contains('4') ||
+                    titleLower.contains('4 bhk') || titleLower.contains('4bhk') ||
+                    descLower.contains('4 bhk') || descLower.contains('4bhk') ||
+                    pTypeName.contains('4 bhk') || pTypeName.contains('4bhk');
               } else if (_activeBhkFilter == '5+ BHK') {
-                matchesBhk = p.bedrooms >= 5 || (p.configurationName?.contains('5') ?? false);
+                matchesBhk = p.bedrooms >= 5 ||
+                    configName.contains('5') ||
+                    titleLower.contains('5 bhk') || titleLower.contains('5bhk') ||
+                    descLower.contains('5 bhk') || descLower.contains('5bhk') ||
+                    pTypeName.contains('5 bhk') || pTypeName.contains('5bhk');
               }
             }
 
-            // Search query filter
+            // Search query filter (strips explicit BHK terms to match location/type/title/address cleanly)
             bool matchesSearch = true;
-            if (_searchController.text.trim().isNotEmpty) {
-              final query = _searchController.text.trim().toLowerCase();
-              final words = query.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-              matchesSearch = words.every((word) =>
-                  p.propertyCode.toLowerCase().contains(word) ||
-                  p.title.toLowerCase().contains(word) ||
-                  (p.description?.toLowerCase().contains(word) ?? false) ||
-                  p.areaName.toLowerCase().contains(word) ||
-                  p.cityName.toLowerCase().contains(word) ||
-                  p.categoryName.toLowerCase().contains(word) ||
-                  (p.configurationName?.toLowerCase().contains(word) ?? false) ||
-                  p.propertyTypeName.toLowerCase().contains(word));
+            if (searchText.isNotEmpty) {
+              final cleanQuery = searchText.replaceAll(RegExp(r'(\d+\+?)\s*-?\s*bhk', caseSensitive: false), '').trim();
+              if (cleanQuery.isNotEmpty) {
+                final words = cleanQuery.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+                matchesSearch = words.every((word) {
+                  final w = word.toLowerCase();
+                  return p.propertyCode.toLowerCase().contains(w) ||
+                      p.title.toLowerCase().contains(w) ||
+                      p.areaName.toLowerCase().contains(w) ||
+                      p.cityName.toLowerCase().contains(w) ||
+                      p.address.toLowerCase().contains(w) ||
+                      (p.landmark?.toLowerCase().contains(w) ?? false) ||
+                      (p.description?.toLowerCase().contains(w) ?? false) ||
+                      p.categoryName.toLowerCase().contains(w) ||
+                      p.propertyTypeName.toLowerCase().contains(w) ||
+                      (p.configurationName?.toLowerCase().contains(w) ?? false) ||
+                      (p.furnishingTypeName?.toLowerCase().contains(w) ?? false) ||
+                      (p.remarks?.toLowerCase().contains(w) ?? false);
+                });
+              }
             }
 
             return matchesListing && matchesCategoryTab && matchesBhk && matchesSearch;
@@ -405,14 +480,21 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
           final cleanLoc = rawLoc.replaceAll(RegExp(r'\b\d+\s*BHK\b', caseSensitive: false), '').trim();
           final locationText = cleanLoc.isNotEmpty ? cleanLoc : rawLoc;
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.l, vertical: CRMSpacing.m),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1100),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final isMobile = constraints.maxWidth < 600;
+
+              return SingleChildScrollView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isMobile ? 12 : CRMSpacing.l,
+                  vertical: CRMSpacing.m,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1100),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                     // Small Breadcrumb Routing Text (Page-wise route in small letters)
                     Text(
                       'Home / Ahmedabad / $_activeCategoryTab Property for $_activeListingTab in $locationText',
@@ -466,9 +548,11 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
             ),
           );
         },
-      ),
-    );
-  }
+      );
+    },
+  ),
+);
+}
 
   Widget _buildFiltersControlBar() {
     return Container(
@@ -481,69 +565,74 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              // Rent / Re-Sale Toggle Tabs
-              Container(
-                height: 34,
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: CRMColors.backgroundOf(context),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                ),
-                child: Row(
-                  children: [
-                    _buildTabChoice('Rent', _activeListingTab == 'Rent', () {
-                      setState(() {
-                        _activeListingTab = 'Rent';
-                      });
-                    }),
-                    _buildTabChoice('Re-Sale', _activeListingTab == 'Re-Sale', () {
-                      setState(() {
-                        _activeListingTab = 'Re-Sale';
-                      });
-                    }),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-
-              // Category Choice Chips
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
+          // Filter Tabs & Categories in smooth horizontal scrollable row
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                // Rent / Re-Sale Toggle Tabs
+                Container(
+                  height: 34,
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: CRMColors.backgroundOf(context),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6)),
+                  ),
                   child: Row(
-                    children: ['Residential', 'Commercial', 'Industrial', 'Land & Plot', 'No Images', 'All'].map((cat) {
-                      final isSelected = _activeCategoryTab == cat;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: ChoiceChip(
-                          label: Text(
-                            cat,
-                            style: TextStyle(
-                              color: isSelected ? Colors.white : CRMColors.textOf(context),
-                              fontSize: 12.5,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                            ),
-                          ),
-                          selected: isSelected,
-                          selectedColor: CRMColors.primaryOf(context),
-                          backgroundColor: CRMColors.backgroundOf(context),
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() {
-                                _activeCategoryTab = cat;
-                              });
-                            }
-                          },
-                        ),
-                      );
-                    }).toList(),
+                    children: [
+                      _buildTabChoice('Rent', _activeListingTab == 'Rent', () {
+                        setState(() {
+                          _activeListingTab = 'Rent';
+                        });
+                      }),
+                      _buildTabChoice('Re-Sale', _activeListingTab == 'Re-Sale', () {
+                        setState(() {
+                          _activeListingTab = 'Re-Sale';
+                        });
+                      }),
+                    ],
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+
+                // Category Chips (Custom pill chips to prevent checkmark truncation)
+                ...['Residential', 'Commercial', 'Industrial', 'Land & Plot', 'No Images', 'All'].map((cat) {
+                  final isSelected = _activeCategoryTab == cat;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          _activeCategoryTab = cat;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSelected ? CRMColors.primaryOf(context) : CRMColors.primaryOf(context).withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isSelected ? CRMColors.primaryOf(context) : CRMColors.primaryOf(context).withOpacity(0.2),
+                          ),
+                        ),
+                        child: Text(
+                          cat,
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : CRMColors.textOf(context),
+                            fontSize: 12.5,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
           ),
 
           // BHK Selector Chips (Shown for Residential or All)
@@ -551,6 +640,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
             const SizedBox(height: 10),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
               child: Row(
                 children: ['All BHK', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5+ BHK'].map((bhk) {
                   final isSelected = (_activeBhkFilter == bhk) || (_activeBhkFilter == null && bhk == 'All BHK');
@@ -560,6 +650,15 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                       onTap: () {
                         setState(() {
                           _activeBhkFilter = bhk == 'All BHK' ? null : bhk;
+                          if (_searchController.text.isNotEmpty) {
+                            final oldText = _searchController.text;
+                            final cleanText = oldText.replaceAll(RegExp(r'\b\d+\+?\s*BHK\b', caseSensitive: false), '').replaceAll(RegExp(r'\s+'), ' ').trim();
+                            if (_activeBhkFilter != null) {
+                              _searchController.text = cleanText.isNotEmpty ? '$cleanText $_activeBhkFilter' : _activeBhkFilter!;
+                            } else {
+                              _searchController.text = cleanText;
+                            }
+                          }
                         });
                       },
                       borderRadius: BorderRadius.circular(16),
@@ -619,58 +718,117 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     final categoryLabel = _activeCategoryTab == 'All' ? '' : '$_activeCategoryTab ';
     final bhkLabel = _activeBhkFilter != null ? '$_activeBhkFilter ' : '';
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 600;
+
+        if (isNarrow) {
+          return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Showing 1 - $totalCount of $totalCount',
-                style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 12, fontWeight: FontWeight.w600),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Showing 1 - $totalCount of $totalCount',
+                    style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  Row(
+                    children: [
+                      Text('Sort by: ', style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 12, fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: CRMColors.cardBgOf(context),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6)),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String?>(
+                            value: _selectedPriceSort,
+                            isDense: true,
+                            style: TextStyle(color: CRMColors.textOf(context), fontSize: 12, fontWeight: FontWeight.w600),
+                            items: const [
+                              DropdownMenuItem(value: null, child: Text('Relevance')),
+                              DropdownMenuItem(value: 'l2h', child: Text('Price: Low to High')),
+                              DropdownMenuItem(value: 'h2l', child: Text('Price: High to Low')),
+                            ],
+                            onChanged: (val) {
+                              setState(() {
+                                _selectedPriceSort = val;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 6),
               Text(
                 '$bhkLabel${categoryLabel}Property for $_activeListingTab in $locationText',
-                style: TextStyle(color: CRMColors.textOf(context), fontSize: 16.5, fontWeight: FontWeight.bold),
+                style: TextStyle(color: CRMColors.textOf(context), fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ],
-          ),
-        ),
-        Row(
+          );
+        }
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text('Sort by: ', style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 12.5, fontWeight: FontWeight.w600)),
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-              decoration: BoxDecoration(
-                color: CRMColors.cardBgOf(context),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6)),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String?>(
-                  value: _selectedPriceSort,
-                  isDense: true,
-                  style: TextStyle(color: CRMColors.textOf(context), fontSize: 12.5, fontWeight: FontWeight.w600),
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('Relevance')),
-                    DropdownMenuItem(value: 'l2h', child: Text('Price: Low to High')),
-                    DropdownMenuItem(value: 'h2l', child: Text('Price: High to Low')),
-                  ],
-                  onChanged: (val) {
-                    setState(() {
-                      _selectedPriceSort = val;
-                    });
-                  },
-                ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Showing 1 - $totalCount of $totalCount',
+                    style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$bhkLabel${categoryLabel}Property for $_activeListingTab in $locationText',
+                    style: TextStyle(color: CRMColors.textOf(context), fontSize: 16.5, fontWeight: FontWeight.bold),
+                  ),
+                ],
               ),
             ),
+            Row(
+              children: [
+                Text('Sort by: ', style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 12.5, fontWeight: FontWeight.w600)),
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: CRMColors.cardBgOf(context),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String?>(
+                      value: _selectedPriceSort,
+                      isDense: true,
+                      style: TextStyle(color: CRMColors.textOf(context), fontSize: 12.5, fontWeight: FontWeight.w600),
+                      items: const [
+                        DropdownMenuItem(value: null, child: Text('Relevance')),
+                        DropdownMenuItem(value: 'l2h', child: Text('Price: Low to High')),
+                        DropdownMenuItem(value: 'h2l', child: Text('Price: High to Low')),
+                      ],
+                      onChanged: (val) {
+                        setState(() {
+                          _selectedPriceSort = val;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -824,7 +982,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                       Text(
                         'Ready to use $bhkText ${p.listingTypeName} in $locationFull',
                         style: TextStyle(color: CRMColors.textOf(context), fontSize: 16, fontWeight: FontWeight.bold),
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 10),
@@ -876,7 +1034,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                                 ),
                                 Text(
-                                  (p.floorNo != null && p.floorNo! > 0) ? 'Floor / BHK' : 'BHK Config',
+                                  (p.floorNo != null && p.floorNo! > 0) ? 'Floor / BHK' : 'Config',
                                   style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 10.5),
                                 ),
                               ],
@@ -888,13 +1046,14 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                       // Key Amenities Chips - Only show if non-empty
                       if (p.amenities.isNotEmpty)
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('Amenities: ', style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11.5, fontWeight: FontWeight.w500)),
                             Expanded(
                               child: Text(
                                 p.amenities.join(' • '),
                                 style: TextStyle(color: CRMColors.textOf(context), fontSize: 11.5, fontWeight: FontWeight.w500),
-                                maxLines: 1,
+                                maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -907,6 +1066,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                   // Bottom Action Buttons
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(
                         _getUpdatedTimeText(p),

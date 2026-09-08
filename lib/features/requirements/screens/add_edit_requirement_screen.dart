@@ -55,7 +55,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
   String? _selectedListingTypeId;
   final List<String> _selectedFurnishingIds = [];
   final List<String> _selectedFacingIds = [];
-  String _selectedStatus = "Not Started";
+  String _selectedStatus = "New";
   final List<String> _selectedAreaIds = [];
   String _areaSearchQuery = '';
   String? _customerFoundMessage;
@@ -173,6 +173,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           _selectedFacingIds.addAll(req.facingIds);
           
           String statusVal = req.status;
+          if (statusVal == 'Not Started') statusVal = 'New';
           if (statusVal == 'Active' || statusVal == 'Live') statusVal = 'Interested';
           if (statusVal == 'Closed' || statusVal == 'Won') statusVal = 'Won';
           if (statusVal == 'Suspended' || statusVal == 'Dead') statusVal = 'Not Interested';
@@ -384,7 +385,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                   _minAreaController.text = draft['minArea'] ?? '';
                   _maxAreaController.text = draft['maxArea'] ?? '';
                   _remarksController.text = draft['remarks'] ?? '';
-                  _selectedStatus = draft['status'] ?? 'Not Started';
+                  _selectedStatus = draft['status'] ?? 'New';
                   
                   final List<String> areas = List<String>.from(draft['areaIds'] ?? []);
                   _selectedAreaIds.clear();
@@ -1039,6 +1040,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               label: 'Pipeline Status Stage *',
               value: _selectedStatus,
               items: const [
+                DropdownMenuItem(value: "New", child: Text("New")),
                 DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
                 DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
                 DropdownMenuItem(value: "Interested", child: Text("Interested")),
