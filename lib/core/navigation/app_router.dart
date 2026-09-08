@@ -44,7 +44,7 @@ import '../../features/reports/screens/reports_shell.dart';
 import '../../features/reports/screens/leads/overall_business_insight_screen.dart';
 import '../../features/reports/screens/leads/telecaller_report_placeholder.dart';
 import '../../features/reports/screens/leads/sales_report_placeholder.dart';
-import '../../features/reports/screens/leads/lead_metrics_placeholder.dart';
+import '../../features/reports/screens/leads/lead_metrics_screen.dart';
 import '../../features/reports/screens/properties/properties_coming_soon_screen.dart';
 import '../utils/seo_helper.dart';
 import 'mobile_system_back_handler.dart';
@@ -358,7 +358,7 @@ class AppRouter {
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
               child: const ReportsShell(
-                child: LeadMetricsPlaceholderScreen(),
+                child: LeadMetricsScreen(),
               ),
             ),
           ),

@@ -120,11 +120,10 @@ class ReportsSubshellNav extends StatelessWidget {
                   _buildSubTab(
                     context,
                     title: 'Lead Metrics',
-                    icon: Icons.analytics_outlined,
+                    icon: Icons.tune_rounded,
                     route: '/reports/leads/metrics',
                     isActive: currentPath.contains('/metrics'),
-                    isFunctional: false,
-                    badgeText: 'Stage 2',
+                    isFunctional: true,
                   ),
                 ],
               ),

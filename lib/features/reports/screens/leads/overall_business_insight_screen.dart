@@ -11,7 +11,6 @@ import '../../models/report_data.dart';
 import '../../widgets/report_date_filter_bar.dart';
 import '../../widgets/report_global_filters_bar.dart';
 import '../../widgets/kpi_card_widget.dart';
-import '../../widgets/kpi_configuration_dialog.dart';
 import '../../widgets/kpi_expand_dialog.dart';
 import '../../widgets/lead_status_pipeline_section.dart';
 import '../../widgets/conversion_funnel_section.dart';
@@ -233,54 +232,34 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                       ),
                       const SizedBox(height: CRMSpacing.m),
 
-                      // KPI Header & "Configure Metrics" Action
+                      // KPI Header
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.speed_rounded, size: 18),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Key Performance Indicators',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: -0.2,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: primaryColor.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '${enabledKpis.length} / 13 Active',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: primaryColor,
-                                  ),
-                                ),
-                              ),
-                            ],
+                          const Icon(Icons.speed_rounded, size: 18),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Key Performance Indicators',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: -0.2,
+                            ),
                           ),
-                          TextButton.icon(
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (dCtx) => KpiConfigurationDialog(
-                                  initialConfigs: config.kpiConfigs,
-                                  onSave: (updated) {
-                                    context.read<ReportsBloc>().add(UpdateKpiConfigEvent(updated));
-                                  },
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.tune_rounded, size: 16),
-                            label: const Text('Configure Metrics', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: primaryColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${enabledKpis.length} / 13 Active',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: primaryColor,
+                              ),
+                            ),
                           ),
                         ],
                       ),
