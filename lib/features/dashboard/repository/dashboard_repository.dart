@@ -152,6 +152,24 @@ class DashboardRepository {
       )).toList();
     }
 
+    final localLocationItems = allLocalProps.where((p) {
+      final st = p.propertyStatusName.trim().toLowerCase();
+      return st == 'available' || st == 'to be available';
+    }).map((p) => DashboardLocationItem(
+      id: p.id,
+      code: p.propertyCode,
+      areaName: (p.areaName.trim().isNotEmpty && p.areaName != 'N/A')
+          ? p.areaName.trim()
+          : 'Other',
+      categoryName: p.categoryName.trim().isNotEmpty
+          ? p.categoryName.trim()
+          : 'Residential',
+      listingType: p.listingTypeName.trim().isNotEmpty
+          ? p.listingTypeName.trim()
+          : 'Rent',
+      createdAt: p.createdAt,
+    )).toList();
+
     final allowedReqIds = <String>{};
     final allowedClientNames = <String>{};
     final reqStatusById = <String, String>{};
@@ -252,6 +270,9 @@ class DashboardRepository {
         checklist: cachedData.checklist,
         followups: filteredFollowups,
         siteVisits: filteredSiteVisits,
+        inventoryLocations: cachedData.inventoryLocations.isNotEmpty
+            ? cachedData.inventoryLocations
+            : localLocationItems,
       );
     }
 
@@ -301,6 +322,9 @@ class DashboardRepository {
       checklist: model.checklist,
       followups: filteredFollowups,
       siteVisits: filteredSiteVisits,
+      inventoryLocations: model.inventoryLocations.isNotEmpty
+          ? model.inventoryLocations
+          : localLocationItems,
     );
   }
 

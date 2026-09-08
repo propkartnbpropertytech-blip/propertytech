@@ -27,8 +27,10 @@ class AnalyticsSection extends StatelessWidget {
           const SizedBox(width: 20),
           Expanded(
             child: TopLocationsChartCard(
+              locations: data?.inventoryLocations ?? const [],
               properties: data?.recentProperties ?? const [],
               topArea: data?.summary.topArea,
+              isRent: isRent,
             ),
           ),
         ],
@@ -43,8 +45,10 @@ class AnalyticsSection extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         TopLocationsChartCard(
+          locations: data?.inventoryLocations ?? const [],
           properties: data?.recentProperties ?? const [],
           topArea: data?.summary.topArea,
+          isRent: isRent,
         ),
       ],
     );
@@ -293,13 +297,17 @@ class _SnapshotBar extends StatelessWidget {
 
 // ── Top Locations Donut Chart ───────────────────────────────
 class TopLocationsChartCard extends StatefulWidget {
+  final List<DashboardLocationItem> locations;
   final List<RecentProperty> properties;
   final String? topArea;
+  final bool isRent;
 
   const TopLocationsChartCard({
     super.key,
+    this.locations = const [],
     this.properties = const [],
     this.topArea,
+    this.isRent = false,
   });
 
   @override
@@ -307,25 +315,133 @@ class TopLocationsChartCard extends StatefulWidget {
 }
 
 class _TopLocationsChartCardState extends State<TopLocationsChartCard> {
-  String _selectedRange = 'This Month';
+  String _selectedCategory = 'All'; // 'All', 'Residential', 'Commercial', 'Industrial', 'Land & Plot'
+  String _selectedRange = 'All Time'; // 'All Time', 'This Month', 'This Week', 'This Quarter', 'This Year'
+  String _selectedDesk = 'All Desks'; // 'All Desks', 'Rental', 'Re-Sale'
+
+  static const _categories = [
+    'All',
+    'Residential',
+    'Commercial',
+    'Industrial',
+    'Land & Plot',
+  ];
 
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
+    final primaryColor = ThemeManager().primaryColor;
+    final now = DateTime.now();
+
+    // Helper to test if an item matches desk
+    bool matchesDesk(String listingType) {
+      if (_selectedDesk == 'Rental') {
+        return listingType.toLowerCase().contains('rent');
+      }
+      if (_selectedDesk == 'Re-Sale') {
+        return !listingType.toLowerCase().contains('rent');
+      }
+      return true; // 'All Desks'
+    }
+
+    // Helper to test if an item matches date range
+    bool matchesRange(DateTime? createdAt) {
+      if (createdAt == null || _selectedRange == 'All Time') return true;
+      if (_selectedRange == 'This Month') {
+        final startOfMonth = DateTime(now.year, now.month, 1);
+        return createdAt.isAfter(startOfMonth) || createdAt.isAtSameMomentAs(startOfMonth);
+      }
+      if (_selectedRange == 'This Week') {
+        final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+        return createdAt.isAfter(startOfWeek) || createdAt.isAtSameMomentAs(startOfWeek);
+      }
+      if (_selectedRange == 'This Quarter') {
+        final quarterStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
+        final startOfQuarter = DateTime(now.year, quarterStartMonth, 1);
+        return createdAt.isAfter(startOfQuarter) || createdAt.isAtSameMomentAs(startOfQuarter);
+      }
+      if (_selectedRange == 'This Year') {
+        final startOfYear = DateTime(now.year, 1, 1);
+        return createdAt.isAfter(startOfYear) || createdAt.isAtSameMomentAs(startOfYear);
+      }
+      return true;
+    }
+
+    // Helper to test if an item matches category
+    bool matchesCategory(String categoryName, String categoryTarget) {
+      if (categoryTarget == 'All') return true;
+      final cat = categoryName.trim().toLowerCase();
+      if (categoryTarget == 'Residential') return cat.contains('residen');
+      if (categoryTarget == 'Commercial') return cat.contains('commerc');
+      if (categoryTarget == 'Industrial') return cat.contains('indust');
+      if (categoryTarget == 'Land & Plot') return cat.contains('land') || cat.contains('plot');
+      return true;
+    }
+
+    // Compute category counts for badge pills across current desk and range
+    final Map<String, int> categoryBadgeCounts = {
+      for (final cat in _categories) cat: 0,
+    };
+
+    if (widget.locations.isNotEmpty) {
+      for (final loc in widget.locations) {
+        if (!matchesDesk(loc.listingType)) continue;
+        if (!matchesRange(loc.createdAt)) continue;
+
+        categoryBadgeCounts['All'] = (categoryBadgeCounts['All'] ?? 0) + 1;
+        for (final cat in _categories) {
+          if (cat == 'All') continue;
+          if (matchesCategory(loc.categoryName, cat)) {
+            categoryBadgeCounts[cat] = (categoryBadgeCounts[cat] ?? 0) + 1;
+          }
+        }
+      }
+    } else {
+      for (final p in widget.properties) {
+        if (!matchesDesk(p.listingType)) continue;
+        final dt = DateTime.tryParse(p.createdAt);
+        if (!matchesRange(dt)) continue;
+
+        categoryBadgeCounts['All'] = (categoryBadgeCounts['All'] ?? 0) + 1;
+        categoryBadgeCounts['Residential'] = (categoryBadgeCounts['Residential'] ?? 0) + 1;
+      }
+    }
+
+    // Filter items for the currently selected category
     final Map<String, int> areaCounts = {};
-    for (final p in widget.properties) {
-      final area = p.areaName.trim();
-      if (area.isNotEmpty && area != 'N/A') {
+    int totalUnits = 0;
+
+    if (widget.locations.isNotEmpty) {
+      for (final loc in widget.locations) {
+        if (!matchesDesk(loc.listingType)) continue;
+        if (!matchesRange(loc.createdAt)) continue;
+        if (!matchesCategory(loc.categoryName, _selectedCategory)) continue;
+
+        totalUnits++;
+        var area = loc.areaName.trim();
+        if (area.isEmpty || area == 'N/A') area = 'Other';
+        areaCounts[area] = (areaCounts[area] ?? 0) + 1;
+      }
+    } else {
+      for (final p in widget.properties) {
+        if (!matchesDesk(p.listingType)) continue;
+        final dt = DateTime.tryParse(p.createdAt);
+        if (!matchesRange(dt)) continue;
+
+        totalUnits++;
+        var area = p.areaName.trim();
+        if (area.isEmpty || area == 'N/A') area = 'Other';
         areaCounts[area] = (areaCounts[area] ?? 0) + 1;
       }
     }
 
     final colors = [
-      ThemeManager().primaryColor,
-      const Color(0xFF3B82F6),
-      const Color(0xFF8B5CF6),
-      const Color(0xFFF97316),
-      const Color(0xFF06B6D4),
+      primaryColor,
+      const Color(0xFF3B82F6), // Blue
+      const Color(0xFF8B5CF6), // Purple
+      const Color(0xFFF97316), // Orange
+      const Color(0xFF06B6D4), // Cyan
+      const Color(0xFF10B981), // Emerald
     ];
 
     final List<_LocationData> locations = [];
@@ -333,7 +449,9 @@ class _TopLocationsChartCardState extends State<TopLocationsChartCard> {
       final sortedEntries = areaCounts.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
       final topEntries = sortedEntries.take(5).toList();
+      int topSum = 0;
       for (int i = 0; i < topEntries.length; i++) {
+        topSum += topEntries[i].value;
         locations.add(
           _LocationData(
             name: topEntries[i].key,
@@ -342,15 +460,26 @@ class _TopLocationsChartCardState extends State<TopLocationsChartCard> {
           ),
         );
       }
-    } else if (widget.topArea != null &&
+      final remaining = totalUnits - topSum;
+      if (remaining > 0) {
+        locations.add(
+          _LocationData(
+            name: 'Others',
+            count: remaining,
+            color: const Color(0xFF94A3B8),
+          ),
+        );
+      }
+    } else if (totalUnits > 0 &&
+        widget.topArea != null &&
         widget.topArea!.isNotEmpty &&
         widget.topArea != 'N/A') {
       locations.add(
-        _LocationData(name: widget.topArea!, count: 1, color: colors[0]),
+        _LocationData(name: widget.topArea!, count: totalUnits, color: colors[0]),
       );
     }
 
-    final int total = locations.fold(0, (sum, item) => sum + item.count);
+    final int chartTotal = totalUnits;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -372,84 +501,230 @@ class _TopLocationsChartCardState extends State<TopLocationsChartCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header Row: Title & Subtitle + Desk & Date dropdowns
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Top Locations',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isDark
-                          ? const Color(0xFFF8FAFC)
-                          : const Color(0xFF14213D),
-                      letterSpacing: -0.2,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Top Locations',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isDark
+                            ? const Color(0xFFF8FAFC)
+                            : const Color(0xFF14213D),
+                        letterSpacing: -0.2,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Active listings by micro-market',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark
-                          ? const Color(0xFF94A3B8)
-                          : const Color(0xFF68738A),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Active listings by micro-market',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF68738A),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              Container(
-                height: 32,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF243044)
-                      : const Color(0xFFF1F4F9),
-                  borderRadius: BorderRadius.circular(8),
+                  ],
                 ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedRange,
-                    dropdownColor:
-                        isDark ? const Color(0xFF1E293B) : Colors.white,
-                    icon: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 16,
+              ),
+              const SizedBox(width: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  // Desk filter
+                  Container(
+                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
                       color: isDark
-                          ? const Color(0xFF94A3B8)
-                          : const Color(0xFF68738A),
+                          ? const Color(0xFF243044)
+                          : const Color(0xFFF1F4F9),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? const Color(0xFFF8FAFC)
-                          : const Color(0xFF14213D),
-                    ),
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedRange = val);
-                    },
-                    items:
-                        const [
-                              'This Week',
-                              'This Month',
-                              'This Quarter',
-                              'This Year',
-                            ]
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _selectedDesk,
+                        dropdownColor:
+                            isDark ? const Color(0xFF1E293B) : Colors.white,
+                        icon: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 16,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF68738A),
+                        ),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? const Color(0xFFF8FAFC)
+                              : const Color(0xFF14213D),
+                        ),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedDesk = val);
+                        },
+                        items: const [
+                          'All Desks',
+                          'Rental',
+                          'Re-Sale',
+                        ]
                             .map(
                               (e) => DropdownMenuItem(value: e, child: Text(e)),
                             )
                             .toList(),
+                      ),
+                    ),
                   ),
-                ),
+                  // Date range filter
+                  Container(
+                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF243044)
+                          : const Color(0xFFF1F4F9),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _selectedRange,
+                        dropdownColor:
+                            isDark ? const Color(0xFF1E293B) : Colors.white,
+                        icon: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 16,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF68738A),
+                        ),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? const Color(0xFFF8FAFC)
+                              : const Color(0xFF14213D),
+                        ),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedRange = val);
+                        },
+                        items: const [
+                          'All Time',
+                          'This Month',
+                          'This Week',
+                          'This Quarter',
+                          'This Year',
+                        ]
+                            .map(
+                              (e) => DropdownMenuItem(value: e, child: Text(e)),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
+
+          const SizedBox(height: 16),
+
+          // Category Filter Tabs
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _categories.map((cat) {
+                final isSelected = _selectedCategory == cat;
+                final badgeCount = categoryBadgeCounts[cat] ?? 0;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    onTap: () => setState(() => _selectedCategory = cat),
+                    borderRadius: BorderRadius.circular(20),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? primaryColor.withValues(alpha: isDark ? 0.25 : 0.12)
+                            : (isDark
+                                ? const Color(0xFF243044)
+                                : const Color(0xFFF1F4F9)),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected
+                              ? primaryColor
+                              : (isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFE2E8F0)),
+                          width: isSelected ? 1.5 : 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            cat,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight:
+                                  isSelected ? FontWeight.w700 : FontWeight.w500,
+                              color: isSelected
+                                  ? (isDark ? Colors.white : primaryColor)
+                                  : (isDark
+                                      ? const Color(0xFF94A3B8)
+                                      : const Color(0xFF64748B)),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? primaryColor
+                                  : (isDark
+                                      ? const Color(0xFF334155)
+                                      : const Color(0xFFCBD5E1)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$badgeCount',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: isSelected
+                                    ? Colors.white
+                                    : (isDark
+                                        ? const Color(0xFFCBD5E1)
+                                        : const Color(0xFF475569)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+
           const SizedBox(height: 20),
-          if (locations.isNotEmpty)
+
+          if (locations.isNotEmpty && chartTotal > 0)
             LayoutBuilder(
               builder: (context, cardConstraints) {
                 final isNarrow = cardConstraints.maxWidth < 360;
@@ -463,14 +738,14 @@ class _TopLocationsChartCardState extends State<TopLocationsChartCard> {
                         size: const Size(130, 130),
                         painter: _DonutChartPainter(
                           locations: locations,
-                          total: total,
+                          total: chartTotal,
                         ),
                       ),
                       Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            '$total',
+                            '$chartTotal',
                             style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
@@ -481,7 +756,7 @@ class _TopLocationsChartCardState extends State<TopLocationsChartCard> {
                             ),
                           ),
                           Text(
-                            'Units',
+                            chartTotal == 1 ? 'Unit' : 'Units',
                             style: TextStyle(
                               fontSize: 10.5,
                               color: isDark
@@ -498,7 +773,8 @@ class _TopLocationsChartCardState extends State<TopLocationsChartCard> {
 
                 final legend = Column(
                   children: locations.map((loc) {
-                    final percent = ((loc.count / total) * 100).toStringAsFixed(0);
+                    final percent =
+                        ((loc.count / chartTotal) * 100).toStringAsFixed(0);
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(
@@ -565,14 +841,30 @@ class _TopLocationsChartCardState extends State<TopLocationsChartCard> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 36),
               child: Center(
-                child: Text(
-                  'No location data available yet',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark
-                        ? const Color(0xFF94A3B8)
-                        : const Color(0xFF68738A),
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.location_city_outlined,
+                      size: 36,
+                      color: isDark
+                          ? const Color(0xFF64748B)
+                          : const Color(0xFFCBD5E1),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _selectedCategory == 'All'
+                          ? 'No active listings found for the selected filter'
+                          : 'No active $_selectedCategory listings found',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: isDark
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF68738A),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
