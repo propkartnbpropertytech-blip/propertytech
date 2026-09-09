@@ -146,4 +146,51 @@ class ReportDateRange {
       endDate: endDate ?? this.endDate,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'periodType': periodType.name,
+      'subOption': subOption.name,
+      'startDate': startDate.toIso8601String(),
+      'endDate': endDate.toIso8601String(),
+    };
+  }
+
+  factory ReportDateRange.fromJson(Map<String, dynamic> json) {
+    final periodTypeName = json['periodType'] as String? ?? '';
+    final subOptionName = json['subOption'] as String? ?? '';
+
+    final periodType = ReportPeriodType.values.firstWhere(
+      (e) => e.name == periodTypeName,
+      orElse: () => ReportPeriodType.monthly,
+    );
+    final subOption = ReportSubPeriodOption.values.firstWhere(
+      (e) => e.name == subOptionName,
+      orElse: () => ReportSubPeriodOption.current,
+    );
+
+    if (subOption == ReportSubPeriodOption.current) {
+      switch (periodType) {
+        case ReportPeriodType.today:
+          return ReportDateRange.today();
+        case ReportPeriodType.weekly:
+          return ReportDateRange.currentWeek();
+        case ReportPeriodType.monthly:
+          return ReportDateRange.currentMonth();
+        case ReportPeriodType.yearly:
+          return ReportDateRange.currentYear();
+        case ReportPeriodType.customRange:
+          break;
+      }
+    }
+
+    final start = DateTime.tryParse(json['startDate'] as String? ?? '') ?? DateTime.now();
+    final end = DateTime.tryParse(json['endDate'] as String? ?? '') ?? DateTime.now();
+    return ReportDateRange(
+      periodType: periodType,
+      subOption: subOption,
+      startDate: start,
+      endDate: end,
+    );
+  }
 }

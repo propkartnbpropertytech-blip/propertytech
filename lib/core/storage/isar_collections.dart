@@ -257,3 +257,23 @@ class DashboardLocal {
   String? siteVisitsJson;
   late DateTime updatedAt;
 }
+
+@collection
+class CampaignLeadLocal {
+  Id? isarId;
+
+  @Index(unique: true, replace: true)
+  late String id;
+
+  late String source;
+  late DateTime receivedAt;
+  late String rawJsonString;
+  String? externalLeadId;
+  late bool isDuplicate;
+  String? duplicateReason;
+  late String qualityStatus;
+  late String importStatus;
+  String? importedClientId;
+  String? metaFeedbackEventId;
+  DateTime? metaFeedbackSentAt;
+}

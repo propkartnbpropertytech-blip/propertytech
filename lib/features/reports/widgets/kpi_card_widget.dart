@@ -7,14 +7,16 @@ import '../models/report_data.dart';
 class KpiCardWidget extends StatefulWidget {
   final ReportKpiConfig config;
   final KpiValue? value;
-  final Function(bool showCount, bool showPercentage) onTogglesChanged;
+  final Function(bool showCount, bool showPercentage)? onTogglesChanged;
+  final bool showToggles;
   final VoidCallback onExpand;
 
   const KpiCardWidget({
     super.key,
     required this.config,
     required this.value,
-    required this.onTogglesChanged,
+    this.onTogglesChanged,
+    this.showToggles = false,
     required this.onExpand,
   });
 
@@ -178,7 +180,7 @@ class _KpiCardWidgetState extends State<KpiCardWidget> {
                     ),
                   ),
 
-                  // Row 3: Denominator basis & Count/Percentage Toggles
+                  // Row 3: Denominator basis (Static on executive dashboard)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -196,33 +198,32 @@ class _KpiCardWidgetState extends State<KpiCardWidget> {
                         ),
                       ),
 
-                      // Count & Percentage Toggle Pills
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildToggleChip(
-                            label: '#',
-                            tooltip: 'Toggle Count',
-                            isActive: showCount,
-                            onTap: () {
-                              // If turning off count, ensure percentage is ON
-                              if (showCount && !showPercentage) return;
-                              widget.onTogglesChanged(!showCount, showPercentage);
-                            },
-                          ),
-                          const SizedBox(width: 4),
-                          _buildToggleChip(
-                            label: '%',
-                            tooltip: 'Toggle Percentage',
-                            isActive: showPercentage,
-                            onTap: () {
-                              // If turning off percentage, ensure count is ON
-                              if (showPercentage && !showCount) return;
-                              widget.onTogglesChanged(showCount, !showPercentage);
-                            },
-                          ),
-                        ],
-                      ),
+                      // Count & Percentage Toggle Pills (Hidden by default; configured in Lead Metrics)
+                      if (widget.showToggles && widget.onTogglesChanged != null)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildToggleChip(
+                              label: '#',
+                              tooltip: 'Toggle Count',
+                              isActive: showCount,
+                              onTap: () {
+                                if (showCount && !showPercentage) return;
+                                widget.onTogglesChanged!(!showCount, showPercentage);
+                              },
+                            ),
+                            const SizedBox(width: 4),
+                            _buildToggleChip(
+                              label: '%',
+                              tooltip: 'Toggle Percentage',
+                              isActive: showPercentage,
+                              onTap: () {
+                                if (showPercentage && !showCount) return;
+                                widget.onTogglesChanged!(showCount, !showPercentage);
+                              },
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                 ],

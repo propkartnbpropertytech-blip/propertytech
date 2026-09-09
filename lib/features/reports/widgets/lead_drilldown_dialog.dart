@@ -117,20 +117,25 @@ class LeadDrilldownDialog extends StatelessWidget {
                                 ),
                                 DataCell(Text(lead.clientMobile)),
                                 DataCell(
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: primaryColor.withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      lead.status,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: primaryColor,
-                                      ),
-                                    ),
+                                  Builder(
+                                    builder: (context) {
+                                      final statusColor = _getStatusColor(lead.status);
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: statusColor.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          lead.status,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: statusColor,
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
                                 ),
                                 DataCell(Text(lead.assigneeName ?? 'Unassigned')),
@@ -168,5 +173,21 @@ class LeadDrilldownDialog extends StatelessWidget {
         onSaved: () {},
       ),
     );
+  }
+
+  Color _getStatusColor(String status) {
+    final s = status.toLowerCase();
+    if (s.startsWith('won')) return const Color(0xFF16A34A);
+    if (s.startsWith('reject') || s == 'dead' || s == 'bin' || s == 'suspended' || s == 'lost' || s == 'not interested') {
+      return const Color(0xFFDC2626);
+    }
+    if (s.startsWith('call attempted') || s.startsWith('call')) {
+      return const Color(0xFF0288D1);
+    }
+    if (s.contains('visit')) return const Color(0xFF9333EA);
+    if (s.contains('negotiation')) return const Color(0xFFEA580C);
+    if (s.contains('follow')) return const Color(0xFFD97706);
+    if (s == 'interested' || s == 'active' || s == 'live') return const Color(0xFF0284C7);
+    return const Color(0xFF64748B);
   }
 }

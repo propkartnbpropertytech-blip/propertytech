@@ -7,6 +7,7 @@ import '../../../core/storage/isar_collections.dart';
 import '../models/report_kpi_type.dart';
 import '../models/report_date_range.dart';
 import '../models/report_configuration.dart';
+import '../models/report_filter_state.dart';
 import '../models/report_data.dart';
 import 'insight_generator.dart';
 
@@ -19,82 +20,11 @@ class ReportDataEngine {
     required List<String> systemStatuses,
     required ReportConfiguration config,
   }) {
-    // 1. Filter Leads by Date Range and Global Filters
     final filteredLeads = allLeads.where((lead) {
-      // Date Range Filter
       if (!config.dateRange.contains(lead.createdAt)) {
         return false;
       }
-
-      // Property Filter
-      if (config.filters.propertyId != null && config.filters.propertyId!.isNotEmpty) {
-        final propId = config.filters.propertyId!;
-        final hasMatch = lead.rawShareSessions?.any((s) => s['property_id'] == propId) == true ||
-            lead.rawSiteVisits?.any((v) => v['property_id'] == propId) == true;
-        if (!hasMatch) return false;
-      }
-
-      // Lead Source Filter
-      if (config.filters.leadSource != null && config.filters.leadSource!.isNotEmpty) {
-        final src = _extractLeadSource(lead);
-        if (src.toLowerCase() != config.filters.leadSource!.toLowerCase()) {
-          return false;
-        }
-      }
-
-      // Telecaller Filter
-      if (config.filters.telecallerId != null && config.filters.telecallerId!.isNotEmpty) {
-        final tId = config.filters.telecallerId!;
-        final matches = lead.createdBy == tId ||
-            lead.creatorName?.toLowerCase() == config.filters.telecallerName?.toLowerCase();
-        if (!matches) return false;
-      }
-
-      // Sales User Filter
-      if (config.filters.salesUserId != null && config.filters.salesUserId!.isNotEmpty) {
-        final sId = config.filters.salesUserId!;
-        final matches = lead.assignedTo == sId ||
-            lead.assigneeName?.toLowerCase() == config.filters.salesUserName?.toLowerCase();
-        if (!matches) return false;
-      }
-
-      // Lead Status Filter
-      if (config.filters.leadStatus != null && config.filters.leadStatus!.isNotEmpty) {
-        if (lead.status.toLowerCase() != config.filters.leadStatus!.toLowerCase()) {
-          return false;
-        }
-      }
-
-      // Lead Type Filter (e.g. Rent, Sale)
-      if (config.filters.leadType != null && config.filters.leadType!.isNotEmpty) {
-        final lt = (lead.listingTypeName ?? '').toLowerCase();
-        final cat = lead.categoryName.toLowerCase();
-        final target = config.filters.leadType!.toLowerCase();
-        if (!lt.contains(target) && !cat.contains(target)) {
-          return false;
-        }
-      }
-
-      // Location Filter
-      if (config.filters.locationId != null && config.filters.locationId!.isNotEmpty) {
-        final locId = config.filters.locationId!;
-        final inAreas = lead.areaIds.contains(locId);
-        final locName = config.filters.locationName?.toLowerCase();
-        final inNames = locName != null && lead.areaNames.any((a) => a.toLowerCase().contains(locName));
-        if (!inAreas && !inNames) return false;
-      }
-
-      // Campaign Filter
-      if (config.filters.campaign != null && config.filters.campaign!.isNotEmpty) {
-        final cmp = config.filters.campaign!.toLowerCase();
-        final notes = (lead.notes ?? '').toLowerCase();
-        final remarks = (lead.remarks ?? '').toLowerCase();
-        if (!notes.contains(cmp) && !remarks.contains(cmp)) {
-          return false;
-        }
-      }
-
-      return true;
+      return _matchesFilters(lead, config.filters);
     }).toList();
 
     // 2. Filter Followups by Date Range
@@ -229,6 +159,9 @@ class ReportDataEngine {
       gatheredStatuses.addAll([
         'New',
         'Not Started',
+        'Call Attempted',
+        'Call Attempted (Picked Up)',
+        'Call Attempted (Open)',
         'Follow-up',
         'Interested',
         'Site Visit',
@@ -499,42 +432,77 @@ class ReportDataEngine {
     leadSources.sort((a, b) => b.count.compareTo(a.count));
 
     // 10. Growth & Comparison
-    final comparisonRange = _calculateComparisonRange(config);
-    final previousLeads = allLeads.where((l) => comparisonRange.contains(l.createdAt)).toList();
-    final previousFollowups = allFollowups.where((f) => comparisonRange.contains(f.createdAt)).toList();
+    final List<GrowthComparisonItem> growthComparisonItems;
+    final List<RequirementModel> previousLeads;
+    if (!config.showGrowthComparison) {
+      growthComparisonItems = const [];
+      previousLeads = const [];
+    } else {
+      final comparisonRange = _calculateComparisonRange(config);
+      // Filter leads with global filters within comparison date range
+      final globalFilteredAllLeads = _applyGlobalFilters(allLeads, config.filters);
+      previousLeads = globalFilteredAllLeads.where((l) => comparisonRange.contains(l.createdAt)).toList();
+      final previousFollowups = allFollowups.where((f) => comparisonRange.contains(f.createdAt)).toList();
 
-    final List<GrowthComparisonItem> growthComparisonItems = [
-      _buildComparisonItem(
-        ReportKpiType.totalLeads,
-        'Total Leads',
-        totalLeadsCount,
-        previousLeads.length,
-      ),
-      _buildComparisonItem(
-        ReportKpiType.leadsContacted,
-        'Leads Contacted',
-        contactedCount,
-        previousLeads.where((l) => _isContacted(l)).length,
-      ),
-      _buildComparisonItem(
-        ReportKpiType.siteVisitsScheduled,
-        'Site Visits Scheduled',
-        visitsScheduledCount,
-        previousLeads.where((l) => _isVisitScheduled(l)).length,
-      ),
-      _buildComparisonItem(
-        ReportKpiType.convertedToWon,
-        'Won Deals',
-        wonCount,
-        previousLeads.where((l) => _isWon(l)).length,
-      ),
-      _buildComparisonItem(
-        ReportKpiType.callAttempted,
-        'Calls Attempted',
-        callAttemptedCount,
-        previousFollowups.length,
-      ),
-    ];
+      final prevContacted = previousLeads.where((l) => _isContacted(l)).length;
+      final prevQualified = previousLeads.where((l) => _isQualified(l)).length;
+      final prevScheduled = previousLeads.where((l) => _isVisitScheduled(l)).length;
+      final prevVisitsDone = previousLeads.where((l) => _isVisitDone(l)).length;
+      final prevWon = previousLeads.where((l) => _isWon(l)).length;
+      final prevLost = previousLeads.where((l) => _isLost(l)).length;
+      final prevCallsAttempted = previousFollowups.length;
+
+      growthComparisonItems = [
+        _buildComparisonItem(
+          ReportKpiType.totalLeads,
+          'Total Leads',
+          totalLeadsCount,
+          previousLeads.length,
+        ),
+        _buildComparisonItem(
+          ReportKpiType.leadsContacted,
+          'Leads Contacted',
+          contactedCount,
+          prevContacted,
+        ),
+        _buildComparisonItem(
+          ReportKpiType.leadQualificationRate,
+          'Qualified Leads',
+          qualifiedCount,
+          prevQualified,
+        ),
+        _buildComparisonItem(
+          ReportKpiType.siteVisitsScheduled,
+          'Site Visits Scheduled',
+          visitsScheduledCount,
+          prevScheduled,
+        ),
+        _buildComparisonItem(
+          ReportKpiType.siteVisitsDone,
+          'Site Visits Done',
+          visitsDoneCount,
+          prevVisitsDone,
+        ),
+        _buildComparisonItem(
+          ReportKpiType.convertedToWon,
+          'Won Leads',
+          wonCount,
+          prevWon,
+        ),
+        _buildComparisonItem(
+          ReportKpiType.lostUnsuccessful,
+          'Lost Leads',
+          lostCount,
+          prevLost,
+        ),
+        _buildComparisonItem(
+          ReportKpiType.callAttempted,
+          'Calls Attempted',
+          callAttemptedCount,
+          prevCallsAttempted,
+        ),
+      ];
+    }
 
     // 11. Trend Analysis Points
     final trendPoints = _generateTrendPoints(
@@ -577,12 +545,20 @@ class ReportDataEngine {
       availableTelecallers: telecallers,
       availableSalesUsers: salesUsers,
       availableProperties: allProperties,
+      allLeads: allLeads,
+      allFollowups: allFollowups,
     );
   }
 
   // --- Helper Methods ---
 
   static String _extractLeadSource(RequirementModel lead) {
+    if (lead.leadSourceDisplay != null && lead.leadSourceDisplay!.isNotEmpty) {
+      return lead.leadSourceDisplay!;
+    }
+    if (lead.leadSource != null && lead.leadSource!.isNotEmpty) {
+      return lead.leadSource!;
+    }
     if (lead.remarks != null && lead.remarks!.isNotEmpty) {
       final rem = lead.remarks!.toLowerCase();
       if (rem.contains('meta') || rem.contains('facebook') || rem.contains('fb')) return 'Facebook Ads';
@@ -612,7 +588,9 @@ class ReportDataEngine {
         s.contains('sitevisit') ||
         s == 'negotiation' ||
         s.contains('won') ||
-        s.contains('closed');
+        s.contains('closed') ||
+        s.contains('callattempted(pickedup)') ||
+        s.contains('pickedup');
   }
 
   static bool _isQualified(RequirementModel l) {
@@ -673,6 +651,9 @@ class ReportDataEngine {
     const order = [
       'New',
       'Not Started',
+      'Call Attempted',
+      'Call Attempted (Picked Up)',
+      'Call Attempted (Open)',
       'Follow-up',
       'Re-Followup',
       'Interested',
@@ -682,9 +663,19 @@ class ReportDataEngine {
       'Negotiation',
       'Won',
       'Rejected',
+      'Rejected (Not Answering)',
+      'Rejected (No Requirement)',
+      'Rejected (Budget Mismatch)',
+      'Rejected (Locality Mismatch)',
+      'Rejected (Broker)',
+      'Rejected (Already rented)',
+      'Rejected (Want Ready-To-Move)',
+      'Rejected (Negotiation Failed)',
+      'Rejected (Others)',
       'Dead',
       'Suspended',
       'Bin',
+      'Not Interested',
     ];
 
     final sorted = statuses.toList();
@@ -702,14 +693,19 @@ class ReportDataEngine {
     if (status == 'Won') return 'Deal Won';
     if (status == 'Site Visit' || status == 'Site Visit Sche.') return 'Visit Scheduled';
     if (status == 'Site Visit Done') return 'Visit Completed';
+    if (status == 'Call Attempted (Picked Up)') return 'Call Picked Up';
+    if (status == 'Call Attempted (Open)') return 'Call Open';
     return status;
   }
 
   static Color _getStatusColor(String status) {
     final s = status.toLowerCase();
     if (s.startsWith('won')) return const Color(0xFF16A34A);
-    if (s.startsWith('reject') || s == 'dead' || s == 'bin' || s == 'suspended' || s == 'lost') {
+    if (s.startsWith('reject') || s == 'dead' || s == 'bin' || s == 'suspended' || s == 'lost' || s == 'not interested') {
       return const Color(0xFFDC2626);
+    }
+    if (s.startsWith('call attempted') || s.startsWith('call')) {
+      return const Color(0xFF0288D1);
     }
     if (s.contains('visit')) return const Color(0xFF9333EA);
     if (s.contains('negotiation')) return const Color(0xFFEA580C);
@@ -719,24 +715,31 @@ class ReportDataEngine {
   }
 
   static ReportDateRange _calculateComparisonRange(ReportConfiguration config) {
-    final currentDuration = config.dateRange.endDate.difference(config.dateRange.startDate);
+    final start = config.dateRange.startDate;
+    final end = config.dateRange.endDate;
+    final currentDuration = end.difference(start);
+
     switch (config.comparisonPeriod) {
       case GrowthComparisonPeriod.previousDay:
-        final s = config.dateRange.startDate.subtract(const Duration(days: 1));
-        final e = config.dateRange.endDate.subtract(const Duration(days: 1));
+        final s = start.subtract(const Duration(days: 1));
+        final e = end.subtract(const Duration(days: 1));
         return ReportDateRange.custom(start: s, end: e);
+
       case GrowthComparisonPeriod.previousWeek:
-        final s = config.dateRange.startDate.subtract(const Duration(days: 7));
-        final e = config.dateRange.endDate.subtract(const Duration(days: 7));
+        final s = start.subtract(const Duration(days: 7));
+        final e = end.subtract(const Duration(days: 7));
         return ReportDateRange.custom(start: s, end: e);
+
       case GrowthComparisonPeriod.previousMonth:
-        final s = DateTime(config.dateRange.startDate.year, config.dateRange.startDate.month - 1, config.dateRange.startDate.day);
-        final e = s.add(currentDuration);
+        final s = _subtractMonth(start);
+        final e = _subtractMonth(end);
         return ReportDateRange.custom(start: s, end: e);
+
       case GrowthComparisonPeriod.previousYear:
-        final s = DateTime(config.dateRange.startDate.year - 1, config.dateRange.startDate.month, config.dateRange.startDate.day);
-        final e = s.add(currentDuration);
+        final s = _subtractYear(start);
+        final e = _subtractYear(end);
         return ReportDateRange.custom(start: s, end: e);
+
       case GrowthComparisonPeriod.customPeriod:
         if (config.customComparisonStart != null && config.customComparisonEnd != null) {
           return ReportDateRange.custom(
@@ -744,10 +747,25 @@ class ReportDataEngine {
             end: config.customComparisonEnd!,
           );
         }
-        final s = config.dateRange.startDate.subtract(currentDuration);
-        final e = config.dateRange.startDate.subtract(const Duration(seconds: 1));
+        final s = start.subtract(currentDuration);
+        final e = start.subtract(const Duration(seconds: 1));
         return ReportDateRange.custom(start: s, end: e);
     }
+  }
+
+  static DateTime _subtractMonth(DateTime d) {
+    final prevMonth = d.month == 1 ? 12 : d.month - 1;
+    final prevYear = d.month == 1 ? d.year - 1 : d.year;
+    final daysInPrevMonth = DateTime(prevYear, prevMonth + 1, 0).day;
+    final day = d.day > daysInPrevMonth ? daysInPrevMonth : d.day;
+    return DateTime(prevYear, prevMonth, day, d.hour, d.minute, d.second, d.millisecond);
+  }
+
+  static DateTime _subtractYear(DateTime d) {
+    final prevYear = d.year - 1;
+    final isLeapFeb29 = d.month == 2 && d.day == 29;
+    final day = isLeapFeb29 ? 28 : d.day;
+    return DateTime(prevYear, d.month, day, d.hour, d.minute, d.second, d.millisecond);
   }
 
   static GrowthComparisonItem _buildComparisonItem(
@@ -837,5 +855,188 @@ class ReportDataEngine {
     }
 
     return points;
+  }
+
+  /// Filter leads by global filters
+  static List<RequirementModel> _applyGlobalFilters(
+    List<RequirementModel> leads,
+    ReportFilterState filters,
+  ) {
+    if (!filters.hasActiveFilters) return leads;
+    return leads.where((l) => _matchesFilters(l, filters)).toList();
+  }
+
+  static bool _matchesFilters(RequirementModel lead, ReportFilterState filters) {
+    // Property Filter
+    if (filters.propertyId != null && filters.propertyId!.isNotEmpty) {
+      final propId = filters.propertyId!;
+      final hasMatch = lead.rawShareSessions?.any((s) => s['property_id'] == propId) == true ||
+          lead.rawSiteVisits?.any((v) => v['property_id'] == propId) == true;
+      if (!hasMatch) return false;
+    }
+
+    // Lead Source Filter
+    if (filters.leadSource != null && filters.leadSource!.isNotEmpty) {
+      final src = _extractLeadSource(lead);
+      if (src.toLowerCase() != filters.leadSource!.toLowerCase()) {
+        return false;
+      }
+    }
+
+    // Telecaller Filter
+    if (filters.telecallerId != null && filters.telecallerId!.isNotEmpty) {
+      final tId = filters.telecallerId!;
+      final matches = lead.createdBy == tId ||
+          lead.creatorName?.toLowerCase() == filters.telecallerName?.toLowerCase();
+      if (!matches) return false;
+    }
+
+    // Sales User Filter
+    if (filters.salesUserId != null && filters.salesUserId!.isNotEmpty) {
+      final sId = filters.salesUserId!;
+      final matches = lead.assignedTo == sId ||
+          lead.assigneeName?.toLowerCase() == filters.salesUserName?.toLowerCase();
+      if (!matches) return false;
+    }
+
+    // Lead Status Filter
+    if (filters.leadStatus != null && filters.leadStatus!.isNotEmpty) {
+      final fStatus = filters.leadStatus!.toLowerCase();
+      final lStatus = lead.status.toLowerCase();
+      if (fStatus == 'rejected') {
+        if (!lStatus.startsWith('rejected') && lStatus != 'not interested' && lStatus != 'bin' && lStatus != 'dead') {
+          return false;
+        }
+      } else if (fStatus == 'call attempted') {
+        if (!lStatus.startsWith('call attempted')) return false;
+      } else {
+        if (lStatus != fStatus) return false;
+      }
+    }
+
+    // Lead Type Filter (e.g. Rent, Sale)
+    if (filters.leadType != null && filters.leadType!.isNotEmpty) {
+      final lt = (lead.listingTypeName ?? '').toLowerCase();
+      final cat = lead.categoryName.toLowerCase();
+      final target = filters.leadType!.toLowerCase();
+      if (!lt.contains(target) && !cat.contains(target)) {
+        return false;
+      }
+    }
+
+    // Location Filter
+    if (filters.locationId != null && filters.locationId!.isNotEmpty) {
+      final locId = filters.locationId!;
+      final inAreas = lead.areaIds.contains(locId);
+      final locName = filters.locationName?.toLowerCase();
+      final inNames = locName != null && lead.areaNames.any((a) => a.toLowerCase().contains(locName));
+      if (!inAreas && !inNames) return false;
+    }
+
+    // Campaign Filter
+    if (filters.campaign != null && filters.campaign!.isNotEmpty) {
+      final cmp = filters.campaign!.toLowerCase();
+      final notes = (lead.notes ?? '').toLowerCase();
+      final remarks = (lead.remarks ?? '').toLowerCase();
+      if (!notes.contains(cmp) && !remarks.contains(cmp)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /// Computes detailed performance metrics for a specific user (telecaller or sales)
+  /// respecting active Date Range and Global Filters.
+  static UserPerformanceSummary computeUserPerformanceSummary({
+    required String userId,
+    required String userName,
+    required String role,
+    required ReportConfiguration config,
+    required List<RequirementModel> allLeads,
+    required List<FollowupLocal> allFollowups,
+  }) {
+    // 1. Filter all leads by date range and global filters
+    final filteredLeads = allLeads.where((lead) {
+      if (!config.dateRange.contains(lead.createdAt)) return false;
+      return _matchesFilters(lead, config.filters);
+    }).toList();
+
+    // 2. Identify leads handled by this specific user
+    final isSales = role.toLowerCase().contains('sales');
+    final isTelecaller = role.toLowerCase().contains('telecaller');
+
+    final userLeads = filteredLeads.where((l) {
+      if (isSales) {
+        return l.assignedTo == userId ||
+            (l.assigneeName != null && l.assigneeName!.toLowerCase() == userName.toLowerCase());
+      } else if (isTelecaller) {
+        return l.createdBy == userId ||
+            (l.creatorName != null && l.creatorName!.toLowerCase() == userName.toLowerCase()) ||
+            l.assignedTo == userId;
+      } else {
+        return l.createdBy == userId ||
+            l.assignedTo == userId ||
+            (l.creatorName != null && l.creatorName!.toLowerCase() == userName.toLowerCase()) ||
+            (l.assigneeName != null && l.assigneeName!.toLowerCase() == userName.toLowerCase());
+      }
+    }).toList();
+
+    final userLeadIds = userLeads.map((l) => l.id).toSet();
+
+    // 3. Filter follow-ups by active date range
+    final filteredFollowups = allFollowups.where((f) {
+      return config.dateRange.contains(f.createdAt) || config.dateRange.contains(f.followupDate);
+    }).toList();
+
+    // 4. Follow-ups associated with this user
+    final userFollowups = filteredFollowups.where((f) {
+      return f.createdBy == userId ||
+          userLeadIds.contains(f.requirementId);
+    }).toList();
+
+    // 5. Compute performance metrics
+    final handled = userLeads.length;
+    final contacted = userLeads.where((l) => _isContacted(l)).length;
+    final qualified = userLeads.where((l) => _isQualified(l)).length;
+    final visits = userLeads.where((l) => _isVisitScheduled(l) || _isVisitDone(l)).length;
+    final won = userLeads.where((l) => _isWon(l)).length;
+    final lost = userLeads.where((l) => _isLost(l)).length;
+    final convPct = handled == 0 ? 0.0 : (won / handled * 100);
+
+    final callAttempted = userFollowups.length;
+    final callPickedUp = userFollowups.where((f) => _isCallPickedUp(f)).length;
+    final callOpen = userFollowups.where((f) => _isCallOpen(f)).length;
+
+    // Pending follow-ups
+    final pendingFollowupIds = <String>{};
+    for (final f in userFollowups) {
+      if (!_isFollowupClosed(f.status)) {
+        pendingFollowupIds.add(f.id);
+      }
+    }
+    for (final l in userLeads) {
+      if (l.nextFollowupDate != null && l.nextFollowupDate!.isNotEmpty && !_isWon(l) && !_isLost(l)) {
+        pendingFollowupIds.add('req_${l.id}');
+      }
+    }
+
+    return UserPerformanceSummary(
+      userId: userId,
+      userName: userName,
+      role: role,
+      dateRangeLabel: config.dateRange.formattedRange,
+      leadsHandled: handled,
+      leadsContacted: contacted,
+      qualifiedLeads: qualified,
+      siteVisits: visits,
+      wonLeads: won,
+      conversionPercentage: convPct,
+      pendingFollowups: pendingFollowupIds.length,
+      callAttempted: callAttempted,
+      callPickedUp: callPickedUp,
+      callOpen: callOpen,
+      lostLeads: lost,
+    );
   }
 }

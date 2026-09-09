@@ -46,6 +46,8 @@ import '../../features/reports/screens/leads/telecaller_report_placeholder.dart'
 import '../../features/reports/screens/leads/sales_report_placeholder.dart';
 import '../../features/reports/screens/leads/lead_metrics_screen.dart';
 import '../../features/reports/screens/properties/properties_coming_soon_screen.dart';
+import '../../features/reports/bloc/reports_bloc.dart';
+import '../../features/reports/bloc/reports_event.dart';
 import '../utils/seo_helper.dart';
 import 'mobile_system_back_handler.dart';
 
@@ -318,58 +320,56 @@ class AppRouter {
               child: const ServiceAgentLibraryScreen(),
             ),
           ),
-          GoRoute(
-            path: '/reports',
-            redirect: (context, state) => '/reports/leads/overall-business-insight',
-          ),
-          GoRoute(
-            path: '/reports/leads',
-            redirect: (context, state) => '/reports/leads/overall-business-insight',
-          ),
-          GoRoute(
-            path: '/reports/leads/overall-business-insight',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const ReportsShell(
-                child: OverallBusinessInsightScreen(),
-              ),
+          ShellRoute(
+            builder: (context, state, child) => BlocProvider<ReportsBloc>(
+              create: (context) => ReportsBloc()..add(const LoadReportEvent()),
+              child: ReportsShell(child: child),
             ),
-          ),
-          GoRoute(
-            path: '/reports/leads/telecaller',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const ReportsShell(
-                child: TelecallerReportPlaceholderScreen(),
+            routes: [
+              GoRoute(
+                path: '/reports',
+                redirect: (context, state) => '/reports/leads/overall-business-insight',
               ),
-            ),
-          ),
-          GoRoute(
-            path: '/reports/leads/sales',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const ReportsShell(
-                child: SalesReportPlaceholderScreen(),
+              GoRoute(
+                path: '/reports/leads',
+                redirect: (context, state) => '/reports/leads/overall-business-insight',
               ),
-            ),
-          ),
-          GoRoute(
-            path: '/reports/leads/metrics',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const ReportsShell(
-                child: LeadMetricsScreen(),
+              GoRoute(
+                path: '/reports/leads/overall-business-insight',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const OverallBusinessInsightScreen(),
+                ),
               ),
-            ),
-          ),
-          GoRoute(
-            path: '/reports/properties',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const ReportsShell(
-                child: PropertiesComingSoonScreen(),
+              GoRoute(
+                path: '/reports/leads/telecaller',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const TelecallerReportPlaceholderScreen(),
+                ),
               ),
-            ),
+              GoRoute(
+                path: '/reports/leads/sales',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const SalesReportPlaceholderScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/leads/metrics',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const LeadMetricsScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/properties',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const PropertiesComingSoonScreen(),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -452,6 +452,7 @@ class AppRouter {
       final isPublicShare = state.matchedLocation.startsWith('/share/') || state.uri.path.startsWith('/share/');
       final onUsers = state.matchedLocation.startsWith('/users');
       final onAudit = state.matchedLocation.startsWith('/settings/audit-logs');
+      final onReports = state.matchedLocation.startsWith('/reports');
       final onTerms = state.matchedLocation == '/terms-and-conditions' || state.matchedLocation == '/terms_and_conditions' || state.uri.path == '/terms-and-conditions' || state.uri.path == '/terms_and_conditions';
       final onPrivacy = state.matchedLocation == '/privacy-policy' || state.matchedLocation == '/privacy_policy' || state.uri.path == '/privacy-policy' || state.uri.path == '/privacy_policy';
       final onResetPassword = state.matchedLocation == '/reset-password' || state.uri.path == '/reset-password';
@@ -484,6 +485,9 @@ class AppRouter {
           return '/dashboard';
         }
         if (onAudit && !RoleGuard.canViewAuditLogs(role)) {
+          return '/dashboard';
+        }
+        if (onReports && !RoleGuard.canViewReports(role)) {
           return '/dashboard';
         }
 

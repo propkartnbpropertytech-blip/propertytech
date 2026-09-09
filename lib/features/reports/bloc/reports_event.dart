@@ -99,12 +99,12 @@ class ToggleKpiMetricEvent extends ReportsEvent {
 }
 
 class UpdateComparisonConfigEvent extends ReportsEvent {
-  final GrowthComparisonPeriod period;
+  final GrowthComparisonPeriod? period;
   final DateTime? customStart;
   final DateTime? customEnd;
 
   const UpdateComparisonConfigEvent({
-    required this.period,
+    this.period,
     this.customStart,
     this.customEnd,
   });

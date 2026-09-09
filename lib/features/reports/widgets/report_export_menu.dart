@@ -58,7 +58,7 @@ class _ReportExportMenuState extends State<ReportExportMenu> {
             children: [
               Icon(Icons.table_chart_outlined, color: Color(0xFF16A34A), size: 18),
               SizedBox(width: 10),
-              Text('Export for Excel (.xls)', style: TextStyle(fontSize: 13)),
+              Text('Export as Excel Workbook (.xlsx)', style: TextStyle(fontSize: 13)),
             ],
           ),
         ),

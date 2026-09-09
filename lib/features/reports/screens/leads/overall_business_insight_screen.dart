@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
@@ -21,16 +22,22 @@ import '../../widgets/growth_comparison_section.dart';
 import '../../widgets/lead_source_analysis_section.dart';
 import '../../widgets/trend_analysis_section.dart';
 import '../../widgets/report_export_menu.dart';
+import '../../widgets/user_performance_summary_dialog.dart';
 
 class OverallBusinessInsightScreen extends StatelessWidget {
   const OverallBusinessInsightScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => ReportsBloc()..add(const LoadReportEvent()),
-      child: const _OverallBusinessInsightContent(),
-    );
+    try {
+      context.read<ReportsBloc>();
+      return const _OverallBusinessInsightContent();
+    } catch (_) {
+      return BlocProvider(
+        create: (context) => ReportsBloc()..add(const LoadReportEvent()),
+        child: const _OverallBusinessInsightContent(),
+      );
+    }
   }
 }
 
@@ -198,9 +205,108 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                               ),
                             ],
                           ),
-                          ReportExportMenu(
-                            reportData: reportData,
-                            config: config,
+                          Row(
+                            children: [
+                              PopupMenuButton<String>(
+                                tooltip: 'Analytical Sections Visibility',
+                                offset: const Offset(0, 36),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                itemBuilder: (ctx) => [
+                                  _buildSectionToggleItem(
+                                    'Pipeline Velocity',
+                                    config.showLeadStatusPipeline,
+                                    () => context.read<ReportsBloc>().add(
+                                          ToggleSectionEvent(showPipeline: !config.showLeadStatusPipeline),
+                                        ),
+                                  ),
+                                  _buildSectionToggleItem(
+                                    'Conversion Funnel',
+                                    config.showConversionFunnel,
+                                    () => context.read<ReportsBloc>().add(
+                                          ToggleSectionEvent(showFunnel: !config.showConversionFunnel),
+                                        ),
+                                  ),
+                                  _buildSectionToggleItem(
+                                    'Follow-up Analysis',
+                                    config.showFollowupAnalysis,
+                                    () => context.read<ReportsBloc>().add(
+                                          ToggleSectionEvent(showFollowup: !config.showFollowupAnalysis),
+                                        ),
+                                  ),
+                                  _buildSectionToggleItem(
+                                    'Team Ranking',
+                                    config.showTeamRanking,
+                                    () => context.read<ReportsBloc>().add(
+                                          ToggleSectionEvent(showTeamRanking: !config.showTeamRanking),
+                                        ),
+                                  ),
+                                  _buildSectionToggleItem(
+                                    'Business Insights',
+                                    config.showBusinessInsights,
+                                    () => context.read<ReportsBloc>().add(
+                                          ToggleSectionEvent(showInsights: !config.showBusinessInsights),
+                                        ),
+                                  ),
+                                  _buildSectionToggleItem(
+                                    'Growth & Comparison',
+                                    config.showGrowthComparison,
+                                    () => context.read<ReportsBloc>().add(
+                                          ToggleSectionEvent(showGrowth: !config.showGrowthComparison),
+                                        ),
+                                  ),
+                                  _buildSectionToggleItem(
+                                    'Lead Sources',
+                                    config.showLeadSourceAnalysis,
+                                    () => context.read<ReportsBloc>().add(
+                                          ToggleSectionEvent(showLeadSource: !config.showLeadSourceAnalysis),
+                                        ),
+                                  ),
+                                  _buildSectionToggleItem(
+                                    'Trend Analysis',
+                                    config.showTrendAnalysis,
+                                    () => context.read<ReportsBloc>().add(
+                                          ToggleSectionEvent(showTrend: !config.showTrendAnalysis),
+                                        ),
+                                  ),
+                                ],
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.view_quilt_outlined,
+                                        size: 16,
+                                        color: isDark ? Colors.white70 : const Color(0xFF334155),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Sections',
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.arrow_drop_down, size: 16),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ReportExportMenu(
+                                reportData: reportData,
+                                config: config,
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -261,11 +367,26 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                               ),
                             ),
                           ),
+                          const Spacer(),
+                          TextButton.icon(
+                            icon: const Icon(Icons.tune_rounded, size: 14),
+                            label: const Text(
+                              'Configure in Lead Metrics',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: primaryColor,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: () {
+                              context.go('/reports/leads/metrics');
+                            },
+                          ),
                         ],
                       ),
                       const SizedBox(height: 10),
 
-                      // Responsive KPI Cards Grid
+                      // Responsive KPI Cards Grid (Static executive display)
                       LayoutBuilder(
                         builder: (context, constraints) {
                           final columns = CRMBreakpoints.kpiColumns(context);
@@ -281,21 +402,14 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                                 child: KpiCardWidget(
                                   config: kpiConfig,
                                   value: reportData.kpiValues[kpiConfig.type],
-                                  onTogglesChanged: (countOn, pctOn) {
-                                    context.read<ReportsBloc>().add(
-                                      ToggleKpiMetricEvent(
-                                        kpiType: kpiConfig.type,
-                                        showCount: countOn,
-                                        showPercentage: pctOn,
-                                      ),
-                                    );
-                                  },
+                                  showToggles: false,
                                   onExpand: () {
                                     showDialog(
                                       context: context,
                                       builder: (dCtx) => KpiExpandDialog(
                                         kpiType: kpiConfig.type,
                                         reportData: reportData,
+                                        config: config,
                                       ),
                                     );
                                   },
@@ -336,50 +450,78 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                         TeamRankingSection(
                           telecallerRankings: reportData.telecallerRankings,
                           salesRankings: reportData.salesRankings,
+                          onUserSelected: (member) {
+                            UserPerformanceSummaryDialog.show(
+                              context,
+                              userId: member.userId,
+                              userName: member.userName,
+                              role: member.role,
+                              config: config,
+                              allLeads: reportData.allLeads,
+                              allFollowups: reportData.allFollowups,
+                            );
+                          },
                         ),
                         const SizedBox(height: CRMSpacing.l),
                       ],
 
-                      // Section: Growth & Comparison (Default OFF, toggleable)
-                      GrowthComparisonSection(
-                        isVisible: config.showGrowthComparison,
-                        activePeriod: config.comparisonPeriod,
-                        comparisonItems: reportData.growthComparisonItems,
-                        onToggleVisibility: (visible) {
-                          context.read<ReportsBloc>().add(ToggleSectionEvent(showGrowth: visible));
-                        },
-                        onPeriodChanged: (newPeriod) {
-                          context.read<ReportsBloc>().add(UpdateComparisonConfigEvent(period: newPeriod));
-                        },
-                      ),
-                      const SizedBox(height: CRMSpacing.l),
+                      // Section: Growth & Comparison (Only shown if toggled ON in Lead Metrics)
+                      if (config.showGrowthComparison) ...[
+                        GrowthComparisonSection(
+                          isVisible: config.showGrowthComparison,
+                          activePeriod: config.comparisonPeriod,
+                          customStart: config.customComparisonStart,
+                          customEnd: config.customComparisonEnd,
+                          comparisonItems: reportData.growthComparisonItems,
+                          onToggleVisibility: (visible) {
+                            context.read<ReportsBloc>().add(ToggleSectionEvent(showGrowth: visible));
+                          },
+                          onPeriodChanged: (newPeriod) {
+                            context.read<ReportsBloc>().add(UpdateComparisonConfigEvent(period: newPeriod));
+                          },
+                          onCustomDatesChanged: (start, end) {
+                            context.read<ReportsBloc>().add(
+                                  UpdateComparisonConfigEvent(
+                                    customStart: start,
+                                    customEnd: end,
+                                  ),
+                                );
+                          },
+                        ),
+                        const SizedBox(height: CRMSpacing.l),
+                      ],
 
-                      // Section: Lead Source Distribution (Default OFF, toggleable)
-                      LeadSourceAnalysisSection(
-                        isVisible: config.showLeadSourceAnalysis,
-                        leadSources: reportData.leadSources,
-                        onToggleVisibility: (visible) {
-                          context.read<ReportsBloc>().add(ToggleSectionEvent(showLeadSource: visible));
-                        },
-                      ),
-                      const SizedBox(height: CRMSpacing.l),
+                      // Section: Lead Source Distribution (Only shown if toggled ON in Lead Metrics)
+                      if (config.showLeadSourceAnalysis) ...[
+                        LeadSourceAnalysisSection(
+                          isVisible: config.showLeadSourceAnalysis,
+                          leadSources: reportData.leadSources,
+                          onToggleVisibility: (visible) {
+                            context.read<ReportsBloc>().add(ToggleSectionEvent(showLeadSource: visible));
+                          },
+                        ),
+                        const SizedBox(height: CRMSpacing.l),
+                      ],
 
-                      // Section: Trend Analysis (Default OFF, toggleable)
-                      TrendAnalysisSection(
-                        isVisible: config.showTrendAnalysis,
-                        selectedMetric: config.trendMetric,
-                        selectedGranularity: config.trendGranularity,
-                        trendPoints: reportData.trendPoints,
-                        onToggleVisibility: (visible) {
-                          context.read<ReportsBloc>().add(ToggleSectionEvent(showTrend: visible));
-                        },
-                        onMetricChanged: (newMetric) {
-                          context.read<ReportsBloc>().add(UpdateTrendConfigEvent(metric: newMetric));
-                        },
-                        onGranularityChanged: (newGran) {
-                          context.read<ReportsBloc>().add(UpdateTrendConfigEvent(granularity: newGran));
-                        },
-                      ),
+                      // Section: Trend Analysis (Only shown if toggled ON in Lead Metrics)
+                      if (config.showTrendAnalysis) ...[
+                        TrendAnalysisSection(
+                          isVisible: config.showTrendAnalysis,
+                          selectedMetric: config.trendMetric,
+                          selectedGranularity: config.trendGranularity,
+                          trendPoints: reportData.trendPoints,
+                          onToggleVisibility: (visible) {
+                            context.read<ReportsBloc>().add(ToggleSectionEvent(showTrend: visible));
+                          },
+                          onMetricChanged: (newMetric) {
+                            context.read<ReportsBloc>().add(UpdateTrendConfigEvent(metric: newMetric));
+                          },
+                          onGranularityChanged: (newGran) {
+                            context.read<ReportsBloc>().add(UpdateTrendConfigEvent(granularity: newGran));
+                          },
+                        ),
+                        const SizedBox(height: CRMSpacing.l),
+                      ],
                       const SizedBox(height: CRMSpacing.xl),
                     ],
                   ),
@@ -388,6 +530,32 @@ class _OverallBusinessInsightContent extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _buildSectionToggleItem(
+    String title,
+    bool isChecked,
+    VoidCallback onToggle,
+  ) {
+    return PopupMenuItem<String>(
+      onTap: onToggle,
+      child: Row(
+        children: [
+          Icon(
+            isChecked ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+            size: 18,
+            color: isChecked ? CRMColors.primary : Colors.grey,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        ],
       ),
     );
   }

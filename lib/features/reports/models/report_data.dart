@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../requirements/models/requirement_model.dart';
 import '../../users/models/user_model.dart';
 import '../../properties/models/property_model.dart';
+import '../../../core/storage/isar_collections.dart';
 import 'report_kpi_type.dart';
 import 'business_insight.dart';
 
@@ -217,6 +218,8 @@ class ReportOverallData {
   final List<UserModel> availableTelecallers;
   final List<UserModel> availableSalesUsers;
   final List<PropertyModel> availableProperties;
+  final List<RequirementModel> allLeads;
+  final List<FollowupLocal> allFollowups;
 
   const ReportOverallData({
     required this.kpiValues,
@@ -235,7 +238,45 @@ class ReportOverallData {
     required this.availableTelecallers,
     required this.availableSalesUsers,
     required this.availableProperties,
+    this.allLeads = const [],
+    this.allFollowups = const [],
   });
 
   bool get isEmpty => filteredLeads.isEmpty;
+}
+
+class UserPerformanceSummary {
+  final String userId;
+  final String userName;
+  final String role; // 'Telecaller' or 'Sales'
+  final String dateRangeLabel;
+  final int leadsHandled;
+  final int leadsContacted;
+  final int qualifiedLeads;
+  final int siteVisits;
+  final int wonLeads;
+  final double conversionPercentage;
+  final int pendingFollowups;
+  final int callAttempted;
+  final int callPickedUp;
+  final int callOpen;
+  final int lostLeads;
+
+  const UserPerformanceSummary({
+    required this.userId,
+    required this.userName,
+    required this.role,
+    required this.dateRangeLabel,
+    required this.leadsHandled,
+    required this.leadsContacted,
+    required this.qualifiedLeads,
+    required this.siteVisits,
+    required this.wonLeads,
+    required this.conversionPercentage,
+    required this.pendingFollowups,
+    required this.callAttempted,
+    required this.callPickedUp,
+    required this.callOpen,
+    required this.lostLeads,
+  });
 }

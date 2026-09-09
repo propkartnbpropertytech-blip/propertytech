@@ -51,6 +51,7 @@ class IsarService {
       ClientLocalSchema,
       OutboxLocalSchema,
       DashboardLocalSchema,
+      CampaignLeadLocalSchema,
     ];
 
     try {

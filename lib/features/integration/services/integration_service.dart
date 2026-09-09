@@ -10,6 +10,7 @@ import '../../properties/repository/properties_repository.dart';
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/storage/isar_collections.dart';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/utils/budget_formatter.dart';
 
@@ -232,24 +233,58 @@ class IntegrationService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _googleSheetUrl = prefs.getString(_sheetUrlPrefsKey) ?? '';
-      final stored = prefs.getString(_leadsPrefsKey);
-      if (stored != null && stored.isNotEmpty) {
-        final decoded = stored.length > 200000
-            ? await compute(_decodeCampaignLeadsJson, stored)
-            : jsonDecode(stored);
-        if (decoded is List) {
-          final parsed = <IntegrationLeadModel>[];
-          for (var i = 0; i < decoded.length; i++) {
-            final item = decoded[i];
-            if (item is Map) {
-              parsed.add(IntegrationLeadModel.fromJson(Map<String, dynamic>.from(item)));
+
+      // 1. Try loading from Isar database first
+      final dbLeads = await RepositoryCoordinator().campaignLeadLocal.getLeads();
+      if (dbLeads.isNotEmpty) {
+        final parsed = <IntegrationLeadModel>[];
+        for (final item in dbLeads) {
+          Map<String, dynamic> raw = {};
+          try {
+            if (item.rawJsonString.isNotEmpty) {
+              raw = Map<String, dynamic>.from(jsonDecode(item.rawJsonString));
             }
-            if (i > 0 && i % 150 == 0) {
-              await Future<void>.delayed(Duration.zero);
+          } catch (_) {}
+
+          parsed.add(
+            IntegrationLeadModel(
+              id: item.id,
+              source: item.source,
+              receivedAt: item.receivedAt,
+              rawJson: raw,
+              externalLeadId: item.externalLeadId,
+              isDuplicate: item.isDuplicate,
+              duplicateReason: item.duplicateReason,
+              qualityStatus: item.qualityStatus,
+              importStatus: item.importStatus,
+              importedClientId: item.importedClientId,
+              metaFeedbackEventId: item.metaFeedbackEventId,
+              metaFeedbackSentAt: item.metaFeedbackSentAt,
+            ),
+          );
+        }
+        _leads = parsed;
+        _invalidateHeaderCache();
+      } else {
+        // 2. Backward compatibility: Check SharedPreferences and migrate to DB
+        final stored = prefs.getString(_leadsPrefsKey);
+        if (stored != null && stored.isNotEmpty) {
+          final decoded = stored.length > 200000
+              ? await compute(_decodeCampaignLeadsJson, stored)
+              : jsonDecode(stored);
+          if (decoded is List) {
+            final parsed = <IntegrationLeadModel>[];
+            for (var i = 0; i < decoded.length; i++) {
+              final item = decoded[i];
+              if (item is Map) {
+                parsed.add(IntegrationLeadModel.fromJson(Map<String, dynamic>.from(item)));
+              }
             }
+            _leads = parsed;
+            _invalidateHeaderCache();
+            // Persist migrated records to DB
+            unawaited(_persistLeads());
           }
-          _leads = parsed;
-          _invalidateHeaderCache();
         }
       }
     } catch (e) {
@@ -1094,6 +1129,29 @@ function onFormSubmit(e) {
       while (_persistDirty) {
         _persistDirty = false;
         try {
+          // 1. Save to local Isar database
+          final dbRepo = RepositoryCoordinator().campaignLeadLocal;
+          final locals = _leads.map((l) {
+            final local = CampaignLeadLocal();
+            local.id = l.id;
+            local.source = l.source;
+            local.receivedAt = l.receivedAt;
+            local.rawJsonString = jsonEncode(l.rawJson);
+            local.externalLeadId = l.externalLeadId;
+            local.isDuplicate = l.isDuplicate;
+            local.duplicateReason = l.duplicateReason;
+            local.qualityStatus = l.qualityStatus;
+            local.importStatus = l.importStatus;
+            local.importedClientId = l.importedClientId;
+            local.metaFeedbackEventId = l.metaFeedbackEventId;
+            local.metaFeedbackSentAt = l.metaFeedbackSentAt;
+            return local;
+          }).toList();
+
+          await dbRepo.clearAll();
+          await dbRepo.saveLeads(locals);
+
+          // 2. Keep local prefs backup in sync
           final payload = <Map<String, dynamic>>[];
           for (var i = 0; i < _leads.length; i++) {
             payload.add(_leads[i].toJson());
@@ -1107,7 +1165,7 @@ function onFormSubmit(e) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_leadsPrefsKey, encoded);
         } catch (e) {
-          debugPrint('Failed to persist campaign leads: $e');
+          debugPrint('Failed to persist campaign leads to database: $e');
         }
       }
     } finally {

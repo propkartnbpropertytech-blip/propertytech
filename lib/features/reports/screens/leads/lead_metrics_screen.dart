@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../../core/theme/theme_manager.dart';
+import '../../bloc/reports_bloc.dart';
+import '../../bloc/reports_event.dart';
 import '../../models/report_configuration.dart';
 import '../../repository/reports_repository.dart';
 
@@ -20,6 +23,9 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   late List<ReportKpiConfig> _kpiConfigs;
+  bool _showGrowthComparison = false;
+  bool _showLeadSourceAnalysis = false;
+  bool _showTrendAnalysis = false;
 
   @override
   void initState() {
@@ -36,6 +42,9 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
     if (mounted) {
       setState(() {
         _kpiConfigs = items;
+        _showGrowthComparison = config.showGrowthComparison;
+        _showLeadSourceAnalysis = config.showLeadSourceAnalysis;
+        _showTrendAnalysis = config.showTrendAnalysis;
         _isLoading = false;
       });
     }
@@ -44,8 +53,26 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
   Future<void> _saveConfig() async {
     setState(() => _isSaving = true);
 
-    // Persist reordered and updated KPI configs
+    // Persist reordered and updated KPI configs and section visibilities
     await _reportsRepository.saveKpiConfiguration(_kpiConfigs);
+    await _reportsRepository.saveSectionVisibilities(
+      showGrowthComparison: _showGrowthComparison,
+      showLeadSourceAnalysis: _showLeadSourceAnalysis,
+      showTrendAnalysis: _showTrendAnalysis,
+    );
+
+    // Immediately synchronize active BLoC instance
+    if (mounted) {
+      try {
+        final bloc = context.read<ReportsBloc>();
+        bloc.add(UpdateKpiConfigEvent(_kpiConfigs));
+        bloc.add(ToggleSectionEvent(
+          showGrowth: _showGrowthComparison,
+          showLeadSource: _showLeadSourceAnalysis,
+          showTrend: _showTrendAnalysis,
+        ));
+      } catch (_) {}
+    }
 
     if (mounted) {
       setState(() => _isSaving = false);
@@ -55,7 +82,7 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
             children: [
               Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
               SizedBox(width: 10),
-              Text('Lead metrics & KPI settings saved successfully!'),
+              Text('Lead metrics & dashboard settings saved successfully!'),
             ],
           ),
           backgroundColor: Color(0xFF16A34A),
@@ -73,7 +100,20 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
 
     setState(() {
       _kpiConfigs = defaultKpis;
+      _showGrowthComparison = defaultConfig.showGrowthComparison;
+      _showLeadSourceAnalysis = defaultConfig.showLeadSourceAnalysis;
+      _showTrendAnalysis = defaultConfig.showTrendAnalysis;
     });
+
+    try {
+      final bloc = context.read<ReportsBloc>();
+      bloc.add(UpdateKpiConfigEvent(defaultKpis));
+      bloc.add(ToggleSectionEvent(
+        showGrowth: defaultConfig.showGrowthComparison,
+        showLeadSource: defaultConfig.showLeadSourceAnalysis,
+        showTrend: defaultConfig.showTrendAnalysis,
+      ));
+    } catch (_) {}
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -472,6 +512,102 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
               ),
               const SizedBox(height: CRMSpacing.l),
 
+              // Section: Analytical Dashboard Sections (Growth, Sources, Trends)
+              Container(
+                decoration: BoxDecoration(
+                  color: surfaceColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: borderColor),
+                ),
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.dashboard_customize_rounded, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              'Analytical Dashboard Sections',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: primaryColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${[_showGrowthComparison, _showLeadSourceAnalysis, _showTrendAnalysis].where((v) => v).length} of 3 Active',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: primaryColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Enable or disable optional analytical modules on the Overall Business Insight page. When toggled off, sections are completely hidden from the executive dashboard.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(height: 1),
+                    const SizedBox(height: 12),
+
+                    // 1. Growth & Comparison
+                    _buildSectionToggleCard(
+                      icon: Icons.compare_arrows_rounded,
+                      title: 'Growth & Comparison',
+                      subtitle: 'Period-over-period and custom comparison analytics with delta & growth percentages.',
+                      isEnabled: _showGrowthComparison,
+                      onChanged: (val) => setState(() => _showGrowthComparison = val),
+                      isDark: isDark,
+                      primaryColor: primaryColor,
+                    ),
+                    const SizedBox(height: 10),
+
+                    // 2. Lead Source Distribution
+                    _buildSectionToggleCard(
+                      icon: Icons.pie_chart_outline_rounded,
+                      title: 'Lead Source Distribution',
+                      subtitle: 'Channel-wise breakdown of incoming leads, conversion shares, and closed deals per source.',
+                      isEnabled: _showLeadSourceAnalysis,
+                      onChanged: (val) => setState(() => _showLeadSourceAnalysis = val),
+                      isDark: isDark,
+                      primaryColor: primaryColor,
+                    ),
+                    const SizedBox(height: 10),
+
+                    // 3. Trend Analysis
+                    _buildSectionToggleCard(
+                      icon: Icons.show_chart_rounded,
+                      title: 'Trend Analysis',
+                      subtitle: 'Interactive time-series progression curves across daily, weekly, and monthly intervals.',
+                      isEnabled: _showTrendAnalysis,
+                      onChanged: (val) => setState(() => _showTrendAnalysis = val),
+                      isDark: isDark,
+                      primaryColor: primaryColor,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: CRMSpacing.l),
+
               // Bottom Save Bar
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
@@ -615,6 +751,85 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                 : (isDark ? Colors.white38 : const Color(0xFF94A3B8)),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSectionToggleCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool isEnabled,
+    required ValueChanged<bool> onChanged,
+    required bool isDark,
+    required Color primaryColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: isDark
+            ? (isEnabled ? const Color(0xFF0F172A) : const Color(0xFF0F172A).withValues(alpha: 0.5))
+            : (isEnabled ? const Color(0xFFF8FAFC) : Colors.white),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isEnabled
+              ? primaryColor.withValues(alpha: 0.4)
+              : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: isEnabled ? primaryColor : (isDark ? Colors.white60 : const Color(0xFF64748B)),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isEnabled
+                        ? const Color(0xFF16A34A).withValues(alpha: 0.12)
+                        : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    isEnabled ? 'ON' : 'OFF',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: isEnabled
+                          ? const Color(0xFF16A34A)
+                          : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Transform.scale(
+            scale: 0.85,
+            child: Switch(
+              value: isEnabled,
+              activeThumbColor: primaryColor,
+              onChanged: onChanged,
+            ),
+          ),
+        ],
       ),
     );
   }

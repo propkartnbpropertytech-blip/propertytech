@@ -360,5 +360,334 @@ void main() {
       expect(report.filteredLeads.length, 4);
       expect(report.kpiValues[ReportKpiType.totalLeads]!.count, 4);
     });
+
+    group('Growth & Comparison Mode Tests', () {
+      test('Growth & Comparison returns empty when master toggle is OFF', () {
+        final offConfig = defaultConfig.copyWith(showGrowthComparison: false);
+        final report = ReportDataEngine.computeReport(
+          allLeads: sampleLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: offConfig,
+        );
+
+        expect(report.growthComparisonItems, isEmpty);
+      });
+
+      test('Growth & Comparison Previous Day mode computes comparison against previous day', () {
+        final dayConfig = defaultConfig.copyWith(
+          showGrowthComparison: true,
+          comparisonPeriod: GrowthComparisonPeriod.previousDay,
+          dateRange: ReportDateRange(
+            periodType: ReportPeriodType.today,
+            startDate: DateTime(now.year, now.month, now.day, 0, 0, 0),
+            endDate: DateTime(now.year, now.month, now.day, 23, 59, 59),
+          ),
+        );
+
+        final report = ReportDataEngine.computeReport(
+          allLeads: sampleLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: dayConfig,
+        );
+
+        expect(report.growthComparisonItems, isNotEmpty);
+        final totalLeadsItem = report.growthComparisonItems.firstWhere((i) => i.kpiType == ReportKpiType.totalLeads);
+        expect(totalLeadsItem.metricName, 'Total Leads');
+        expect(totalLeadsItem.currentCount, isA<num>());
+        expect(totalLeadsItem.previousCount, isA<num>());
+        expect(totalLeadsItem.difference, totalLeadsItem.currentCount - totalLeadsItem.previousCount);
+      });
+
+      test('Growth & Comparison Previous Week mode computes comparison against previous week', () {
+        final weekConfig = defaultConfig.copyWith(
+          showGrowthComparison: true,
+          comparisonPeriod: GrowthComparisonPeriod.previousWeek,
+          dateRange: ReportDateRange(
+            periodType: ReportPeriodType.weekly,
+            startDate: now.subtract(const Duration(days: 7)),
+            endDate: now,
+          ),
+        );
+
+        final report = ReportDataEngine.computeReport(
+          allLeads: sampleLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: weekConfig,
+        );
+
+        expect(report.growthComparisonItems, isNotEmpty);
+        expect(report.growthComparisonItems.any((i) => i.kpiType == ReportKpiType.totalLeads), isTrue);
+      });
+
+      test('Growth & Comparison Previous Month mode computes calendar month comparison', () {
+        final monthConfig = defaultConfig.copyWith(
+          showGrowthComparison: true,
+          comparisonPeriod: GrowthComparisonPeriod.previousMonth,
+          dateRange: ReportDateRange(
+            periodType: ReportPeriodType.monthly,
+            startDate: DateTime(now.year, now.month, 1),
+            endDate: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
+          ),
+        );
+
+        final report = ReportDataEngine.computeReport(
+          allLeads: sampleLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: monthConfig,
+        );
+
+        expect(report.growthComparisonItems, isNotEmpty);
+      });
+
+      test('Growth & Comparison Previous Year mode computes calendar year comparison', () {
+        final yearConfig = defaultConfig.copyWith(
+          showGrowthComparison: true,
+          comparisonPeriod: GrowthComparisonPeriod.previousYear,
+          dateRange: ReportDateRange(
+            periodType: ReportPeriodType.yearly,
+            startDate: DateTime(now.year, 1, 1),
+            endDate: DateTime(now.year, 12, 31, 23, 59, 59),
+          ),
+        );
+
+        final report = ReportDataEngine.computeReport(
+          allLeads: sampleLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: yearConfig,
+        );
+
+        expect(report.growthComparisonItems, isNotEmpty);
+      });
+
+      test('Growth & Comparison Custom Period mode respects independent custom dates', () {
+        final customConfig = defaultConfig.copyWith(
+          showGrowthComparison: true,
+          comparisonPeriod: GrowthComparisonPeriod.customPeriod,
+          customComparisonStart: now.subtract(const Duration(days: 30)),
+          customComparisonEnd: now.subtract(const Duration(days: 20)),
+          dateRange: ReportDateRange(
+            periodType: ReportPeriodType.customRange,
+            startDate: now.subtract(const Duration(days: 10)),
+            endDate: now,
+          ),
+        );
+
+        final report = ReportDataEngine.computeReport(
+          allLeads: sampleLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: customConfig,
+        );
+
+        expect(report.growthComparisonItems, isNotEmpty);
+      });
+
+      test('Growth calculation handles zero previous value with positive current as 100%', () {
+        // Only 1 lead today, 0 leads in custom comparison range
+        final customConfig = defaultConfig.copyWith(
+          showGrowthComparison: true,
+          comparisonPeriod: GrowthComparisonPeriod.customPeriod,
+          customComparisonStart: DateTime(2020, 1, 1),
+          customComparisonEnd: DateTime(2020, 1, 2),
+        );
+
+        final report = ReportDataEngine.computeReport(
+          allLeads: sampleLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: customConfig,
+        );
+
+        final totalLeadsItem = report.growthComparisonItems.firstWhere((i) => i.kpiType == ReportKpiType.totalLeads);
+        expect(totalLeadsItem.previousCount, 0);
+        expect(totalLeadsItem.currentCount, greaterThan(0));
+        expect(totalLeadsItem.growthPercentage, 100.0);
+        expect(totalLeadsItem.isPositive, isTrue);
+      });
+    });
+
+    group('User Drill-Down Performance Summary Tests', () {
+      test('computeUserPerformanceSummary calculates 13 metrics for Telecaller', () {
+        final summary = ReportDataEngine.computeUserPerformanceSummary(
+          userId: 'tele_1',
+          userName: 'Alice Telecaller',
+          role: 'Telecaller',
+          config: defaultConfig,
+          allLeads: sampleLeads,
+          allFollowups: sampleFollowups,
+        );
+
+        expect(summary.userId, 'tele_1');
+        expect(summary.userName, 'Alice Telecaller');
+        expect(summary.role, 'Telecaller');
+        expect(summary.leadsHandled, 4);
+        expect(summary.leadsContacted, 4);
+        expect(summary.qualifiedLeads, 3);
+        expect(summary.siteVisits, 3);
+        expect(summary.wonLeads, 1);
+        expect(summary.conversionPercentage, 25.0); // 1 / 4 * 100
+        expect(summary.lostLeads, 0);
+        expect(summary.callAttempted, 0);
+        expect(summary.dateRangeLabel, isNotEmpty);
+      });
+
+      test('computeUserPerformanceSummary calculates 13 metrics for Sales User', () {
+        final summary = ReportDataEngine.computeUserPerformanceSummary(
+          userId: 'sales_1',
+          userName: 'Bob Sales',
+          role: 'Sales',
+          config: defaultConfig,
+          allLeads: sampleLeads,
+          allFollowups: sampleFollowups,
+        );
+
+        expect(summary.userId, 'sales_1');
+        expect(summary.userName, 'Bob Sales');
+        expect(summary.role, 'Sales');
+        expect(summary.leadsHandled, 4);
+        expect(summary.wonLeads, 1);
+        expect(summary.conversionPercentage, 25.0);
+        expect(summary.callAttempted, 3);
+      });
+    });
+
+    group('Lead Status Change Options & Filter Matching Tests', () {
+      test('Dynamic pipeline discovers Call Attempted and Rejected variants with proper ordering', () {
+        final callAttemptedLeads = [
+          RequirementModel(
+            id: 'call_1',
+            clientName: 'Call Lead 1',
+            clientMobile: '9111111111',
+            categoryId: 'cat_res',
+            categoryName: 'Residential',
+            propertyTypeId: 'type_apt',
+            propertyTypeName: 'Apartment',
+            minBudget: 1000000.0,
+            maxBudget: 2000000.0,
+            areaIds: const ['area_1'],
+            areaNames: const ['Area 1'],
+            status: 'Call Attempted (Picked Up)',
+            assignedTo: 'sales_1',
+            createdAt: now.subtract(const Duration(days: 1)),
+          ),
+          RequirementModel(
+            id: 'call_2',
+            clientName: 'Call Lead 2',
+            clientMobile: '9222222222',
+            categoryId: 'cat_res',
+            categoryName: 'Residential',
+            propertyTypeId: 'type_apt',
+            propertyTypeName: 'Apartment',
+            minBudget: 1000000.0,
+            maxBudget: 2000000.0,
+            areaIds: const ['area_1'],
+            areaNames: const ['Area 1'],
+            status: 'Call Attempted (Open)',
+            assignedTo: 'sales_1',
+            createdAt: now.subtract(const Duration(days: 1)),
+          ),
+          RequirementModel(
+            id: 'rej_1',
+            clientName: 'Rejected Lead',
+            clientMobile: '9333333333',
+            categoryId: 'cat_res',
+            categoryName: 'Residential',
+            propertyTypeId: 'type_apt',
+            propertyTypeName: 'Apartment',
+            minBudget: 1000000.0,
+            maxBudget: 2000000.0,
+            areaIds: const ['area_1'],
+            areaNames: const ['Area 1'],
+            status: 'Rejected (Budget Mismatch)',
+            assignedTo: 'sales_1',
+            createdAt: now.subtract(const Duration(days: 1)),
+          ),
+        ];
+
+        final report = ReportDataEngine.computeReport(
+          allLeads: callAttemptedLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: defaultConfig,
+        );
+
+        // Picked Up lead counts as contacted
+        final contactedKpi = report.kpiValues[ReportKpiType.leadsContacted]!;
+        expect(contactedKpi.count, 1);
+
+        // Discovered pipeline stages contain new statuses
+        final statusNames = report.pipelineStages.map((s) => s.status).toList();
+        expect(statusNames.contains('Call Attempted (Picked Up)'), isTrue);
+        expect(statusNames.contains('Call Attempted (Open)'), isTrue);
+        expect(statusNames.contains('Rejected (Budget Mismatch)'), isTrue);
+
+        // Formatted display names
+        final pickedUpStage = report.pipelineStages.firstWhere((s) => s.status == 'Call Attempted (Picked Up)');
+        expect(pickedUpStage.displayName, 'Call Picked Up');
+
+        // Status filter matching group and specific sub-option
+        final groupFilterConfig = defaultConfig.copyWith(
+          filters: defaultConfig.filters.copyWith(leadStatus: 'Call Attempted'),
+        );
+        final groupFilteredReport = ReportDataEngine.computeReport(
+          allLeads: callAttemptedLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: groupFilterConfig,
+        );
+        // Group filter 'Call Attempted' matches both Picked Up and Open
+        expect(groupFilteredReport.filteredLeads.length, 2);
+
+        final specificFilterConfig = defaultConfig.copyWith(
+          filters: defaultConfig.filters.copyWith(leadStatus: 'Call Attempted (Picked Up)'),
+        );
+        final specificFilteredReport = ReportDataEngine.computeReport(
+          allLeads: callAttemptedLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: specificFilterConfig,
+        );
+        expect(specificFilteredReport.filteredLeads.length, 1);
+
+        // Group filter 'Rejected' matches 'Rejected (Budget Mismatch)'
+        final rejFilterConfig = defaultConfig.copyWith(
+          filters: defaultConfig.filters.copyWith(leadStatus: 'Rejected'),
+        );
+        final rejFilteredReport = ReportDataEngine.computeReport(
+          allLeads: callAttemptedLeads,
+          allUsers: sampleUsers,
+          allProperties: sampleProperties,
+          allFollowups: sampleFollowups,
+          systemStatuses: systemStatuses,
+          config: rejFilterConfig,
+        );
+        expect(rejFilteredReport.filteredLeads.length, 1);
+      });
+    });
   });
 }

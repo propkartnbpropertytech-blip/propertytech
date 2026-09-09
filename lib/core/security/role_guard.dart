@@ -26,6 +26,12 @@ class RoleGuard {
   /// Audit logs — Super Admin only (defense-in-depth).
   static bool canViewAuditLogs(String? role) => isSuperAdmin(role);
 
+  /// Reports module — Admin and Super Admin only.
+  static bool canViewReports(String? role) {
+    final r = (role ?? '').toLowerCase().trim();
+    return r == 'admin' || r == 'super admin';
+  }
+
   /// Settings mutations that affect org lookups (cities/areas).
   static bool canManageLookups(String? role) {
     final r = (role ?? '').toLowerCase();
@@ -89,6 +95,9 @@ class RoleGuard {
       return '/dashboard';
     }
     if (pathOnly.startsWith('/settings/audit-logs') && !canViewAuditLogs(role)) {
+      return '/dashboard';
+    }
+    if (pathOnly.startsWith('/reports') && !canViewReports(role)) {
       return '/dashboard';
     }
     return path;
