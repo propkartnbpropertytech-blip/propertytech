@@ -39,6 +39,17 @@ class RequirementModel {
   final String? creatorEmail;
   final String? leadSource;
   final String? referralName;
+  final String? metaLeadId;
+  final String? metaPageId;
+  final String? metaFormId;
+  final String? metaCampaignId;
+  final String? metaCampaignName;
+  final String? metaAdsetId;
+  final String? metaAdsetName;
+  final String? metaAdId;
+  final String? metaAdName;
+  final Map<String, dynamic>? metaCustomFields;
+  final String? leadQuality;
 
   RequirementModel({
     required this.id,
@@ -79,9 +90,30 @@ class RequirementModel {
     this.creatorEmail,
     this.leadSource,
     this.referralName,
+    this.metaLeadId,
+    this.metaPageId,
+    this.metaFormId,
+    this.metaCampaignId,
+    this.metaCampaignName,
+    this.metaAdsetId,
+    this.metaAdsetName,
+    this.metaAdId,
+    this.metaAdName,
+    this.metaCustomFields,
+    this.leadQuality,
   });
 
+  bool get isMetaLead => metaLeadId != null && metaLeadId!.isNotEmpty;
+  String? get metaCampaignDisplayName => metaCampaignName ?? metaCampaignId;
+  String? get metaAdDisplayName => metaAdName ?? metaAdId;
+
   String? get leadSourceDisplay {
+    if (isMetaLead) {
+      if (metaCampaignName != null && metaCampaignName!.isNotEmpty) {
+        return 'Meta Ads ($metaCampaignName)';
+      }
+      return 'Meta Ads';
+    }
     final src = (leadSource != null && leadSource!.trim().isNotEmpty)
         ? leadSource!.trim()
         : null;
@@ -274,6 +306,21 @@ class RequirementModel {
       creatorEmail: (json['creatorEmail'] ?? json['creator_email']) as String?,
       leadSource: parsedLeadSource,
       referralName: parsedReferralName,
+      metaLeadId: (json['meta_lead_id'] ?? json['metaLeadId'])?.toString(),
+      metaPageId: (json['meta_page_id'] ?? json['metaPageId'])?.toString(),
+      metaFormId: (json['meta_form_id'] ?? json['metaFormId'])?.toString(),
+      metaCampaignId: (json['meta_campaign_id'] ?? json['metaCampaignId'])?.toString(),
+      metaCampaignName: (json['meta_campaign_name'] ?? json['metaCampaignName'])?.toString(),
+      metaAdsetId: (json['meta_adset_id'] ?? json['metaAdsetId'])?.toString(),
+      metaAdsetName: (json['meta_adset_name'] ?? json['metaAdsetName'])?.toString(),
+      metaAdId: (json['meta_ad_id'] ?? json['metaAdId'])?.toString(),
+      metaAdName: (json['meta_ad_name'] ?? json['metaAdName'])?.toString(),
+      metaCustomFields: json['meta_custom_fields'] is Map
+          ? Map<String, dynamic>.from(json['meta_custom_fields'] as Map)
+          : json['metaCustomFields'] is Map
+              ? Map<String, dynamic>.from(json['metaCustomFields'] as Map)
+              : null,
+      leadQuality: (json['lead_quality'] ?? json['leadQuality'])?.toString(),
     );
   }
 
@@ -314,6 +361,17 @@ class RequirementModel {
       'creatorEmail': creatorEmail,
       'leadSource': leadSource,
       'referralName': referralName,
+      'meta_lead_id': metaLeadId,
+      'meta_page_id': metaPageId,
+      'meta_form_id': metaFormId,
+      'meta_campaign_id': metaCampaignId,
+      'meta_campaign_name': metaCampaignName,
+      'meta_adset_id': metaAdsetId,
+      'meta_adset_name': metaAdsetName,
+      'meta_ad_id': metaAdId,
+      'meta_ad_name': metaAdName,
+      'meta_custom_fields': metaCustomFields,
+      'lead_quality': leadQuality,
     };
   }
 
@@ -352,6 +410,17 @@ class RequirementModel {
       'lead_source': leadSource,
       'referral_name': referralName,
       'source': formattedSource,
+      if (metaLeadId != null) 'meta_lead_id': metaLeadId,
+      if (metaPageId != null) 'meta_page_id': metaPageId,
+      if (metaFormId != null) 'meta_form_id': metaFormId,
+      if (metaCampaignId != null) 'meta_campaign_id': metaCampaignId,
+      if (metaCampaignName != null) 'meta_campaign_name': metaCampaignName,
+      if (metaAdsetId != null) 'meta_adset_id': metaAdsetId,
+      if (metaAdsetName != null) 'meta_adset_name': metaAdsetName,
+      if (metaAdId != null) 'meta_ad_id': metaAdId,
+      if (metaAdName != null) 'meta_ad_name': metaAdName,
+      if (metaCustomFields != null) 'meta_custom_fields': metaCustomFields,
+      if (leadQuality != null) 'lead_quality': leadQuality,
     };
   }
 
@@ -479,6 +548,17 @@ class RequirementModel {
     String? creatorEmail,
     String? leadSource,
     String? referralName,
+    String? metaLeadId,
+    String? metaPageId,
+    String? metaFormId,
+    String? metaCampaignId,
+    String? metaCampaignName,
+    String? metaAdsetId,
+    String? metaAdsetName,
+    String? metaAdId,
+    String? metaAdName,
+    Map<String, dynamic>? metaCustomFields,
+    String? leadQuality,
   }) {
     return RequirementModel(
       id: id ?? this.id,
@@ -519,6 +599,17 @@ class RequirementModel {
       creatorEmail: creatorEmail ?? this.creatorEmail,
       leadSource: leadSource ?? this.leadSource,
       referralName: referralName ?? this.referralName,
+      metaLeadId: metaLeadId ?? this.metaLeadId,
+      metaPageId: metaPageId ?? this.metaPageId,
+      metaFormId: metaFormId ?? this.metaFormId,
+      metaCampaignId: metaCampaignId ?? this.metaCampaignId,
+      metaCampaignName: metaCampaignName ?? this.metaCampaignName,
+      metaAdsetId: metaAdsetId ?? this.metaAdsetId,
+      metaAdsetName: metaAdsetName ?? this.metaAdsetName,
+      metaAdId: metaAdId ?? this.metaAdId,
+      metaAdName: metaAdName ?? this.metaAdName,
+      metaCustomFields: metaCustomFields ?? this.metaCustomFields,
+      leadQuality: leadQuality ?? this.leadQuality,
     );
   }
 }

@@ -9,6 +9,7 @@ import '../../properties/models/property_model.dart';
 import '../../properties/repository/properties_repository.dart';
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
+import '../../../core/api/api_client.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/storage/isar_collections.dart';
 import '../../../core/storage/repository_coordinator.dart';
@@ -22,6 +23,7 @@ class IntegrationService extends ChangeNotifier {
   static const _leadsPrefsKey = 'campaign_ingestion_leads_json';
   static const _sheetUrlPrefsKey = 'campaign_google_sheet_url';
 
+  final ApiClient _apiClient = ApiClient();
   final RequirementsRepository _requirementsRepository = RequirementsRepository();
   final PropertiesRepository _propertiesRepository = PropertiesRepository();
   final Dio _externalHttp = Dio(
@@ -55,6 +57,10 @@ class IntegrationService extends ChangeNotifier {
   // Ingested Leads (clean start)
   List<IntegrationLeadModel> _leads = [];
   List<IntegrationLeadModel> get leads => List.unmodifiable(_leads);
+  List<IntegrationLeadModel> get requirementLeads =>
+      _leads.where((l) => l.leadType == 'Requirement').toList();
+  List<IntegrationLeadModel> get propertyListingLeads =>
+      _leads.where((l) => l.leadType == 'Property Listing').toList();
 
   // Dynamic user-defined headers created in advance or dynamically
   final Set<String> _customHeaders = {};
@@ -64,6 +70,17 @@ class IntegrationService extends ChangeNotifier {
   final Set<String> _hiddenHeaders = {};
   Set<String> get hiddenHeaders => Set.unmodifiable(_hiddenHeaders);
   Set<String> get visibleHeaders => Set.from(getActiveVisibleHeaders());
+
+  // Column header ordering (preserves exact Google Sheet order or custom drag-and-drop order)
+  List<String> _headerOrder = [];
+  List<String> get headerOrder => List.unmodifiable(_headerOrder);
+  static const String _headerOrderPrefsKey = 'campaign_header_order_v1';
+
+  // Live Auto-Sync Status
+  DateTime? _lastSyncAt;
+  int _lastSyncCount = 0;
+  DateTime? get lastSyncAt => _lastSyncAt;
+  int get lastSyncCount => _lastSyncCount;
 
   // Column header to CRM field mappings
   final Map<String, String> _columnToCrmFieldMap = {
@@ -125,6 +142,10 @@ class IntegrationService extends ChangeNotifier {
 
     _customHeaders.add(trimmed);
     _hiddenHeaders.remove(trimmed);
+    if (!_headerOrder.contains(trimmed)) {
+      _headerOrder.add(trimmed);
+      unawaited(_persistHeaderOrder());
+    }
     _invalidateHeaderCache();
 
     if (crmField != null && crmField.isNotEmpty) {
@@ -141,6 +162,8 @@ class IntegrationService extends ChangeNotifier {
     _customHeaders.remove(headerName);
     _hiddenHeaders.remove(headerName);
     _columnToCrmFieldMap.remove(headerName);
+    _headerOrder.remove(headerName);
+    unawaited(_persistHeaderOrder());
 
     final updated = <IntegrationLeadModel>[];
     for (final lead in _leads) {
@@ -189,41 +212,162 @@ class IntegrationService extends ChangeNotifier {
     _cachedVisibleHeaders = null;
   }
 
-  /// Get all detected headers across leads + custom headers
-  List<String> getDetectedHeaders() {
-    if (_cachedDetectedHeaders != null) return _cachedDetectedHeaders!;
+  /// Get all detected headers in exact Google Sheet order or custom drag-and-drop order
+  List<String> getDetectedHeaders({List<IntegrationLeadModel>? leadsSubset}) {
+    if (leadsSubset == null && _cachedDetectedHeaders != null) return _cachedDetectedHeaders!;
 
-    final Set<String> headers = Set.from(_customHeaders);
-    for (final lead in _leads) {
-      headers.addAll(lead.rawJson.keys);
+    final targetLeads = leadsSubset ?? _leads;
+
+    // 1. Gather all actual existing headers in leads + custom headers
+    final existingHeaders = <String>{..._customHeaders};
+    for (final lead in targetLeads) {
+      for (final k in lead.rawJson.keys) {
+        final clean = k.trim();
+        if (clean.isNotEmpty && !clean.startsWith('_engine_') && clean.toLowerCase() != 'source') {
+          existingHeaders.add(clean);
+        }
+      }
     }
 
-    if (headers.isEmpty) {
+    if (existingHeaders.isEmpty && _headerOrder.isEmpty) {
       final defaultHeaders = ['Full Name', 'Phone Number', 'Email ID', 'City', 'Budget', 'Configuration', 'Campaign Name'];
-      _cachedDetectedHeaders = defaultHeaders;
+      if (leadsSubset == null) _cachedDetectedHeaders = defaultHeaders;
       return defaultHeaders;
     }
 
-    final priority = ['Full Name', 'Phone Number', 'Email ID', 'City', 'Budget', 'Configuration', 'Campaign Name'];
-    final result = <String>[];
-    
-    for (final p in priority) {
-      if (headers.contains(p)) {
-        result.add(p);
-        headers.remove(p);
+    // 2. Build list strictly following _headerOrder (preserves sheet order or user dragged order)
+    if (_headerOrder.isNotEmpty) {
+      final result = <String>[];
+      for (final h in _headerOrder) {
+        if (existingHeaders.contains(h) || _customHeaders.contains(h)) {
+          result.add(h);
+          existingHeaders.remove(h);
+        }
       }
+
+      // Only append genuine custom headers that were added after _headerOrder was initialized
+      for (final h in _customHeaders) {
+        if (!result.contains(h)) {
+          result.add(h);
+        }
+      }
+
+      if (leadsSubset == null) _cachedDetectedHeaders = result;
+      return result;
     }
-    result.addAll(headers);
-    _cachedDetectedHeaders = result;
+
+    final result = existingHeaders.toList();
+    if (leadsSubset == null) {
+      _headerOrder = List<String>.from(result);
+      _cachedDetectedHeaders = result;
+    }
     return result;
   }
 
+  /// Update detected headers sequence from newly arrived sheet/CSV rows
+  void _updateDetectedHeadersFromRows(List<Map<String, dynamic>> rows) {
+    if (rows.isEmpty) return;
+    final incomingKeys = <String>[];
+    for (final row in rows) {
+      for (final k in row.keys) {
+        final clean = k.trim();
+        if (clean.isNotEmpty && clean.toLowerCase() != 'source' && !clean.startsWith('_engine_')) {
+          if (!incomingKeys.contains(clean)) {
+            incomingKeys.add(clean);
+          }
+        }
+      }
+    }
+
+    if (_headerOrder.isEmpty) {
+      _headerOrder = List<String>.from(incomingKeys);
+      unawaited(_persistHeaderOrder());
+    } else {
+      bool added = false;
+      for (final k in incomingKeys) {
+        if (!_headerOrder.contains(k)) {
+          _headerOrder.add(k);
+          added = true;
+        }
+      }
+      if (added) {
+        unawaited(_persistHeaderOrder());
+      }
+    }
+    _invalidateHeaderCache();
+  }
+
+  /// Reorder headers via drag and place
+  Future<void> reorderHeaders(int oldIndex, int newIndex) async {
+    final current = List<String>.from(getDetectedHeaders());
+    if (oldIndex < 0 || oldIndex >= current.length) return;
+    if (newIndex < 0 || newIndex > current.length) return;
+
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final item = current.removeAt(oldIndex);
+    current.insert(newIndex, item);
+
+    _headerOrder = current;
+    _invalidateHeaderCache();
+    await _persistHeaderOrder();
+    notifyListeners();
+  }
+
+  /// Move a single header left (-1) or right (+1)
+  Future<void> moveHeader(String header, int direction) async {
+    final current = List<String>.from(getDetectedHeaders());
+    final idx = current.indexOf(header);
+    if (idx == -1) return;
+    final newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= current.length) return;
+
+    final item = current.removeAt(idx);
+    current.insert(newIdx, item);
+
+    _headerOrder = current;
+    _invalidateHeaderCache();
+    await _persistHeaderOrder();
+    notifyListeners();
+  }
+
+  /// Reset header order back to original sheet insertion order
+  Future<void> resetHeaderOrderToSheet() async {
+    _headerOrder.clear();
+    final extracted = <String>[];
+    for (final lead in _leads) {
+      for (final k in lead.rawJson.keys) {
+        final clean = k.trim();
+        if (clean.isNotEmpty &&
+            !clean.startsWith('_engine_') &&
+            clean.toLowerCase() != 'source' &&
+            clean != 'Client Name' &&
+            clean != 'Phone' &&
+            clean != 'Property Name') {
+          if (!extracted.contains(clean)) extracted.add(clean);
+        }
+      }
+    }
+    _headerOrder = extracted;
+    _invalidateHeaderCache();
+    await _persistHeaderOrder();
+    notifyListeners();
+  }
+
+  Future<void> _persistHeaderOrder() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_headerOrderPrefsKey, jsonEncode(_headerOrder));
+    } catch (_) {}
+  }
+
   /// Get currently visible headers for the table
-  List<String> getActiveVisibleHeaders() {
-    if (_cachedVisibleHeaders != null) return _cachedVisibleHeaders!;
-    final all = getDetectedHeaders();
+  List<String> getActiveVisibleHeaders({List<IntegrationLeadModel>? leadsSubset}) {
+    if (leadsSubset == null && _cachedVisibleHeaders != null) return _cachedVisibleHeaders!;
+    final all = getDetectedHeaders(leadsSubset: leadsSubset);
     final visible = all.where((h) => !_hiddenHeaders.contains(h)).toList();
-    _cachedVisibleHeaders = visible;
+    if (leadsSubset == null) _cachedVisibleHeaders = visible;
     return visible;
   }
 
@@ -287,15 +431,99 @@ class IntegrationService extends ChangeNotifier {
           }
         }
       }
+
+      // 3. Load saved header ordering preference
+      final savedHeaderOrder = prefs.getString(_headerOrderPrefsKey);
+      if (savedHeaderOrder != null && savedHeaderOrder.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(savedHeaderOrder) as List<dynamic>;
+          _headerOrder = decoded.map((e) => e.toString()).toList();
+          _invalidateHeaderCache();
+        } catch (_) {}
+      }
+
+      if (_googleSheetUrl.isNotEmpty) {
+        _startSheetPolling();
+      }
     } catch (e) {
       debugPrint('Failed to load persisted campaign leads: $e');
     }
     notifyListeners();
   }
 
+  bool _isFetchingServerLeads = false;
+  bool get isFetchingServerLeads => _isFetchingServerLeads;
+
+  Future<int> fetchServerLeads({bool silent = false, bool resetWithServer = false}) async {
+    if (_isFetchingServerLeads) return 0;
+    _isFetchingServerLeads = true;
+    try {
+      final response = await _apiClient.get(
+        '/integrations/leads',
+        queryParameters: {'limit': 1000},
+      );
+
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        final List<dynamic> leadsList = data['leads'] ?? [];
+
+        final incoming = <IntegrationLeadModel>[];
+        for (final item in leadsList) {
+          if (item is Map<String, dynamic>) {
+            incoming.add(IntegrationLeadModel.fromJson(item));
+          }
+        }
+
+        if (incoming.isNotEmpty || resetWithServer) {
+          if (resetWithServer) {
+            _leads = incoming;
+          } else {
+            // Meta Ads leads are authoritative from the server; retain other sources (e.g. CSV/Google Sheets)
+            final incomingIds = incoming.map((l) => l.id).toSet();
+            final incomingExtIds = incoming.map((l) => l.externalLeadId).whereType<String>().toSet();
+            final nonServerLeads = _leads.where((l) =>
+                l.source != 'Meta Ads' &&
+                !incomingIds.contains(l.id) &&
+                (l.externalLeadId == null || !incomingExtIds.contains(l.externalLeadId))).toList();
+            _leads = [...incoming, ...nonServerLeads];
+          }
+
+          _updateDetectedHeadersFromRows(incoming.map((l) => l.rawJson).toList());
+          for (final lead in incoming) {
+            for (final k in lead.rawJson.keys) {
+              _autoSuggestMappingForHeader(k);
+            }
+          }
+          _invalidateHeaderCache();
+          await _persistLeads();
+          notifyListeners();
+          return incoming.length;
+        }
+      }
+      return 0;
+    } catch (e) {
+      debugPrint('Failed to fetch campaign leads from server: $e');
+      return 0;
+    } finally {
+      _isFetchingServerLeads = false;
+    }
+  }
+
+  /// Clean and deduplicate all leads on the server, then reload
+  Future<Map<String, dynamic>> cleanDuplicates() async {
+    try {
+      final response = await _apiClient.post('/integrations/leads/clean-duplicates', {});
+      await fetchServerLeads(resetWithServer: true);
+      return response.data is Map<String, dynamic> ? response.data as Map<String, dynamic> : {'success': true};
+    } catch (e) {
+      debugPrint('Error cleaning duplicates: $e');
+      rethrow;
+    }
+  }
+
   void watchCampaignUi() {
     _campaignUiWatchers++;
-    unawaited(ensureLoaded());
+    unawaited(ensureLoaded().then((_) => fetchServerLeads(silent: true)));
     _startSheetPolling();
   }
 
@@ -560,11 +788,20 @@ class IntegrationService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Clear all leads
-  void clearAllLeads() {
+  /// Clear all leads and resets header state
+  Future<void> clearAllLeads() async {
     _leads.clear();
+    _headerOrder.clear();
+    _customHeaders.clear();
+    _hiddenHeaders.clear();
+    _columnToCrmFieldMap.clear();
     _invalidateHeaderCache();
-    unawaited(_persistLeads());
+    await RepositoryCoordinator().campaignLeadLocal.clearAll();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_headerOrderPrefsKey);
+      await prefs.remove('isar_campaign_leads_web_v1');
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -719,12 +956,35 @@ class IntegrationService extends ChangeNotifier {
       final propertyNotes = matchedProperties.isEmpty
           ? ''
           : ' Interested property: ${matchedProperties.map((p) => '${p.title} (${p.propertyCode})').join(', ')}.';
+      final email = mapped['email']!.isNotEmpty
+          ? mapped['email']!
+          : (lead.getStringValue('Email ID').isNotEmpty
+              ? lead.getStringValue('Email ID')
+              : (lead.getStringValue('Email').isNotEmpty ? lead.getStringValue('Email') : _extractEmail(lead.rawJson)));
+      final emailNote = email.isNotEmpty ? ' Email: $email.' : '';
       final summaryRemarks =
-          'Imported from ${lead.source}. Campaign: $campaign.$propertyNotes${extraRemarks.isNotEmpty ? ' $extraRemarks' : ''}';
+          'Imported from ${lead.source}. Campaign: $campaign.$propertyNotes$emailNote${extraRemarks.isNotEmpty ? ' $extraRemarks' : ''}';
 
       final userRole = (user?.role ?? '').toLowerCase();
       final bool isAdminOrTelecaller =
           userRole == 'admin' || userRole == 'super admin' || userRole == 'telecaller';
+
+      final isMeta = lead.source == 'Meta Ads' || (lead.externalLeadId != null && lead.externalLeadId!.isNotEmpty);
+      final metaLeadId = isMeta ? lead.externalLeadId : null;
+      final metaCampaignName = lead.getStringValue('Campaign Name').isNotEmpty
+          ? lead.getStringValue('Campaign Name')
+          : (lead.getStringValue('Campaign').isNotEmpty ? lead.getStringValue('Campaign') : null);
+      final metaAdName = lead.getStringValue('Ad Name').isNotEmpty ? lead.getStringValue('Ad Name') : null;
+
+      final metaCustomFields = <String, dynamic>{};
+      for (final entry in lead.rawJson.entries) {
+        final k = entry.key.toLowerCase().trim();
+        if (['client name', 'full name', 'name', 'phone number', 'phone', 'mobile', 'property', 'property name'].contains(k)) continue;
+        metaCustomFields[entry.key] = entry.value;
+      }
+      if (email.isNotEmpty && !metaCustomFields.containsKey('Email ID') && !metaCustomFields.containsKey('Email')) {
+        metaCustomFields['Email ID'] = email;
+      }
 
       final req = RequirementModel(
         id: '',
@@ -746,6 +1006,12 @@ class IntegrationService extends ChangeNotifier {
         areaNames: area != null ? [area.name] : const [],
         remarks: summaryRemarks,
         status: 'Active',
+        leadSource: isMeta ? 'Meta Ads' : lead.source,
+        metaLeadId: metaLeadId,
+        metaCampaignName: metaCampaignName,
+        metaAdName: metaAdName,
+        metaCustomFields: metaCustomFields.isNotEmpty ? metaCustomFields : null,
+        leadQuality: 'Pending',
         createdAt: DateTime.now(),
         createdBy: user?.id,
         creatorName: user?.fullName,
@@ -771,6 +1037,10 @@ class IntegrationService extends ChangeNotifier {
             importStatus: 'Imported',
             importedClientId: createdReq?.id ?? 'bulk_imported',
           );
+          unawaited(_apiClient.patch('/integrations/leads/${lead.id}/status', {
+            'importStatus': 'Imported',
+            'importedClientId': createdReq?.id,
+          }).catchError((_) => Response(requestOptions: RequestOptions(path: ''))));
           importedCount++;
         }
       } catch (e) {
@@ -784,6 +1054,10 @@ class IntegrationService extends ChangeNotifier {
               importStatus: 'Imported',
               importedClientId: created.id,
             );
+            unawaited(_apiClient.patch('/integrations/leads/${lead.id}/status', {
+              'importStatus': 'Imported',
+              'importedClientId': created.id,
+            }).catchError((_) => Response(requestOptions: RequestOptions(path: ''))));
             importedCount++;
           } catch (err) {
             debugPrint('Error importing lead fallback: $err');
@@ -803,6 +1077,225 @@ class IntegrationService extends ChangeNotifier {
     }
   }
 
+  /// Import selected Property Listing leads into the Properties inventory page
+  Future<int> importLeadsToProperties(List<String> leadIds) async {
+    int importedCount = 0;
+    if (leadIds.isEmpty) return 0;
+
+    final coordinator = RepositoryCoordinator();
+    coordinator.beginBulkMutation();
+    try {
+      final metadata = await _propertiesRepository.getPropertyMetadata();
+      final user = RoleGuard.currentUser;
+
+      // Find Rent listing type
+      LookupItem? rentListing;
+      for (final l in metadata.listingTypes) {
+        if (l.name.toLowerCase().contains('rent')) {
+          rentListing = l;
+          break;
+        }
+      }
+      rentListing ??= (metadata.listingTypes.isNotEmpty ? metadata.listingTypes.first : null);
+
+      // Default category, city, status
+      final defaultCategory = metadata.categories.isNotEmpty ? metadata.categories.first : null;
+      final defaultCity = metadata.cities.isNotEmpty ? metadata.cities.first : null;
+      final defaultStatus = metadata.statuses.isNotEmpty ? metadata.statuses.first : null;
+
+      final indexById = <String, int>{};
+      for (var i = 0; i < _leads.length; i++) {
+        indexById[_leads[i].id] = i;
+      }
+
+      for (final id in leadIds) {
+        final index = indexById[id];
+        if (index == null) continue;
+
+        final lead = _leads[index];
+        if (lead.importStatus == 'Imported') {
+          importedCount++;
+          continue;
+        }
+
+        final rj = lead.rawJson;
+
+        // Extract Owner Name
+        String ownerName = '';
+        for (final k in ['full_name', 'Client Name', 'Name of client', 'Name', 'Customer Name', 'Owner Name', 'owner_name']) {
+          if (rj.containsKey(k) && rj[k] != null && rj[k].toString().trim().isNotEmpty) {
+            ownerName = rj[k].toString().trim();
+            break;
+          }
+        }
+        if (ownerName.isEmpty) ownerName = 'Property Owner';
+
+        // Extract Owner Mobile
+        String mobile = '';
+        for (final k in ['phone_number', 'Phone Number', 'Phone', 'Mobile', 'mobile', 'Number', 'contact']) {
+          if (rj.containsKey(k) && rj[k] != null && rj[k].toString().trim().isNotEmpty) {
+            mobile = _normalizePhone(rj[k].toString());
+            if (mobile.isNotEmpty) break;
+          }
+        }
+
+        // Extract Owner Email
+        String email = '';
+        for (final k in ['email', 'Email ID', 'Email', 'email_id']) {
+          if (rj.containsKey(k) && rj[k] != null && rj[k].toString().trim().isNotEmpty) {
+            email = rj[k].toString().trim();
+            break;
+          }
+        }
+
+        // Extract Location / Address
+        String rawLocation = '';
+        for (final k in [
+          'where_is_your_property_located?',
+          'where_is_your_property_located',
+          'Where is your property located?',
+          'what_is_the_complete_address_of_your_property?',
+          'what_is_the_complete_address_of_your_property',
+          'Location',
+          'Address',
+          'City',
+          'city'
+        ]) {
+          if (rj.containsKey(k) && rj[k] != null && rj[k].toString().trim().isNotEmpty) {
+            rawLocation = rj[k].toString().trim();
+            break;
+          }
+        }
+        String cleanLocation = rawLocation
+            .replaceAll('_', ' ')
+            .split(' ')
+            .map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}' : '')
+            .join(' ')
+            .trim();
+        if (cleanLocation.toLowerCase() == 'other area') cleanLocation = 'Ahmedabad';
+
+        // Extract Property Type / BHK
+        String rawPropType = '';
+        for (final k in [
+          'what_type_of_property_are_you_looking_to_rent_out?',
+          'what_type_of_property_are_you_looking_to_rent_out',
+          'What type of property you are looking to rent out?',
+          'Property Type',
+          'Type',
+          'Configuration',
+          'BHK'
+        ]) {
+          if (rj.containsKey(k) && rj[k] != null && rj[k].toString().trim().isNotEmpty) {
+            rawPropType = rj[k].toString().trim().toLowerCase();
+            break;
+          }
+        }
+
+        LookupItem? matchedType;
+        if (rawPropType.contains('2_bhk') || rawPropType.contains('2 bhk')) {
+          matchedType = metadata.types.firstWhere(
+            (t) => t.name.toLowerCase().contains('2 bhk'),
+            orElse: () => metadata.types.first,
+          );
+        } else if (rawPropType.contains('3_bhk') || rawPropType.contains('3 bhk')) {
+          matchedType = metadata.types.firstWhere(
+            (t) => t.name.toLowerCase().contains('3 bhk'),
+            orElse: () => metadata.types.first,
+          );
+        } else if (rawPropType.contains('4_bhk') || rawPropType.contains('4 bhk')) {
+          matchedType = metadata.types.firstWhere(
+            (t) => t.name.toLowerCase().contains('4 bhk'),
+            orElse: () => metadata.types.first,
+          );
+        } else if (rawPropType.contains('commercial') || rawPropType.contains('office')) {
+          matchedType = metadata.types.firstWhere(
+            (t) => t.name.toLowerCase().contains('commercial') || t.name.toLowerCase().contains('office'),
+            orElse: () => metadata.types.first,
+          );
+        } else if (metadata.types.isNotEmpty) {
+          matchedType = metadata.types.first;
+        }
+
+        // Extract Expected Monthly Rent
+        String rawRent = '';
+        for (final k in [
+          'what_is_your_expected_monthly_rent?',
+          'what_is_your_expected_monthly_rent',
+          'What is your expected monthly rent?',
+          'Expected Rent',
+          'Price',
+          'Rent',
+          'Budget'
+        ]) {
+          if (rj.containsKey(k) && rj[k] != null && rj[k].toString().trim().isNotEmpty) {
+            rawRent = rj[k].toString().trim();
+            break;
+          }
+        }
+        double parsedRent = 0;
+        final rentDigits = RegExp(r'(\d+[\d,]*)').allMatches(rawRent);
+        if (rentDigits.isNotEmpty) {
+          final firstMatch = rentDigits.first.group(0)?.replaceAll(',', '');
+          parsedRent = double.tryParse(firstMatch ?? '0') ?? 0;
+        }
+
+        // Match City
+        String leadCity = lead.getStringValue('City').trim();
+        if (leadCity.isEmpty) leadCity = lead.getStringValue('city').trim();
+        LookupItem? matchedCity;
+        if (leadCity.isNotEmpty) {
+          for (final c in metadata.cities) {
+            if (c.name.toLowerCase().contains(leadCity.toLowerCase())) {
+              matchedCity = c;
+              break;
+            }
+          }
+        }
+        matchedCity ??= defaultCity;
+
+        // Generate clean property title
+        final typeName = matchedType?.name ?? (rawPropType.isNotEmpty ? rawPropType.replaceAll('_', ' ').toUpperCase() : 'Property');
+        final title = '$typeName for Rent in ${cleanLocation.isNotEmpty ? cleanLocation : 'Ahmedabad'}';
+
+        final propertyData = {
+          'title': title,
+          'owner_name': ownerName,
+          'owner_mobile': mobile,
+          'address': cleanLocation.isNotEmpty ? cleanLocation : 'Ahmedabad',
+          'price': parsedRent,
+          'category_id': defaultCategory?.id ?? '',
+          'property_type_id': matchedType?.id ?? '',
+          'listing_type_id': rentListing?.id ?? '',
+          'property_status_id': defaultStatus?.id ?? '',
+          'city_id': matchedCity?.id ?? '',
+          'remarks': 'Imported from Campaign Leads (Source: ${lead.source}, Campaign: ${lead.getStringValue('Campaign Name')}). Email: $email',
+          'created_by': user?.id,
+        };
+
+        try {
+          final createdProp = await _propertiesRepository.createProperty(propertyData);
+          _leads[index] = lead.copyWith(
+            importStatus: 'Imported',
+            importedClientId: createdProp.id,
+          );
+          unawaited(_apiClient.patch('/integrations/leads/${lead.id}/status', {
+            'importStatus': 'Imported',
+            'importedClientId': createdProp.id,
+          }).catchError((_) => Response(requestOptions: RequestOptions(path: ''))));
+          importedCount++;
+        } catch (e) {
+          debugPrint('Error importing lead ${lead.id} to Properties: $e');
+        }
+      }
+
+      await _persistLeads();
+      notifyListeners();
+      return importedCount;
+    } finally {
+      coordinator.endBulkMutation();
+    }
+  }
+
   Future<int> importAllPendingLeads() async {
     final pending = _leads
         .where((l) => l.importStatus != 'Imported' && !l.isDuplicate)
@@ -812,7 +1305,7 @@ class IntegrationService extends ChangeNotifier {
     return importLeadsToCrm(pending);
   }
 
-  /// Delete single lead (from local memory)
+  /// Delete single lead (local memory + server sync)
   Future<bool> deleteLead(String id) async {
     final leadIndex = _leads.indexWhere((l) => l.id == id);
     if (leadIndex == -1) return false;
@@ -821,10 +1314,16 @@ class IntegrationService extends ChangeNotifier {
     _invalidateHeaderCache();
     await _persistLeads();
     notifyListeners();
+
+    unawaited(_apiClient.delete('/integrations/leads/$id').catchError((e) {
+      debugPrint('Error syncing deleteLead to server: $e');
+      return Response(requestOptions: RequestOptions(path: ''));
+    }));
+
     return true;
   }
 
-  /// Batch delete multiple leads (from local memory)
+  /// Batch delete multiple leads (local memory + server sync)
   Future<int> deleteLeads(List<String> ids) async {
     if (ids.isEmpty) return 0;
 
@@ -835,6 +1334,12 @@ class IntegrationService extends ChangeNotifier {
     _invalidateHeaderCache();
     await _persistLeads();
     notifyListeners();
+
+    unawaited(_apiClient.post('/integrations/leads/bulk-delete', {'ids': ids}).catchError((e) {
+      debugPrint('Error syncing bulkDeleteLeads to server: $e');
+      return Response(requestOptions: RequestOptions(path: ''));
+    }));
+
     return leadsToDelete.length;
   }
 
@@ -909,6 +1414,7 @@ class IntegrationService extends ChangeNotifier {
     String source = 'Google Sheets',
     bool importToLeads = false,
   }) async {
+    _updateDetectedHeadersFromRows(rows);
     final prepared = await CampaignIngestEngine().prepare(rows);
     if (prepared.isEmpty) return 0;
 
@@ -1035,6 +1541,8 @@ class IntegrationService extends ChangeNotifier {
     try {
       final rows = await _downloadSheetRows(url);
       final count = await ingestRows(rows, importToLeads: importToLeads);
+      _lastSyncAt = DateTime.now();
+      _lastSyncCount = count;
       lastSyncError = null;
       notifyListeners();
       return count;
@@ -1151,19 +1659,21 @@ function onFormSubmit(e) {
           await dbRepo.clearAll();
           await dbRepo.saveLeads(locals);
 
-          // 2. Keep local prefs backup in sync
-          final payload = <Map<String, dynamic>>[];
-          for (var i = 0; i < _leads.length; i++) {
-            payload.add(_leads[i].toJson());
-            if (i > 0 && i % 80 == 0) {
-              await Future<void>.delayed(Duration.zero);
+          // 2. Keep local prefs backup in sync (skip on Web for large sets to eliminate localStorage main-thread lock)
+          if (!kIsWeb || _leads.length <= 100) {
+            final payload = <Map<String, dynamic>>[];
+            for (var i = 0; i < _leads.length; i++) {
+              payload.add(_leads[i].toJson());
+              if (!kIsWeb && i > 0 && i % 80 == 0) {
+                await Future<void>.delayed(Duration.zero);
+              }
             }
+            final encoded = (!kIsWeb && payload.length > 400)
+                ? await compute(_encodeCampaignLeadsJson, payload)
+                : jsonEncode(payload);
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(_leadsPrefsKey, encoded);
           }
-          final encoded = (!kIsWeb && payload.length > 400)
-              ? await compute(_encodeCampaignLeadsJson, payload)
-              : jsonEncode(payload);
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_leadsPrefsKey, encoded);
         } catch (e) {
           debugPrint('Failed to persist campaign leads to database: $e');
         }
@@ -1178,9 +1688,8 @@ function onFormSubmit(e) {
 
   void _startSheetPolling() {
     _sheetPollTimer?.cancel();
-    if (_campaignUiWatchers <= 0) return;
     if (_googleSheetUrl.trim().isEmpty) return;
-    _sheetPollTimer = Timer.periodic(const Duration(seconds: 90), (_) {
+    _sheetPollTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       unawaited(syncGoogleSheet(silent: true));
     });
   }
@@ -1481,7 +1990,7 @@ function onFormSubmit(e) {
     return _propertyCache!;
   }
 
-  Future<Map<String, dynamic>> _enrichRowFromProperties(Map<String, dynamic> row) async {
+  Future<Map<String, dynamic>> enrichRowFromProperties(Map<String, dynamic> row) async {
     final inventory = await _cachedProperties();
     if (inventory.isEmpty) return row;
     final mappedStub = <String, String>{

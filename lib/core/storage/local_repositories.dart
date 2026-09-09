@@ -816,11 +816,62 @@ class ClientLocalRepository {
 
 class CampaignLeadLocalRepository {
   Isar get _isar => IsarService().isar;
+  bool get _useInMemory => kIsWeb || !IsarService().isInitialized;
 
   static final Map<String, CampaignLeadLocal> inMemory = {};
+  static const String _webLeadsKey = 'isar_campaign_leads_web_v1';
+
+  Future<void> _persistWebLeads() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = inMemory.values.map((l) => {
+        'id': l.id,
+        'source': l.source,
+        'receivedAt': l.receivedAt.toIso8601String(),
+        'rawJsonString': l.rawJsonString,
+        'externalLeadId': l.externalLeadId,
+        'isDuplicate': l.isDuplicate,
+        'duplicateReason': l.duplicateReason,
+        'qualityStatus': l.qualityStatus,
+        'importStatus': l.importStatus,
+        'importedClientId': l.importedClientId,
+        'metaFeedbackEventId': l.metaFeedbackEventId,
+        'metaFeedbackSentAt': l.metaFeedbackSentAt?.toIso8601String(),
+      }).toList();
+      await prefs.setString(_webLeadsKey, jsonEncode(list));
+    } catch (_) {}
+  }
 
   Future<List<CampaignLeadLocal>> getLeads() async {
-    if (kIsWeb) {
+    if (_useInMemory) {
+      if (inMemory.isEmpty) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final stored = prefs.getString(_webLeadsKey);
+          if (stored != null && stored.isNotEmpty) {
+            final list = jsonDecode(stored) as List<dynamic>;
+            for (final item in list) {
+              final m = item as Map<String, dynamic>;
+              final l = CampaignLeadLocal()
+                ..id = m['id']?.toString() ?? ''
+                ..source = m['source']?.toString() ?? ''
+                ..receivedAt = DateTime.tryParse(m['receivedAt']?.toString() ?? '') ?? DateTime.now()
+                ..rawJsonString = m['rawJsonString']?.toString() ?? '{}'
+                ..externalLeadId = m['externalLeadId']?.toString()
+                ..isDuplicate = m['isDuplicate'] as bool? ?? false
+                ..duplicateReason = m['duplicateReason']?.toString()
+                ..qualityStatus = m['qualityStatus']?.toString() ?? 'Pending'
+                ..importStatus = m['importStatus']?.toString() ?? 'New'
+                ..importedClientId = m['importedClientId']?.toString()
+                ..metaFeedbackEventId = m['metaFeedbackEventId']?.toString()
+                ..metaFeedbackSentAt = m['metaFeedbackSentAt'] != null
+                    ? DateTime.tryParse(m['metaFeedbackSentAt'].toString())
+                    : null;
+              inMemory[l.id] = l;
+            }
+          }
+        } catch (_) {}
+      }
       final list = inMemory.values.toList();
       list.sort((a, b) => b.receivedAt.compareTo(a.receivedAt));
       return list;
@@ -833,10 +884,11 @@ class CampaignLeadLocalRepository {
   }
 
   Future<void> saveLeads(List<CampaignLeadLocal> leads) async {
-    if (kIsWeb) {
+    if (_useInMemory) {
       for (final l in leads) {
         inMemory[l.id] = l;
       }
+      await _persistWebLeads();
       return;
     }
     await _isar.writeTxn(() async {
@@ -845,8 +897,9 @@ class CampaignLeadLocalRepository {
   }
 
   Future<void> saveLead(CampaignLeadLocal lead) async {
-    if (kIsWeb) {
+    if (_useInMemory) {
       inMemory[lead.id] = lead;
+      await _persistWebLeads();
       return;
     }
     await _isar.writeTxn(() async {
@@ -855,8 +908,9 @@ class CampaignLeadLocalRepository {
   }
 
   Future<void> deleteLead(String id) async {
-    if (kIsWeb) {
+    if (_useInMemory) {
       inMemory.remove(id);
+      await _persistWebLeads();
       return;
     }
     await _isar.writeTxn(() async {
@@ -865,10 +919,11 @@ class CampaignLeadLocalRepository {
   }
 
   Future<void> deleteLeads(List<String> ids) async {
-    if (kIsWeb) {
+    if (_useInMemory) {
       for (final id in ids) {
         inMemory.remove(id);
       }
+      await _persistWebLeads();
       return;
     }
     await _isar.writeTxn(() async {
@@ -879,8 +934,9 @@ class CampaignLeadLocalRepository {
   }
 
   Future<void> clearAll() async {
-    if (kIsWeb) {
+    if (_useInMemory) {
       inMemory.clear();
+      await _persistWebLeads();
       return;
     }
     await _isar.writeTxn(() async {

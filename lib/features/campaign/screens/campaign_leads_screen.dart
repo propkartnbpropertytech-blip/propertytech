@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart';
+import 'package:excel/excel.dart' as xl;
+import '../../../core/utils/file_downloader.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
@@ -27,13 +30,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   final IntegrationService _service = IntegrationService();
   final TextEditingController _searchController = TextEditingController();
 
+  String _selectedSection = 'Property Listing'; // 'Property Listing' (Owners) or 'Requirement' (Tenants)
   String _selectedSourceFilter = 'All';
   String _selectedDuplicateFilter = 'All';
   final Set<String> _selectedLeadIds = {};
   bool _isImporting = false;
   bool _isSyncingSheet = false;
   int _currentPage = 1;
-  int _pageSize = 50;
+  int _pageSize = 25;
   String _searchQuery = '';
   Timer? _searchDebounce;
   Timer? _uiDebounce;
@@ -58,11 +62,107 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   List<IntegrationLeadModel>? _cachedFilteredLeads;
   int _cachedUniqueLeads = 0;
   int _cachedDupLeads = 0;
-  int _cachedMetaResponsesSent = 0;
+  int _cachedImportedCount = 0;
+  List<String> _cachedAllDetectedHeaders = [];
+  List<String> _cachedVisibleHeaders = [];
+  int _cachedPropertyListingCount = 0;
+  int _cachedRequirementCount = 0;
   List<IntegrationLeadModel>? _lastServiceLeadsRef;
+  String? _lastSectionFilter;
   String? _lastSourceFilter;
   String? _lastDuplicateFilter;
   String? _lastSearchQuery;
+
+  // Excel Column Filters & Sorting
+  final Map<String, Set<String>> _columnFilters = {};
+  String? _sortColumn;
+  bool _sortAscending = true;
+  int? _lastColumnFiltersHash;
+  String? _lastSortColumn;
+  bool? _lastSortAscending;
+
+  int _computeColumnFiltersHash() {
+    int hash = 0;
+    for (final entry in _columnFilters.entries) {
+      hash ^= entry.key.hashCode;
+      for (final val in entry.value) {
+        hash ^= val.hashCode;
+      }
+    }
+    return hash;
+  }
+
+  String _getDisplayNameForColumn(String columnKey) {
+    if (columnKey == '#Source') return 'Source';
+    if (columnKey == '#MetaQuality') return 'Meta Rating';
+    if (columnKey == '#CrmStatus') return 'Import Status';
+
+    final clean = columnKey.trim();
+    final lower = clean.toLowerCase();
+
+    // Map questions to friendly header titles
+    if (lower == 'full_name' || lower == 'name' || lower == 'client name') {
+      return _selectedSection == 'Property Listing' ? 'Owner Name' : 'Client Name';
+    }
+    if (lower == 'phone_number' || lower == 'phone' || lower == 'mobile' || lower == 'number') {
+      return 'Phone Number';
+    }
+    if (lower == 'email' || lower == 'email id') {
+      return 'Email ID';
+    }
+    if (lower.contains('where_is_your_property_located') || lower.contains('where is your property located')) {
+      return 'Property Location';
+    }
+    if (lower.contains('what_type_of_property') || lower.contains('looking_to_rent_out') || lower.contains('rent out')) {
+      return 'Property Type';
+    }
+    if (lower.contains('expected_monthly_rent') || lower.contains('expected monthly rent')) {
+      return 'Expected Rent';
+    }
+    if (lower.contains('complete_address') || lower.contains('complete address')) {
+      return 'Property Address';
+    }
+    if (lower.contains('which_area_are_you_looking') || lower.contains('area are you looking')) {
+      return 'Looking Area';
+    }
+    if (lower.contains('which_location_are_you_looking')) {
+      return 'Looking Location';
+    }
+    if (lower.contains('type_of_home') || lower.contains('type of home')) {
+      return 'Home Type';
+    }
+    if (lower.contains('monthly_rental_budget') || lower.contains('monthly rental budget')) {
+      return 'Rental Budget';
+    }
+    if (lower.contains('staying_in_the_property') || lower.contains('who will be staying')) {
+      return 'Who Will Stay';
+    }
+
+    if (clean.contains('_')) {
+      return clean
+          .replaceAll('_', ' ')
+          .replaceAll('?', '')
+          .split(' ')
+          .map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '')
+          .join(' ')
+          .trim();
+    }
+    return columnKey;
+  }
+
+  String _formatDisplayCellValue(String key, String val) {
+    if (val.isEmpty) return '-';
+    // Format snake_case choices like "vaishnodevi_circle" -> "Vaishnodevi Circle"
+    if (val.contains('_') && !val.contains('@') && !val.startsWith('http')) {
+      return val
+          .replaceAll('_', ' ')
+          .split(' ')
+          .map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '')
+          .join(' ')
+          .trim();
+    }
+    return val;
+  }
 
   void _onServiceUpdate() {
     _uiDebounce?.cancel();
@@ -76,35 +176,46 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   void _recomputeFilteredLeadsIfNeeded() {
     final currentLeads = _service.leads;
+    final currentFiltersHash = _computeColumnFiltersHash();
+
     if (_cachedFilteredLeads != null &&
         identical(_lastServiceLeadsRef, currentLeads) &&
+        _lastSectionFilter == _selectedSection &&
         _lastSourceFilter == _selectedSourceFilter &&
         _lastDuplicateFilter == _selectedDuplicateFilter &&
-        _lastSearchQuery == _searchQuery) {
+        _lastSearchQuery == _searchQuery &&
+        _lastColumnFiltersHash == currentFiltersHash &&
+        _lastSortColumn == _sortColumn &&
+        _lastSortAscending == _sortAscending) {
       return;
     }
 
     _lastServiceLeadsRef = currentLeads;
+    _lastSectionFilter = _selectedSection;
     _lastSourceFilter = _selectedSourceFilter;
     _lastDuplicateFilter = _selectedDuplicateFilter;
     _lastSearchQuery = _searchQuery;
+    _lastColumnFiltersHash = currentFiltersHash;
+    _lastSortColumn = _sortColumn;
+    _lastSortAscending = _sortAscending;
+
+    // Filter by Section First (Property Listing vs Requirement)
+    var list = currentLeads.where((l) => l.leadType == _selectedSection).toList();
 
     var u = 0;
     var d = 0;
-    var m = 0;
-    for (final lead in currentLeads) {
+    var imp = 0;
+    for (final lead in list) {
       if (lead.isDuplicate) {
         d++;
       } else {
         u++;
       }
-      if (lead.metaFeedbackEventId != null) m++;
+      if (lead.importStatus == 'Imported') imp++;
     }
     _cachedUniqueLeads = u;
     _cachedDupLeads = d;
-    _cachedMetaResponsesSent = m;
-
-    var list = currentLeads;
+    _cachedImportedCount = imp;
 
     // Filter by Source
     if (_selectedSourceFilter != 'All') {
@@ -133,7 +244,73 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       }).toList();
     }
 
+    // Excel Column Level Multi-Select Filters
+    if (_columnFilters.isNotEmpty) {
+      list = list.where((lead) {
+        for (final entry in _columnFilters.entries) {
+          final colKey = entry.key;
+          final allowedValues = entry.value;
+
+          String cellVal;
+          if (colKey == '#Source') {
+            cellVal = lead.source;
+          } else if (colKey == '#MetaQuality') {
+            cellVal = lead.qualityStatus;
+          } else if (colKey == '#CrmStatus') {
+            cellVal = lead.importStatus;
+          } else {
+            cellVal = lead.getStringValue(colKey).trim();
+          }
+
+          if (cellVal.isEmpty) {
+            cellVal = '(Blanks)';
+          }
+
+          if (!allowedValues.contains(cellVal)) {
+            return false;
+          }
+        }
+        return true;
+      }).toList();
+    }
+
+    // Excel Column Sorting
+    if (_sortColumn != null) {
+      list = List<IntegrationLeadModel>.from(list);
+      list.sort((a, b) {
+        String valA = '';
+        String valB = '';
+        if (_sortColumn == '#Source') {
+          valA = a.source;
+          valB = b.source;
+        } else if (_sortColumn == '#MetaQuality') {
+          valA = a.qualityStatus;
+          valB = b.qualityStatus;
+        } else if (_sortColumn == '#CrmStatus') {
+          valA = a.importStatus;
+          valB = b.importStatus;
+        } else {
+          valA = a.getStringValue(_sortColumn!).trim();
+          valB = b.getStringValue(_sortColumn!).trim();
+        }
+
+        final numA = double.tryParse(valA.replaceAll(RegExp(r'[^\d.-]'), ''));
+        final numB = double.tryParse(valB.replaceAll(RegExp(r'[^\d.-]'), ''));
+        int cmp;
+        if (numA != null && numB != null && valA.isNotEmpty && valB.isNotEmpty) {
+          cmp = numA.compareTo(numB);
+        } else {
+          cmp = valA.toLowerCase().compareTo(valB.toLowerCase());
+        }
+        return _sortAscending ? cmp : -cmp;
+      });
+    }
+
     _cachedFilteredLeads = list;
+    _cachedPropertyListingCount = currentLeads.where((l) => l.leadType == 'Property Listing').length;
+    _cachedRequirementCount = currentLeads.where((l) => l.leadType == 'Requirement').length;
+    _cachedAllDetectedHeaders = _service.getDetectedHeaders(leadsSubset: list);
+    _cachedVisibleHeaders = _service.getActiveVisibleHeaders(leadsSubset: list);
   }
 
   List<IntegrationLeadModel> get _filteredLeads {
@@ -162,12 +339,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     }
 
     final leads = _filteredLeads;
-    final allDetectedHeaders = _service.getDetectedHeaders();
-    final visibleHeaders = _service.getActiveVisibleHeaders();
+    final allDetectedHeaders = _cachedAllDetectedHeaders;
+    final visibleHeaders = _cachedVisibleHeaders;
     final uniqueLeads = _cachedUniqueLeads;
     final dupLeads = _cachedDupLeads;
-    final metaResponsesSent = _cachedMetaResponsesSent;
-    final totalLeads = _service.leads.length;
+    final importedCount = _cachedImportedCount;
+    final propertyListingCount = _cachedPropertyListingCount;
+    final requirementCount = _cachedRequirementCount;
+    final totalLeads = leads.length;
     final totalPages = leads.isEmpty ? 1 : (leads.length / _pageSize).ceil();
     final currentPage = _currentPage.clamp(1, totalPages);
     final startIndex = (currentPage - 1) * _pageSize;
@@ -189,7 +368,39 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
+                    _buildAutoSyncLiveBadge(context),
+                    CRMButton(
+                      label: _service.isFetchingServerLeads ? 'Refreshing...' : 'Refresh Leads',
+                      prefixIcon: Icons.refresh_rounded,
+                      variant: CRMButtonVariant.outline,
+                      height: 40,
+                      isLoading: _service.isFetchingServerLeads,
+                      onPressed: _service.isFetchingServerLeads
+                          ? null
+                          : () async {
+                              final count = await _service.fetchServerLeads();
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      count > 0
+                                          ? 'Fetched $count new leads from server.'
+                                          : 'Campaign leads are up to date.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                    ),
+                    CRMButton(
+                      label: 'Clean Duplicates',
+                      prefixIcon: Icons.cleaning_services_rounded,
+                      variant: CRMButtonVariant.outline,
+                      height: 40,
+                      onPressed: () => _cleanDuplicatesDialog(context),
+                    ),
                     CRMButton(
                       label: _isSyncingSheet ? 'Syncing...' : 'Sync Google Sheet',
                       prefixIcon: Icons.sync_rounded,
@@ -199,6 +410,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       onPressed: _isSyncingSheet ? null : () => _syncGoogleSheet(context),
                     ),
                     CRMButton(
+                      label: 'Export Excel',
+                      prefixIcon: Icons.table_view_rounded,
+                      variant: CRMButtonVariant.outline,
+                      height: 40,
+                      onPressed: () => _exportCurrentSpreadsheetToExcel(context),
+                    ),
+                    CRMButton(
                       label: 'Import CSV',
                       prefixIcon: Icons.upload_file_rounded,
                       variant: CRMButtonVariant.outline,
@@ -206,11 +424,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       onPressed: () => _importCsvFile(context),
                     ),
                     CRMButton(
-                      label: _isImporting ? 'Moving...' : 'Move to Leads page',
-                      prefixIcon: Icons.drive_file_move_rounded,
+                      label: _isImporting
+                          ? 'Moving...'
+                          : (_selectedSection == 'Property Listing' ? 'Move to Properties page' : 'Move to Leads page'),
+                      prefixIcon: _selectedSection == 'Property Listing'
+                          ? Icons.home_work_rounded
+                          : Icons.drive_file_move_rounded,
                       height: 40,
                       isLoading: _isImporting,
-                      onPressed: _isImporting ? null : () => _moveSelectedToLeadsPage(context),
+                      onPressed: _isImporting
+                          ? null
+                          : () => _selectedSection == 'Property Listing'
+                              ? _moveSelectedToPropertiesPage(context)
+                              : _moveSelectedToLeadsPage(context),
                     ),
                     CRMButton(
                       label: 'Paste JSON',
@@ -225,8 +451,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
               const SizedBox(height: CRMSpacing.m),
 
+              // Dual-Section Segmented Tab Switcher (Property Listing Leads vs Requirement Leads)
+              _buildLeadTypeSegmentedControl(context, propertyListingCount, requirementCount),
+
+              const SizedBox(height: CRMSpacing.m),
+
               // KPI Analytics Cards (Compact)
-              _buildKpiMetricsRow(context, totalLeads, uniqueLeads, dupLeads, metaResponsesSent),
+              _buildKpiMetricsRow(context, totalLeads, uniqueLeads, dupLeads, importedCount),
 
               const SizedBox(height: CRMSpacing.m),
 
@@ -235,6 +466,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 _buildBatchActionBar(context, leads),
                 const SizedBox(height: CRMSpacing.m),
               ],
+
+              // Excel Active Filters Chips Bar
+              _buildActiveFiltersBar(context),
 
               // Excel-like Interactive Spreadsheet Section
               _buildExcelSpreadsheetCard(context, allDetectedHeaders, visibleHeaders, leads, pageLeads, startIndex, currentPage, totalPages),
@@ -247,7 +481,179 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   // --- WIDGETS ---
 
-  Widget _buildKpiMetricsRow(BuildContext context, int total, int unique, int dups, int metaSent) {
+  Widget _buildLeadTypeSegmentedControl(BuildContext context, int propCount, int reqCount) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: CRMColors.borderOf(context)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildSectionTabItem(
+              context: context,
+              title: 'Property Listing Leads',
+              subtitle: 'Owners listing properties for rent -> destination: Properties page',
+              icon: Icons.home_work_rounded,
+              count: propCount,
+              badgeColor: const Color(0xFF0284C7),
+              isSelected: _selectedSection == 'Property Listing',
+              onTap: () {
+                if (_selectedSection != 'Property Listing') {
+                  setState(() {
+                    _selectedSection = 'Property Listing';
+                    _selectedLeadIds.clear();
+                    _currentPage = 1;
+                    _cachedFilteredLeads = null;
+                  });
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildSectionTabItem(
+              context: context,
+              title: 'Requirement Leads',
+              subtitle: 'Tenants searching for rental homes -> destination: Leads page',
+              icon: Icons.people_alt_rounded,
+              count: reqCount,
+              badgeColor: const Color(0xFF10B981),
+              isSelected: _selectedSection == 'Requirement',
+              onTap: () {
+                if (_selectedSection != 'Requirement') {
+                  setState(() {
+                    _selectedSection = 'Requirement';
+                    _selectedLeadIds.clear();
+                    _currentPage = 1;
+                    _cachedFilteredLeads = null;
+                  });
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTabItem({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required int count,
+    required Color badgeColor,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeBg = isDark ? const Color(0xFF262E3D) : Colors.white;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? activeBg : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+          border: isSelected
+              ? Border.all(color: CRMColors.primaryOf(context).withOpacity(0.4), width: 1.5)
+              : null,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? CRMColors.primaryOf(context).withOpacity(0.15)
+                    : (isDark ? Colors.white10 : Colors.black.withOpacity(0.04)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                icon,
+                color: isSelected ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                            color: isSelected
+                                ? CRMColors.textOf(context)
+                                : CRMColors.textSecondaryOf(context),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isSelected ? badgeColor : badgeColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: isSelected ? Colors.white : badgeColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: CRMColors.textSecondaryOf(context).withOpacity(0.85),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKpiMetricsRow(BuildContext context, int total, int unique, int dups, int imported) {
+    final destinationLabel = _selectedSection == 'Property Listing' ? 'In Inventory' : 'In CRM Leads';
+    final destinationIcon = _selectedSection == 'Property Listing' ? Icons.home_work_rounded : Icons.contacts_rounded;
     final isMobile = MediaQuery.of(context).size.width < 600;
     if (isMobile) {
       return Column(
@@ -264,7 +670,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             children: [
               _buildMetricItem(context, 'Duplicates', dups.toString(), Icons.copy_rounded, CRMColors.warning),
               const SizedBox(width: CRMSpacing.s),
-              _buildMetricItem(context, 'Meta Synced', metaSent.toString(), Icons.insights_rounded, CRMColors.textSecondaryOf(context)),
+              _buildMetricItem(context, destinationLabel, imported.toString(), destinationIcon, CRMColors.info),
             ],
           ),
         ],
@@ -278,7 +684,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         const SizedBox(width: CRMSpacing.s),
         _buildMetricItem(context, 'Duplicates', dups.toString(), Icons.copy_rounded, CRMColors.warning),
         const SizedBox(width: CRMSpacing.s),
-        _buildMetricItem(context, 'Meta Synced', metaSent.toString(), Icons.insights_rounded, CRMColors.textSecondaryOf(context)),
+        _buildMetricItem(context, destinationLabel, imported.toString(), destinationIcon, CRMColors.info),
       ],
     );
   }
@@ -433,14 +839,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ),
           const SizedBox(width: CRMSpacing.s),
 
-          // Move cleaned campaign leads to the main Leads page
+          // Move cleaned campaign leads to appropriate CRM destination
           CRMButton(
-            label: _isImporting ? 'Moving...' : 'Move to Leads page ($count)',
-            prefixIcon: Icons.drive_file_move_rounded,
+            label: _isImporting
+                ? 'Moving...'
+                : (_selectedSection == 'Property Listing' ? 'Move to Properties page ($count)' : 'Move to Leads page ($count)'),
+            prefixIcon: _selectedSection == 'Property Listing' ? Icons.home_work_rounded : Icons.drive_file_move_rounded,
             variant: CRMButtonVariant.primary,
             height: 36,
             isLoading: _isImporting,
-            onPressed: () => _moveSelectedToLeadsPage(context),
+            onPressed: () => _selectedSection == 'Property Listing'
+                ? _moveSelectedToPropertiesPage(context)
+                : _moveSelectedToLeadsPage(context),
           ),
 
           const Spacer(),
@@ -470,6 +880,20 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 700;
 
+    final reorderColumnsButton = SizedBox(
+      height: 36,
+      child: OutlinedButton.icon(
+        icon: const Icon(Icons.swap_horiz_rounded, size: 15),
+        label: const Text('Reorder Columns'),
+        style: OutlinedButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        onPressed: () => _showReorderColumnsDialog(context),
+      ),
+    );
+
     final columnsButton = SizedBox(
       height: 36,
       child: OutlinedButton.icon(
@@ -484,6 +908,20 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ),
     );
 
+    final exportExcelButton = SizedBox(
+      height: 36,
+      child: OutlinedButton.icon(
+        icon: const Icon(Icons.table_view_rounded, size: 15),
+        label: const Text('Export Excel'),
+        style: OutlinedButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        onPressed: () => _exportCurrentSpreadsheetToExcel(context),
+      ),
+    );
+
     final addHeaderButton = CRMButton(
       label: 'Add Header',
       prefixIcon: Icons.add_rounded,
@@ -495,7 +933,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final moreToolsButton = PopupMenuButton<String>(
       tooltip: 'More Tools',
       onSelected: (action) {
-        if (action == 'merge') {
+        if (action == 'reorder') {
+          _showReorderColumnsDialog(context);
+        } else if (action == 'export') {
+          _exportCurrentSpreadsheetToExcel(context);
+        } else if (action == 'clear_filters') {
+          setState(() {
+            _columnFilters.clear();
+            _sortColumn = null;
+            _sortAscending = true;
+            _cachedFilteredLeads = null;
+            _currentPage = 1;
+          });
+        } else if (action == 'merge') {
           _showMergeHeadersDialog(context, allDetectedHeaders);
         } else if (action == 'dedup') {
           _service.deduplicateAll();
@@ -507,7 +957,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Removed all duplicate lead entries.')),
           );
-        } else         if (action == 'json') {
+        } else if (action == 'json') {
           _showPasteJsonDialog(context);
         } else if (action == 'csv') {
           _importCsvFile(context);
@@ -518,6 +968,37 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         }
       },
       itemBuilder: (ctx) => [
+        const PopupMenuItem(
+          value: 'reorder',
+          child: Row(
+            children: [
+              Icon(Icons.swap_horiz_rounded, size: 16),
+              SizedBox(width: 8),
+              Text('Reorder Columns (Drag & Drop)'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'export',
+          child: Row(
+            children: [
+              Icon(Icons.table_view_rounded, size: 16),
+              SizedBox(width: 8),
+              Text('Export Spreadsheet to Excel (.xlsx)'),
+            ],
+          ),
+        ),
+        if (_columnFilters.isNotEmpty || _sortColumn != null)
+          const PopupMenuItem(
+            value: 'clear_filters',
+            child: Row(
+              children: [
+                Icon(Icons.filter_alt_off_rounded, size: 16, color: CRMColors.danger),
+                SizedBox(width: 8),
+                Text('Clear All Column Filters', style: TextStyle(color: CRMColors.danger)),
+              ],
+            ),
+          ),
         const PopupMenuItem(
           value: 'merge',
           child: Row(
@@ -664,10 +1145,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             DropdownMenuItem(value: 'Webhook API', child: Text('Webhook API ')),
           ],
           onChanged: (val) {
-            if (val != null) setState(() {
-              _selectedSourceFilter = val;
-              _currentPage = 1;
-            });
+            if (val != null) {
+              setState(() {
+                _selectedSourceFilter = val;
+                _currentPage = 1;
+              });
+            }
           },
         ),
       ),
@@ -691,10 +1174,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             DropdownMenuItem(value: 'Unique Only', child: Text('Unique Leads Only ')),
           ],
           onChanged: (val) {
-            if (val != null) setState(() {
-              _selectedDuplicateFilter = val;
-              _currentPage = 1;
-            });
+            if (val != null) {
+              setState(() {
+                _selectedDuplicateFilter = val;
+                _currentPage = 1;
+              });
+            }
           },
         ),
       ),
@@ -705,13 +1190,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       child: CRMCard(
         elevated: true,
         title: 'Spreadsheet view',
-        subtitle: isMobile ? null : 'Dynamic column headers with visibility controls, header merging & automated deduplication.',
+        subtitle: isMobile
+            ? null
+            : 'Exact Google Sheet column sequence with drag-and-place reordering, Excel-style filtration & sorting.',
         headerAction: isMobile
             ? moreToolsButton
             : Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  reorderColumnsButton,
+                  const SizedBox(width: CRMSpacing.s),
                   columnsButton,
+                  const SizedBox(width: CRMSpacing.s),
+                  exportExcelButton,
                   const SizedBox(width: CRMSpacing.s),
                   addHeaderButton,
                   const SizedBox(width: CRMSpacing.s),
@@ -727,7 +1218,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 spacing: CRMSpacing.s,
                 runSpacing: CRMSpacing.s,
                 children: [
+                  reorderColumnsButton,
                   columnsButton,
+                  exportExcelButton,
                   addHeaderButton,
                 ],
               ),
@@ -844,41 +1337,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       columnSpacing: 18,
                       columns: [
                         const DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
-                        const DataColumn(label: Text('Source', style: TextStyle(fontWeight: FontWeight.bold))),
-                        const DataColumn(label: Text('Meta Lead Quality', style: TextStyle(fontWeight: FontWeight.bold))),
-                        const DataColumn(label: Text('CRM Status', style: TextStyle(fontWeight: FontWeight.bold))),
+                        _buildExcelDataColumn(context, title: 'Source', columnKey: '#Source', isStandard: true),
+                        _buildExcelDataColumn(context, title: 'Meta Rating', columnKey: '#MetaQuality', isStandard: true),
+                        _buildExcelDataColumn(context, title: 'Import Status', columnKey: '#CrmStatus', isStandard: true),
 
-                        // Dynamic Column Headers (Only Visible Ones)
+                        // Dynamic Column Headers (Only Visible Ones, strictly preserving Google Sheet / user drag-and-place order)
                         ...visibleHeaders.map((header) {
                           final crmTarget = _service.columnMappings[header];
-                          return DataColumn(
-                            label: InkWell(
-                              onTap: () => _showHeaderOptionsDialog(context, header),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(header, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                          const SizedBox(width: 4),
-                                          const Icon(Icons.arrow_drop_down, size: 16),
-                                        ],
-                                      ),
-                                      if (crmTarget != null)
-                                        Text(
-                                          '-> CRM: $crmTarget',
-                                          style: TextStyle(fontSize: 10, color: CRMColors.primaryOf(context), fontWeight: FontWeight.w600),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
+                          return _buildExcelDataColumn(
+                            context,
+                            title: header,
+                            columnKey: header,
+                            crmTarget: crmTarget,
+                            isStandard: false,
                           );
                         }),
 
@@ -913,29 +1384,56 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             // Row Index
                             DataCell(Text('${startIndex + index + 1}')),
 
-                            // Source Badge
+                            // Source Badge + Enquiry Frequency Badge
                             DataCell(
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: lead.source == 'Meta Ads'
-                                      ? CRMColors.terracotta.withValues(alpha: 0.15)
-                                      : CRMColors.sage.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: lead.source == 'Meta Ads'
-                                        ? CRMColors.terracotta.withValues(alpha: 0.4)
-                                        : CRMColors.sage.withValues(alpha: 0.4),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: lead.source == 'Meta Ads'
+                                          ? CRMColors.terracotta.withValues(alpha: 0.15)
+                                          : CRMColors.sage.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: lead.source == 'Meta Ads'
+                                            ? CRMColors.terracotta.withValues(alpha: 0.4)
+                                            : CRMColors.sage.withValues(alpha: 0.4),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      lead.source,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: lead.source == 'Meta Ads' ? CRMColors.terracotta : CRMColors.sage,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                child: Text(
-                                  lead.source,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: lead.source == 'Meta Ads' ? CRMColors.terracotta : CRMColors.sage,
-                                  ),
-                                ),
+                                  if (lead.enquiryCount > 1) ...[
+                                    const SizedBox(width: 6),
+                                    Tooltip(
+                                      message: 'Enquired ${lead.enquiryCount} times across campaigns',
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: CRMColors.primaryOf(context).withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(color: CRMColors.primaryOf(context).withValues(alpha: 0.4)),
+                                        ),
+                                        child: Text(
+                                          '${lead.enquiryCount}x',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: CRMColors.primaryOf(context),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
 
@@ -1021,7 +1519,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               final val = lead.getStringValue(header);
                               return DataCell(
                                 Text(
-                                  val.isEmpty ? '-' : val,
+                                  _formatDisplayCellValue(header, val),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1076,44 +1574,869 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     return Row(
       children: [
         Text(
-          'Showing $from–$to of $totalFiltered',
-          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+          'Showing $from–$to of $totalFiltered leads',
+          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontWeight: FontWeight.w600),
         ),
         const Spacer(),
-        DropdownButtonHideUnderline(
-          child: DropdownButton<int>(
-            value: _pageSize,
-            items: const [
-              DropdownMenuItem(value: 25, child: Text('25 / page')),
-              DropdownMenuItem(value: 50, child: Text('50 / page')),
-              DropdownMenuItem(value: 100, child: Text('100 / page')),
-            ],
-            onChanged: (val) {
-              if (val == null) return;
-              setState(() {
-                _pageSize = val;
-                _currentPage = 1;
-              });
-            },
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          height: 32,
+          decoration: BoxDecoration(
+            color: CRMColors.cardBgOf(context),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: CRMColors.borderOf(context)),
           ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<int>(
+              value: _pageSize,
+              items: const [
+                DropdownMenuItem(value: 25, child: Text('25 / page', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 50, child: Text('50 / page', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 100, child: Text('100 / page', style: TextStyle(fontSize: 12))),
+              ],
+              onChanged: (val) {
+                if (val == null) return;
+                setState(() {
+                  _pageSize = val;
+                  _currentPage = 1;
+                });
+              },
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        IconButton(
+          tooltip: 'First page',
+          onPressed: currentPage <= 1
+              ? null
+              : () => setState(() => _currentPage = 1),
+          icon: const Icon(Icons.first_page_rounded, size: 20),
         ),
         IconButton(
           tooltip: 'Previous page',
           onPressed: currentPage <= 1
               ? null
               : () => setState(() => _currentPage = currentPage - 1),
-          icon: const Icon(Icons.chevron_left_rounded),
+          icon: const Icon(Icons.chevron_left_rounded, size: 20),
         ),
-        Text('$currentPage / $totalPages', style: CRMTypography.caption),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: CRMColors.surfaceElevatedOf(context),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: CRMColors.borderOf(context)),
+          ),
+          child: Text(
+            'Page $currentPage of $totalPages',
+            style: CRMTypography.caption.copyWith(fontWeight: FontWeight.bold),
+          ),
+        ),
         IconButton(
           tooltip: 'Next page',
           onPressed: currentPage >= totalPages
               ? null
               : () => setState(() => _currentPage = currentPage + 1),
-          icon: const Icon(Icons.chevron_right_rounded),
+          icon: const Icon(Icons.chevron_right_rounded, size: 20),
+        ),
+        IconButton(
+          tooltip: 'Last page',
+          onPressed: currentPage >= totalPages
+              ? null
+              : () => setState(() => _currentPage = totalPages),
+          icon: const Icon(Icons.last_page_rounded, size: 20),
         ),
       ],
     );
+  }
+
+  // --- EXCEL FEATURES, FILTERING, SORTING & DRAG-AND-PLACE REORDERING ---
+
+  /// Live Auto-Sync Status Badge (1-minute engine indicator)
+  Widget _buildAutoSyncLiveBadge(BuildContext context) {
+    final hasSheet = _service.googleSheetUrl.isNotEmpty;
+    final lastSync = _service.lastSyncAt;
+
+    String syncTimeText;
+    if (!hasSheet) {
+      syncTimeText = 'Sheet not connected';
+    } else if (_isSyncingSheet) {
+      syncTimeText = 'Syncing now...';
+    } else if (lastSync == null) {
+      syncTimeText = 'Engine active (1 min)';
+    } else {
+      final diff = DateTime.now().difference(lastSync);
+      if (diff.inSeconds < 60) {
+        syncTimeText = 'Synced just now';
+      } else if (diff.inMinutes < 60) {
+        syncTimeText = 'Synced ${diff.inMinutes}m ago';
+      } else {
+        syncTimeText = 'Synced at ${DateFormat('HH:mm').format(lastSync.toLocal())}';
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: hasSheet
+            ? CRMColors.success.withValues(alpha: 0.1)
+            : CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+        border: Border.all(
+          color: hasSheet
+              ? CRMColors.success.withValues(alpha: 0.35)
+              : CRMColors.borderOf(context),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: hasSheet ? CRMColors.success : Colors.grey,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            hasSheet ? 'Auto-sync: 1 min' : 'Auto-sync: Idle',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: hasSheet ? CRMColors.success : CRMColors.textSecondaryOf(context),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '• $syncTimeText',
+            style: TextStyle(
+              fontSize: 11,
+              color: CRMColors.textSecondaryOf(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Active Filters Bar (Excel-Style filter chips row)
+  Widget _buildActiveFiltersBar(BuildContext context) {
+    if (_columnFilters.isEmpty && _sortColumn == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: CRMColors.primaryOf(context).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: CRMColors.primaryOf(context).withValues(alpha: 0.2)),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.filter_alt_rounded, size: 16, color: CRMColors.primaryOf(context)),
+              const SizedBox(width: 4),
+              Text(
+                'Excel Filters (${_columnFilters.length + (_sortColumn != null ? 1 : 0)} active):',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: CRMColors.primaryOf(context),
+                ),
+              ),
+            ],
+          ),
+
+          // Chips for each filtered column
+          ..._columnFilters.entries.map((entry) {
+            final colKey = entry.key;
+            final values = entry.value;
+            final colName = _getDisplayNameForColumn(colKey);
+
+            final summary = values.length <= 2
+                ? values.join(', ')
+                : '${values.first} +${values.length - 1} more';
+
+            return Chip(
+              label: Text('$colName: $summary', style: const TextStyle(fontSize: 11)),
+              deleteIcon: const Icon(Icons.close, size: 14),
+              onDeleted: () {
+                setState(() {
+                  _columnFilters.remove(colKey);
+                  _cachedFilteredLeads = null;
+                  _currentPage = 1;
+                });
+              },
+              backgroundColor: CRMColors.cardBgOf(context),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+            );
+          }),
+
+          // Chip for active sort
+          if (_sortColumn != null)
+            Chip(
+              avatar: Icon(
+                _sortAscending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                size: 14,
+                color: CRMColors.primaryOf(context),
+              ),
+              label: Text(
+                'Sorted: ${_getDisplayNameForColumn(_sortColumn!)} (${_sortAscending ? "A-Z" : "Z-A"})',
+                style: const TextStyle(fontSize: 11),
+              ),
+              deleteIcon: const Icon(Icons.close, size: 14),
+              onDeleted: () {
+                setState(() {
+                  _sortColumn = null;
+                  _sortAscending = true;
+                  _cachedFilteredLeads = null;
+                });
+              },
+              backgroundColor: CRMColors.cardBgOf(context),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+            ),
+
+          // Clear All Filters button
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _columnFilters.clear();
+                _sortColumn = null;
+                _sortAscending = true;
+                _cachedFilteredLeads = null;
+                _currentPage = 1;
+              });
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const Text(
+              'Clear All Filters',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// DataColumn builder with Excel-Style Filter Badge & Sort Arrows
+  DataColumn _buildExcelDataColumn(
+    BuildContext context, {
+    required String title,
+    required String columnKey,
+    String? crmTarget,
+    bool isStandard = false,
+  }) {
+    final isFiltered = _columnFilters.containsKey(columnKey);
+    final isSorted = _sortColumn == columnKey;
+
+    return DataColumn(
+      label: InkWell(
+        onTap: () {
+          if (isStandard) {
+            _showExcelColumnFilterDialog(context, columnKey, columnTitle: title);
+          } else {
+            _showHeaderOptionsDialog(context, columnKey);
+          }
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isFiltered ? CRMColors.primaryOf(context) : null,
+                      ),
+                    ),
+                    if (isSorted) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        _sortAscending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                        size: 14,
+                        color: CRMColors.primaryOf(context),
+                      ),
+                    ],
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () => _showExcelColumnFilterDialog(context, columnKey, columnTitle: title),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+                        decoration: isFiltered
+                            ? BoxDecoration(
+                                color: CRMColors.primaryOf(context).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              )
+                            : null,
+                        child: Icon(
+                          isFiltered ? Icons.filter_alt_rounded : Icons.arrow_drop_down,
+                          size: 16,
+                          color: isFiltered ? CRMColors.primaryOf(context) : Colors.grey,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (crmTarget != null)
+                  Text(
+                    '-> CRM: $crmTarget',
+                    style: TextStyle(fontSize: 10, color: CRMColors.primaryOf(context), fontWeight: FontWeight.w600),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Excel-Style Column Filter & Sort Dialog (Distinct values checkboxes, A-Z/Z-A sorting, Search)
+  void _showExcelColumnFilterDialog(
+    BuildContext context,
+    String columnKey, {
+    required String columnTitle,
+  }) {
+    final distinctValueCounts = <String, int>{};
+    for (final lead in _service.leads) {
+      String val;
+      if (columnKey == '#Source') {
+        val = lead.source;
+      } else if (columnKey == '#MetaQuality') {
+        val = lead.qualityStatus;
+      } else if (columnKey == '#CrmStatus') {
+        val = lead.importStatus;
+      } else {
+        val = lead.getStringValue(columnKey).trim();
+      }
+      if (val.isEmpty) val = '(Blanks)';
+      distinctValueCounts[val] = (distinctValueCounts[val] ?? 0) + 1;
+    }
+
+    final allDistinctValues = distinctValueCounts.keys.toList()
+      ..sort((a, b) {
+        if (a == '(Blanks)') return 1;
+        if (b == '(Blanks)') return -1;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+
+    final currentlySelected = _columnFilters.containsKey(columnKey)
+        ? Set<String>.from(_columnFilters[columnKey]!)
+        : Set<String>.from(allDistinctValues);
+
+    final searchController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final query = searchController.text.trim().toLowerCase();
+          final visibleValues = query.isEmpty
+              ? allDistinctValues
+              : allDistinctValues.where((v) => v.toLowerCase().contains(query)).toList();
+
+          final isAllVisibleSelected = visibleValues.isNotEmpty &&
+              visibleValues.every((v) => currentlySelected.contains(v));
+
+          final isCurrentlySortedAsc = _sortColumn == columnKey && _sortAscending;
+          final isCurrentlySortedDesc = _sortColumn == columnKey && !_sortAscending;
+
+          return AlertDialog(
+            titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            title: Row(
+              children: [
+                Icon(Icons.filter_alt_rounded, color: CRMColors.primaryOf(context), size: 22),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Filter & Sort: $columnTitle',
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Excel Sort Section
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: CRMColors.surfaceElevatedOf(context),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: CRMColors.borderOf(context)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: Icon(
+                              Icons.arrow_upward_rounded,
+                              size: 15,
+                              color: isCurrentlySortedAsc ? CRMColors.primaryOf(context) : null,
+                            ),
+                            label: Text(
+                              'Sort A to Z',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: isCurrentlySortedAsc ? FontWeight.bold : FontWeight.normal,
+                                color: isCurrentlySortedAsc ? CRMColors.primaryOf(context) : null,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: isCurrentlySortedAsc
+                                  ? CRMColors.primaryOf(context).withValues(alpha: 0.1)
+                                  : null,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _sortColumn = columnKey;
+                                _sortAscending = true;
+                                _cachedFilteredLeads = null;
+                              });
+                              setModalState(() {});
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: Icon(
+                              Icons.arrow_downward_rounded,
+                              size: 15,
+                              color: isCurrentlySortedDesc ? CRMColors.primaryOf(context) : null,
+                            ),
+                            label: Text(
+                              'Sort Z to A',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: isCurrentlySortedDesc ? FontWeight.bold : FontWeight.normal,
+                                color: isCurrentlySortedDesc ? CRMColors.primaryOf(context) : null,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: isCurrentlySortedDesc
+                                  ? CRMColors.primaryOf(context).withValues(alpha: 0.1)
+                                  : null,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _sortColumn = columnKey;
+                                _sortAscending = false;
+                                _cachedFilteredLeads = null;
+                              });
+                              setModalState(() {});
+                            },
+                          ),
+                        ),
+                        if (_sortColumn == columnKey) ...[
+                          const SizedBox(width: 6),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                            tooltip: 'Clear Sort',
+                            onPressed: () {
+                              setState(() {
+                                _sortColumn = null;
+                                _sortAscending = true;
+                                _cachedFilteredLeads = null;
+                              });
+                              setModalState(() {});
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Search values within this column
+                  SizedBox(
+                    height: 36,
+                    child: TextField(
+                      controller: searchController,
+                      onChanged: (_) => setModalState(() {}),
+                      decoration: InputDecoration(
+                        hintText: 'Search values in this column...',
+                        prefixIcon: const Icon(Icons.search_rounded, size: 16),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                        suffixIcon: searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 14),
+                                onPressed: () {
+                                  searchController.clear();
+                                  setModalState(() {});
+                                },
+                              )
+                            : null,
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Select All / Deselect All
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          setModalState(() {
+                            if (isAllVisibleSelected) {
+                              currentlySelected.removeAll(visibleValues);
+                            } else {
+                              currentlySelected.addAll(visibleValues);
+                            }
+                          });
+                        },
+                        child: Text(
+                          isAllVisibleSelected ? 'Deselect All' : '(Select All)',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Text(
+                        '${currentlySelected.length} of ${allDistinctValues.length} selected',
+                        style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
+                      ),
+                    ],
+                  ),
+
+                  const Divider(height: 1),
+
+                  // Unique values checkbox list
+                  SizedBox(
+                    height: 200,
+                    child: visibleValues.isEmpty
+                        ? const Center(child: Text('No matching values', style: TextStyle(fontSize: 12, color: Colors.grey)))
+                        : ListView.builder(
+                            itemCount: visibleValues.length,
+                            itemBuilder: (ctx, i) {
+                              final val = visibleValues[i];
+                              final isChecked = currentlySelected.contains(val);
+                              final count = distinctValueCounts[val] ?? 0;
+
+                              return CheckboxListTile(
+                                dense: true,
+                                controlAffinity: ListTileControlAffinity.leading,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                                value: isChecked,
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        val,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontStyle: val == '(Blanks)' ? FontStyle.italic : FontStyle.normal,
+                                          color: val == '(Blanks)' ? CRMColors.textSecondaryOf(context) : null,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: CRMColors.surfaceElevatedOf(context),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Text(
+                                        '$count',
+                                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                onChanged: (checked) {
+                                  setModalState(() {
+                                    if (checked == true) {
+                                      currentlySelected.add(val);
+                                    } else {
+                                      currentlySelected.remove(val);
+                                    }
+                                  });
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              if (_columnFilters.containsKey(columnKey))
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _columnFilters.remove(columnKey);
+                      _cachedFilteredLeads = null;
+                      _currentPage = 1;
+                    });
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Clear Filter', style: TextStyle(color: CRMColors.danger)),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    if (currentlySelected.length >= allDistinctValues.length) {
+                      _columnFilters.remove(columnKey);
+                    } else {
+                      _columnFilters[columnKey] = Set<String>.from(currentlySelected);
+                    }
+                    _cachedFilteredLeads = null;
+                    _currentPage = 1;
+                  });
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Apply'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Drag-and-Drop Column Reordering Dialog
+  void _showReorderColumnsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final allHeaders = _service.getDetectedHeaders();
+
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.swap_horiz_rounded, color: CRMColors.primaryOf(context)),
+                const SizedBox(width: 8),
+                const Text('Reorder Spreadsheet Columns'),
+              ],
+            ),
+            content: SizedBox(
+              width: 520,
+              height: 440,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Drag and drop columns using the handles (⠿) to change their display order. The layout is saved automatically and matches the Google Sheet sequence by default.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${allHeaders.length} Columns',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.restore_page_rounded, size: 16),
+                        label: const Text('Reset to Sheet Order'),
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          await _service.resetHeaderOrderToSheet();
+                          setModalState(() {});
+                          setState(() {});
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('Reset column order to original Google Sheet sequence.')),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 8),
+                  Expanded(
+                    child: ReorderableListView.builder(
+                      itemCount: allHeaders.length,
+                      onReorder: (oldIndex, newIndex) async {
+                        await _service.reorderHeaders(oldIndex, newIndex);
+                        setModalState(() {});
+                        setState(() {});
+                      },
+                      itemBuilder: (ctx, i) {
+                        final h = allHeaders[i];
+                        final isVisible = _service.isHeaderVisible(h);
+                        final crmTarget = _service.columnMappings[h];
+
+                        return ListTile(
+                          key: ValueKey('reorder_$h'),
+                          dense: true,
+                          leading: const Icon(Icons.drag_indicator_rounded, color: Colors.grey),
+                          title: Row(
+                            children: [
+                              Text(
+                                '${i + 1}. ',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  h,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    decoration: isVisible ? null : TextDecoration.lineThrough,
+                                    color: isVisible ? null : Colors.grey,
+                                  ),
+                                ),
+                              ),
+                              if (crmTarget != null)
+                                Container(
+                                  margin: const EdgeInsets.only(right: 8),
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.primaryOf(context).withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '-> $crmTarget',
+                                    style: TextStyle(fontSize: 10, color: CRMColors.primaryOf(context), fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Quick shift up/down buttons
+                              IconButton(
+                                icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 18),
+                                tooltip: 'Move Up',
+                                onPressed: i > 0
+                                    ? () async {
+                                        await _service.moveHeader(h, -1);
+                                        setModalState(() {});
+                                        setState(() {});
+                                      }
+                                    : null,
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                                tooltip: 'Move Down',
+                                onPressed: i < allHeaders.length - 1
+                                    ? () async {
+                                        await _service.moveHeader(h, 1);
+                                        setModalState(() {});
+                                        setState(() {});
+                                      }
+                                    : null,
+                              ),
+                              Switch(
+                                value: isVisible,
+                                activeThumbColor: CRMColors.primaryOf(context),
+                                onChanged: (val) {
+                                  _service.setHeaderVisibility(h, val);
+                                  setModalState(() {});
+                                  setState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Done'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Export current filtered spreadsheet directly to genuine Excel (.xlsx)
+  Future<void> _exportCurrentSpreadsheetToExcel(BuildContext context) async {
+    final leadsToExport = _filteredLeads;
+    if (leadsToExport.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No leads match the current filters to export.')),
+      );
+      return;
+    }
+
+    final visibleHeaders = _service.getActiveVisibleHeaders();
+    final excel = xl.Excel.createExcel();
+    final sheet = excel['Campaign Leads'];
+
+    // Header Row
+    final headerCells = <xl.CellValue>[
+      xl.TextCellValue('#'),
+      xl.TextCellValue('Source'),
+      xl.TextCellValue('Meta Quality'),
+      xl.TextCellValue('CRM Status'),
+      ...visibleHeaders.map((h) => xl.TextCellValue(h)),
+      xl.TextCellValue('Received Date'),
+    ];
+    sheet.appendRow(headerCells);
+
+    // Data Rows
+    for (var i = 0; i < leadsToExport.length; i++) {
+      final lead = leadsToExport[i];
+      final rowCells = <xl.CellValue>[
+        xl.IntCellValue(i + 1),
+        xl.TextCellValue(lead.source),
+        xl.TextCellValue(lead.qualityStatus),
+        xl.TextCellValue(lead.importStatus),
+        ...visibleHeaders.map((h) => xl.TextCellValue(lead.getStringValue(h))),
+        xl.TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(lead.receivedAt)),
+      ];
+      sheet.appendRow(rowCells);
+    }
+
+    final bytes = excel.save();
+    if (bytes != null) {
+      final filename = 'PropKart_Campaign_Leads_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
+      await FileDownloader.download(bytes, filename);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported ${leadsToExport.length} lead(s) to Excel ($filename).'),
+            backgroundColor: CRMColors.success,
+          ),
+        );
+      }
+    }
   }
 
   // --- DIALOGS & ACTIONS ---
@@ -1533,7 +2856,51 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     _service.setColumnMapping(header, val);
                   },
                 ),
-                const Divider(height: 24),
+                const Divider(height: 20),
+                ListTile(
+                  leading: Icon(Icons.filter_alt_rounded, color: CRMColors.primaryOf(context)),
+                  title: const Text('Excel Filter & Sort...', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Filter distinct values, sort A-Z / Z-A', style: TextStyle(fontSize: 11)),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showExcelColumnFilterDialog(context, header, columnTitle: header);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.arrow_back_rounded),
+                  title: const Text('Move Column Left'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await _service.moveHeader(header, -1);
+                    if (mounted) setState(() {});
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.arrow_forward_rounded),
+                  title: const Text('Move Column Right'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await _service.moveHeader(header, 1);
+                    if (mounted) setState(() {});
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.swap_horiz_rounded),
+                  title: const Text('Reorder All Columns (Drag & Drop)'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showReorderColumnsDialog(context);
+                  },
+                ),
+                const Divider(height: 20),
                 ListTile(
                   leading: const Icon(Icons.edit_rounded),
                   title: const Text('Rename Header'),
@@ -1911,6 +3278,72 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     }
   }
 
+  Future<void> _moveSelectedToPropertiesPage(BuildContext context) async {
+    final selected = _selectedLeadIds.toList();
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select the property listing leads you want to move.')),
+      );
+      return;
+    }
+
+    final pendingIds = _service.leads
+        .where((l) => selected.contains(l.id) && l.importStatus != 'Imported')
+        .map((l) => l.id)
+        .toList();
+
+    if (pendingIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Those property leads were already moved to the Properties page.')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.home_work_rounded, color: CRMColors.primaryOf(context)),
+            const SizedBox(width: 8),
+            const Text('Move to Properties page?'),
+          ],
+        ),
+        content: Text(
+          'Move ${pendingIds.length} Property Listing lead(s) to your Properties inventory?\n\n'
+          'Each will be added as a rental inventory item with Owner Name, Mobile, Expected Rent, Location, and Property Type.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.home_work_rounded, size: 16),
+            onPressed: () => Navigator.pop(ctx, true),
+            label: const Text('Move to Properties page'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isImporting = true);
+    final count = await _service.importLeadsToProperties(pendingIds);
+    if (!mounted) return;
+    setState(() {
+      _isImporting = false;
+      _selectedLeadIds.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          count == 0
+              ? 'No properties were created. Check property metadata or details.'
+              : 'Moved $count property lead(s) to Properties inventory.',
+        ),
+        backgroundColor: count == 0 ? null : CRMColors.success,
+      ),
+    );
+  }
+
   Future<void> _moveSelectedToLeadsPage(BuildContext context) async {
     final selected = _selectedLeadIds.toList();
     if (selected.isEmpty) {
@@ -1964,5 +3397,63 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         backgroundColor: count == 0 ? null : CRMColors.success,
       ),
     );
+  }
+
+  Future<void> _cleanDuplicatesDialog(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.cleaning_services_rounded, color: CRMColors.primaryOf(context)),
+            const SizedBox(width: 8),
+            const Text('Clean & Merge Duplicates?'),
+          ],
+        ),
+        content: const Text(
+          'This runs the deduplication engine across the database:\n\n'
+          '• Multiple inquiries with the same phone will be merged into 1 master lead with an enquiry counter.\n'
+          '• Blank rows with no phone/name will be purged.\n'
+          '• Your clean leads will be refreshed immediately.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.primaryOf(context),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Clean Now'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final messenger = ScaffoldMessenger.of(context);
+      final res = await _service.cleanDuplicates();
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Cleanup Complete: ${res['deletedDuplicates'] ?? 0} duplicates merged, ${res['purgedJunk'] ?? 0} junk purged. ${res['remainingCleanLeads'] ?? 0} clean leads remaining.',
+            ),
+            backgroundColor: CRMColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to clean duplicates: $e'), backgroundColor: CRMColors.danger),
+        );
+      }
+    }
   }
 }

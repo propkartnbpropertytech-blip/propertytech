@@ -14,6 +14,8 @@ class IntegrationLeadModel {
   final String? importedClientId;
   final String? metaFeedbackEventId;
   final DateTime? metaFeedbackSentAt;
+  final int enquiryCount;
+  final String leadType; // 'Property Listing', 'Requirement'
 
   IntegrationLeadModel({
     required this.id,
@@ -28,6 +30,8 @@ class IntegrationLeadModel {
     this.importedClientId,
     this.metaFeedbackEventId,
     this.metaFeedbackSentAt,
+    this.enquiryCount = 1,
+    this.leadType = 'Requirement',
   });
 
   /// Extract cell value by dynamic key
@@ -67,6 +71,8 @@ class IntegrationLeadModel {
     String? importedClientId,
     String? metaFeedbackEventId,
     DateTime? metaFeedbackSentAt,
+    int? enquiryCount,
+    String? leadType,
   }) {
     return IntegrationLeadModel(
       id: id ?? this.id,
@@ -81,6 +87,8 @@ class IntegrationLeadModel {
       importedClientId: importedClientId ?? this.importedClientId,
       metaFeedbackEventId: metaFeedbackEventId ?? this.metaFeedbackEventId,
       metaFeedbackSentAt: metaFeedbackSentAt ?? this.metaFeedbackSentAt,
+      enquiryCount: enquiryCount ?? this.enquiryCount,
+      leadType: leadType ?? this.leadType,
     );
   }
 
@@ -98,10 +106,27 @@ class IntegrationLeadModel {
       'imported_client_id': importedClientId,
       'meta_feedback_event_id': metaFeedbackEventId,
       'meta_feedback_sent_at': metaFeedbackSentAt?.toIso8601String(),
+      'enquiry_count': enquiryCount,
+      'lead_type': leadType,
     };
   }
 
   factory IntegrationLeadModel.fromJson(Map<String, dynamic> json) {
+    String type = json['lead_type']?.toString() ?? '';
+    if (type.isEmpty) {
+      final raw = json['raw_json'];
+      final rawStr = raw is Map ? jsonEncode(raw).toLowerCase() : (raw?.toString().toLowerCase() ?? '');
+      if (rawStr.contains('rent out') ||
+          rawStr.contains('property located') ||
+          rawStr.contains('expected monthly rent') ||
+          rawStr.contains('expected_monthly_rent') ||
+          rawStr.contains('rental property')) {
+        type = 'Property Listing';
+      } else {
+        type = 'Requirement';
+      }
+    }
+
     return IntegrationLeadModel(
       id: json['id']?.toString() ?? '',
       source: json['source']?.toString() ?? 'Meta Ads',
@@ -123,6 +148,8 @@ class IntegrationLeadModel {
       metaFeedbackSentAt: json['meta_feedback_sent_at'] != null
           ? DateTime.tryParse(json['meta_feedback_sent_at'].toString())
           : null,
+      enquiryCount: int.tryParse(json['enquiry_count']?.toString() ?? '1') ?? 1,
+      leadType: type,
     );
   }
 }

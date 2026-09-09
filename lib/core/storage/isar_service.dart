@@ -11,6 +11,7 @@ class IsarService {
   IsarService._internal();
 
   Isar? _isar;
+  bool get isInitialized => _isar != null;
 
   Isar get isar {
     if (_isar == null) {

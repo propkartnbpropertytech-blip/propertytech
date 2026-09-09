@@ -2765,6 +2765,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
                                 ),
+                                if (req.isMetaLead) ...[
+                                  const SizedBox(height: 3),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF1877F2).withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: const Color(0xFF1877F2).withOpacity(0.35)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.campaign_rounded, size: 10, color: Color(0xFF1877F2)),
+                                        const SizedBox(width: 3),
+                                        Flexible(
+                                          child: Text(
+                                            req.metaCampaignDisplayName != null ? 'Meta: ${req.metaCampaignDisplayName}' : 'Meta Ads',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Color(0xFF1877F2),
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                                 if (req.nextFollowupDate != null) ...[
                                   const SizedBox(height: 2),
                                   Row(
@@ -3450,11 +3480,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.hub_outlined, size: 13, color: CRMColors.textMutedOf(context)),
+                            Icon(
+                              req.isMetaLead ? Icons.campaign_rounded : Icons.hub_outlined,
+                              size: 13,
+                              color: req.isMetaLead ? const Color(0xFF1877F2) : CRMColors.textMutedOf(context),
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               'Source: ${req.leadSourceDisplay}',
-                              style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5, fontWeight: FontWeight.w600),
+                              style: TextStyle(
+                                color: req.isMetaLead ? const Color(0xFF1877F2) : CRMColors.textSecondaryOf(context),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ],
                         ),
@@ -7162,6 +7200,8 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                     ),
                                   ),
                                 ),
+                                if (req.isMetaLead)
+                                  _buildMetaAttributionCard(req),
                                 const SizedBox(height: CRMSpacing.l),
                                 if (!_isLoading && _error == null) ...[
                                   Row(
@@ -7245,6 +7285,8 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                     ),
                                   ),
                                 ),
+                                if (req.isMetaLead)
+                                  _buildMetaAttributionCard(req),
                                 const SizedBox(height: CRMSpacing.l),
                                 if (!_isLoading && _error == null) ...[
                                   Row(
@@ -7281,6 +7323,90 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
     ),
   );
 }
+
+  Widget _buildMetaAttributionCard(RequirementModel req) {
+    if (!req.isMetaLead) return const SizedBox.shrink();
+    final customFields = req.metaCustomFields ?? {};
+
+    return Container(
+      margin: const EdgeInsets.only(top: CRMSpacing.m),
+      padding: const EdgeInsets.all(CRMSpacing.m),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1877F2).withOpacity(0.05),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+        border: Border.all(color: const Color(0xFF1877F2).withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.campaign_rounded, size: 16, color: Color(0xFF1877F2)),
+              const SizedBox(width: 6),
+              Text(
+                "Meta Ads Attribution",
+                style: CRMTypography.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF1877F2),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1877F2).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  req.leadQuality ?? "Pending",
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1877F2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 16),
+          _buildDetailRow("Campaign", req.metaCampaignName ?? req.metaCampaignId ?? "N/A", Icons.folder_special_outlined),
+          if (req.metaAdName != null || req.metaAdId != null)
+            _buildDetailRow("Ad", req.metaAdName ?? req.metaAdId ?? "N/A", Icons.ad_units_outlined),
+          if (req.metaAdsetName != null || req.metaAdsetId != null)
+            _buildDetailRow("AdSet", req.metaAdsetName ?? req.metaAdsetId ?? "N/A", Icons.layers_outlined),
+          _buildDetailRow("Meta Lead ID", req.metaLeadId ?? "N/A", Icons.fingerprint_rounded),
+          if (req.metaFormId != null)
+            _buildDetailRow("Form ID", req.metaFormId!, Icons.assignment_outlined),
+          if (customFields.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              "Form Responses:",
+              style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
+            ),
+            const SizedBox(height: 4),
+            ...customFields.entries.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 4.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "• ${e.key.replaceAll('_', ' ')}: ",
+                    style: CRMTypography.caption.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  Expanded(
+                    child: Text(
+                      "${e.value}",
+                      style: CRMTypography.caption.copyWith(color: CRMColors.textOf(context)),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _buildDetailRow(String label, String value, IconData icon) {
     return Padding(
