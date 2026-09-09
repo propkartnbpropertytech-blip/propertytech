@@ -2,18 +2,20 @@ import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:excel/excel.dart';
 import '../../../core/utils/file_downloader.dart';
+import '../models/report_kpi_type.dart';
 import '../models/report_configuration.dart';
 import '../models/report_data.dart';
 
 class ReportExportService {
-  /// Export PDF Report
-  static Future<void> exportPdf({
+  /// Build PDF Document
+  static pw.Document buildPdfDocument({
     required ReportOverallData reportData,
     required ReportConfiguration config,
-  }) async {
+  }) {
     final pdf = pw.Document();
-    final dateStr = config.dateRange.formattedRange;
+    final dateStr = config.dateRange.formattedRange.replaceAll('–', '-').replaceAll('—', '-');
     final generatedAt = DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
 
     // 1. Gather enabled KPIs
@@ -147,14 +149,14 @@ class ReportExportService {
                       pw.Padding(
                         padding: const pw.EdgeInsets.all(5),
                         child: pw.Text(
-                          k.showCount ? (reportData.kpiValues[k.type]?.formattedCount ?? '0') : '—',
+                          k.showCount ? (reportData.kpiValues[k.type]?.formattedCount ?? '0') : '-',
                           style: const pw.TextStyle(fontSize: 8),
                         ),
                       ),
                       pw.Padding(
                         padding: const pw.EdgeInsets.all(5),
                         child: pw.Text(
-                          k.showPercentage ? (reportData.kpiValues[k.type]?.formattedPercentage ?? '0.0%') : '—',
+                          k.showPercentage ? (reportData.kpiValues[k.type]?.formattedPercentage ?? '0.0%') : '-',
                           style: const pw.TextStyle(fontSize: 8),
                         ),
                       ),
@@ -350,21 +352,65 @@ class ReportExportService {
                 ],
               ),
             ],
+
+            // Section: Growth & Comparison Breakdown (if enabled)
+            if (config.showGrowthComparison && reportData.growthComparisonItems.isNotEmpty) ...[
+              pw.SizedBox(height: 14),
+              pw.Text(
+                'Growth & Comparison (${config.comparisonPeriod.displayName})',
+                style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 6),
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                children: [
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                    children: [
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('Metric', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('Current Period', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('Previous Period', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('Difference', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('Growth %', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
+                    ],
+                  ),
+                  for (final item in reportData.growthComparisonItems) ...[
+                    pw.TableRow(
+                      children: [
+                        pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(item.metricName, style: const pw.TextStyle(fontSize: 8))),
+                        pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(item.currentCount.toString(), style: const pw.TextStyle(fontSize: 8))),
+                        pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(item.previousCount.toString(), style: const pw.TextStyle(fontSize: 8))),
+                        pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('${item.difference >= 0 ? '+' : ''}${item.difference}', style: const pw.TextStyle(fontSize: 8))),
+                        pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('${item.difference >= 0 ? '+' : ''}${item.growthPercentage.toStringAsFixed(2)}%', style: const pw.TextStyle(fontSize: 8))),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ],
           ];
         },
       ),
     );
+    return pdf;
+  }
 
+  /// Export PDF Report
+  static Future<void> exportPdf({
+    required ReportOverallData reportData,
+    required ReportConfiguration config,
+  }) async {
+    final pdf = buildPdfDocument(reportData: reportData, config: config);
     final bytes = await pdf.save();
     final filename = 'PropKart_Overall_Business_Insight_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
     await FileDownloader.download(bytes, filename);
   }
 
-  /// Export CSV
-  static Future<void> exportCsv({
+  /// Generate CSV string content
+  static String generateCsvContent({
     required ReportOverallData reportData,
     required ReportConfiguration config,
-  }) async {
+  }) {
     final buffer = StringBuffer();
 
     // Title & Context
@@ -375,12 +421,13 @@ class ReportExportService {
 
     // 1. KPI Section
     buffer.writeln('"=== KEY PERFORMANCE INDICATORS ==="');
-    buffer.writeln('"Metric","Count","Percentage","Denominator"');
-    for (final k in config.sortedEnabledKpis) {
+    buffer.writeln('"Order","Metric","Count","Percentage","Denominator"');
+    for (var i = 0; i < config.sortedEnabledKpis.length; i++) {
+      final k = config.sortedEnabledKpis[i];
       final v = reportData.kpiValues[k.type];
       final countStr = k.showCount ? (v?.count.toString() ?? '0') : '';
       final pctStr = k.showPercentage ? (v?.formattedPercentage ?? '0.0%') : '';
-      buffer.writeln('"${k.type.displayName}","$countStr","$pctStr","${v?.denominatorLabel ?? ''}"');
+      buffer.writeln('"${i + 1}","${k.type.displayName}","$countStr","$pctStr","${v?.denominatorLabel ?? ''}"');
     }
     buffer.writeln();
 
@@ -412,9 +459,38 @@ class ReportExportService {
         buffer.writeln('"${s.rank}","${s.userName}","${s.leadsCount}","${s.contactedCount}","${s.qualifiedCount}","${s.siteVisitsCount}","${s.wonCount}","${s.conversionRate.toStringAsFixed(1)}%"');
       }
       buffer.writeln();
+
+      buffer.writeln('"=== TELECALLER TEAM RANKINGS ==="');
+      buffer.writeln('"Rank","User","Leads","Contacted","Qualified","Site Visits","Won","Conversion Rate"');
+      for (final t in reportData.telecallerRankings) {
+        buffer.writeln('"${t.rank}","${t.userName}","${t.leadsCount}","${t.contactedCount}","${t.qualifiedCount}","${t.siteVisitsCount}","${t.wonCount}","${t.conversionRate.toStringAsFixed(1)}%"');
+      }
+      buffer.writeln();
     }
 
-    // 5. Raw Lead Rows for Detailed Auditing
+    // 5. Growth & Comparison Section
+    if (config.showGrowthComparison && reportData.growthComparisonItems.isNotEmpty) {
+      buffer.writeln('"=== GROWTH & COMPARISON (${config.comparisonPeriod.displayName}) ==="');
+      buffer.writeln('"Metric","Current Period","Previous Period","Difference","Growth %"');
+      for (final g in reportData.growthComparisonItems) {
+        final diffStr = '${g.difference >= 0 ? '+' : ''}${g.difference}';
+        final growthStr = '${g.difference >= 0 ? '+' : ''}${g.growthPercentage.toStringAsFixed(2)}%';
+        buffer.writeln('"${g.metricName}","${g.currentCount}","${g.previousCount}","$diffStr","$growthStr"');
+      }
+      buffer.writeln();
+    }
+
+    // 6. Lead Sources Section
+    if (config.showLeadSourceAnalysis && reportData.leadSources.isNotEmpty) {
+      buffer.writeln('"=== LEAD SOURCES ANALYSIS ==="');
+      buffer.writeln('"Source","Count","Share %"');
+      for (final src in reportData.leadSources) {
+        buffer.writeln('"${src.source}","${src.count}","${src.percentage.toStringAsFixed(1)}%"');
+      }
+      buffer.writeln();
+    }
+
+    // 7. Raw Lead Rows for Detailed Auditing
     buffer.writeln('"=== FILTERED LEADS LIST ==="');
     buffer.writeln('"Lead Name","Mobile","Status","Created At","Assigned To","Telecaller / Creator","Budget Range","Category"');
     for (final l in reportData.filteredLeads) {
@@ -422,54 +498,278 @@ class ReportExportService {
       final createdStr = DateFormat('yyyy-MM-dd').format(l.createdAt);
       buffer.writeln('"${l.clientName}","${l.clientMobile}","${l.status}","$createdStr","${l.assigneeName ?? ''}","${l.creatorName ?? ''}","$budgetStr","${l.categoryName}"');
     }
+    return buffer.toString();
+  }
 
-    final bytes = utf8.encode(buffer.toString());
+  /// Export CSV
+  static Future<void> exportCsv({
+    required ReportOverallData reportData,
+    required ReportConfiguration config,
+  }) async {
+    final content = generateCsvContent(reportData: reportData, config: config);
+    final bytes = utf8.encode(content);
     final filename = 'PropKart_Business_Insight_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv';
     await FileDownloader.download(bytes, filename);
   }
 
-  /// Export Excel (Formatted Tabular CSV with Excel compatibility)
+  /// Build Genuine Excel (.xlsx) Workbook
+  static Excel buildExcelDocument({
+    required ReportOverallData reportData,
+    required ReportConfiguration config,
+  }) {
+    final excel = Excel.createExcel();
+
+    // 1. Summary Sheet
+    final summarySheet = excel['Summary'];
+    summarySheet.appendRow([TextCellValue('PropKart CRM - Overall Business Insight Report')]);
+    summarySheet.appendRow([TextCellValue('Reporting Period:'), TextCellValue(config.dateRange.formattedRange)]);
+    summarySheet.appendRow([TextCellValue('Export Generated:'), TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()))]);
+    if (config.filters.hasActiveFilters) {
+      summarySheet.appendRow([TextCellValue('Active Filters:'), TextCellValue('${config.filters.activeFiltersCount} filters applied')]);
+    }
+    summarySheet.appendRow([]);
+    final totalLeads = reportData.kpiValues[ReportKpiType.totalLeads]?.count ?? 0;
+    final contacted = reportData.kpiValues[ReportKpiType.leadsContacted]?.count ?? 0;
+    final won = reportData.kpiValues[ReportKpiType.convertedToWon]?.count ?? 0;
+    final convRate = reportData.kpiValues[ReportKpiType.convertedToWon]?.percentage ?? 0.0;
+
+    summarySheet.appendRow([
+      TextCellValue('Total Leads'),
+      IntCellValue(totalLeads),
+      TextCellValue('Contacted'),
+      IntCellValue(contacted),
+      TextCellValue('Won'),
+      IntCellValue(won),
+      TextCellValue('Conversion %'),
+      TextCellValue('${convRate.toStringAsFixed(1)}%'),
+    ]);
+
+    // 2. KPIs Sheet (Filtered and Ordered by live configuration)
+    final kpiSheet = excel['KPIs'];
+    kpiSheet.appendRow([
+      TextCellValue('Order'),
+      TextCellValue('KPI Metric'),
+      TextCellValue('Count'),
+      TextCellValue('Percentage'),
+      TextCellValue('Denominator / Basis'),
+    ]);
+    for (var i = 0; i < config.sortedEnabledKpis.length; i++) {
+      final k = config.sortedEnabledKpis[i];
+      final v = reportData.kpiValues[k.type];
+      kpiSheet.appendRow([
+        IntCellValue(i + 1),
+        TextCellValue(k.type.displayName),
+        k.showCount ? IntCellValue(v?.count ?? 0) : TextCellValue('—'),
+        k.showPercentage ? TextCellValue(v?.formattedPercentage ?? '0.0%') : TextCellValue('—'),
+        TextCellValue(v?.denominatorLabel ?? ''),
+      ]);
+    }
+
+    // 3. Lead Status Sheet (if enabled)
+    if (config.showLeadStatusPipeline && reportData.pipelineStages.isNotEmpty) {
+      final statusSheet = excel['Lead Status'];
+      statusSheet.appendRow([
+        TextCellValue('Stage Name'),
+        TextCellValue('Leads Count'),
+        TextCellValue('Share of Pipeline %'),
+      ]);
+      for (final s in reportData.pipelineStages) {
+        statusSheet.appendRow([
+          TextCellValue(s.displayName),
+          IntCellValue(s.count),
+          DoubleCellValue(double.parse(s.percentage.toStringAsFixed(2))),
+        ]);
+      }
+    }
+
+    // 4. Conversion Funnel Sheet (if enabled)
+    if (config.showConversionFunnel && reportData.funnelStages.isNotEmpty) {
+      final funnelSheet = excel['Conversion Funnel'];
+      funnelSheet.appendRow([
+        TextCellValue('Funnel Stage'),
+        TextCellValue('Count'),
+        TextCellValue('Step-to-Step Conversion %'),
+        TextCellValue('Overall Conversion %'),
+      ]);
+      for (final f in reportData.funnelStages) {
+        funnelSheet.appendRow([
+          TextCellValue(f.stageName),
+          IntCellValue(f.count),
+          DoubleCellValue(double.parse(f.stageConversionRate.toStringAsFixed(2))),
+          DoubleCellValue(double.parse(f.totalConversionRate.toStringAsFixed(2))),
+        ]);
+      }
+    }
+
+    // 5. Follow-ups Sheet (if enabled)
+    if (config.showFollowupAnalysis && reportData.followupCategories.isNotEmpty) {
+      final followupSheet = excel['Follow-ups'];
+      followupSheet.appendRow([
+        TextCellValue('Category'),
+        TextCellValue('Client Name'),
+        TextCellValue('Mobile'),
+        TextCellValue('Assigned Representative'),
+        TextCellValue('Follow-up Date'),
+        TextCellValue('Next Action'),
+        TextCellValue('Current Status'),
+      ]);
+      for (final cat in reportData.followupCategories) {
+        for (final item in cat.items) {
+          followupSheet.appendRow([
+            TextCellValue(cat.categoryName),
+            TextCellValue(item.leadName),
+            TextCellValue(item.clientMobile ?? ''),
+            TextCellValue(item.assignedUserName ?? 'Unassigned'),
+            TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(item.followupDateTime)),
+            TextCellValue(item.nextAction),
+            TextCellValue(item.leadStatus),
+          ]);
+        }
+      }
+    }
+
+    // 6. Team Ranking Sheet (if enabled)
+    if (config.showTeamRanking && (reportData.salesRankings.isNotEmpty || reportData.telecallerRankings.isNotEmpty)) {
+      final teamSheet = excel['Team Ranking'];
+      teamSheet.appendRow([TextCellValue('=== SALES TEAM RANKING ===')]);
+      teamSheet.appendRow([
+        TextCellValue('Rank'),
+        TextCellValue('Representative'),
+        TextCellValue('Leads Assigned'),
+        TextCellValue('Contacted'),
+        TextCellValue('Qualified'),
+        TextCellValue('Site Visits'),
+        TextCellValue('Won Deals'),
+        TextCellValue('Conversion Rate %'),
+      ]);
+      for (final s in reportData.salesRankings) {
+        teamSheet.appendRow([
+          IntCellValue(s.rank),
+          TextCellValue(s.userName),
+          IntCellValue(s.leadsCount),
+          IntCellValue(s.contactedCount),
+          IntCellValue(s.qualifiedCount),
+          IntCellValue(s.siteVisitsCount),
+          IntCellValue(s.wonCount),
+          DoubleCellValue(double.parse(s.conversionRate.toStringAsFixed(2))),
+        ]);
+      }
+
+      teamSheet.appendRow([]);
+      teamSheet.appendRow([TextCellValue('=== TELECALLER TEAM RANKING ===')]);
+      teamSheet.appendRow([
+        TextCellValue('Rank'),
+        TextCellValue('Telecaller'),
+        TextCellValue('Leads Assigned'),
+        TextCellValue('Contacted'),
+        TextCellValue('Qualified'),
+        TextCellValue('Site Visits'),
+        TextCellValue('Won Deals'),
+        TextCellValue('Conversion Rate %'),
+      ]);
+      for (final t in reportData.telecallerRankings) {
+        teamSheet.appendRow([
+          IntCellValue(t.rank),
+          TextCellValue(t.userName),
+          IntCellValue(t.leadsCount),
+          IntCellValue(t.contactedCount),
+          IntCellValue(t.qualifiedCount),
+          IntCellValue(t.siteVisitsCount),
+          IntCellValue(t.wonCount),
+          DoubleCellValue(double.parse(t.conversionRate.toStringAsFixed(2))),
+        ]);
+      }
+    }
+
+    // 7. Lead Sources Sheet (if enabled)
+    if (config.showLeadSourceAnalysis && reportData.leadSources.isNotEmpty) {
+      final sourceSheet = excel['Lead Sources'];
+      sourceSheet.appendRow([
+        TextCellValue('Lead Source'),
+        TextCellValue('Count'),
+        TextCellValue('Share %'),
+      ]);
+      for (final src in reportData.leadSources) {
+        sourceSheet.appendRow([
+          TextCellValue(src.source),
+          IntCellValue(src.count),
+          DoubleCellValue(double.parse(src.percentage.toStringAsFixed(2))),
+        ]);
+      }
+    }
+
+    // 8. Growth & Comparison Sheet (if enabled)
+    if (config.showGrowthComparison && reportData.growthComparisonItems.isNotEmpty) {
+      final growthSheet = excel['Growth & Comparison'];
+      growthSheet.appendRow([TextCellValue('Comparison Mode: ${config.comparisonPeriod.displayName}')]);
+      growthSheet.appendRow([
+        TextCellValue('Metric'),
+        TextCellValue('Current Period'),
+        TextCellValue('Previous Period'),
+        TextCellValue('Difference'),
+        TextCellValue('Growth %'),
+      ]);
+      for (final g in reportData.growthComparisonItems) {
+        growthSheet.appendRow([
+          TextCellValue(g.metricName),
+          IntCellValue(g.currentCount.toInt()),
+          IntCellValue(g.previousCount.toInt()),
+          IntCellValue(g.difference.toInt()),
+          DoubleCellValue(double.parse(g.growthPercentage.toStringAsFixed(2))),
+        ]);
+      }
+    }
+
+    // 9. Lead Details Sheet
+    if (reportData.filteredLeads.isNotEmpty) {
+      final detailsSheet = excel['Lead Details'];
+      detailsSheet.appendRow([
+        TextCellValue('ID'),
+        TextCellValue('Client Name'),
+        TextCellValue('Mobile'),
+        TextCellValue('Status'),
+        TextCellValue('Category'),
+        TextCellValue('Min Budget'),
+        TextCellValue('Max Budget'),
+        TextCellValue('Assigned Rep'),
+        TextCellValue('Created By'),
+        TextCellValue('Created Date'),
+      ]);
+      for (final l in reportData.filteredLeads) {
+        detailsSheet.appendRow([
+          TextCellValue(l.id),
+          TextCellValue(l.clientName),
+          TextCellValue(l.clientMobile),
+          TextCellValue(l.status),
+          TextCellValue(l.categoryName),
+          DoubleCellValue(l.minBudget),
+          DoubleCellValue(l.maxBudget),
+          TextCellValue(l.assigneeName ?? ''),
+          TextCellValue(l.creatorName ?? ''),
+          TextCellValue(DateFormat('yyyy-MM-dd').format(l.createdAt)),
+        ]);
+      }
+    }
+
+    // Remove default Sheet1 if present
+    try {
+      excel.delete('Sheet1');
+    } catch (_) {}
+
+    return excel;
+  }
+
+  /// Export Genuine Excel (.xlsx) Workbook
   static Future<void> exportExcel({
     required ReportOverallData reportData,
     required ReportConfiguration config,
   }) async {
-    // Standard UTF-8 BOM CSV is natively opened by Microsoft Excel with preserved formatting
-    final buffer = StringBuffer();
-    // Add UTF-8 BOM
-    buffer.write('\uFEFF');
-
-    // Title & Context
-    buffer.writeln('PropKart CRM - Overall Business Insight Dashboard');
-    buffer.writeln('Reporting Period\t${config.dateRange.formattedRange}');
-    buffer.writeln('Export Date\t${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}');
-    buffer.writeln();
-
-    buffer.writeln('METRICS SUMMARY');
-    buffer.writeln('KPI Metric\tCount\tPercentage\tDenominator Basis');
-    for (final k in config.sortedEnabledKpis) {
-      final v = reportData.kpiValues[k.type];
-      final c = k.showCount ? (v?.count.toString() ?? '0') : '';
-      final p = k.showPercentage ? (v?.formattedPercentage ?? '0.0%') : '';
-      buffer.writeln('${k.type.displayName}\t$c\t$p\t${v?.denominatorLabel ?? ''}');
+    final excel = buildExcelDocument(reportData: reportData, config: config);
+    final bytes = excel.save();
+    if (bytes != null) {
+      final filename = 'PropKart_Overall_Business_Insight_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
+      await FileDownloader.download(bytes, filename);
     }
-    buffer.writeln();
-
-    buffer.writeln('PIPELINE STAGES');
-    buffer.writeln('Stage Name\tLeads Count\tShare of Pipeline');
-    for (final s in reportData.pipelineStages) {
-      buffer.writeln('${s.displayName}\t${s.count}\t${s.percentage.toStringAsFixed(1)}%');
-    }
-    buffer.writeln();
-
-    buffer.writeln('LEAD RECORDS');
-    buffer.writeln('ID\tClient Name\tMobile\tStatus\tCreated Date\tAssigned Rep\tBudget Min\tBudget Max');
-    for (final l in reportData.filteredLeads) {
-      buffer.writeln('${l.id}\t${l.clientName}\t${l.clientMobile}\t${l.status}\t${DateFormat('yyyy-MM-dd').format(l.createdAt)}\t${l.assigneeName ?? ''}\t${l.minBudget}\t${l.maxBudget}');
-    }
-
-    final bytes = utf8.encode(buffer.toString());
-    final filename = 'PropKart_Business_Insight_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xls';
-    await FileDownloader.download(bytes, filename);
   }
 
   /// Print Dispatcher

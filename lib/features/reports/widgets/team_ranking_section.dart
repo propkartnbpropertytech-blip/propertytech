@@ -7,11 +7,13 @@ import '../models/report_data.dart';
 class TeamRankingSection extends StatefulWidget {
   final List<TeamMemberRanking> telecallerRankings;
   final List<TeamMemberRanking> salesRankings;
+  final void Function(TeamMemberRanking member)? onUserSelected;
 
   const TeamRankingSection({
     super.key,
     required this.telecallerRankings,
     required this.salesRankings,
+    this.onUserSelected,
   });
 
   @override
@@ -225,9 +227,12 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
                       DataCell(
                         InkWell(
                           onTap: () {
-                            // Navigate to placeholder route
-                            final target = _activeTab == 0 ? '/reports/leads/telecaller' : '/reports/leads/sales';
-                            context.go(target);
+                            if (widget.onUserSelected != null) {
+                              widget.onUserSelected!(m);
+                            } else {
+                              final target = _activeTab == 0 ? '/reports/leads/telecaller' : '/reports/leads/sales';
+                              context.go(target);
+                            }
                           },
                           child: Text(
                             m.userName,

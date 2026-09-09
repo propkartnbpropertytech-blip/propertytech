@@ -199,7 +199,7 @@ class RecentPropertiesCard extends StatelessWidget {
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: properties.length,
+              itemCount: properties.length.clamp(0, 5),
               separatorBuilder: (_, _) => Divider(
                 height: 1,
                 color:

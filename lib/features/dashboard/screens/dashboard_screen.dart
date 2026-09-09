@@ -57,7 +57,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // Pagination states
   int _propertyPage = 1;
-  static const int _propertiesPerPage = 8;
+  static const int _propertiesPerPage = 5;
 
   int _followupPage = 1;
   static const int _followupsPerPage = 5;

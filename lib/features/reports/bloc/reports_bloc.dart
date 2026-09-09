@@ -48,11 +48,11 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
       prevData = (state as ReportsLoaded).data;
     }
 
-    emit(ReportsLoading(config: config, previousData: prevData));
-
     if (state is ReportsInitial) {
       config = await _reportsRepository.loadConfiguration();
     }
+
+    emit(ReportsLoading(config: config, previousData: prevData));
 
     try {
       final data = await _reportsRepository.getReportData(config);
@@ -67,6 +67,7 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
     Emitter<ReportsState> emit,
   ) async {
     final updatedConfig = state.config.copyWith(dateRange: event.dateRange);
+    await _reportsRepository.saveDateRangePreference(event.dateRange);
     await _recomputeWithConfig(updatedConfig, emit);
   }
 
@@ -75,6 +76,7 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
     Emitter<ReportsState> emit,
   ) async {
     final updatedConfig = state.config.copyWith(filters: event.filters);
+    await _reportsRepository.saveFiltersPreference(event.filters);
     await _recomputeWithConfig(updatedConfig, emit);
   }
 
@@ -83,6 +85,7 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
     Emitter<ReportsState> emit,
   ) async {
     final updatedConfig = state.config.copyWith(filters: const ReportFilterState.empty());
+    await _reportsRepository.saveFiltersPreference(const ReportFilterState.empty());
     await _recomputeWithConfig(updatedConfig, emit);
   }
 
@@ -100,7 +103,22 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
       showLeadSourceAnalysis: event.showLeadSource,
       showTrendAnalysis: event.showTrend,
     );
-    if (state is ReportsLoaded) {
+    final needsRecompute = (event.showGrowth == true && !state.config.showGrowthComparison) ||
+        (event.showTrend == true && !state.config.showTrendAnalysis) ||
+        (event.showLeadSource == true && !state.config.showLeadSourceAnalysis);
+
+    await _reportsRepository.saveSectionVisibilities(
+      showGrowthComparison: updatedConfig.showGrowthComparison,
+      showLeadSourceAnalysis: updatedConfig.showLeadSourceAnalysis,
+      showTrendAnalysis: updatedConfig.showTrendAnalysis,
+      showLeadStatusPipeline: updatedConfig.showLeadStatusPipeline,
+      showConversionFunnel: updatedConfig.showConversionFunnel,
+      showFollowupAnalysis: updatedConfig.showFollowupAnalysis,
+      showTeamRanking: updatedConfig.showTeamRanking,
+      showBusinessInsights: updatedConfig.showBusinessInsights,
+    );
+
+    if (state is ReportsLoaded && !needsRecompute) {
       final currentData = (state as ReportsLoaded).data;
       emit(ReportsLoaded(config: updatedConfig, data: currentData));
     } else {

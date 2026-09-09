@@ -15,6 +15,7 @@ class RepositoryCoordinator {
   final LookupLocalRepository lookupLocal = LookupLocalRepository();
   final OutboxLocalRepository outboxLocal = OutboxLocalRepository();
   final DashboardLocalRepository dashboardLocal = DashboardLocalRepository();
+  final CampaignLeadLocalRepository campaignLeadLocal = CampaignLeadLocalRepository();
 
   // Typed Stream Controllers
   final _propertiesController = StreamController<void>.broadcast();

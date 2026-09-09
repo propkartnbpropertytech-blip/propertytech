@@ -813,3 +813,78 @@ class ClientLocalRepository {
     });
   }
 }
+
+class CampaignLeadLocalRepository {
+  Isar get _isar => IsarService().isar;
+
+  static final Map<String, CampaignLeadLocal> inMemory = {};
+
+  Future<List<CampaignLeadLocal>> getLeads() async {
+    if (kIsWeb) {
+      final list = inMemory.values.toList();
+      list.sort((a, b) => b.receivedAt.compareTo(a.receivedAt));
+      return list;
+    }
+    return await _isar.campaignLeadLocals
+        .filter()
+        .idIsNotEmpty()
+        .sortByReceivedAtDesc()
+        .findAll();
+  }
+
+  Future<void> saveLeads(List<CampaignLeadLocal> leads) async {
+    if (kIsWeb) {
+      for (final l in leads) {
+        inMemory[l.id] = l;
+      }
+      return;
+    }
+    await _isar.writeTxn(() async {
+      await _isar.campaignLeadLocals.putAll(leads);
+    });
+  }
+
+  Future<void> saveLead(CampaignLeadLocal lead) async {
+    if (kIsWeb) {
+      inMemory[lead.id] = lead;
+      return;
+    }
+    await _isar.writeTxn(() async {
+      await _isar.campaignLeadLocals.put(lead);
+    });
+  }
+
+  Future<void> deleteLead(String id) async {
+    if (kIsWeb) {
+      inMemory.remove(id);
+      return;
+    }
+    await _isar.writeTxn(() async {
+      await _isar.campaignLeadLocals.filter().idEqualTo(id).deleteAll();
+    });
+  }
+
+  Future<void> deleteLeads(List<String> ids) async {
+    if (kIsWeb) {
+      for (final id in ids) {
+        inMemory.remove(id);
+      }
+      return;
+    }
+    await _isar.writeTxn(() async {
+      for (final id in ids) {
+        await _isar.campaignLeadLocals.filter().idEqualTo(id).deleteAll();
+      }
+    });
+  }
+
+  Future<void> clearAll() async {
+    if (kIsWeb) {
+      inMemory.clear();
+      return;
+    }
+    await _isar.writeTxn(() async {
+      await _isar.campaignLeadLocals.clear();
+    });
+  }
+}

@@ -119,4 +119,38 @@ class ReportFilterState extends Equatable {
         locationName,
         campaign,
       ];
+
+  Map<String, dynamic> toJson() {
+    return {
+      'propertyId': propertyId,
+      'propertyName': propertyName,
+      'leadSource': leadSource,
+      'telecallerId': telecallerId,
+      'telecallerName': telecallerName,
+      'salesUserId': salesUserId,
+      'salesUserName': salesUserName,
+      'leadStatus': leadStatus,
+      'leadType': leadType,
+      'locationId': locationId,
+      'locationName': locationName,
+      'campaign': campaign,
+    };
+  }
+
+  factory ReportFilterState.fromJson(Map<String, dynamic> json) {
+    return ReportFilterState(
+      propertyId: json['propertyId'] as String?,
+      propertyName: json['propertyName'] as String?,
+      leadSource: json['leadSource'] as String?,
+      telecallerId: json['telecallerId'] as String?,
+      telecallerName: json['telecallerName'] as String?,
+      salesUserId: json['salesUserId'] as String?,
+      salesUserName: json['salesUserName'] as String?,
+      leadStatus: json['leadStatus'] as String?,
+      leadType: json['leadType'] as String?,
+      locationId: json['locationId'] as String?,
+      locationName: json['locationName'] as String?,
+      campaign: json['campaign'] as String?,
+    );
+  }
 }

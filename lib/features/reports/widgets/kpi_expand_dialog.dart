@@ -1,19 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/theme/theme_manager.dart';
+import '../bloc/reports_bloc.dart';
+import '../models/report_configuration.dart';
 import '../models/report_kpi_type.dart';
 import '../models/report_data.dart';
+import 'user_performance_summary_dialog.dart';
 
 class KpiExpandDialog extends StatelessWidget {
   final ReportKpiType kpiType;
   final ReportOverallData reportData;
+  final ReportConfiguration? config;
 
   const KpiExpandDialog({
     super.key,
     required this.kpiType,
     required this.reportData,
+    this.config,
   });
 
   @override
@@ -239,6 +245,18 @@ class KpiExpandDialog extends StatelessWidget {
             itemBuilder: (context, idx) {
               final t = list[idx];
               return ListTile(
+                onTap: () {
+                  final cfg = config ?? context.read<ReportsBloc>().state.config;
+                  UserPerformanceSummaryDialog.show(
+                    context,
+                    userId: t.userId,
+                    userName: t.userName,
+                    role: 'Telecaller',
+                    config: cfg,
+                    allLeads: reportData.allLeads,
+                    allFollowups: reportData.allFollowups,
+                  );
+                },
                 leading: CircleAvatar(
                   radius: 16,
                   backgroundColor: const Color(0xFF64748B).withValues(alpha: 0.15),
@@ -247,13 +265,24 @@ class KpiExpandDialog extends StatelessWidget {
                 title: Text(t.userName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                 subtitle: Text('Leads Managed: ${t.leadsCount} · Qualified: ${t.qualifiedCount} · Won: ${t.wonCount}', style: const TextStyle(fontSize: 11)),
                 trailing: ElevatedButton(
-                  onPressed: () => context.go('/reports/leads/telecaller'),
+                  onPressed: () {
+                    final cfg = config ?? context.read<ReportsBloc>().state.config;
+                    UserPerformanceSummaryDialog.show(
+                      context,
+                      userId: t.userId,
+                      userName: t.userName,
+                      role: 'Telecaller',
+                      config: cfg,
+                      allLeads: reportData.allLeads,
+                      allFollowups: reportData.allFollowups,
+                    );
+                  },
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text('View Report', style: TextStyle(fontSize: 11)),
+                  child: const Text('View Summary', style: TextStyle(fontSize: 11)),
                 ),
               );
             },
@@ -285,6 +314,18 @@ class KpiExpandDialog extends StatelessWidget {
             itemBuilder: (context, idx) {
               final s = list[idx];
               return ListTile(
+                onTap: () {
+                  final cfg = config ?? context.read<ReportsBloc>().state.config;
+                  UserPerformanceSummaryDialog.show(
+                    context,
+                    userId: s.userId,
+                    userName: s.userName,
+                    role: 'Sales',
+                    config: cfg,
+                    allLeads: reportData.allLeads,
+                    allFollowups: reportData.allFollowups,
+                  );
+                },
                 leading: CircleAvatar(
                   radius: 16,
                   backgroundColor: const Color(0xFF16A34A).withValues(alpha: 0.15),
@@ -293,13 +334,24 @@ class KpiExpandDialog extends StatelessWidget {
                 title: Text(s.userName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                 subtitle: Text('Assigned: ${s.leadsCount} · Site Visits: ${s.siteVisitsCount} · Won: ${s.wonCount} (${s.conversionRate.toStringAsFixed(1)}%)', style: const TextStyle(fontSize: 11)),
                 trailing: ElevatedButton(
-                  onPressed: () => context.go('/reports/leads/sales'),
+                  onPressed: () {
+                    final cfg = config ?? context.read<ReportsBloc>().state.config;
+                    UserPerformanceSummaryDialog.show(
+                      context,
+                      userId: s.userId,
+                      userName: s.userName,
+                      role: 'Sales',
+                      config: cfg,
+                      allLeads: reportData.allLeads,
+                      allFollowups: reportData.allFollowups,
+                    );
+                  },
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text('View Report', style: TextStyle(fontSize: 11)),
+                  child: const Text('View Summary', style: TextStyle(fontSize: 11)),
                 ),
               );
             },
