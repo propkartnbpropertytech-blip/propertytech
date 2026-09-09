@@ -349,7 +349,14 @@ class RequirementLocalRepository {
             ..adminId = map['adminId']
             ..organizationId = map['organizationId']
             ..leadSource = map['leadSource']
-            ..referralName = map['referralName'];
+            ..referralName = map['referralName']
+            ..listingTypeId = map['listingTypeId']
+            ..listingTypeName = map['listingTypeName']
+            ..creatorName = map['creatorName']
+            ..assigneeName = map['assigneeName']
+            ..createdBy = map['createdBy']
+            ..assignedTo = map['assignedTo']
+            ..nextFollowupDate = map['nextFollowupDate'];
           inMemory[r.id] = r;
         }
         print("Loaded ${inMemory.length} requirements from local storage cache.");
@@ -364,8 +371,8 @@ class RequirementLocalRepository {
       final prefs = await SharedPreferences.getInstance();
       final jsonList = inMemory.values.map((item) => jsonEncode({
         'id': item.id,
-        'clientName': kIsWeb ? '' : item.clientName,
-        'clientMobile': kIsWeb ? '' : item.clientMobile,
+        'clientName': item.clientName,
+        'clientMobile': item.clientMobile,
         'categoryId': item.categoryId,
         'categoryName': item.categoryName,
         'propertyTypeId': item.propertyTypeId,
@@ -387,6 +394,13 @@ class RequirementLocalRepository {
         'organizationId': item.organizationId,
         'leadSource': item.leadSource,
         'referralName': item.referralName,
+        'listingTypeId': item.listingTypeId,
+        'listingTypeName': item.listingTypeName,
+        'creatorName': item.creatorName,
+        'assigneeName': item.assigneeName,
+        'createdBy': item.createdBy,
+        'assignedTo': item.assignedTo,
+        'nextFollowupDate': item.nextFollowupDate,
       })).toList();
       await prefs.setStringList('cached_requirements', jsonList);
     } catch (e) {
@@ -395,10 +409,10 @@ class RequirementLocalRepository {
   }
 
   Future<void> saveRequirements(List<RequirementLocal> requirements) async {
+    for (final r in requirements) {
+      inMemory[r.id] = r;
+    }
     if (kIsWeb) {
-      for (final r in requirements) {
-        inMemory[r.id] = r;
-      }
       await _saveAllToPrefs();
       return;
     }
@@ -433,6 +447,61 @@ class FollowupLocalRepository {
 
   static final Map<String, FollowupLocal> inMemory = {};
 
+  Future<void> loadInMemoryCache() async {
+    if (!kIsWeb) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = prefs.getStringList('cached_followups');
+      if (jsonList != null) {
+        for (final jsonStr in jsonList) {
+          final map = jsonDecode(jsonStr);
+          final f = FollowupLocal()
+            ..id = map['id']
+            ..propertyId = map['propertyId']
+            ..propertyCode = map['propertyCode']
+            ..propertyTitle = map['propertyTitle']
+            ..requirementId = map['requirementId']
+            ..requirementCustomerName = map['requirementCustomerName']
+            ..createdBy = map['createdBy'] ?? ''
+            ..clientName = map['clientName'] ?? ''
+            ..mobile = map['mobile'] ?? ''
+            ..followupDate = DateTime.tryParse(map['followupDate'] ?? '') ?? DateTime.now()
+            ..notes = map['notes']
+            ..status = map['status'] ?? 'Pending'
+            ..createdAt = DateTime.tryParse(map['createdAt'] ?? '') ?? DateTime.now();
+          inMemory[f.id] = f;
+        }
+        print("Loaded ${inMemory.length} followups from local storage cache.");
+      }
+    } catch (e) {
+      print("Error loading cached followups: $e");
+    }
+  }
+
+  Future<void> _saveAllToPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = inMemory.values.map((item) => jsonEncode({
+        'id': item.id,
+        'propertyId': item.propertyId,
+        'propertyCode': item.propertyCode,
+        'propertyTitle': item.propertyTitle,
+        'requirementId': item.requirementId,
+        'requirementCustomerName': item.requirementCustomerName,
+        'createdBy': item.createdBy,
+        'clientName': item.clientName,
+        'mobile': item.mobile,
+        'followupDate': item.followupDate.toIso8601String(),
+        'notes': item.notes,
+        'status': item.status,
+        'createdAt': item.createdAt.toIso8601String(),
+      })).toList();
+      await prefs.setStringList('cached_followups', jsonList);
+    } catch (e) {
+      print("Error saving followups to preferences: $e");
+    }
+  }
+
   Future<List<FollowupLocal>> getAllFollowups() async {
     if (kIsWeb) {
       return inMemory.values.toList();
@@ -449,10 +518,11 @@ class FollowupLocalRepository {
   }
 
   Future<void> saveFollowups(List<FollowupLocal> followups) async {
+    for (final f in followups) {
+      inMemory[f.id] = f;
+    }
     if (kIsWeb) {
-      for (final f in followups) {
-        inMemory[f.id] = f;
-      }
+      await _saveAllToPrefs();
       return;
     }
 
@@ -464,6 +534,7 @@ class FollowupLocalRepository {
   Future<void> deleteFollowup(String id) async {
     if (kIsWeb) {
       inMemory.remove(id);
+      await _saveAllToPrefs();
       return;
     }
 

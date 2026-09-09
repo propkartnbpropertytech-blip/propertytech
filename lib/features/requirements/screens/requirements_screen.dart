@@ -594,7 +594,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         builder: (dialogContext) => RequirementStepperDialog(
           requirement: req,
           initialStep: 1,
-          updateStatusOnSave: true,
+          onSavedWithDate: (scheduledDate) {
+            final now = DateTime.now();
+            final todayDate = DateTime(now.year, now.month, now.day);
+            final targetDay = DateTime(scheduledDate.year, scheduledDate.month, scheduledDate.day);
+            if (targetDay.isBefore(todayDate)) {
+              _selectedFollowupSubTab = 'Due';
+            } else if (targetDay.isAfter(todayDate)) {
+              _selectedFollowupSubTab = 'Future';
+            } else {
+              _selectedFollowupSubTab = 'Today';
+            }
+            _reqFollowupDateFilter = scheduledDate;
+            _currentFollowupPage = 1;
+          },
           onSaved: () {
             if (isReFollowup) {
               NotificationCenter.addNotification(
@@ -1694,46 +1707,62 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  bool _isUserCreator(RequirementModel r, UserModel user) {
+    if (r.createdBy == user.id) return true;
+    final uName = user.fullName.trim().toLowerCase();
+    if (uName.isNotEmpty) {
+      if (r.createdBy != null && r.createdBy!.trim().toLowerCase() == uName) return true;
+      if (r.creatorName != null && r.creatorName!.trim().toLowerCase() == uName) return true;
+    }
+    return false;
+  }
+
+  bool _isUserAssignee(RequirementModel r, UserModel user) {
+    final uName = user.fullName.trim().toLowerCase();
+    if (r.assignedTo != null && r.assignedTo!.isNotEmpty) {
+      if (r.assignedTo == user.id) return true;
+      if (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName) return true;
+    }
+    if (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName) return true;
+    return false;
+  }
+
   bool _hasEditAccess(RequirementModel r, UserModel? currentUser) {
     if (currentUser == null) return false;
     if (currentUser.role == 'Super Admin') return true;
     if (currentUser.role == 'Admin') {
-      return r.createdBy == currentUser.id || r.adminId == currentUser.id;
+      return _isUserCreator(r, currentUser) || r.adminId == currentUser.id;
     }
     if (currentUser.role == 'Telecaller') {
-      return r.createdBy == currentUser.id || r.adminId == currentUser.adminId;
+      return _isUserCreator(r, currentUser) || r.adminId == currentUser.adminId;
     }
     if (currentUser.role == 'Sales') {
       if (_isLeadTransferredAway(r, currentUser)) return false;
-      return r.createdBy == currentUser.id || r.assignedTo == currentUser.id;
+      return _isUserCreator(r, currentUser) || _isUserAssignee(r, currentUser);
     }
     return false;
   }
 
   bool _isLeadTransferredAway(RequirementModel r, UserModel? currentUser) {
     if (currentUser == null || currentUser.role != 'Sales') return false;
+    final isAssignee = _isUserAssignee(r, currentUser);
+    final isCreator = _isUserCreator(r, currentUser);
+    if (!isCreator) return false;
     final assigned = r.assignedTo;
     if (assigned == null || assigned.isEmpty) return false;
-    return r.createdBy == currentUser.id && assigned != currentUser.id;
+    return !isAssignee;
   }
 
   bool _salesCanViewRequirement(RequirementModel r, UserModel currentUser) {
-    final isCreator = r.createdBy == currentUser.id;
-    final isAssignee = r.assignedTo != null &&
-        r.assignedTo!.isNotEmpty &&
-        r.assignedTo == currentUser.id;
-    return isCreator || isAssignee;
+    return _isUserCreator(r, currentUser) || _isUserAssignee(r, currentUser);
   }
 
   Widget _buildSalesAssignToLabel(RequirementModel req, UserModel? currentUser) {
     final assignee = req.assigneeName?.trim() ?? '';
     final creator = req.creatorName?.trim() ?? '';
     final isReceivedTransfer = currentUser != null &&
-        req.assignedTo != null &&
-        req.assignedTo!.isNotEmpty &&
-        req.assignedTo == currentUser.id &&
-        req.createdBy != null &&
-        req.createdBy != currentUser.id;
+        _isUserAssignee(req, currentUser) &&
+        !_isUserCreator(req, currentUser);
 
     if (_isLeadTransferredAway(req, currentUser)) {
       return Text(
@@ -2474,6 +2503,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                                 _removeNotesPopover();
 
                                                 if (mounted) {
+                                                  setState(() {
+                                                    _refreshFollowupsFuture();
+                                                  });
+                                                  _triggerFetch();
                                                   ScaffoldMessenger.of(context).showSnackBar(
                                                     const SnackBar(
                                                       content: Text('Note saved successfully.'),
@@ -2547,14 +2580,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       builder: (dialogContext) {
         return _ViewAllNotesDialogWidget(
           requirement: req,
-          onSave: (updatedNotes) {
+          onSave: (updatedNotes) async {
             context.read<RequirementsBloc>().add(
               UpdateRequirementEvent(req.copyWith(notes: updatedNotes)),
             );
-            RequirementsRepository().updateRequirementFields(
+            await RequirementsRepository().updateRequirementFields(
               req.id,
               {'notes': updatedNotes},
             );
+            if (mounted) {
+              setState(() {
+                _refreshFollowupsFuture();
+              });
+              _triggerFetch();
+            }
           },
         );
       },
@@ -4037,7 +4076,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         return RequirementStepperDialog(
           requirement: req,
           initialStep: initialStep,
-          updateStatusOnSave: true,
+          onSavedWithDate: (scheduledDate) {
+            final now = DateTime.now();
+            final todayDate = DateTime(now.year, now.month, now.day);
+            final targetDay = DateTime(scheduledDate.year, scheduledDate.month, scheduledDate.day);
+            if (targetDay.isBefore(todayDate)) {
+              _selectedFollowupSubTab = 'Due';
+            } else if (targetDay.isAfter(todayDate)) {
+              _selectedFollowupSubTab = 'Future';
+            } else {
+              _selectedFollowupSubTab = 'Today';
+            }
+            _reqFollowupDateFilter = scheduledDate;
+            _currentFollowupPage = 1;
+          },
           onSaved: () {
             if (isReFollowup) {
               NotificationCenter.addNotification(
@@ -4066,9 +4118,22 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildFollowupStatusActionCell(DashboardFollowup f, RequirementModel? reqModel) {
-    if (reqModel == null) {
-      return const SizedBox.shrink();
-    }
+    final targetReq = reqModel ?? RequirementModel(
+      id: (f.requirementId != null && f.requirementId!.isNotEmpty) ? f.requirementId! : (f.id.isNotEmpty ? f.id : 'temp_req'),
+      clientName: f.clientName,
+      clientMobile: f.mobile,
+      categoryId: '',
+      categoryName: '',
+      propertyTypeId: '',
+      propertyTypeName: (f.propertyTitle != null && f.propertyTitle!.isNotEmpty) ? f.propertyTitle! : '',
+      minBudget: 0.0,
+      maxBudget: 0.0,
+      areaIds: const [],
+      areaNames: const [],
+      status: f.status.isNotEmpty ? f.status : 'Re-Followup',
+      remarks: f.notes,
+      createdAt: DateTime.now(),
+    );
 
     if (_selectedFollowupSubTab == 'AllClients') {
       return OutlinedButton.icon(
@@ -4082,13 +4147,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           'History',
           style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
         ),
-        onPressed: () => _openFollowupStepper(reqModel, reqModel.status ?? 'Re-Followup', initialStep: 2),
+        onPressed: () => _openFollowupStepper(targetReq, targetReq.status ?? 'Re-Followup', initialStep: 2),
       );
     }
 
     return _FollowupActionButton(
       followup: f,
-      reqModel: reqModel,
+      reqModel: targetReq,
       onSelect: (req, status) {
         _openFollowupStepper(req, status);
       },
@@ -4105,7 +4170,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final currentUser = authState is Authenticated ? authState.user : null;
     final isHighRole = currentUser != null &&
         (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
-    final reqModel = reqsList.firstWhereOrNull((r) => r.id == f.requirementId);
+    final reqModel = reqsList.firstWhereOrNull((r) =>
+        (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+        (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+        (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
 
     return Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.m),
@@ -4317,16 +4385,40 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final dashboardData = snapshot.data?[0] as DashboardData?;
               final reqsList = snapshot.data?[1] as List<RequirementModel>? ?? [];
 
-              final followups = dashboardData?.followups ?? [];
+              final serverFollowups = dashboardData?.followups ?? [];
+              final localFollowups = FollowupLocalRepository.inMemory.values.map((fl) => fl.toModel()).toList();
+              final followups = [
+                ...localFollowups,
+                ...serverFollowups,
+              ];
 
               final now = DateTime.now();
               final todayDate = DateTime(now.year, now.month, now.day);
 
+              bool isSameMobile(String m1, String m2) {
+                final d1 = m1.replaceAll(RegExp(r'\D'), '');
+                final d2 = m2.replaceAll(RegExp(r'\D'), '');
+                if (d1.isEmpty || d2.isEmpty) return false;
+                if (d1 == d2) return true;
+                final s1 = d1.length >= 10 ? d1.substring(d1.length - 10) : d1;
+                final s2 = d2.length >= 10 ? d2.substring(d2.length - 10) : d2;
+                return s1 == s2;
+              }
+
               // Deduplicate followups by requirementId keeping only the active pending entry per lead
               final Map<String, DashboardFollowup> latestReqFollowupsMap = {};
               for (final f in followups) {
-                final reqIdStr = f.requirementId ?? '';
-                final key = reqIdStr.isNotEmpty ? reqIdStr : f.id;
+                final req = reqsList.firstWhereOrNull((r) =>
+                    (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+                    (f.mobile.isNotEmpty && r.clientMobile.isNotEmpty && isSameMobile(r.clientMobile, f.mobile)) ||
+                    (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+
+                if (req == null) continue;
+
+                final reqStatus = req.status;
+                if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') continue;
+
+                final key = req.id;
                 final existing = latestReqFollowupsMap[key];
                 if (existing == null) {
                   latestReqFollowupsMap[key] = f;
@@ -4334,14 +4426,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   final bool fIsPending = f.status == 'Pending' || f.status == 'Follow-up' || f.status == 'Re-Followup';
                   final bool existingIsPending = existing.status == 'Pending' || existing.status == 'Follow-up' || existing.status == 'Re-Followup';
 
-                  if (fIsPending && !existingIsPending) {
+                  if (f.id.startsWith('local_') && !existing.id.startsWith('local_')) {
                     latestReqFollowupsMap[key] = f;
-                  } else if (fIsPending == existingIsPending) {
-                    final dtExisting = DateTime.tryParse(existing.followupDate)?.toLocal() ?? DateTime(1970);
-                    final dtCurrent = DateTime.tryParse(f.followupDate)?.toLocal() ?? DateTime(1970);
-                    if (dtCurrent.isAfter(dtExisting)) {
-                      latestReqFollowupsMap[key] = f;
-                    }
+                  } else if (!f.id.startsWith('local_') && existing.id.startsWith('local_')) {
+                    // Keep existing local entry
+                  } else if (fIsPending && !existingIsPending) {
+                    latestReqFollowupsMap[key] = f;
+                  } else {
+                    latestReqFollowupsMap[key] = f;
                   }
                 }
               }
@@ -4352,27 +4444,39 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 final hasFollowupStatus = reqStatus == 'Follow-up' || reqStatus == 'Re-Followup' || reqStatus == 'Site Visit' || reqStatus == 'Pending' || reqStatus == 'Active';
                 final hasNextDate = req.nextFollowupDate != null && req.nextFollowupDate!.isNotEmpty;
 
-                if ((hasFollowupStatus || hasNextDate) && reqStatus != 'Won' && reqStatus != 'Closed' && !reqStatus.startsWith('Rejected') && reqStatus != 'Dead') {
+                if ((hasFollowupStatus || hasNextDate) && reqStatus != 'Bin' && reqStatus != 'Won' && reqStatus != 'Closed' && !reqStatus.startsWith('Rejected') && reqStatus != 'Dead') {
                   final key = req.id;
                   final existing = latestReqFollowupsMap[key];
-                  if (hasNextDate) {
+                  if (existing != null) {
+                    final chosenDate = (hasNextDate && req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty)
+                        ? req.nextFollowupDate!
+                        : (existing.followupDate.isNotEmpty ? existing.followupDate : req.createdAt.toIso8601String());
+
+                    final chosenNotes = (req.remarks != null && req.remarks!.trim().isNotEmpty)
+                        ? req.remarks!
+                        : ((existing.notes != null && existing.notes!.trim().isNotEmpty) ? existing.notes : (req.notes ?? ''));
+
                     latestReqFollowupsMap[key] = DashboardFollowup(
-                      id: existing?.id ?? 'local_${req.id}',
+                      id: existing.id,
                       requirementId: req.id,
-                      clientName: req.clientName,
-                      mobile: req.clientMobile,
-                      followupDate: req.nextFollowupDate!,
-                      status: reqStatus,
-                      notes: req.remarks ?? req.notes ?? existing?.notes,
-                      creatorName: req.creatorName ?? req.assigneeName ?? existing?.creatorName,
+                      clientName: existing.clientName.isNotEmpty ? existing.clientName : req.clientName,
+                      mobile: existing.mobile.isNotEmpty ? existing.mobile : req.clientMobile,
+                      propertyTitle: (req.listingTypeName != null && req.listingTypeName!.isNotEmpty)
+                          ? req.listingTypeName!
+                          : (existing.propertyTitle ?? 'Rent'),
+                      followupDate: chosenDate,
+                      status: existing.status.isNotEmpty ? existing.status : reqStatus,
+                      notes: chosenNotes,
+                      creatorName: existing.creatorName ?? req.creatorName ?? req.assigneeName,
                     );
-                  } else if (existing == null) {
+                  } else {
                     latestReqFollowupsMap[key] = DashboardFollowup(
                       id: 'local_${req.id}',
                       requirementId: req.id,
                       clientName: req.clientName,
                       mobile: req.clientMobile,
-                      followupDate: req.createdAt.toIso8601String(),
+                      propertyTitle: req.listingTypeName ?? 'Rent',
+                      followupDate: hasNextDate ? req.nextFollowupDate! : req.createdAt.toIso8601String(),
                       status: reqStatus,
                       notes: req.remarks ?? req.notes,
                       creatorName: req.creatorName ?? req.assigneeName,
@@ -4389,20 +4493,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               for (final f in latestReqFollowupsMap.values) {
                 final req = reqsList.firstWhereOrNull((r) =>
                     (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
-                    (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+                    (f.mobile.isNotEmpty && r.clientMobile.isNotEmpty && isSameMobile(r.clientMobile, f.mobile)) ||
                     (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
 
-                if (req != null) {
-                  final reqStatus = req.status;
-                  if (reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') continue;
-
-                  final isRentTab = _activeListingTab == 'Rent';
-                  final listingNameLower = (req.listingTypeName ?? '').toLowerCase();
-                  final reqIsRent = listingNameLower.contains('rent') ||
-                      (req.listingTypeId != null && (LookupLocalRepository.getLookupNameSync(req.listingTypeId!)?.toLowerCase().contains('rent') ?? false)) ||
-                      req.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
-                  if (isRentTab != reqIsRent) continue;
+                if (req == null) {
+                  // Followup does NOT belong to any active lead in current leads page -> skip completely
+                  continue;
                 }
+
+                final reqStatus = req.status;
+                if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') continue;
+
+                if (getListingTypeLabel(req) != _activeListingTab) continue;
 
                 allClientsFollowups.add(f);
 
@@ -4445,7 +4547,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   );
                   if (filterDay != todayDate) {
                     selectedList = futureFollowups.where((f) {
-                      final parsed = DateTime.tryParse(f.followupDate);
+                      final parsed = _parseFollowupDateTime(f.followupDate);
                       if (parsed == null) return false;
                       return parsed.year == _reqFollowupDateFilter!.year &&
                           parsed.month == _reqFollowupDateFilter!.month &&
@@ -4457,22 +4559,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 selectedList = allClientsFollowups;
               } else {
                 selectedList = todayFollowups;
-                if (_reqFollowupDateFilter != null) {
-                  final filterDay = DateTime(
-                    _reqFollowupDateFilter!.year,
-                    _reqFollowupDateFilter!.month,
-                    _reqFollowupDateFilter!.day,
-                  );
-                  if (filterDay != todayDate) {
-                    selectedList = todayFollowups.where((f) {
-                      final parsed = DateTime.tryParse(f.followupDate);
-                      if (parsed == null) return false;
-                      return parsed.year == _reqFollowupDateFilter!.year &&
-                          parsed.month == _reqFollowupDateFilter!.month &&
-                          parsed.day == _reqFollowupDateFilter!.day;
-                    }).toList();
-                  }
-                }
               }
 
               final filtered = selectedList;
@@ -4517,6 +4603,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     setState(() {
                       _selectedFollowupSubTab = tabKey;
                       _currentFollowupPage = 1;
+                      if (tabKey == 'Today') {
+                        _reqFollowupDateFilter = DateTime.now();
+                      } else if (tabKey == 'Due' || tabKey == 'AllClients') {
+                        _reqFollowupDateFilter = null;
+                      }
                     });
                   },
                   child: AnimatedContainer(
@@ -4639,16 +4730,39 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         const DataColumn(label: Text('Actions')),
                       ],
                       rows: pageItems.map((f) {
-                        final reqModel = reqsList.firstWhereOrNull((r) => r.id == f.requirementId);
+                        final reqModel = reqsList.firstWhereOrNull((r) =>
+                            (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+                            (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+                            (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
 
-                        final parsedDate = DateTime.tryParse(f.followupDate)?.toLocal();
+                        final parsedDate = _parseFollowupDateTime(f.followupDate);
                         final displayDate = parsedDate != null
                             ? DateFormat('dd/MM/yyyy hh:mm a').format(parsedDate)
                             : f.followupDate;
 
-                        final configText = reqModel != null
-                            ? '${reqModel.propertyTypeName} (${reqModel.configurationName ?? "-"})'
-                            : 'N/A';
+                        String configText = 'General Requirement';
+                        if (reqModel != null) {
+                          final config = (reqModel.configurationName ?? '').trim();
+                          final pType = (reqModel.propertyTypeName.isNotEmpty
+                                  ? reqModel.propertyTypeName
+                                  : (reqModel.categoryName.isNotEmpty ? reqModel.categoryName : ''))
+                              .trim();
+                          final listing = (reqModel.listingTypeName ?? '').trim();
+
+                          final List<String> parts = [];
+                          if (config.isNotEmpty && config != '-') parts.add(config);
+                          if (pType.isNotEmpty && pType != 'N/A') parts.add(pType);
+                          if (listing.isNotEmpty && listing != 'N/A') parts.add('($listing)');
+
+                          if (parts.isNotEmpty) {
+                            configText = parts.join(' ');
+                          } else if (reqModel.remarks != null && reqModel.remarks!.trim().isNotEmpty) {
+                            configText = reqModel.remarks!.trim();
+                          }
+                        } else if (f.propertyTitle != null && f.propertyTitle!.isNotEmpty) {
+                          configText = f.propertyTitle!;
+                        }
+
                         final budgetText = reqModel != null
                             ? '${BudgetFormatter.format(reqModel.minBudget)} - ${BudgetFormatter.format(reqModel.maxBudget)}'
                             : '';
@@ -4659,6 +4773,33 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         final tooltipMsg = reqModel != null
                             ? 'Client: ${f.clientName}\nRequirement: $configText\nBudget: $budgetText\nAreas: $areasText'
                             : 'Client: ${f.clientName}\nMobile: ${f.mobile}';
+
+                        String addedByName = 'N/A';
+                        if (reqModel != null) {
+                          final salesman = _getSalesmanName(reqModel, currentUser);
+                          if (salesman.isNotEmpty && salesman != 'System' && salesman != 'N/A') {
+                            addedByName = salesman;
+                          }
+                        }
+                        if (addedByName == 'N/A' && f.creatorName != null && f.creatorName!.isNotEmpty && f.creatorName != 'System') {
+                          try {
+                            final usersState = context.read<UsersBloc>().state;
+                            if (usersState is UsersLoaded) {
+                              final match = usersState.users.firstWhereOrNull((u) => u.id == f.creatorName);
+                              if (match != null && match.fullName.isNotEmpty) {
+                                addedByName = match.fullName;
+                              }
+                            }
+                          } catch (_) {}
+                          if (addedByName == 'N/A') {
+                            addedByName = f.creatorName!;
+                          }
+                        }
+                        if (addedByName == 'N/A' || addedByName == 'System') {
+                          if (currentUser != null && currentUser.fullName.isNotEmpty) {
+                            addedByName = currentUser.fullName;
+                          }
+                        }
 
                         return DataRow(
                           cells: [
@@ -4727,8 +4868,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                           const SizedBox(width: 4),
                                           Expanded(
                                             child: Text(
-                                              f.creatorName ??
-                                                  (reqModel != null ? _getSalesmanName(reqModel, currentUser) : 'N/A'),
+                                              addedByName,
                                               style: CRMTypography.bodyMedium.copyWith(
                                                 fontWeight: FontWeight.bold,
                                                 color: CRMColors.textOf(context),
@@ -5623,12 +5763,14 @@ class RequirementStepperDialog extends StatefulWidget {
   final VoidCallback onSaved;
   final bool updateStatusOnSave;
   final bool isSiteVisit;
+  final void Function(DateTime scheduledDate)? onSavedWithDate;
 
   const RequirementStepperDialog({
     super.key,
     required this.requirement,
     this.initialStep = 1,
     required this.onSaved,
+    this.onSavedWithDate,
     this.updateStatusOnSave = false,
     this.isSiteVisit = false,
   });
@@ -5650,12 +5792,18 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
   void initState() {
     super.initState();
     _currentStep = widget.initialStep;
-    if (widget.requirement.nextFollowupDate != null) {
-      final parsed = DateTime.tryParse(widget.requirement.nextFollowupDate!)?.toLocal();
+    if (widget.requirement.nextFollowupDate != null && widget.requirement.nextFollowupDate!.trim().isNotEmpty) {
+      final parsed = _parseFollowupDateTime(widget.requirement.nextFollowupDate);
       if (parsed != null) {
         _followupDate = parsed;
-        _followupTime = TimeOfDay(hour: parsed.hour, minute: parsed.minute);
+        _followupTime = TimeOfDay.fromDateTime(parsed);
+      } else {
+        _followupDate = DateTime.now();
+        _followupTime = TimeOfDay.now();
       }
+    } else {
+      _followupDate = DateTime.now();
+      _followupTime = TimeOfDay.now();
     }
   }
 
@@ -5683,11 +5831,12 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         _followupTime.hour,
         _followupTime.minute,
       );
+      final isoDateStr = scheduledDateTime.toIso8601String();
 
       if (widget.isSiteVisit) {
         await DioClient.dio.post('/site-visits', data: {
           'requirement_id': widget.requirement.id,
-          'visit_date': scheduledDateTime.toUtc().toIso8601String(),
+          'visit_date': isoDateStr,
           'remarks': remarks,
         });
 
@@ -5702,7 +5851,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           'client_name': widget.requirement.clientName,
           'mobile': widget.requirement.clientMobile,
           'notes': remarks,
-          'followup_date': scheduledDateTime.toUtc().toIso8601String(),
+          'followup_date': isoDateStr,
           'requirement_id': widget.requirement.id,
         });
 
@@ -5711,11 +5860,31 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           'requirement_id': widget.requirement.id,
           'client_name': widget.requirement.clientName,
           'mobile': widget.requirement.clientMobile,
-          'followup_date': scheduledDateTime.toUtc().toIso8601String(),
+          'followup_date': isoDateStr,
           'notes': remarks,
           'status': 'Pending',
           'creator_name': 'Propkart Admin',
         });
+
+        try {
+          final authState = context.read<AuthBloc>().state;
+          final currentUser = authState is Authenticated ? authState.user : null;
+
+          final newFollowupLocal = FollowupLocal()
+            ..id = 'local_${DateTime.now().millisecondsSinceEpoch}'
+            ..requirementId = widget.requirement.id
+            ..clientName = widget.requirement.clientName
+            ..mobile = widget.requirement.clientMobile
+            ..followupDate = scheduledDateTime
+            ..notes = remarks
+            ..status = 'Pending'
+            ..createdBy = currentUser?.fullName ?? 'Propkart Admin'
+            ..createdAt = DateTime.now();
+
+          await RepositoryCoordinator().followupLocal.saveFollowups([newFollowupLocal]);
+        } catch (e) {
+          debugPrint('⚠️ Local followup save error: $e');
+        }
 
         final RequirementsRepository requirementsRepository = RequirementsRepository();
         final bool hasPreviousFollowup = widget.requirement.status == 'Follow-up' ||
@@ -5725,15 +5894,26 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
 
         final updatedReq = widget.requirement.copyWith(
           status: targetStatus,
-          nextFollowupDate: scheduledDateTime.toUtc().toIso8601String(),
+          nextFollowupDate: isoDateStr,
           remarks: remarks,
         );
-        await requirementsRepository.updateRequirement(updatedReq);
+        final saved = await requirementsRepository.updateRequirement(updatedReq);
+        final finalReq = saved.copyWith(
+          nextFollowupDate: (saved.nextFollowupDate != null && saved.nextFollowupDate!.isNotEmpty) ? saved.nextFollowupDate : isoDateStr,
+          remarks: (saved.remarks != null && saved.remarks!.isNotEmpty) ? saved.remarks : remarks,
+          createdBy: (saved.createdBy != null && saved.createdBy!.isNotEmpty) ? saved.createdBy : widget.requirement.createdBy,
+          creatorName: (saved.creatorName != null && saved.creatorName!.isNotEmpty) ? saved.creatorName : widget.requirement.creatorName,
+          assignedTo: (saved.assignedTo != null && saved.assignedTo!.isNotEmpty) ? saved.assignedTo : widget.requirement.assignedTo,
+          assigneeName: (saved.assigneeName != null && saved.assigneeName!.isNotEmpty) ? saved.assigneeName : widget.requirement.assigneeName,
+        );
+        await RepositoryCoordinator().requirementLocal.saveRequirements([finalReq.toLocal()]);
+
         RepositoryCoordinator().refreshDashboard();
         RepositoryCoordinator().refreshRequirements();
       }
 
       if (mounted) {
+        widget.onSavedWithDate?.call(scheduledDateTime);
         widget.onSaved();
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(

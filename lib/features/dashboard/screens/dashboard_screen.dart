@@ -57,7 +57,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // Pagination states
   int _propertyPage = 1;
-  static const int _propertiesPerPage = 5;
+  static const int _propertiesPerPage = 8;
 
   int _followupPage = 1;
   static const int _followupsPerPage = 5;
@@ -356,7 +356,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   ),
                                   const SizedBox(height: 24),
 
-                                  // Middle Section: Recent Properties & (Today's Schedule + Follow-ups)
+                                  // Middle Section: Recent Properties & (Note + Follow-ups)
                                   if (isDesktop)
                                     Row(
                                       crossAxisAlignment:

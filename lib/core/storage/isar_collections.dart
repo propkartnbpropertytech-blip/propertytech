@@ -128,6 +128,7 @@ class RequirementLocal {
   String? createdBy;
   String? leadSource;
   String? referralName;
+  String? nextFollowupDate;
 }
 
 @collection

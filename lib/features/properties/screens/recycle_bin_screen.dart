@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../core/storage/local_repositories.dart';
+import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/model_mappers.dart';
+import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
@@ -196,18 +199,30 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
       if (currentUser != null) {
         final role = currentUser.role;
+        final uName = currentUser.fullName.trim().toLowerCase();
         if (role == 'Admin') {
-          parsedList = parsedList.where((r) =>
-            r.createdBy == currentUserId || r.adminId == currentUserId
-          ).toList();
+          parsedList = parsedList.where((r) {
+            final isCreator = r.createdBy == currentUserId ||
+                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+            return isCreator || r.adminId == currentUserId;
+          }).toList();
         } else if (role == 'Telecaller') {
-          parsedList = parsedList.where((r) =>
-            r.createdBy == currentUserId || r.adminId == currentUser?.adminId
-          ).toList();
+          parsedList = parsedList.where((r) {
+            final isCreator = r.createdBy == currentUserId ||
+                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+            return isCreator || r.adminId == currentUser?.adminId;
+          }).toList();
         } else if (role != 'Super Admin') {
-          parsedList = parsedList.where((r) =>
-            r.createdBy == currentUserId
-          ).toList();
+          parsedList = parsedList.where((r) {
+            final isCreator = r.createdBy == currentUserId ||
+                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+            final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUserId || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+                (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
+            return isCreator || isAssignee;
+          }).toList();
         }
       }
 
@@ -226,48 +241,89 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   Future<void> _restoreProperty(String id) async {
+    final itemToRestore = _binProperties.firstWhereOrNull((p) => p.id == id);
+    setState(() {
+      _binProperties.removeWhere((p) => p.id == id);
+    });
+
+    if (itemToRestore != null) {
+      try {
+        final restoredItem = itemToRestore.copyWith(portalStatus: 'Active');
+        await RepositoryCoordinator().propertyLocal.saveProperties([restoredItem.toLocal()]);
+        RepositoryCoordinator().refreshProperties();
+        RepositoryCoordinator().refreshDashboard();
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Property restored successfully'),
+          backgroundColor: CRMColors.success,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
     try {
       await _propertiesService.restoreProperty(id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Property restored successfully'), backgroundColor: CRMColors.success),
-      );
-      _fetchBinProperties();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to restore property: $e'), backgroundColor: CRMColors.danger),
-      );
+      debugPrint('⚠️ Restore property API error: $e');
     }
   }
 
   Future<void> _restoreRequirement(RequirementModel r) async {
+    setState(() {
+      _binRequirements.removeWhere((item) => item.id == r.id);
+    });
+
+    final String newStatus = r.status == 'Bin' || r.status.startsWith('Rejected') ? 'Follow-up' : (r.status.isEmpty ? 'Active' : r.status);
+    final restoredReq = r.copyWith(status: newStatus);
+    try {
+      await RepositoryCoordinator().requirementLocal.saveRequirements([restoredReq.toLocal()]);
+      RepositoryCoordinator().refreshRequirements();
+      RepositoryCoordinator().refreshDashboard();
+    } catch (_) {}
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Requirement restored successfully'),
+          backgroundColor: CRMColors.success,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
     try {
       if (_requirementsSubTab == 'Bin') {
         await _requirementsService.restoreRequirement(r.id);
       } else {
-        await _requirementsService.updateRequirement(r.id, {'status': 'Interested'});
+        await _requirementsService.updateRequirement(r.id, {'status': newStatus});
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Requirement restored successfully'), backgroundColor: CRMColors.success),
-      );
-      _fetchBinRequirements();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to restore requirement: $e'), backgroundColor: CRMColors.danger),
-      );
+      debugPrint('⚠️ Restore requirement API error: $e');
     }
   }
 
   Future<void> _deleteRequirement(RequirementModel r) async {
+    setState(() {
+      _binRequirements.removeWhere((item) => item.id == r.id);
+    });
+
     try {
       await _requirementsService.deleteRequirement(r.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Requirement moved to Recycle Bin'), backgroundColor: CRMColors.success),
-      );
-      _fetchBinRequirements();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Requirement moved to Recycle Bin'), backgroundColor: CRMColors.success),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete requirement: $e'), backgroundColor: CRMColors.danger),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete requirement: $e'), backgroundColor: CRMColors.danger),
+        );
+      }
     }
   }
 
@@ -286,16 +342,25 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
     if (confirm != true) return;
 
+    setState(() {
+      _binProperties.removeWhere((p) => p.id == id);
+    });
+
     try {
-      await _propertiesService.permanentDeleteProperty(id);
+      await RepositoryCoordinator().propertyLocal.deleteProperty(id);
+      RepositoryCoordinator().refreshProperties();
+    } catch (_) {}
+
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Property permanently deleted'), backgroundColor: CRMColors.success),
       );
-      _fetchBinProperties();
+    }
+
+    try {
+      await _propertiesService.permanentDeleteProperty(id);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete property: $e'), backgroundColor: CRMColors.danger),
-      );
+      debugPrint('⚠️ Permanent delete property error: $e');
     }
   }
 
@@ -314,16 +379,25 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
     if (confirm != true) return;
 
+    setState(() {
+      _binRequirements.removeWhere((r) => r.id == id);
+    });
+
     try {
-      await _requirementsService.permanentDeleteRequirement(id);
+      await RepositoryCoordinator().requirementLocal.deleteRequirement(id);
+      RepositoryCoordinator().refreshRequirements();
+    } catch (_) {}
+
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Requirement permanently deleted'), backgroundColor: CRMColors.success),
       );
-      _fetchBinRequirements();
+    }
+
+    try {
+      await _requirementsService.permanentDeleteRequirement(id);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete requirement: $e'), backgroundColor: CRMColors.danger),
-      );
+      debugPrint('⚠️ Permanent delete requirement error: $e');
     }
   }
 
