@@ -1,0 +1,41 @@
+Task ID,Page,Section,Feature,Description,Proposed Solution,Status
+1,Dashboard,KPIs,KPI Title Change,"Map the Rental KPI from ""Rented"" to ""Site Visit Done"" (calculated using rentalSiteVisits)",Change title to 'Site Visit Done' and count using rentalSiteVisits calculated in repository,Discovery
+2,Dashboard,KPIs,Remove Trends,Remove trend indicator widgets from dashboard cards,Omit growthPercent from CRMKPIChips in DashboardScreen,Discovery
+3,Dashboard,Header,Greeting Message,Modify welcoming header to show user's name rather than email,Use currentUser.fullName instead of email.split('@').first,Discovery
+4,Dashboard,Follow-up,Admin followups,Allow admin users to see all followups across all sales users,Modify BLoC / Repository to return all followups for Admins,Discovery
+5,Dashboard,Pipeline,Pipeline Intersections,Ensure no sales user is intersected at pipeline,Ensure correct RBAC query mappings in database fetch,Discovery
+6,Notes,Notes list,Response Time Logging,Measure notes operations response times and log to backend/telemetry,Use Stopwatches around checklist requests and call PerformanceLogger.logMetric,Discovery
+7,Follow-up,Follow-up section,Header modification,Change header to "Scheduled" and remove description,Change header label and remove subtitle text,Discovery
+8,Recent Properties,Filters,Filter switching fix,Switching tabs clears active filters and page numbers; show active areas only,Add reset filter state on tab switch and area filtering in DashboardScreen,Discovery
+9,Super Search,Search,Unordered main search,Universal search matches search terms in an unordered way,Tokenize query by spaces and match tokens against searchable attributes,Discovery
+10,Property Metrics,Header,Remove Header Text,Remove the text label "Property metrics" from view,Remove property metrics text from Dashboard/Properties screens,Discovery
+11,Properties,KPIs,Remove KPIs,Remove "Verified" and "Shortlisted" KPI cards,Delete these two cards from the KPI grid,Discovery
+12,Properties,KPIs,Add KPIs,Add "Active Listings" and 3D configuration type donut chart,Add custom donut chart widget with legend for Residential/Commercial/Industrial/Land/Plot,Discovery
+13,Properties,Search,Universal Search,Make search universal to check config / category / area / city / owner across attributes,Extend Isar and web queries to search all textual fields,Discovery
+14,Properties,Verification,Remove Verification system,Remove verification property system and dropdowns,Remove verification checkboxes; filters; and statuses,Discovery
+15,Properties,Tabs,Rent-Resale buttons,Rent-Resale buttons on top should have no borders / text only ("nude" style),Update tab button decoration to transparent borderless design,Discovery
+16,Properties,Filters,Residential category filter,If category is Residential; show BHK configurations as multi-select checklist,Show checklist options in filter dropdown only when Residential is selected,Discovery
+17,Properties,Filters,Common Attributes,Use common attribute fields for all category filter selections,Keep category and area dropdowns persistent and shared,Discovery
+18,Properties,Filters,Remove Shortlist Filter,Remove shortlisted tab from properties page actions list,Omit "Shortlisted" choice chip from properties tab bar,Discovery
+19,Properties,Order,LIFO system,Ensure newly added properties go to the top (first position) instantly,Ensure LIFO sorting (newest first) in Isar local DB and web queries,Discovery
+20,Properties,Table,Admin column view,For admin users; show which sales user performed the tasks,Add "Sales User" column in properties list table,Discovery
+21,Add Property,Validation,Pre-fill search,When typing name; search database; if exists allow adding configs,Implement text check; prompt loading details (address; city; area; owner) to copy,Discovery
+22,Add Property,Videos,Video upload error,Fix video upload failure (status 201 check),Update crm_video_picker to accept 200 and 201 codes and parse response safely,Discovery
+23,Add Property,Media,Compressor,Add compression for photos and videos,Implement Canvas resize on web for photos and warning logic for videos,Discovery
+24,Add Property,Media,Permanently Delete Media,Permanently delete uploaded media from database/storage when property is deleted,Call Supabase API or clear local caches if applicable,Discovery
+25,Add Property,Verification,Remove Verification Toggle,Remove verification toggle button from add property form,Delete the Verified switch from the dialog header,Discovery
+26,Add Property,Maps,Google Maps API,Integrate Google Place API for address details autocomplete,Implement Google Places API geocode lookup in address field,Discovery
+27,Add Property,Coordinates,Remove coordinates fields,Remove Latitude and Longitude fields from Stepper Step 2,Remove lat/lng TextFormFields from layout,Discovery
+28,Add Property,Validation,Price check,Validate that rental price does not exceed 10 lakhs in Stepper Step 3,Add validator rule in price TextFormField validation callback,Discovery
+29,Add Property,Hint,Mobile hint fix,Remove space between digits after 5th number in mobile field,Modify default hint text in CRMPhoneField constructor,Discovery
+30,Add Property,KPIs,Fixed KPIs,Keep KPIs fixed so they do not fluctuate with query searches,Calculate statistics row counts over unfiltered master properties list,Discovery
+31,Requirements,Filters,Rent-Resale filter,Move Rent-Resale toggle filter to the top of the page,Relocate Rent-Resale tab row in requirements_screen.dart,Discovery
+32,Requirements,Access,RBAC Requirements,Sales users can only see requirements they created,Filter requirements list in frontend by currentUser.id if role is sales,Discovery
+33,Requirements,Table,Remove "Ready",Remove text "Ready" from readiness column,Omit "Ready" text label in requirements list,Discovery
+34,Requirements,Search,Upgrade Search Button,Upgrade requirements search button style,Style search button with CRMButton styling and modern layout,Discovery
+35,Requirements,Status,Status Flow (Site Visit),Implement reschedule / completed workflow with modal prompts for site visit status,Intercept status dropdown; show Reschedule/Done; complete visits; ask outcome,Discovery
+36,Requirements,Matches,Client liked matching,Allow selecting property client liked; updates property status,Add "Client Liked" button; update status to Rented Out/Sold Out,Discovery
+37,Requirements,Table,Admin column,Add column to show which sales user performed the tasks,Add "Sales User" column in requirements table list,Discovery
+38,Requirements,Recycle Bin,Delete access,Only admin users can empty the recycle bin,Disable or hide the Empty Bin action for non-admin users,Discovery
+39,Add Requirement,Hint,Mobile Hint fix,Fix mobile number input hint text,Utilize updated CRMPhoneField hint text,Discovery
+40,Super Admin,Validation,User creation mobile check,Sales user cannot be created with an existing mobile number,Add check in user form validation callback to check duplicate numbers,Discovery

@@ -1,0 +1,13 @@
+# PropKart
+
+PropKart is a comprehensive Property Management Software and CRM platform designed to streamline real estate operations.
+
+## Key Features
+- **Property Management**: Browse, search, and list residential and commercial properties.
+- **Requirement Matching**: Match buyer requirements with available property inventory.
+- **User Roles & RBAC**: Advanced access control for Admins, Super Admins, Telecallers, and Employees.
+
+## Navigation Links
+- [Login Screen](https://propkart.nbpropertytech.com/login)
+- [Terms & Conditions](https://propkart.nbpropertytech.com/terms-and-conditions)
+- [Privacy Policy](https://propkart.nbpropertytech.com/privacy-policy)

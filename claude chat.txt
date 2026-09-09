@@ -1,0 +1,183 @@
+Solid stack — covers monitoring, analytics, UX friction, and performance in one setup with zero licensing cost. Here's how to wire them together cleanly:
+
+Implementation order (matters — do it in this sequence)
+Sentry first — catch errors before you even have traffic to analyze
+GA4 — get traffic/event tracking live
+Clarity — add heatmaps once you have real users to record
+Web Vitals — pipe into GA4 as custom events (reuses GA4, no separate dashboard needed)
+For Flutter Web specifically
+
+1. Sentry
+
+yaml
+# pubspec.yaml
+dependencies:
+  sentry_flutter: ^8.9.0
+dart
+await SentryFlutter.init(
+  (options) {
+    options.dsn = 'YOUR_DSN';
+    options.tracesSampleRate = 1.0;
+    options.profilesSampleRate = 1.0;
+  },
+  appRunner: () => runApp(MyApp()),
+);
+
+Sentry Flutter auto-captures Web Vitals-adjacent performance data too (slow frames, cold start).
+
+2. GA4 + Clarity + GTM — these are pure JS snippets, so they go in web/index.html:
+
+html
+<!-- GTM -->
+<script>(function(w,d,s,l,i){...})(window,document,'script','dataLayer','GTM-XXXXXXX');</script>
+
+Then configure GA4 and Clarity as tags inside GTM's dashboard (no separate code changes needed later — this is the whole point of using GTM as the container).
+
+3. Web Vitals → GA4
+Since Flutter Web compiles to JS/Wasm, use the web-vitals JS library directly in index.html, and push events into GA4 via gtag:
+
+html
+<script type="module">
+  import {onCLS, onINP, onLCP} from 'https://unpkg.com/web-vitals@4?module';
+  function sendToGA(metric) {
+    gtag('event', metric.name, {
+      value: Math.round(metric.value),
+      event_category: 'Web Vitals',
+    });
+  }
+  onCLS(sendToGA); onINP(sendToGA); onLCP(sendToGA);
+</script>
+
+Now LCP/INP/CLS show up as events inside GA4 — no separate dashboard to check.
+
+End result
+web/index.html
+ ├── GTM container
+ │    ├── GA4 tag (traffic + Web Vitals events)
+ │    └── Clarity tag (heatmaps/recordings)
+ │
+Flutter app (Dart)
+ └── Sentry SDK (errors + performance/crash data)
+
+Two systems, four tools, nothing overlapping. Want me to give you the exact GTM tag configuration steps (trigger setup for GA4/Clarity inside the GTM UI), or the full index.html boilerplate ready to drop in?
+
+yes
+
+1. Full web/index.html boilerplate
+html
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your App</title>
+
+  <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-XXXXXXX');</script>
+  <!-- End GTM -->
+
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+  <!-- GTM noscript fallback -->
+  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-XXXXXXX"
+  height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+
+  <!-- Web Vitals -> GA4 (via dataLayer, so GTM/GA4 picks it up) -->
+  <script type="module">
+    import {onCLS, onINP, onLCP, onFCP, onTTFB} from 'https://unpkg.com/web-vitals@4?module';
+
+    function sendToDataLayer(metric) {
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({
+        event: 'web_vitals',
+        metric_name: metric.name,
+        metric_value: Math.round(metric.name === 'CLS' ? metric.value * 1000 : metric.value),
+        metric_id: metric.id,
+        metric_rating: metric.rating // 'good' | 'needs-improvement' | 'poor'
+      });
+    }
+
+    onCLS(sendToDataLayer);
+    onINP(sendToDataLayer);
+    onLCP(sendToDataLayer);
+    onFCP(sendToDataLayer);
+    onTTFB(sendToDataLayer);
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
+
+Note: pushing to dataLayer (not calling gtag directly) is the correct pattern since GTM owns GA4 here — GTM reads the dataLayer event and forwards it to GA4.
+
+2. GTM Dashboard Configuration Steps
+
+A. Create GA4 tag
+
+GTM → Tags → New → Tag Configuration → Google Analytics: GA4 Configuration
+Enter your GA4 Measurement ID (G-XXXXXXX)
+Trigger: All Pages
+Save as GA4 - Base Config
+
+B. Create Web Vitals event tag
+
+Tags → New → Google Analytics: GA4 Event
+Configuration Tag: select GA4 - Base Config
+Event Name: {{Event}} → set to web_vitals
+Event Parameters (add these as GTM Variables first, see below):
+metric_name → {{DLV - metric_name}}
+metric_value → {{DLV - metric_value}}
+metric_rating → {{DLV - metric_rating}}
+Trigger: Custom Event → event name = web_vitals
+
+C. Create the Data Layer Variables (needed for step B)
+
+Variables → New → Data Layer Variable
+Create three: DLV - metric_name, DLV - metric_value, DLV - metric_rating
+Each maps to the matching key from your dataLayer.push() (metric_name, metric_value, metric_rating)
+
+D. Create Clarity tag
+
+Tags → New → Tag Configuration → Custom HTML
+Paste:
+html
+<script type="text/javascript">
+  (function(c,l,a,r,i,t,y){
+    c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+    t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+    y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+  })(window, document, "clarity", "script", "YOUR_CLARITY_ID");
+</script>
+Trigger: All Pages
+Save as Clarity - Base
+
+E. Publish
+
+Preview mode first (GTM → Preview) → verify GA4 realtime report shows events + web_vitals events firing → verify Clarity dashboard shows a recording → then Submit → Publish.
+3. Sentry (separate from GTM — stays in Dart code)
+dart
+await SentryFlutter.init(
+  (options) {
+    options.dsn = 'YOUR_SENTRY_DSN';
+    options.tracesSampleRate = 1.0;
+    options.profilesSampleRate = 1.0;
+    options.environment = 'production'; // or 'staging'
+  },
+  appRunner: () => runApp(const MyApp()),
+);
+Verification checklist
+Tool	How to verify it's working
+GTM	Preview mode shows tags firing
+GA4	Realtime report shows active user + web_vitals event
+Clarity	Dashboard shows session recording within ~30 min
+Sentry	Trigger a test error, check it appears in Sentry issues
+Web Vitals	Check GA4 → Events → web_vitals, filter by metric_name
+
+Replace GTM-XXXXXXX, G-XXXXXXX, YOUR_CLARITY_ID, YOUR_SENTRY_DSN with your actual IDs before deploying.
