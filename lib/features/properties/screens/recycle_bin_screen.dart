@@ -199,18 +199,30 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
       if (currentUser != null) {
         final role = currentUser.role;
+        final uName = currentUser.fullName.trim().toLowerCase();
         if (role == 'Admin') {
-          parsedList = parsedList.where((r) =>
-            r.createdBy == currentUserId || r.adminId == currentUserId
-          ).toList();
+          parsedList = parsedList.where((r) {
+            final isCreator = r.createdBy == currentUserId ||
+                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+            return isCreator || r.adminId == currentUserId;
+          }).toList();
         } else if (role == 'Telecaller') {
-          parsedList = parsedList.where((r) =>
-            r.createdBy == currentUserId || r.adminId == currentUser?.adminId
-          ).toList();
+          parsedList = parsedList.where((r) {
+            final isCreator = r.createdBy == currentUserId ||
+                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+            return isCreator || r.adminId == currentUser?.adminId;
+          }).toList();
         } else if (role != 'Super Admin') {
-          parsedList = parsedList.where((r) =>
-            r.createdBy == currentUserId
-          ).toList();
+          parsedList = parsedList.where((r) {
+            final isCreator = r.createdBy == currentUserId ||
+                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+            final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUserId || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+                (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
+            return isCreator || isAssignee;
+          }).toList();
         }
       }
 

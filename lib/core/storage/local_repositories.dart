@@ -409,10 +409,10 @@ class RequirementLocalRepository {
   }
 
   Future<void> saveRequirements(List<RequirementLocal> requirements) async {
+    for (final r in requirements) {
+      inMemory[r.id] = r;
+    }
     if (kIsWeb) {
-      for (final r in requirements) {
-        inMemory[r.id] = r;
-      }
       await _saveAllToPrefs();
       return;
     }
@@ -518,10 +518,10 @@ class FollowupLocalRepository {
   }
 
   Future<void> saveFollowups(List<FollowupLocal> followups) async {
+    for (final f in followups) {
+      inMemory[f.id] = f;
+    }
     if (kIsWeb) {
-      for (final f in followups) {
-        inMemory[f.id] = f;
-      }
       await _saveAllToPrefs();
       return;
     }

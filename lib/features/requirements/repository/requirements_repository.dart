@@ -7,6 +7,7 @@ import 'package:propkart/core/storage/model_mappers.dart';
 import 'package:propkart/core/storage/performance_logger.dart';
 import 'package:propkart/core/security/role_guard.dart';
 import 'package:propkart/core/storage/local_repositories.dart';
+import 'package:collection/collection.dart';
 
 class RequirementsRepository {
   final RequirementsService _requirementsService = RequirementsService();
@@ -46,22 +47,30 @@ class RequirementsRepository {
     final currentUser = RoleGuard.currentUser;
     if (currentUser != null) {
       final role = currentUser.role;
+      final uName = currentUser.fullName.trim().toLowerCase();
       if (role == 'Admin') {
-        requirements = requirements.where((r) =>
-          r.createdBy == currentUser.id || r.adminId == currentUser.id
-        ).toList();
+        requirements = requirements.where((r) {
+          final isCreator = r.createdBy == currentUser.id ||
+              (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+              (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+          return isCreator || r.adminId == currentUser.id;
+        }).toList();
       } else if (role == 'Telecaller') {
         // Telecaller: same leads rights as their supervisor Admin
-        requirements = requirements.where((r) =>
-          r.createdBy == currentUser.id || r.adminId == currentUser.adminId
-        ).toList();
+        requirements = requirements.where((r) {
+          final isCreator = r.createdBy == currentUser.id ||
+              (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+              (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+          return isCreator || r.adminId == currentUser.adminId;
+        }).toList();
       } else if (role != 'Super Admin') {
         // Sales: own leads (including ones transferred away) plus leads assigned to them.
         requirements = requirements.where((r) {
-          final isCreator = r.createdBy == currentUser.id;
-          final isAssignee = r.assignedTo != null &&
-              r.assignedTo!.isNotEmpty &&
-              r.assignedTo == currentUser.id;
+          final isCreator = r.createdBy == currentUser.id ||
+              (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+              (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+          final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+              (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
           return isCreator || isAssignee;
         }).toList();
       }
@@ -128,11 +137,28 @@ class RequirementsRepository {
         final local = r.toLocal();
         final existing = existingLocalMap[r.id];
         if (existing != null && existing.nextFollowupDate != null && existing.nextFollowupDate!.trim().isNotEmpty) {
-          if (local.nextFollowupDate == null || local.nextFollowupDate!.trim().isEmpty) {
-            local.nextFollowupDate = existing.nextFollowupDate;
-            if (existing.remarks != null && existing.remarks!.trim().isNotEmpty) {
-              local.remarks = existing.remarks;
-            }
+          local.nextFollowupDate = existing.nextFollowupDate;
+          if (existing.remarks != null && existing.remarks!.trim().isNotEmpty) {
+            local.remarks = existing.remarks;
+          }
+        }
+        bool isSameMobile(String m1, String m2) {
+          final d1 = m1.replaceAll(RegExp(r'\D'), '');
+          final d2 = m2.replaceAll(RegExp(r'\D'), '');
+          if (d1.isEmpty || d2.isEmpty) return false;
+          if (d1 == d2) return true;
+          final s1 = d1.length >= 10 ? d1.substring(d1.length - 10) : d1;
+          final s2 = d2.length >= 10 ? d2.substring(d2.length - 10) : d2;
+          return s1 == s2;
+        }
+        final localFollowup = FollowupLocalRepository.inMemory.values.firstWhereOrNull(
+          (f) => (f.requirementId != null && f.requirementId == r.id) ||
+                 (f.mobile.isNotEmpty && r.clientMobile.isNotEmpty && isSameMobile(f.mobile, r.clientMobile))
+        );
+        if (localFollowup != null) {
+          local.nextFollowupDate = localFollowup.followupDate.toIso8601String();
+          if (localFollowup.notes != null && localFollowup.notes!.trim().isNotEmpty) {
+            local.remarks = localFollowup.notes;
           }
         }
         return local;

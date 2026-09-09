@@ -77,18 +77,30 @@ class DashboardRepository {
     final currentUser = RoleGuard.currentUser;
     if (currentUser != null) {
       final role = currentUser.role;
+      final uName = currentUser.fullName.trim().toLowerCase();
       if (role == 'Admin') {
-        localReqs = localReqs.where((r) =>
-          r.createdBy == currentUser.id || r.adminId == currentUser.id
-        ).toList();
+        localReqs = localReqs.where((r) {
+          final isCreator = r.createdBy == currentUser.id ||
+              (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+              (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+          return isCreator || r.adminId == currentUser.id;
+        }).toList();
       } else if (role == 'Telecaller') {
-        localReqs = localReqs.where((r) =>
-          r.createdBy == currentUser.id || r.adminId == currentUser.adminId
-        ).toList();
+        localReqs = localReqs.where((r) {
+          final isCreator = r.createdBy == currentUser.id ||
+              (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+              (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+          return isCreator || r.adminId == currentUser.adminId;
+        }).toList();
       } else if (role != 'Super Admin') {
-        localReqs = localReqs.where((r) =>
-          r.createdBy == currentUser.id || (r.assignedTo != null && r.assignedTo!.isNotEmpty && r.assignedTo == currentUser.id)
-        ).toList();
+        localReqs = localReqs.where((r) {
+          final isCreator = r.createdBy == currentUser.id ||
+              (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+              (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+          final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+              (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
+          return isCreator || isAssignee;
+        }).toList();
       }
     }
     int rentalReqs = 0;
