@@ -87,7 +87,7 @@ class DashboardRepository {
         ).toList();
       } else if (role != 'Super Admin') {
         localReqs = localReqs.where((r) =>
-          r.createdBy == currentUser.id
+          r.createdBy == currentUser.id || (r.assignedTo != null && r.assignedTo!.isNotEmpty && r.assignedTo == currentUser.id)
         ).toList();
       }
     }
