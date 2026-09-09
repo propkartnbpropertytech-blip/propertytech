@@ -6,6 +6,7 @@ import 'package:propkart/core/storage/isar_collections.dart';
 import 'package:propkart/core/storage/model_mappers.dart';
 import 'package:propkart/core/storage/performance_logger.dart';
 import 'package:propkart/core/security/role_guard.dart';
+import 'package:propkart/core/storage/local_repositories.dart';
 
 class RequirementsRepository {
   final RequirementsService _requirementsService = RequirementsService();
@@ -122,7 +123,20 @@ class RequirementsRepository {
       final jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
 
       final writeStart = DateTime.now();
-      final localEntities = freshList.map((r) => r.toLocal()).toList();
+      final existingLocalMap = RequirementLocalRepository.inMemory;
+      final localEntities = freshList.map((r) {
+        final local = r.toLocal();
+        final existing = existingLocalMap[r.id];
+        if (existing != null && existing.nextFollowupDate != null && existing.nextFollowupDate!.trim().isNotEmpty) {
+          if (local.nextFollowupDate == null || local.nextFollowupDate!.trim().isEmpty) {
+            local.nextFollowupDate = existing.nextFollowupDate;
+            if (existing.remarks != null && existing.remarks!.trim().isNotEmpty) {
+              local.remarks = existing.remarks;
+            }
+          }
+        }
+        return local;
+      }).toList();
       await _coordinator.requirementLocal.saveRequirements(localEntities);
       final isarWriteMs = DateTime.now().difference(writeStart).inMilliseconds;
 

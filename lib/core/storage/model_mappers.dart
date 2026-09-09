@@ -232,6 +232,7 @@ extension RequirementLocalExtensions on RequirementLocal {
       assignedTo: assignedTo,
       leadSource: leadSource,
       referralName: referralName,
+      nextFollowupDate: nextFollowupDate,
     );
   }
 }
@@ -272,7 +273,8 @@ extension RequirementModelExtensions on RequirementModel {
       ..assigneeName = assigneeName
       ..createdBy = createdBy
       ..leadSource = leadSource
-      ..referralName = referralName;
+      ..referralName = referralName
+      ..nextFollowupDate = nextFollowupDate;
   }
 }
 

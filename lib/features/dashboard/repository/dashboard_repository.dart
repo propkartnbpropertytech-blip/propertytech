@@ -5,6 +5,7 @@ import 'package:propkart/core/storage/isar_collections.dart';
 import 'package:propkart/core/storage/model_mappers.dart';
 import 'package:propkart/core/storage/performance_logger.dart';
 import 'package:propkart/core/security/role_guard.dart';
+import 'package:collection/collection.dart';
 
 class DashboardRepository {
   final DashboardService _dashboardService = DashboardService();
@@ -172,34 +173,86 @@ class DashboardRepository {
 
     final allowedReqIds = <String>{};
     final allowedClientNames = <String>{};
+    final binnedReqIds = <String>{};
+    final binnedClientNames = <String>{};
     final reqStatusById = <String, String>{};
     final reqStatusByName = <String, String>{};
+
     for (final r in localReqs) {
+      final status = (r.status ?? '').trim();
+      final name = (r.clientName ?? '').toLowerCase().trim();
+
+      if (status == 'Bin' || status == 'Rejected' || status.startsWith('Rejected') || status == 'Dead') {
+        binnedReqIds.add(r.id);
+        if (name.isNotEmpty) binnedClientNames.add(name);
+        reqStatusById[r.id] = status;
+        if (name.isNotEmpty) reqStatusByName[name] = status;
+        continue;
+      }
+
       allowedReqIds.add(r.id);
-      final name = (r.clientName ?? '').toLowerCase();
       if (name.isNotEmpty) allowedClientNames.add(name);
-      final status = r.status ?? '';
       reqStatusById[r.id] = status;
       if (name.isNotEmpty) reqStatusByName[name] = status;
     }
 
     bool isAllowedItem(String? reqId, String? clientName) {
-      if (reqId != null && reqId.isNotEmpty) return allowedReqIds.contains(reqId);
-      if (clientName != null && clientName.isNotEmpty) return allowedClientNames.contains(clientName.toLowerCase());
+      if (reqId != null && reqId.isNotEmpty) {
+        if (binnedReqIds.contains(reqId)) return false;
+        return allowedReqIds.contains(reqId);
+      }
+      if (clientName != null && clientName.isNotEmpty) {
+        final cName = clientName.toLowerCase().trim();
+        if (binnedClientNames.contains(cName)) return false;
+        return allowedClientNames.contains(cName);
+      }
       return false;
     }
 
-    bool isFollowupAllowedItem(String? reqId, String? clientName) {
-      if (!isAllowedItem(reqId, clientName)) return false;
-      if (reqId != null && reqId.isNotEmpty) {
-        final s = reqStatusById[reqId] ?? '';
-        return s == 'Follow-up' || s == 'Re-Followup';
+    final userRole = (currentUser?.role ?? '').toLowerCase();
+    final isFullAccessUser = userRole == 'admin' || userRole == 'super admin';
+
+    bool isFollowupAllowedItem(DashboardFollowup f) {
+      // Reject followups belonging to deleted or Bin/Rejected requirements
+      if (f.requirementId != null && f.requirementId!.isNotEmpty) {
+        final reqId = f.requirementId!;
+        if (binnedReqIds.contains(reqId) || reqStatusById[reqId] == 'Bin') {
+          return false;
+        }
+        if (!allowedReqIds.contains(reqId)) {
+          return false;
+        }
+      } else if (f.requirementCustomerName != null && f.requirementCustomerName!.isNotEmpty) {
+        final cName = f.requirementCustomerName!.toLowerCase().trim();
+        if (binnedClientNames.contains(cName) && !allowedClientNames.contains(cName)) {
+          return false;
+        }
+      } else if (f.clientName.isNotEmpty) {
+        final cName = f.clientName.toLowerCase().trim();
+        if (binnedClientNames.contains(cName) && !allowedClientNames.contains(cName)) {
+          return false;
+        }
       }
-      if (clientName != null && clientName.isNotEmpty) {
-        final s = reqStatusByName[clientName.toLowerCase()] ?? '';
-        return s == 'Follow-up' || s == 'Re-Followup';
+
+      // Role-based access check
+      if (isFullAccessUser) return true;
+
+      if (currentUser != null) {
+        final userId = currentUser.id.toLowerCase();
+        final userName = currentUser.fullName.toLowerCase();
+        final creator = (f.creatorName ?? '').toLowerCase();
+        if (creator == userId || creator == userName) {
+          return true;
+        }
       }
-      return true;
+
+      if (f.requirementId != null && f.requirementId!.isNotEmpty) {
+        return allowedReqIds.contains(f.requirementId);
+      }
+      if (f.requirementCustomerName != null && f.requirementCustomerName!.isNotEmpty) {
+        return allowedClientNames.contains(f.requirementCustomerName!.toLowerCase().trim());
+      }
+      return false;
     }
 
     if (cachedData != null) {
@@ -255,9 +308,154 @@ class DashboardRepository {
         monthlyGrowth: cachedData.summary.monthlyGrowth,
       );
 
-      final filteredFollowups = cachedData.followups.where((f) =>
-        isFollowupAllowedItem(f.requirementId, f.requirementCustomerName)
-      ).toList();
+      final allLocalFollowups = await _coordinator.followupLocal.getAllFollowups();
+      final localDashFollowups = allLocalFollowups.map((lf) => DashboardFollowup(
+        id: lf.id,
+        followupDate: lf.followupDate.toIso8601String(),
+        clientName: lf.clientName,
+        mobile: lf.mobile,
+        propertyTitle: lf.propertyTitle,
+        propertyCode: lf.propertyCode,
+        requirementCustomerName: lf.requirementCustomerName ?? lf.clientName,
+        requirementId: lf.requirementId,
+        notes: lf.notes,
+        status: lf.status,
+        creatorName: lf.createdBy,
+      )).toList();
+
+      final activeReqModels = localReqs.map((r) => r.toModel()).toList();
+
+      final combinedFollowupsMap = <String, DashboardFollowup>{};
+
+      void addFollowupToMap(DashboardFollowup f) {
+        if (!isFollowupAllowedItem(f)) return;
+
+        final req = activeReqModels.firstWhereOrNull((r) =>
+            (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+            (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+            (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+
+        if (req == null) return;
+        final reqStatus = req.status;
+        if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') {
+          return;
+        }
+
+        final key = req.id;
+        final existing = combinedFollowupsMap[key];
+        if (existing == null) {
+          combinedFollowupsMap[key] = f;
+        } else {
+          if (f.id.startsWith('local_') && !existing.id.startsWith('local_')) {
+            combinedFollowupsMap[key] = f;
+          } else if (!f.id.startsWith('local_') && existing.id.startsWith('local_')) {
+            // Keep existing local entry
+          } else {
+            combinedFollowupsMap[key] = f;
+          }
+        }
+      }
+
+      for (final f in cachedData.followups) {
+        addFollowupToMap(f);
+      }
+      for (final f in localDashFollowups) {
+        addFollowupToMap(f);
+      }
+
+      // Sync active requirements with pending followups or nextFollowupDate
+      for (final localReq in localReqs) {
+        final req = localReq.toModel();
+        final reqStatus = req.status;
+        if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') {
+          continue;
+        }
+
+        final hasFollowupStatus = reqStatus == 'Follow-up' ||
+            reqStatus == 'Re-Followup' ||
+            reqStatus == 'Site Visit' ||
+            reqStatus == 'Pending' ||
+            reqStatus == 'Active';
+        final hasNextDate = req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty;
+
+        if (hasFollowupStatus || hasNextDate) {
+          final key = req.id;
+          final existing = combinedFollowupsMap[key];
+          if (existing != null) {
+            final chosenDate = (hasNextDate && req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty)
+                ? req.nextFollowupDate!
+                : (existing.followupDate.isNotEmpty ? existing.followupDate : req.createdAt.toIso8601String());
+
+            final chosenNotes = (req.remarks != null && req.remarks!.trim().isNotEmpty)
+                ? req.remarks!
+                : ((existing.notes != null && existing.notes!.trim().isNotEmpty) ? existing.notes : (req.notes ?? ''));
+
+            combinedFollowupsMap[key] = DashboardFollowup(
+              id: existing.id,
+              requirementId: req.id,
+              clientName: existing.clientName.isNotEmpty ? existing.clientName : req.clientName,
+              mobile: existing.mobile.isNotEmpty ? existing.mobile : req.clientMobile,
+              propertyTitle: req.listingTypeName ?? existing.propertyTitle ?? 'Rent',
+              followupDate: chosenDate,
+              status: existing.status.isNotEmpty ? existing.status : reqStatus,
+              notes: chosenNotes,
+              creatorName: existing.creatorName ?? req.creatorName ?? req.assigneeName,
+            );
+          } else {
+            combinedFollowupsMap[key] = DashboardFollowup(
+              id: 'local_${req.id}',
+              requirementId: req.id,
+              clientName: req.clientName,
+              mobile: req.clientMobile,
+              propertyTitle: req.listingTypeName ?? 'Rent',
+              followupDate: hasNextDate ? req.nextFollowupDate! : req.createdAt.toIso8601String(),
+              status: reqStatus,
+              notes: req.remarks ?? req.notes,
+              creatorName: req.creatorName ?? req.assigneeName,
+            );
+          }
+        }
+      }
+
+      // Purge any followups tied to binned/deleted requirements, and assign exact listingTypeName to propertyTitle
+      final List<String> keysToRemove = [];
+      combinedFollowupsMap.forEach((key, f) {
+        final req = activeReqModels.firstWhereOrNull((r) =>
+            (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+            (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+            (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+
+        if (req == null) {
+          keysToRemove.add(key);
+        } else {
+          final reqStatus = req.status;
+          if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') {
+            keysToRemove.add(key);
+          } else {
+            final listingType = (req.listingTypeName != null && req.listingTypeName!.isNotEmpty)
+                ? req.listingTypeName!
+                : 'Rent';
+            combinedFollowupsMap[key] = DashboardFollowup(
+              id: f.id,
+              requirementId: req.id,
+              clientName: f.clientName.isNotEmpty ? f.clientName : req.clientName,
+              mobile: f.mobile.isNotEmpty ? f.mobile : req.clientMobile,
+              propertyTitle: listingType,
+              propertyCode: f.propertyCode,
+              requirementCustomerName: f.requirementCustomerName ?? req.clientName,
+              followupDate: f.followupDate,
+              notes: f.notes ?? req.remarks ?? req.notes,
+              status: f.status,
+              creatorName: f.creatorName ?? req.creatorName ?? req.assigneeName,
+            );
+          }
+        }
+      });
+      for (final k in keysToRemove) {
+        combinedFollowupsMap.remove(k);
+      }
+
+      final filteredFollowups = combinedFollowupsMap.values.toList();
 
       final filteredSiteVisits = cachedData.siteVisits.where((sv) =>
         isAllowedItem(sv.requirementId, sv.requirementCustomerName)
@@ -308,7 +506,7 @@ class DashboardRepository {
     );
 
     final filteredFollowups = model.followups.where((f) =>
-      isAllowedItem(f.requirementId, f.requirementCustomerName)
+      isFollowupAllowedItem(f)
     ).toList();
 
     final filteredSiteVisits = model.siteVisits.where((sv) =>

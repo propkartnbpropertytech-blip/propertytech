@@ -30,6 +30,7 @@ class IsarService {
       await LookupLocalRepository().loadInMemoryCache();
       await PropertyLocalRepository().loadInMemoryCache();
       await RequirementLocalRepository().loadInMemoryCache();
+      await FollowupLocalRepository().loadInMemoryCache();
       return;
     }
 
