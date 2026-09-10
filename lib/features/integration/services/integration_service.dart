@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/integration_lead_model.dart';
+import '../../campaign/models/campaign_followup_model.dart';
 import 'campaign_ingest_engine.dart';
 import '../../properties/models/property_model.dart';
 import '../../properties/repository/properties_repository.dart';
@@ -530,6 +531,79 @@ class IntegrationService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error syncing Meta leads: $e');
       return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Update a lead's campaign status ('Follow up', 'Interested', 'Not interested')
+  Future<bool> updateLeadCampaignStatus(String leadId, String status) async {
+    try {
+      // 1. Optimistically update in memory
+      final idx = _leads.indexWhere((l) => l.id == leadId);
+      if (idx != -1) {
+        _leads[idx] = _leads[idx].copyWith(campaignStatus: status);
+        notifyListeners();
+        unawaited(_persistLeads());
+      }
+
+      // 2. Persist to backend
+      final res = await _apiClient.patch('/integrations/leads/$leadId/campaign-status', {
+        'status': status,
+      });
+
+      return res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+    } catch (e) {
+      debugPrint('[IntegrationService] Error updating campaign status for $leadId: $e');
+      return false;
+    }
+  }
+
+  /// Schedule a follow-up for a campaign lead
+  Future<bool> scheduleFollowup(String leadId, DateTime scheduledAt, String remarks) async {
+    try {
+      // 1. Optimistically update in memory
+      final idx = _leads.indexWhere((l) => l.id == leadId);
+      if (idx != -1) {
+        _leads[idx] = _leads[idx].copyWith(
+          campaignStatus: 'Follow up',
+          followupScheduledAt: scheduledAt,
+          followupRemarks: remarks,
+          followupStatus: 'Pending',
+        );
+        notifyListeners();
+        unawaited(_persistLeads());
+      }
+
+      // 2. Persist to backend dedicated table
+      final res = await _apiClient.post('/integrations/leads/$leadId/followups', {
+        'scheduledAt': scheduledAt.toIso8601String(),
+        'remarks': remarks,
+      });
+
+      return res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+    } catch (e) {
+      debugPrint('[IntegrationService] Error scheduling follow-up for $leadId: $e');
+      return false;
+    }
+  }
+
+  /// Fetch follow-ups from dedicated table (filter: today, future, all)
+  Future<List<CampaignFollowupModel>> fetchFollowups({String filter = 'all', String? leadType}) async {
+    try {
+      final queryParams = <String, dynamic>{'filter': filter};
+      if (leadType != null && leadType.isNotEmpty && leadType != 'All') {
+        queryParams['leadType'] = leadType;
+      }
+      final res = await _apiClient.get('/integrations/followups', queryParameters: queryParams);
+      if (res.data is Map<String, dynamic> && res.data['followups'] is List) {
+        final list = res.data['followups'] as List;
+        return list
+            .map((item) => CampaignFollowupModel.fromJson(Map<String, dynamic>.from(item)))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[IntegrationService] Error fetching followups: $e');
+      return [];
     }
   }
 

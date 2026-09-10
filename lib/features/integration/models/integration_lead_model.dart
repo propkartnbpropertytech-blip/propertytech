@@ -16,6 +16,10 @@ class IntegrationLeadModel {
   final DateTime? metaFeedbackSentAt;
   final int enquiryCount;
   final String leadType; // 'Property Listing', 'Requirement'
+  final String campaignStatus; // 'New', 'Follow up', 'Interested', 'Not interested'
+  final DateTime? followupScheduledAt;
+  final String? followupRemarks;
+  final String? followupStatus;
   final CrmMatchInfo? crmMatch;
 
   IntegrationLeadModel({
@@ -33,6 +37,10 @@ class IntegrationLeadModel {
     this.metaFeedbackSentAt,
     this.enquiryCount = 1,
     this.leadType = 'Requirement',
+    this.campaignStatus = 'New',
+    this.followupScheduledAt,
+    this.followupRemarks,
+    this.followupStatus,
     this.crmMatch,
   });
 
@@ -75,6 +83,10 @@ class IntegrationLeadModel {
     DateTime? metaFeedbackSentAt,
     int? enquiryCount,
     String? leadType,
+    String? campaignStatus,
+    DateTime? followupScheduledAt,
+    String? followupRemarks,
+    String? followupStatus,
     CrmMatchInfo? crmMatch,
   }) {
     return IntegrationLeadModel(
@@ -92,6 +104,10 @@ class IntegrationLeadModel {
       metaFeedbackSentAt: metaFeedbackSentAt ?? this.metaFeedbackSentAt,
       enquiryCount: enquiryCount ?? this.enquiryCount,
       leadType: leadType ?? this.leadType,
+      campaignStatus: campaignStatus ?? this.campaignStatus,
+      followupScheduledAt: followupScheduledAt ?? this.followupScheduledAt,
+      followupRemarks: followupRemarks ?? this.followupRemarks,
+      followupStatus: followupStatus ?? this.followupStatus,
       crmMatch: crmMatch ?? this.crmMatch,
     );
   }
@@ -112,6 +128,10 @@ class IntegrationLeadModel {
       'meta_feedback_sent_at': metaFeedbackSentAt?.toIso8601String(),
       'enquiry_count': enquiryCount,
       'lead_type': leadType,
+      'campaign_status': campaignStatus,
+      'followup_scheduled_at': followupScheduledAt?.toIso8601String(),
+      'followup_remarks': followupRemarks,
+      'followup_status': followupStatus,
       'crm_match': crmMatch?.toJson(),
     };
   }
@@ -131,6 +151,10 @@ class IntegrationLeadModel {
         type = 'Requirement';
       }
     }
+
+    final latestFu = json['latest_followup'] is Map<String, dynamic>
+        ? json['latest_followup'] as Map<String, dynamic>
+        : null;
 
     return IntegrationLeadModel(
       id: json['id']?.toString() ?? '',
@@ -155,6 +179,14 @@ class IntegrationLeadModel {
           : null,
       enquiryCount: int.tryParse(json['enquiry_count']?.toString() ?? '1') ?? 1,
       leadType: type,
+      campaignStatus: json['campaign_status']?.toString() ?? 'New',
+      followupScheduledAt: latestFu != null && latestFu['scheduled_at'] != null
+          ? DateTime.tryParse(latestFu['scheduled_at'].toString())
+          : (json['followup_scheduled_at'] != null
+              ? DateTime.tryParse(json['followup_scheduled_at'].toString())
+              : null),
+      followupRemarks: latestFu?['remarks']?.toString() ?? json['followup_remarks']?.toString(),
+      followupStatus: latestFu?['status']?.toString() ?? json['followup_status']?.toString(),
       crmMatch: json['crm_match'] is Map<String, dynamic>
           ? CrmMatchInfo.fromJson(Map<String, dynamic>.from(json['crm_match']))
           : null,
