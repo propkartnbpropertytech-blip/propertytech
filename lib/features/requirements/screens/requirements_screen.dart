@@ -4707,51 +4707,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 }
               }
 
-              // Also include any requirements with pending followups or nextFollowupDate
-              for (final req in reqsList) {
-                final reqStatus = req.status;
-                final hasFollowupStatus = reqStatus == 'Follow-up' || reqStatus == 'Re-Followup' || reqStatus == 'Site Visit' || reqStatus == 'Pending' || reqStatus == 'Active';
-                final hasNextDate = req.nextFollowupDate != null && req.nextFollowupDate!.isNotEmpty;
-
-                if ((hasFollowupStatus || hasNextDate) && reqStatus != 'Bin' && reqStatus != 'Won' && reqStatus != 'Closed' && !reqStatus.startsWith('Rejected') && reqStatus != 'Dead') {
-                  final key = req.id;
-                  final existing = latestReqFollowupsMap[key];
-                  if (existing != null) {
-                    final chosenDate = (hasNextDate && req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty)
-                        ? req.nextFollowupDate!
-                        : (existing.followupDate.isNotEmpty ? existing.followupDate : req.createdAt.toIso8601String());
-
-                    final chosenNotes = existing.notes;
-
-                    latestReqFollowupsMap[key] = DashboardFollowup(
-                      id: existing.id,
-                      requirementId: req.id,
-                      clientName: existing.clientName.isNotEmpty ? existing.clientName : req.clientName,
-                      mobile: existing.mobile.isNotEmpty ? existing.mobile : req.clientMobile,
-                      propertyTitle: (req.listingTypeName != null && req.listingTypeName!.isNotEmpty)
-                          ? req.listingTypeName!
-                          : (existing.propertyTitle ?? 'Rent'),
-                      followupDate: chosenDate,
-                      status: existing.status.isNotEmpty ? existing.status : reqStatus,
-                      notes: chosenNotes,
-                      creatorName: existing.creatorName ?? req.creatorName ?? req.assigneeName,
-                    );
-                  } else {
-                    latestReqFollowupsMap[key] = DashboardFollowup(
-                      id: 'local_${req.id}',
-                      requirementId: req.id,
-                      clientName: req.clientName,
-                      mobile: req.clientMobile,
-                      propertyTitle: req.listingTypeName ?? 'Rent',
-                      followupDate: hasNextDate ? req.nextFollowupDate! : req.createdAt.toIso8601String(),
-                      status: reqStatus,
-                      notes: null,
-                      creatorName: req.creatorName ?? req.assigneeName,
-                    );
-                  }
-                }
-              }
-
               final List<DashboardFollowup> todayFollowups = [];
               final List<DashboardFollowup> dueFollowups = [];
               final List<DashboardFollowup> futureFollowups = [];
