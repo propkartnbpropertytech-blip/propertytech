@@ -56,3 +56,9 @@ app.*.map.json
 /android/build/
 /android/app/build/
 
+# Platform ephemeral build artifacts
+**/ephemeral/
+**/windows/flutter/ephemeral/
+**/linux/flutter/ephemeral/
+**/macos/Flutter/ephemeral/
+**/ios/Flutter/ephemeral/
