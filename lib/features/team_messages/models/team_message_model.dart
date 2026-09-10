@@ -4,6 +4,8 @@ class TeamChatUserModel {
   final String email;
   final String role;
   final String? adminId;
+  final String? teamName;
+  final String? adminName;
   final int unreadCount;
   final String? lastMessage;
   final DateTime? lastMessageAt;
@@ -14,6 +16,8 @@ class TeamChatUserModel {
     required this.email,
     required this.role,
     this.adminId,
+    this.teamName,
+    this.adminName,
     this.unreadCount = 0,
     this.lastMessage,
     this.lastMessageAt,
@@ -40,6 +44,8 @@ class TeamChatUserModel {
       email: json['email']?.toString() ?? '',
       role: r,
       adminId: adminId,
+      teamName: json['team_name']?.toString(),
+      adminName: json['admin_name']?.toString(),
       unreadCount: json['unread_count'] is int
           ? json['unread_count']
           : int.tryParse(json['unread_count']?.toString() ?? '0') ?? 0,
@@ -57,6 +63,8 @@ class TeamChatUserModel {
       'email': email,
       'role': role,
       'admin_id': adminId,
+      'team_name': teamName,
+      'admin_name': adminName,
       'unread_count': unreadCount,
       'last_message': lastMessage,
       'last_message_at': lastMessageAt?.toIso8601String(),

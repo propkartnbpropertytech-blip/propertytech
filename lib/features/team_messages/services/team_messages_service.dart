@@ -21,9 +21,15 @@ class TeamMessagesService {
     }
   }
 
-  Future<List<TeamMessageModel>> getConversation(String otherUserId) async {
+  Future<List<TeamMessageModel>> getConversation(String otherUserId, {String? withAdminId}) async {
     try {
-      final response = await _apiClient.get('/team-messages/conversation/$otherUserId');
+      final queryParams = withAdminId != null && withAdminId.isNotEmpty
+          ? {'with_admin_id': withAdminId}
+          : null;
+      final response = await _apiClient.get(
+        '/team-messages/conversation/$otherUserId',
+        queryParameters: queryParams,
+      );
       if (response.data is Map<String, dynamic> && response.data['success'] == true) {
         final List msgList = response.data['data']?['messages'] ?? [];
         return msgList.map((m) => TeamMessageModel.fromJson(m as Map<String, dynamic>)).toList();

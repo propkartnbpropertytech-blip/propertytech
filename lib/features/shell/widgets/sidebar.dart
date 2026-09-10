@@ -167,15 +167,6 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         primaryHoverColor: primaryHoverColor,
                       ),
                     if (widget.userRole.isEmpty ||
-                        RoleGuard.canViewPage(widget.userRole, '/messages'))
-                      _buildNavItem(
-                        context,
-                        title: 'Messages',
-                        icon: Icons.chat_bubble_outline_rounded,
-                        route: '/messages',
-                        isActive: currentPath.startsWith('/messages'),
-                      ),
-                    if (widget.userRole.isEmpty ||
                         RoleGuard.canViewPage(widget.userRole, '/library'))
                       _buildNavItem(
                         context,
