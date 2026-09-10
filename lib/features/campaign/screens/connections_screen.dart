@@ -277,88 +277,102 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
           const SizedBox(height: CRMSpacing.m),
 
           // Verify Token & Webhook Secret
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          Builder(
+            builder: (context) {
+              final isNarrow = MediaQuery.of(context).size.width < 700;
+              final tokenField = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'META VERIFY TOKEN',
+                    style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                  ),
+                  const SizedBox(height: CRMSpacing.xs),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: CRMColors.cardBgOf(context),
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                      border: Border.all(color: CRMColors.borderOf(context)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SelectableText(
+                            _service.metaVerifyToken,
+                            style: CRMTypography.caption.copyWith(fontFamily: 'monospace', fontSize: 11),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.copy_rounded, size: 14),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: _service.metaVerifyToken));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Verify Token copied!')),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+
+              final secretField = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'WEBHOOK SECRET (HMAC SHA-256)',
+                    style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                  ),
+                  const SizedBox(height: CRMSpacing.xs),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: CRMColors.cardBgOf(context),
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                      border: Border.all(color: CRMColors.borderOf(context)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SelectableText(
+                            _service.webhookSecret,
+                            style: CRMTypography.caption.copyWith(fontFamily: 'monospace', fontSize: 11),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.copy_rounded, size: 14),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: _service.webhookSecret));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Webhook Secret copied!')),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+
+              if (isNarrow) {
+                return Column(
                   children: [
-                    Text(
-                      'META VERIFY TOKEN',
-                      style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
-                    ),
-                    const SizedBox(height: CRMSpacing.xs),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: CRMColors.cardBgOf(context),
-                        borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                        border: Border.all(color: CRMColors.borderOf(context)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: SelectableText(
-                              _service.metaVerifyToken,
-                              style: CRMTypography.caption.copyWith(fontFamily: 'monospace', fontSize: 11),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.copy_rounded, size: 14),
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: _service.metaVerifyToken));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Verify Token copied!')),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
+                    tokenField,
+                    const SizedBox(height: CRMSpacing.m),
+                    secretField,
                   ],
-                ),
-              ),
-              const SizedBox(width: CRMSpacing.m),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'WEBHOOK SECRET (HMAC SHA-256)',
-                      style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
-                    ),
-                    const SizedBox(height: CRMSpacing.xs),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: CRMColors.cardBgOf(context),
-                        borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                        border: Border.all(color: CRMColors.borderOf(context)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: SelectableText(
-                              _service.webhookSecret,
-                              style: CRMTypography.caption.copyWith(fontFamily: 'monospace', fontSize: 11),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.copy_rounded, size: 14),
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: _service.webhookSecret));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Webhook Secret copied!')),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: tokenField),
+                  const SizedBox(width: CRMSpacing.m),
+                  Expanded(child: secretField),
+                ],
+              );
+            },
           ),
 
           const SizedBox(height: CRMSpacing.m),
@@ -530,58 +544,72 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isWide = constraints.maxWidth > 800;
+          final tiles = [
+            _buildConnectorTile(
+              context,
+              title: 'WhatsApp Cloud API',
+              subtitle: 'Automate lead replies & conversational capture',
+              icon: Icons.chat_rounded,
+              iconColor: const Color(0xFF25D366),
+              statusLabel: 'Ready to Connect',
+              statusColor: CRMColors.primaryOf(context),
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('WhatsApp Cloud API connector module initialized.')),
+                );
+              },
+            ),
+            _buildConnectorTile(
+              context,
+              title: 'Google Ads (Search & Display)',
+              subtitle: 'Lead Form Assets & Offline Conversion Uploads',
+              icon: Icons.ads_click_rounded,
+              iconColor: const Color(0xFF4285F4),
+              statusLabel: 'Ready to Connect',
+              statusColor: CRMColors.primaryOf(context),
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Google Ads webhook connector available via POST endpoint.')),
+                );
+              },
+            ),
+            _buildConnectorTile(
+              context,
+              title: 'Custom REST Webhook API',
+              subtitle: 'Ingest JSON payloads from any external landing page',
+              icon: Icons.api_rounded,
+              iconColor: const Color(0xFF9C27B0),
+              statusLabel: 'Active (Port 5001)',
+              statusColor: CRMColors.success,
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: _service.webhookUrl));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Custom REST Webhook URL copied!')),
+                );
+              },
+            ),
+          ];
+
+          if (!isWide) {
+            return Column(
+              children: [
+                tiles[0],
+                const SizedBox(height: CRMSpacing.m),
+                tiles[1],
+                const SizedBox(height: CRMSpacing.m),
+                tiles[2],
+              ],
+            );
+          }
+
           return GridView.count(
-            crossAxisCount: isWide ? 3 : 1,
+            crossAxisCount: 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: CRMSpacing.m,
             crossAxisSpacing: CRMSpacing.m,
-            childAspectRatio: isWide ? 2.2 : 3.5,
-            children: [
-              _buildConnectorTile(
-                context,
-                title: 'WhatsApp Cloud API',
-                subtitle: 'Automate lead replies & conversational capture',
-                icon: Icons.chat_rounded,
-                iconColor: const Color(0xFF25D366),
-                statusLabel: 'Ready to Connect',
-                statusColor: CRMColors.primaryOf(context),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('WhatsApp Cloud API connector module initialized.')),
-                  );
-                },
-              ),
-              _buildConnectorTile(
-                context,
-                title: 'Google Ads (Search & Display)',
-                subtitle: 'Lead Form Assets & Offline Conversion Uploads',
-                icon: Icons.ads_click_rounded,
-                iconColor: const Color(0xFF4285F4),
-                statusLabel: 'Ready to Connect',
-                statusColor: CRMColors.primaryOf(context),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Google Ads webhook connector available via POST endpoint.')),
-                  );
-                },
-              ),
-              _buildConnectorTile(
-                context,
-                title: 'Custom REST Webhook API',
-                subtitle: 'Ingest JSON payloads from any external landing page',
-                icon: Icons.api_rounded,
-                iconColor: const Color(0xFF9C27B0),
-                statusLabel: 'Active (Port 5001)',
-                statusColor: CRMColors.success,
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: _service.webhookUrl));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Custom REST Webhook URL copied!')),
-                  );
-                },
-              ),
-            ],
+            childAspectRatio: 2.2,
+            children: tiles,
           );
         },
       ),
@@ -660,60 +688,67 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
           children: [
             Icon(Icons.integration_instructions_rounded, color: CRMColors.primaryOf(context)),
             const SizedBox(width: 10),
-            const Text('Integration Setup Guides'),
+            const Expanded(
+              child: Text('Integration Setup Guides', overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
-        content: SizedBox(
-          width: 480,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.facebook_rounded, color: CRMColors.terracotta, size: 28),
-                title: const Text('Meta Lead Ads Setup Guide', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Connect Facebook & Instagram lead forms to auto-ingest into CRM'),
-                trailing: const Icon(Icons.chevron_right),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: CRMColors.borderOf(context)),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showMetaSetupGuide(context);
-                },
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.facebook_rounded, color: CRMColors.terracotta, size: 28),
+                    title: const Text('Meta Lead Ads Setup Guide', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Connect Facebook & Instagram lead forms to auto-ingest into CRM'),
+                    trailing: const Icon(Icons.chevron_right),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(color: CRMColors.borderOf(context)),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showMetaSetupGuide(context);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    leading: const Icon(Icons.table_chart_rounded, color: CRMColors.sage, size: 28),
+                    title: const Text('Google Sheets Apps Script Guide', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Sync new spreadsheet rows directly to your CRM webhook'),
+                    trailing: const Icon(Icons.chevron_right),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(color: CRMColors.borderOf(context)),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showGoogleSheetsSetupGuide(context);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    leading: Icon(Icons.send_rounded, color: CRMColors.primaryOf(context), size: 28),
+                    title: const Text('Meta Conversions API (Lead Quality)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Send qualified/converted offline lead feedback back to Meta algorithms'),
+                    trailing: const Icon(Icons.chevron_right),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(color: CRMColors.borderOf(context)),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showMetaConversionsApiInfo(context);
+                    },
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              ListTile(
-                leading: const Icon(Icons.table_chart_rounded, color: CRMColors.sage, size: 28),
-                title: const Text('Google Sheets Apps Script Guide', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Sync new spreadsheet rows directly to your CRM webhook'),
-                trailing: const Icon(Icons.chevron_right),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: CRMColors.borderOf(context)),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showGoogleSheetsSetupGuide(context);
-                },
-              ),
-              const SizedBox(height: 10),
-              ListTile(
-                leading: Icon(Icons.send_rounded, color: CRMColors.primaryOf(context), size: 28),
-                title: const Text('Meta Conversions API (Lead Quality)', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Send qualified/converted offline lead feedback back to Meta algorithms'),
-                trailing: const Icon(Icons.chevron_right),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: CRMColors.borderOf(context)),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showMetaConversionsApiInfo(context);
-                },
-              ),
-            ],
+            ),
           ),
         ),
         actions: [
@@ -734,27 +769,32 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
           children: [
             const Icon(Icons.facebook_rounded, color: CRMColors.terracotta),
             const SizedBox(width: 8),
-            const Text('Meta Lead Ads Webhook Setup'),
+            const Expanded(
+              child: Text('Meta Lead Ads Webhook Setup', overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
-        content: SizedBox(
-          width: 540,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Follow these steps in your Meta for Developers App / Business Suite:',
-                  style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: CRMSpacing.m),
-                _buildGuideStep('1', 'Go to developers.facebook.com > Your App > Webhooks.'),
-                _buildGuideStep('2', 'Select "Page" or "Leadgen" object and click Subscribe.'),
-                _buildGuideStep('3', 'Callback URL:', _service.webhookUrl),
-                _buildGuideStep('4', 'Verify Token:', _service.metaVerifyToken),
-                _buildGuideStep('5', 'Subscribe to the "leadgen" field.'),
-                _buildGuideStep('6', 'Test using the Meta Lead Ads Testing Tool to ingest a sample lead.'),
-              ],
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 540),
+          child: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Follow these steps in your Meta for Developers App / Business Suite:',
+                    style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: CRMSpacing.m),
+                  _buildGuideStep('1', 'Go to developers.facebook.com > Your App > Webhooks.'),
+                  _buildGuideStep('2', 'Select "Page" or "Leadgen" object and click Subscribe.'),
+                  _buildGuideStep('3', 'Callback URL:', _service.webhookUrl),
+                  _buildGuideStep('4', 'Verify Token:', _service.metaVerifyToken),
+                  _buildGuideStep('5', 'Subscribe to the "leadgen" field.'),
+                  _buildGuideStep('6', 'Test using the Meta Lead Ads Testing Tool to ingest a sample lead.'),
+                ],
+              ),
             ),
           ),
         ),
@@ -773,34 +813,39 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
           children: [
             const Icon(Icons.table_chart_rounded, color: CRMColors.sage),
             const SizedBox(width: 8),
-            const Text('Google Sheets Apps Script Integration'),
+            const Expanded(
+              child: Text('Google Sheets Apps Script Integration', overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
-        content: SizedBox(
-          width: 560,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('To send every spreadsheet row into PropKart Leads:'),
-                const SizedBox(height: CRMSpacing.m),
-                _buildGuideStep('1', 'Share the sheet: Anyone with the link (Viewer), paste the URL here, and click Sync to Campaign inbox. Rows stay on Campaign Leads until you move them.'),
-                _buildGuideStep('2', 'Also open Extensions > Apps Script, replace the code with this (sends new rows as they are added):'),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(6),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('To send every spreadsheet row into PropKart Leads:'),
+                  const SizedBox(height: CRMSpacing.m),
+                  _buildGuideStep('1', 'Share the sheet: Anyone with the link (Viewer), paste the URL here, and click Sync to Campaign inbox. Rows stay on Campaign Leads until you move them.'),
+                  _buildGuideStep('2', 'Also open Extensions > Apps Script, replace the code with this (sends new rows as they are added):'),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: SelectableText(
+                      IntegrationService.appsScriptSnippet(_service.webhookUrl),
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                    ),
                   ),
-                  child: SelectableText(
-                    IntegrationService.appsScriptSnippet(_service.webhookUrl),
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-                  ),
-                ),
-                const SizedBox(height: CRMSpacing.m),
-                _buildGuideStep('3', 'Click Run on syncAllRows once (authorize Google when asked). Keep your On change / On form submit trigger for new rows.'),
-                _buildGuideStep('4', 'Keep headers as plain text. Put dropdowns in data rows. Recommended columns: Client Name, Phone, Property Name (dropdown of inventory), City, Budget, Configuration, Campaign Name. If Name is a property dropdown, add a separate Client Name column.'),
-              ],
+                  const SizedBox(height: CRMSpacing.m),
+                  _buildGuideStep('3', 'Click Run on syncAllRows once (authorize Google when asked). Keep your On change / On form submit trigger for new rows.'),
+                  _buildGuideStep('4', 'Keep headers as plain text. Put dropdowns in data rows. Recommended columns: Client Name, Phone, Property Name (dropdown of inventory), City, Budget, Configuration, Campaign Name. If Name is a property dropdown, add a separate Client Name column.'),
+                ],
+              ),
             ),
           ),
         ),
@@ -819,23 +864,30 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
           children: [
             Icon(Icons.send_rounded, color: CRMColors.primaryOf(context)),
             const SizedBox(width: 8),
-            const Text('Meta Conversions API (Lead Quality)'),
+            const Expanded(
+              child: Text('Meta Conversions API (Lead Quality)', overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
-        content: SizedBox(
-          width: 520,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'When you update lead quality (Qualified, Disqualified, Converted) in the Ingestion Grid, an event is dispatched to Meta Conversions API.',
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'When you update lead quality (Qualified, Disqualified, Converted) in the Ingestion Grid, an event is dispatched to Meta Conversions API.',
+                  ),
+                  const SizedBox(height: CRMSpacing.m),
+                  _buildGuideStep(' Qualified', 'Signals to Meta algorithm to find more high-intent buyers with similar demographics.'),
+                  _buildGuideStep(' Converted', 'Dispatches final conversion value to Meta for ROAS optimization.'),
+                  _buildGuideStep(' Disqualified', 'Prevents ad budget wastage on junk clicks.'),
+                ],
               ),
-              const SizedBox(height: CRMSpacing.m),
-              _buildGuideStep(' Qualified', 'Signals to Meta algorithm to find more high-intent buyers with similar demographics.'),
-              _buildGuideStep(' Converted', 'Dispatches final conversion value to Meta for ROAS optimization.'),
-              _buildGuideStep(' Disqualified', 'Prevents ad budget wastage on junk clicks.'),
-            ],
+            ),
           ),
         ),
         actions: [

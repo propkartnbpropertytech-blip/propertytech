@@ -19,7 +19,7 @@ class CampaignSubshellHeader extends StatelessWidget {
     final isDark = themeManager.isDarkMode;
     final primaryColor = themeManager.primaryColor;
     final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 680;
+    final isCompact = screenWidth < 1050;
 
     return Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.l),
@@ -27,7 +27,7 @@ class CampaignSubshellHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Top Row: Title + Trailing actions
-          if (isMobile) ...[
+          if (isCompact) ...[
             Text(
               'Campaign',
               style: TextStyle(

@@ -708,6 +708,67 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   Widget _buildViewSelector(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 750;
+
+    final tabs = [
+      _buildViewTabItem(
+        context: context,
+        title: 'Active Leads',
+        subtitle: 'Clean campaign pipeline & incoming leads',
+        icon: Icons.table_chart_rounded,
+        count: _cachedTotalActiveCount,
+        badgeColor: CRMColors.primaryOf(context),
+        isSelected: _viewMode == 'active',
+        isMobile: isMobile,
+        onTap: () {
+          if (_viewMode != 'active') {
+            setState(() {
+              _viewMode = 'active';
+              _cachedFilteredLeads = null;
+              _currentPage = 1;
+            });
+          }
+        },
+      ),
+      _buildViewTabItem(
+        context: context,
+        title: 'Follow-ups',
+        subtitle: 'Today, future & scheduled callbacks',
+        icon: Icons.access_time_filled_rounded,
+        count: _cachedFollowupCount,
+        badgeColor: const Color(0xFFF59E0B),
+        isSelected: _viewMode == 'followups',
+        isMobile: isMobile,
+        onTap: () {
+          if (_viewMode != 'followups') {
+            setState(() {
+              _viewMode = 'followups';
+            });
+            _loadFollowups();
+          }
+        },
+      ),
+      _buildViewTabItem(
+        context: context,
+        title: 'Not Interested',
+        subtitle: 'Archived non-interested leads',
+        icon: Icons.do_not_disturb_on_rounded,
+        count: _cachedNotInterestedCount,
+        badgeColor: const Color(0xFFEF4444),
+        isSelected: _viewMode == 'not_interested',
+        isMobile: isMobile,
+        onTap: () {
+          if (_viewMode != 'not_interested') {
+            setState(() {
+              _viewMode = 'not_interested';
+              _cachedFilteredLeads = null;
+              _currentPage = 1;
+            });
+          }
+        },
+      ),
+    ];
 
     return Container(
       padding: const EdgeInsets.all(5),
@@ -716,71 +777,27 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: CRMColors.borderOf(context)),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildViewTabItem(
-              context: context,
-              title: 'Active Leads',
-              subtitle: 'Clean campaign pipeline & incoming leads',
-              icon: Icons.table_chart_rounded,
-              count: _cachedTotalActiveCount,
-              badgeColor: CRMColors.primaryOf(context),
-              isSelected: _viewMode == 'active',
-              onTap: () {
-                if (_viewMode != 'active') {
-                  setState(() {
-                    _viewMode = 'active';
-                    _cachedFilteredLeads = null;
-                    _currentPage = 1;
-                  });
-                }
-              },
+      child: isMobile && screenWidth < 520
+          ? SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (int i = 0; i < tabs.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 6),
+                    tabs[i],
+                  ],
+                ],
+              ),
+            )
+          : Row(
+              children: [
+                Expanded(child: tabs[0]),
+                const SizedBox(width: 8),
+                Expanded(child: tabs[1]),
+                const SizedBox(width: 8),
+                Expanded(child: tabs[2]),
+              ],
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildViewTabItem(
-              context: context,
-              title: 'Follow-ups',
-              subtitle: 'Today, future & scheduled callbacks',
-              icon: Icons.access_time_filled_rounded,
-              count: _cachedFollowupCount,
-              badgeColor: const Color(0xFFF59E0B),
-              isSelected: _viewMode == 'followups',
-              onTap: () {
-                if (_viewMode != 'followups') {
-                  setState(() {
-                    _viewMode = 'followups';
-                  });
-                  _loadFollowups();
-                }
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildViewTabItem(
-              context: context,
-              title: 'Not Interested',
-              subtitle: 'Archived non-interested leads',
-              icon: Icons.do_not_disturb_on_rounded,
-              count: _cachedNotInterestedCount,
-              badgeColor: const Color(0xFFEF4444),
-              isSelected: _viewMode == 'not_interested',
-              onTap: () {
-                if (_viewMode != 'not_interested') {
-                  setState(() {
-                    _viewMode = 'not_interested';
-                    _cachedFilteredLeads = null;
-                    _currentPage = 1;
-                  });
-                }
-              },
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -793,6 +810,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     required Color badgeColor,
     required bool isSelected,
     required VoidCallback onTap,
+    bool isMobile = false,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final activeBg = isDark ? const Color(0xFF262E3D) : Colors.white;
@@ -802,7 +820,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       borderRadius: BorderRadius.circular(10),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: isMobile ? 10 : 14,
+          vertical: isMobile ? 8 : 10,
+        ),
         decoration: BoxDecoration(
           color: isSelected ? activeBg : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
@@ -820,10 +841,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               : null,
         ),
         child: Row(
+          mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: isMobile ? 30 : 38,
+              height: isMobile ? 30 : 38,
               decoration: BoxDecoration(
                 color: isSelected
                     ? badgeColor.withValues(alpha: 0.15)
@@ -833,61 +855,88 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               child: Icon(
                 icon,
                 color: isSelected ? badgeColor : CRMColors.textSecondaryOf(context),
-                size: 20,
+                size: isMobile ? 16 : 20,
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                            color: isSelected
-                                ? CRMColors.textOf(context)
-                                : CRMColors.textSecondaryOf(context),
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: isSelected ? badgeColor : badgeColor.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '$count',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: isSelected ? Colors.white : badgeColor,
-                          ),
-                        ),
-                      ),
-                    ],
+            const SizedBox(width: 8),
+            if (isMobile) ...[
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                  color: isSelected ? CRMColors.textOf(context) : CRMColors.textSecondaryOf(context),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: isSelected ? badgeColor : badgeColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected ? Colors.white : badgeColor,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: CRMColors.textSecondaryOf(context).withOpacity(0.85),
+                ),
+              ),
+            ] else ...[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                              color: isSelected
+                                  ? CRMColors.textOf(context)
+                                  : CRMColors.textSecondaryOf(context),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isSelected ? badgeColor : badgeColor.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isSelected ? Colors.white : badgeColor,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: CRMColors.textSecondaryOf(context).withOpacity(0.85),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -930,6 +979,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     return PopupMenuButton<String>(
       tooltip: 'Change Status (Follow up, Interested, Not interested)',
+      constraints: const BoxConstraints(minWidth: 260, maxWidth: 300),
       onSelected: (newStatus) async {
         if (newStatus == 'Follow up') {
           _showScheduleFollowupDialog(context, lead);
@@ -978,13 +1028,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 child: const Icon(Icons.schedule_rounded, size: 16, color: Color(0xFFF59E0B)),
               ),
               const SizedBox(width: 10),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Follow up', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                  Text('Set calendar date, clock time & remarks', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                ],
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Follow up', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('Pick date, time & notes', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1002,13 +1054,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 child: const Icon(Icons.star_rounded, size: 16, color: Color(0xFF10B981)),
               ),
               const SizedBox(width: 10),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Interested', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF10B981))),
-                  Text('Highlight row & ready to move to Leads page', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                ],
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Interested', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF10B981)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('Ready to move to Leads page', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1026,13 +1080,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 child: const Icon(Icons.thumb_down_alt_rounded, size: 16, color: Color(0xFFEF4444)),
               ),
               const SizedBox(width: 10),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Not interested', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFFEF4444))),
-                  Text('Move lead to dedicated Not Interested page', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                ],
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Not interested', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFFEF4444)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('Move to Not Interested tab', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1120,111 +1176,118 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 ),
               ],
             ),
-            content: SizedBox(
-              width: 440,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Date & Time', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx))),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      // Date Picker Button
-                      Expanded(
-                        flex: 3,
-                        child: InkWell(
-                          onTap: () async {
-                            final picked = await showDatePicker(
-                              context: ctx,
-                              initialDate: selectedDate,
-                              firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                              lastDate: DateTime.now().add(const Duration(days: 365)),
-                            );
-                            if (picked != null) {
-                              setDialogState(() => selectedDate = picked);
-                            }
-                          },
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                              border: Border.all(color: CRMColors.borderOf(ctx)),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.event_rounded, size: 18, color: Color(0xFFF59E0B)),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    DateFormat('EEE, d MMM yyyy').format(selectedDate),
-                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Date & Time', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx))),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        // Date Picker Button
+                        Expanded(
+                          flex: 3,
+                          child: InkWell(
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: ctx,
+                                initialDate: selectedDate,
+                                firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                                lastDate: DateTime.now().add(const Duration(days: 365)),
+                              );
+                              if (picked != null) {
+                                setDialogState(() => selectedDate = picked);
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                                border: Border.all(color: CRMColors.borderOf(ctx)),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.event_rounded, size: 18, color: Color(0xFFF59E0B)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      DateFormat('EEE, d MMM yyyy').format(selectedDate),
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      // Time Picker Button
-                      Expanded(
-                        flex: 2,
-                        child: InkWell(
-                          onTap: () async {
-                            final picked = await showTimePicker(
-                              context: ctx,
-                              initialTime: selectedTime,
-                            );
-                            if (picked != null) {
-                              setDialogState(() => selectedTime = picked);
-                            }
-                          },
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                              border: Border.all(color: CRMColors.borderOf(ctx)),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.access_time_rounded, size: 18, color: Color(0xFFF59E0B)),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    selectedTime.format(ctx),
-                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        const SizedBox(width: 10),
+                        // Time Picker Button
+                        Expanded(
+                          flex: 2,
+                          child: InkWell(
+                            onTap: () async {
+                              final picked = await showTimePicker(
+                                context: ctx,
+                                initialTime: selectedTime,
+                              );
+                              if (picked != null) {
+                                setDialogState(() => selectedTime = picked);
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                                border: Border.all(color: CRMColors.borderOf(ctx)),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.access_time_rounded, size: 18, color: Color(0xFFF59E0B)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      selectedTime.format(ctx),
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Remarks & Notes', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx))),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: remarksController,
-                    maxLines: 4,
-                    decoration: InputDecoration(
-                      hintText: 'Enter discussion notes, callback requirements, client preferences...',
-                      hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
-                      filled: true,
-                      fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Remarks & Notes', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx))),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: remarksController,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        hintText: 'Enter discussion notes, callback requirements, client preferences...',
+                        hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                        filled: true,
+                        fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             actions: [
@@ -1298,7 +1361,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           children: [
             const Icon(Icons.star_rounded, color: Color(0xFF10B981)),
             const SizedBox(width: 8),
-            Text('Move to $targetPage Page?'),
+            Expanded(
+              child: Text(
+                'Move to $targetPage Page?',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         content: Text(
@@ -1337,6 +1405,26 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   Widget _buildInterestedLeadsAlertBanner(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 700;
+
+    final actionButton = ElevatedButton.icon(
+      icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+      label: Text(
+        _selectedSection == 'Property Listing'
+            ? 'Move to Properties ($_cachedInterestedCount)'
+            : 'Move to Leads Page ($_cachedInterestedCount)',
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF10B981),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      onPressed: _isImporting ? null : () => _moveInterestedToCrm(context),
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -1344,53 +1432,70 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withValues(alpha: 0.2),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.star_rounded, color: Color(0xFF10B981), size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+      child: isMobile
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  '$_cachedInterestedCount Interested Lead${_cachedInterestedCount > 1 ? 's' : ''} Ready for CRM',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF10B981)),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.star_rounded, color: Color(0xFF10B981), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '$_cachedInterestedCount Interested Lead${_cachedInterestedCount > 1 ? 's' : ''} Ready for CRM',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF10B981)),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 6),
                 Text(
                   'These leads are marked as interested. Click below to transfer them directly into the ${_selectedSection == 'Property Listing' ? 'Properties' : 'Leads'} page.',
                   style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
                 ),
+                const SizedBox(height: 10),
+                actionButton,
+              ],
+            )
+          : Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.star_rounded, color: Color(0xFF10B981), size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '$_cachedInterestedCount Interested Lead${_cachedInterestedCount > 1 ? 's' : ''} Ready for CRM',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF10B981)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'These leads are marked as interested. Click below to transfer them directly into the ${_selectedSection == 'Property Listing' ? 'Properties' : 'Leads'} page.',
+                        style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                actionButton,
               ],
             ),
-          ),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-            label: Text(
-              _selectedSection == 'Property Listing'
-                  ? 'Move to Properties ($_cachedInterestedCount)'
-                  : 'Move to Leads Page ($_cachedInterestedCount)',
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: _isImporting ? null : () => _moveInterestedToCrm(context),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1517,14 +1622,22 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       children: [
         Row(
           children: [
-            _buildFollowupSubChip('All Follow-ups', 'all', totalCount),
-            const SizedBox(width: 8),
-            _buildFollowupSubChip('Today', 'today', todayCount),
-            const SizedBox(width: 8),
-            _buildFollowupSubChip('Future', 'future', futureCount),
-            const SizedBox(width: 8),
-            _buildFollowupSubChip('Overdue', 'missed', missedCount),
-            const Spacer(),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildFollowupSubChip('All Follow-ups', 'all', totalCount),
+                    const SizedBox(width: 8),
+                    _buildFollowupSubChip('Today', 'today', todayCount),
+                    const SizedBox(width: 8),
+                    _buildFollowupSubChip('Future', 'future', futureCount),
+                    const SizedBox(width: 8),
+                    _buildFollowupSubChip('Overdue', 'missed', missedCount),
+                  ],
+                ),
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.refresh_rounded),
               tooltip: 'Refresh Follow-ups',
@@ -1563,6 +1676,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   Widget _buildFollowupCard(BuildContext context, CampaignFollowupModel item) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MediaQuery.of(context).size.width < 700;
     Color tagColor = const Color(0xFF3B82F6);
     String tagLabel = 'Upcoming';
     if (item.isToday) {
@@ -1575,6 +1689,69 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     final formattedDateTime = DateFormat('EEE, d MMM yyyy • h:mm a').format(item.scheduledAt);
 
+    final actionButtons = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (item.mobile.isNotEmpty) ...[
+          IconButton(
+            icon: const Icon(Icons.phone_rounded, color: Color(0xFF10B981), size: 18),
+            tooltip: 'Call Client',
+            onPressed: () => _launchTel(item.mobile),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF22C55E), size: 18),
+            tooltip: 'Chat on WhatsApp',
+            onPressed: () => _launchWhatsApp(item.mobile, item.clientName),
+          ),
+        ],
+        IconButton(
+          icon: const Icon(Icons.edit_calendar_rounded, color: Color(0xFFF59E0B), size: 18),
+          tooltip: 'Reschedule Follow-up',
+          onPressed: () {
+            final lead = item.lead ?? _service.leads.firstWhere(
+              (l) => l.id == item.leadId,
+              orElse: () => IntegrationLeadModel(
+                id: item.leadId,
+                source: 'Meta Ads',
+                receivedAt: item.createdAt,
+                rawJson: {'full_name': item.clientName, 'phone_number': item.mobile},
+              ),
+            );
+            _showScheduleFollowupDialog(context, lead);
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.star_rounded, color: Color(0xFF10B981), size: 18),
+          tooltip: 'Mark Interested',
+          onPressed: () async {
+            await _service.updateLeadCampaignStatus(item.leadId, 'Interested');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Marked as Interested! You can move this lead to CRM.'),
+                  backgroundColor: Color(0xFF10B981),
+                ),
+              );
+              _loadFollowups();
+            }
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.thumb_down_alt_rounded, color: Color(0xFFEF4444), size: 18),
+          tooltip: 'Mark Not Interested',
+          onPressed: () async {
+            await _service.updateLeadCampaignStatus(item.leadId, 'Not interested');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Moved to Not Interested list.')),
+              );
+              _loadFollowups();
+            }
+          },
+        ),
+      ],
+    );
+
     return Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.s),
       padding: const EdgeInsets.all(14),
@@ -1584,162 +1761,131 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         border: Border.all(color: CRMColors.borderOf(context)),
         boxShadow: CRMShadows.soft,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: tagColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.schedule_rounded, color: tagColor, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      item.clientName,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: tagColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        tagLabel,
-                        style: TextStyle(color: tagColor, fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        item.leadType,
-                        style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: tagColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                const SizedBox(height: 4),
-                Row(
+                child: Icon(Icons.schedule_rounded, color: tagColor, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.calendar_today_rounded, size: 13, color: tagColor),
-                    const SizedBox(width: 5),
-                    Text(
-                      formattedDateTime,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tagColor),
-                    ),
-                    if (item.mobile.isNotEmpty) ...[
-                      const SizedBox(width: 12),
-                      Icon(Icons.phone_rounded, size: 13, color: CRMColors.textSecondaryOf(context)),
-                      const SizedBox(width: 5),
-                      Text(item.mobile, style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context))),
-                    ],
-                  ],
-                ),
-                if (item.remarks.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: CRMColors.borderOf(context)),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        const Icon(Icons.notes_rounded, size: 14, color: Colors.grey),
-                        const SizedBox(width: 6),
-                        Expanded(
+                        Text(
+                          item.clientName,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: tagColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
                           child: Text(
-                            item.remarks,
-                            style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                            tagLabel,
+                            style: TextStyle(color: tagColor, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            item.leadType,
+                            style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Actions
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (item.mobile.isNotEmpty) ...[
-                IconButton(
-                  icon: const Icon(Icons.phone_rounded, color: Color(0xFF10B981), size: 18),
-                  tooltip: 'Call Client',
-                  onPressed: () => _launchTel(item.mobile),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF22C55E), size: 18),
-                  tooltip: 'Chat on WhatsApp',
-                  onPressed: () => _launchWhatsApp(item.mobile, item.clientName),
-                ),
-              ],
-              IconButton(
-                icon: const Icon(Icons.edit_calendar_rounded, color: Color(0xFFF59E0B), size: 18),
-                tooltip: 'Reschedule Follow-up',
-                onPressed: () {
-                  final lead = item.lead ?? _service.leads.firstWhere(
-                    (l) => l.id == item.leadId,
-                    orElse: () => IntegrationLeadModel(
-                      id: item.leadId,
-                      source: 'Meta Ads',
-                      receivedAt: item.createdAt,
-                      rawJson: {'full_name': item.clientName, 'phone_number': item.mobile},
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.calendar_today_rounded, size: 13, color: tagColor),
+                            const SizedBox(width: 5),
+                            Text(
+                              formattedDateTime,
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tagColor),
+                            ),
+                          ],
+                        ),
+                        if (item.mobile.isNotEmpty)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.phone_rounded, size: 13, color: CRMColors.textSecondaryOf(context)),
+                              const SizedBox(width: 5),
+                              Text(item.mobile, style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context))),
+                            ],
+                          ),
+                      ],
                     ),
-                  );
-                  _showScheduleFollowupDialog(context, lead);
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.star_rounded, color: Color(0xFF10B981), size: 18),
-                tooltip: 'Mark Interested',
-                onPressed: () async {
-                  await _service.updateLeadCampaignStatus(item.leadId, 'Interested');
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Marked as Interested! You can move this lead to CRM.'),
-                        backgroundColor: Color(0xFF10B981),
+                    if (item.remarks.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: CRMColors.borderOf(context)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.notes_rounded, size: 14, color: Colors.grey),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                item.remarks,
+                                style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    );
-                    _loadFollowups();
-                  }
-                },
+                    ],
+                  ],
+                ),
               ),
-              IconButton(
-                icon: const Icon(Icons.thumb_down_alt_rounded, color: Color(0xFFEF4444), size: 18),
-                tooltip: 'Mark Not Interested',
-                onPressed: () async {
-                  await _service.updateLeadCampaignStatus(item.leadId, 'Not interested');
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Moved to Not Interested list.')),
-                    );
-                    _loadFollowups();
-                  }
-                },
-              ),
+              if (!isMobile) ...[
+                const SizedBox(width: 12),
+                actionButtons,
+              ],
             ],
           ),
+          if (isMobile) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: actionButtons,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1768,20 +1914,34 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             return false;
           }).toList();
 
+    final isMobile = MediaQuery.of(context).size.width < 800;
+    final metricItems = [
+      _buildMetricItem(context, 'Total Not Interested', totalCount.toString(), Icons.do_not_disturb_on_rounded, const Color(0xFFEF4444)),
+      _buildMetricItem(context, 'Not Interested Today', todayCount.toString(), Icons.today_rounded, const Color(0xFFF97316)),
+      _buildMetricItem(context, 'Property Listings', propListingCount.toString(), Icons.home_work_rounded, const Color(0xFF0284C7)),
+      _buildMetricItem(context, 'Requirements', reqCount.toString(), Icons.people_alt_rounded, const Color(0xFF10B981)),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            _buildMetricItem(context, 'Total Not Interested', totalCount.toString(), Icons.do_not_disturb_on_rounded, const Color(0xFFEF4444)),
-            const SizedBox(width: CRMSpacing.s),
-            _buildMetricItem(context, 'Not Interested Today', todayCount.toString(), Icons.today_rounded, const Color(0xFFF97316)),
-            const SizedBox(width: CRMSpacing.s),
-            _buildMetricItem(context, 'Property Listings', propListingCount.toString(), Icons.home_work_rounded, const Color(0xFF0284C7)),
-            const SizedBox(width: CRMSpacing.s),
-            _buildMetricItem(context, 'Requirements', reqCount.toString(), Icons.people_alt_rounded, const Color(0xFF10B981)),
-          ],
-        ),
+        if (isMobile) ...[
+          Row(children: [metricItems[0], const SizedBox(width: CRMSpacing.s), metricItems[1]]),
+          const SizedBox(height: CRMSpacing.s),
+          Row(children: [metricItems[2], const SizedBox(width: CRMSpacing.s), metricItems[3]]),
+        ] else ...[
+          Row(
+            children: [
+              metricItems[0],
+              const SizedBox(width: CRMSpacing.s),
+              metricItems[1],
+              const SizedBox(width: CRMSpacing.s),
+              metricItems[2],
+              const SizedBox(width: CRMSpacing.s),
+              metricItems[3],
+            ],
+          ),
+        ],
 
         const SizedBox(height: CRMSpacing.m),
 
@@ -1935,6 +2095,47 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   Widget _buildLeadTypeSegmentedControl(BuildContext context, int propCount, int reqCount) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MediaQuery.of(context).size.width < 700;
+
+    final propTab = _buildSectionTabItem(
+      context: context,
+      title: 'Property Listing Leads',
+      subtitle: 'Owners listing properties for rent -> destination: Properties page',
+      icon: Icons.home_work_rounded,
+      count: propCount,
+      badgeColor: const Color(0xFF0284C7),
+      isSelected: _selectedSection == 'Property Listing',
+      onTap: () {
+        if (_selectedSection != 'Property Listing') {
+          setState(() {
+            _selectedSection = 'Property Listing';
+            _selectedLeadIds.clear();
+            _currentPage = 1;
+            _cachedFilteredLeads = null;
+          });
+        }
+      },
+    );
+
+    final reqTab = _buildSectionTabItem(
+      context: context,
+      title: 'Requirement Leads',
+      subtitle: 'Tenants searching for rental homes -> destination: Leads page',
+      icon: Icons.people_alt_rounded,
+      count: reqCount,
+      badgeColor: const Color(0xFF10B981),
+      isSelected: _selectedSection == 'Requirement',
+      onTap: () {
+        if (_selectedSection != 'Requirement') {
+          setState(() {
+            _selectedSection = 'Requirement';
+            _selectedLeadIds.clear();
+            _currentPage = 1;
+            _cachedFilteredLeads = null;
+          });
+        }
+      },
+    );
 
     return Container(
       padding: const EdgeInsets.all(5),
@@ -1943,53 +2144,21 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: CRMColors.borderOf(context)),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildSectionTabItem(
-              context: context,
-              title: 'Property Listing Leads',
-              subtitle: 'Owners listing properties for rent -> destination: Properties page',
-              icon: Icons.home_work_rounded,
-              count: propCount,
-              badgeColor: const Color(0xFF0284C7),
-              isSelected: _selectedSection == 'Property Listing',
-              onTap: () {
-                if (_selectedSection != 'Property Listing') {
-                  setState(() {
-                    _selectedSection = 'Property Listing';
-                    _selectedLeadIds.clear();
-                    _currentPage = 1;
-                    _cachedFilteredLeads = null;
-                  });
-                }
-              },
+      child: isMobile
+          ? Column(
+              children: [
+                propTab,
+                const SizedBox(height: 6),
+                reqTab,
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(child: propTab),
+                const SizedBox(width: 8),
+                Expanded(child: reqTab),
+              ],
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildSectionTabItem(
-              context: context,
-              title: 'Requirement Leads',
-              subtitle: 'Tenants searching for rental homes -> destination: Leads page',
-              icon: Icons.people_alt_rounded,
-              count: reqCount,
-              badgeColor: const Color(0xFF10B981),
-              isSelected: _selectedSection == 'Requirement',
-              onTap: () {
-                if (_selectedSection != 'Requirement') {
-                  setState(() {
-                    _selectedSection = 'Requirement';
-                    _selectedLeadIds.clear();
-                    _currentPage = 1;
-                    _cachedFilteredLeads = null;
-                  });
-                }
-              },
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2220,37 +2389,45 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
             children: [
-              Icon(Icons.calendar_month_rounded, size: 16, color: CRMColors.primaryOf(context)),
-              const SizedBox(width: 8),
-              Text(
-                'DATE FILTER:',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                  color: CRMColors.textSecondaryOf(context),
-                ),
-              ),
-              const SizedBox(width: 6),
-              if (_selectedDateFilter == CampaignDateFilter.today)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'DEFAULT',
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.calendar_month_rounded, size: 16, color: CRMColors.primaryOf(context)),
+                  const SizedBox(width: 8),
+                  Text(
+                    'DATE FILTER:',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF10B981),
+                      letterSpacing: 0.5,
+                      color: CRMColors.textSecondaryOf(context),
                     ),
                   ),
-                ),
-              const Spacer(),
+                  const SizedBox(width: 6),
+                  if (_selectedDateFilter == CampaignDateFilter.today)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'DEFAULT',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               // 1-minute ping heartbeat badge
               _buildOneMinutePingBadge(context),
             ],
@@ -2506,123 +2683,126 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         borderRadius: BorderRadius.circular(CRMBorderRadius.card),
         border: Border.all(color: CRMColors.primaryOf(context).withValues(alpha: 0.3)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            height: 36,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: CRMColors.primaryOf(context),
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-            ),
-            child: Text(
-              '$count Selected',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-            ),
-          ),
-          const SizedBox(width: CRMSpacing.s),
-
-          // Bulk Delete (Database Sync with Warning)
-          SizedBox(
-            height: 36,
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.delete_forever_rounded, size: 16),
-              label: Text('Delete ($count)'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: CRMColors.danger,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-              onPressed: () => _confirmBatchDeleteDialog(context),
-            ),
-          ),
-          const SizedBox(width: CRMSpacing.s),
-
-          // Bulk Merge (if 2+ selected)
-          if (count >= 2) ...[
-            SizedBox(
-              height: 36,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.merge_type_rounded, size: 16),
-                label: const Text('Merge Selected'),
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-                onPressed: () => _showMergeSelectedLeadsDialog(context),
-              ),
-            ),
-            const SizedBox(width: CRMSpacing.s),
-          ],
-
-          // Bulk Quality Status Menu
-          PopupMenuButton<String>(
-            tooltip: 'Update Quality Status',
-            onSelected: (status) async {
-              await _service.bulkUpdateQualityStatus(_selectedLeadIds.toList(), status);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Updated $count leads to $status')),
-                );
-              }
-            },
-            itemBuilder: (ctx) => const [
-              PopupMenuItem(value: 'Qualified', child: Text('Mark Qualified')),
-              PopupMenuItem(value: 'Converted', child: Text('Mark Converted')),
-              PopupMenuItem(value: 'Disqualified', child: Text('Mark Disqualified')),
-              PopupMenuItem(value: 'Junk', child: Text('Mark Junk')),
-              PopupMenuItem(value: 'Pending', child: Text('Mark Pending')),
-            ],
-            child: Container(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
               height: 36,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: CRMColors.cardBgOf(context),
+                color: CRMColors.primaryOf(context),
                 borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                border: Border.all(color: CRMColors.borderOf(context)),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.star_half_rounded, size: 16, color: CRMColors.textOf(context)),
-                  const SizedBox(width: 4),
-                  Text('Set Status', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CRMColors.textOf(context))),
-                  const Icon(Icons.arrow_drop_down, size: 16),
-                ],
+              child: Text(
+                '$count Selected',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
-          ),
-          const SizedBox(width: CRMSpacing.s),
+            const SizedBox(width: CRMSpacing.s),
 
-          // Move cleaned campaign leads to appropriate CRM destination
-          CRMButton(
-            label: _isImporting
-                ? 'Moving...'
-                : (_selectedSection == 'Property Listing' ? 'Move to Properties page ($count)' : 'Move to Leads page ($count)'),
-            prefixIcon: _selectedSection == 'Property Listing' ? Icons.home_work_rounded : Icons.drive_file_move_rounded,
-            variant: CRMButtonVariant.primary,
-            height: 36,
-            isLoading: _isImporting,
-            onPressed: () => _selectedSection == 'Property Listing'
-                ? _moveSelectedToPropertiesPage(context)
-                : _moveSelectedToLeadsPage(context),
-          ),
+            // Bulk Delete (Database Sync with Warning)
+            SizedBox(
+              height: 36,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.delete_forever_rounded, size: 16),
+                label: Text('Delete ($count)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: CRMColors.danger,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                onPressed: () => _confirmBatchDeleteDialog(context),
+              ),
+            ),
+            const SizedBox(width: CRMSpacing.s),
 
-          const Spacer(),
+            // Bulk Merge (if 2+ selected)
+            if (count >= 2) ...[
+              SizedBox(
+                height: 36,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.merge_type_rounded, size: 16),
+                  label: const Text('Merge Selected'),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  onPressed: () => _showMergeSelectedLeadsDialog(context),
+                ),
+              ),
+              const SizedBox(width: CRMSpacing.s),
+            ],
 
-          // Clear Selection Button
-          IconButton(
-            icon: const Icon(Icons.close_rounded, size: 18),
-            tooltip: 'Clear Selection',
-            onPressed: () => setState(() => _selectedLeadIds.clear()),
-          ),
-        ],
+            // Bulk Quality Status Menu
+            PopupMenuButton<String>(
+              tooltip: 'Update Quality Status',
+              onSelected: (status) async {
+                await _service.bulkUpdateQualityStatus(_selectedLeadIds.toList(), status);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Updated $count leads to $status')),
+                  );
+                }
+              },
+              itemBuilder: (ctx) => const [
+                PopupMenuItem(value: 'Qualified', child: Text('Mark Qualified')),
+                PopupMenuItem(value: 'Converted', child: Text('Mark Converted')),
+                PopupMenuItem(value: 'Disqualified', child: Text('Mark Disqualified')),
+                PopupMenuItem(value: 'Junk', child: Text('Mark Junk')),
+                PopupMenuItem(value: 'Pending', child: Text('Mark Pending')),
+              ],
+              child: Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: CRMColors.cardBgOf(context),
+                  borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                  border: Border.all(color: CRMColors.borderOf(context)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.star_half_rounded, size: 16, color: CRMColors.textOf(context)),
+                    const SizedBox(width: 4),
+                    Text('Set Status', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CRMColors.textOf(context))),
+                    const Icon(Icons.arrow_drop_down, size: 16),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: CRMSpacing.s),
+
+            // Move cleaned campaign leads to appropriate CRM destination
+            CRMButton(
+              label: _isImporting
+                  ? 'Moving...'
+                  : (_selectedSection == 'Property Listing' ? 'Move to Properties page ($count)' : 'Move to Leads page ($count)'),
+              prefixIcon: _selectedSection == 'Property Listing' ? Icons.home_work_rounded : Icons.drive_file_move_rounded,
+              variant: CRMButtonVariant.primary,
+              height: 36,
+              isLoading: _isImporting,
+              onPressed: () => _selectedSection == 'Property Listing'
+                  ? _moveSelectedToPropertiesPage(context)
+                  : _moveSelectedToLeadsPage(context),
+            ),
+
+            const SizedBox(width: CRMSpacing.m),
+
+            // Clear Selection Button
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 18),
+              tooltip: 'Clear Selection',
+              onPressed: () => setState(() => _selectedLeadIds.clear()),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3263,52 +3443,46 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   ) {
     final from = totalFiltered == 0 ? 0 : startIndex + 1;
     final to = (startIndex + _pageSize).clamp(0, totalFiltered);
-    return Row(
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
+    final pageSizeDropdown = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      height: 32,
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: CRMColors.borderOf(context)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<int>(
+          value: _pageSize,
+          items: const [
+            DropdownMenuItem(value: 25, child: Text('25 / page', style: TextStyle(fontSize: 12))),
+            DropdownMenuItem(value: 50, child: Text('50 / page', style: TextStyle(fontSize: 12))),
+            DropdownMenuItem(value: 100, child: Text('100 / page', style: TextStyle(fontSize: 12))),
+          ],
+          onChanged: (val) {
+            if (val == null) return;
+            setState(() {
+              _pageSize = val;
+              _currentPage = 1;
+            });
+          },
+        ),
+      ),
+    );
+
+    final navButtons = Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          'Showing $from–$to of $totalFiltered leads',
-          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontWeight: FontWeight.w600),
-        ),
-        const Spacer(),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          height: 32,
-          decoration: BoxDecoration(
-            color: CRMColors.cardBgOf(context),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: CRMColors.borderOf(context)),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<int>(
-              value: _pageSize,
-              items: const [
-                DropdownMenuItem(value: 25, child: Text('25 / page', style: TextStyle(fontSize: 12))),
-                DropdownMenuItem(value: 50, child: Text('50 / page', style: TextStyle(fontSize: 12))),
-                DropdownMenuItem(value: 100, child: Text('100 / page', style: TextStyle(fontSize: 12))),
-              ],
-              onChanged: (val) {
-                if (val == null) return;
-                setState(() {
-                  _pageSize = val;
-                  _currentPage = 1;
-                });
-              },
-            ),
-          ),
-        ),
-        const SizedBox(width: 6),
         IconButton(
           tooltip: 'First page',
-          onPressed: currentPage <= 1
-              ? null
-              : () => setState(() => _currentPage = 1),
+          onPressed: currentPage <= 1 ? null : () => setState(() => _currentPage = 1),
           icon: const Icon(Icons.first_page_rounded, size: 20),
         ),
         IconButton(
           tooltip: 'Previous page',
-          onPressed: currentPage <= 1
-              ? null
-              : () => setState(() => _currentPage = currentPage - 1),
+          onPressed: currentPage <= 1 ? null : () => setState(() => _currentPage = currentPage - 1),
           icon: const Icon(Icons.chevron_left_rounded, size: 20),
         ),
         Container(
@@ -3325,18 +3499,52 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         ),
         IconButton(
           tooltip: 'Next page',
-          onPressed: currentPage >= totalPages
-              ? null
-              : () => setState(() => _currentPage = currentPage + 1),
+          onPressed: currentPage >= totalPages ? null : () => setState(() => _currentPage = currentPage + 1),
           icon: const Icon(Icons.chevron_right_rounded, size: 20),
         ),
         IconButton(
           tooltip: 'Last page',
-          onPressed: currentPage >= totalPages
-              ? null
-              : () => setState(() => _currentPage = totalPages),
+          onPressed: currentPage >= totalPages ? null : () => setState(() => _currentPage = totalPages),
           icon: const Icon(Icons.last_page_rounded, size: 20),
         ),
+      ],
+    );
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Showing $from–$to of $totalFiltered leads',
+                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontWeight: FontWeight.w600),
+              ),
+              pageSizeDropdown,
+            ],
+          ),
+          const SizedBox(height: 6),
+          Center(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: navButtons,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Text(
+          'Showing $from–$to of $totalFiltered leads',
+          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontWeight: FontWeight.w600),
+        ),
+        const Spacer(),
+        pageSizeDropdown,
+        const SizedBox(width: 6),
+        navButtons,
       ],
     );
   }
@@ -3676,11 +3884,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 ),
               ],
             ),
-            content: SizedBox(
-              width: 440,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Excel Sort Section
                   Container(
@@ -3890,7 +4100,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 ],
               ),
             ),
-            actions: [
+          ),
+          actions: [
               if (_columnFilters.containsKey(columnKey))
                 TextButton(
                   onPressed: () {
@@ -3942,13 +4153,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               children: [
                 Icon(Icons.swap_horiz_rounded, color: CRMColors.primaryOf(context)),
                 const SizedBox(width: 8),
-                const Text('Reorder Spreadsheet Columns'),
+                const Expanded(
+                  child: Text(
+                    'Reorder Spreadsheet Columns',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
-            content: SizedBox(
-              width: 520,
-              height: 440,
-              child: Column(
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520, maxHeight: 440),
+              child: SizedBox(
+                width: double.maxFinite,
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
@@ -4071,7 +4288,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 ],
               ),
             ),
-            actions: [
+          ),
+          actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Done'),
@@ -4148,7 +4366,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: CRMColors.danger),
             const SizedBox(width: 8),
-            const Text('Delete Lead Permanently?'),
+            const Expanded(
+              child: Text(
+                'Delete Lead Permanently?',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         content: Text(
@@ -4189,7 +4412,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: CRMColors.danger),
             const SizedBox(width: 8),
-            Text('Delete $count Leads Permanently?'),
+            Expanded(
+              child: Text(
+                'Delete $count Leads Permanently?',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         content: Text(
@@ -4236,33 +4464,43 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               children: [
                 Icon(Icons.merge_type_rounded, color: CRMColors.primaryOf(context)),
                 const SizedBox(width: 8),
-                const Text('Merge Selected Leads'),
+                const Expanded(
+                  child: Text(
+                    'Merge Selected Leads',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
-            content: SizedBox(
-              width: 500,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Select the primary lead to keep. All non-empty fields and remarks from other selected leads will be consolidated into this primary record, and secondary records will be removed from the database.'),
-                  const SizedBox(height: CRMSpacing.m),
-                  const Text('Primary Lead Record:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: CRMSpacing.xs),
-                  ...selectedLeads.map((l) {
-                    final name = l.getStringValue('Full Name').isNotEmpty ? l.getStringValue('Full Name') : (l.getStringValue('Name').isNotEmpty ? l.getStringValue('Name') : 'Lead #${l.id.substring(0, 8)}');
-                    final phone = l.getStringValue('Phone Number').isNotEmpty ? l.getStringValue('Phone Number') : l.getStringValue('Phone');
-                    return RadioListTile<String>(
-                      title: Text('$name ($phone) - ${l.source}'),
-                      subtitle: Text('ID: ${l.id} | Quality: ${l.qualityStatus}'),
-                      value: l.id,
-                      groupValue: primaryId,
-                      onChanged: (val) {
-                        if (val != null) setModalState(() => primaryId = val);
-                      },
-                    );
-                  }),
-                ],
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 500),
+              child: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Select the primary lead to keep. All non-empty fields and remarks from other selected leads will be consolidated into this primary record, and secondary records will be removed from the database.'),
+                      const SizedBox(height: CRMSpacing.m),
+                      const Text('Primary Lead Record:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: CRMSpacing.xs),
+                      ...selectedLeads.map((l) {
+                        final name = l.getStringValue('Full Name').isNotEmpty ? l.getStringValue('Full Name') : (l.getStringValue('Name').isNotEmpty ? l.getStringValue('Name') : 'Lead #${l.id.substring(0, 8)}');
+                        final phone = l.getStringValue('Phone Number').isNotEmpty ? l.getStringValue('Phone Number') : l.getStringValue('Phone');
+                        return RadioListTile<String>(
+                          title: Text('$name ($phone) - ${l.source}'),
+                          subtitle: Text('ID: ${l.id} | Quality: ${l.qualityStatus}'),
+                          value: l.id,
+                          groupValue: primaryId,
+                          onChanged: (val) {
+                            if (val != null) setModalState(() => primaryId = val);
+                          },
+                        );
+                      }),
+                    ],
+                  ),
+                ),
               ),
             ),
             actions: [
@@ -4299,7 +4537,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: CRMColors.danger),
             const SizedBox(width: 8),
-            const Text('Clear All Ingested Leads?'),
+            const Expanded(
+              child: Text(
+                'Clear All Ingested Leads?',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         content: const Text('Are you sure you want to clear all leads in memory?'),
@@ -4338,77 +4581,85 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 children: [
                   Icon(Icons.view_column_rounded, color: CRMColors.primaryOf(context)),
                   const SizedBox(width: 8),
-                  Text('Select Visible Headers ($visibleCount of $totalCount visible)'),
+                  Expanded(
+                    child: Text(
+                      'Select Visible Headers ($visibleCount of $totalCount visible)',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
-              content: SizedBox(
-                width: 480,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        TextButton.icon(
-                          icon: const Icon(Icons.check_box_rounded, size: 16),
-                          label: const Text('Select All'),
-                          onPressed: () {
-                            _service.setAllHeadersVisibility(true);
-                            setModalState(() {});
-                            setState(() {});
-                          },
-                        ),
-                        TextButton.icon(
-                          icon: const Icon(Icons.check_box_outline_blank_rounded, size: 16),
-                          label: const Text('Deselect All'),
-                          onPressed: () {
-                            _service.setAllHeadersVisibility(false);
-                            setModalState(() {});
-                            setState(() {});
-                          },
-                        ),
-                      ],
-                    ),
-                    const Divider(),
-                    SizedBox(
-                      height: 350,
-                      child: ListView.builder(
-                        itemCount: currentAllHeaders.length,
-                        itemBuilder: (context, i) {
-                          final h = currentAllHeaders[i];
-                          final isChecked = _service.isHeaderVisible(h);
-                          final crmTarget = _service.columnMappings[h];
-
-                          return CheckboxListTile(
-                            dense: true,
-                            title: Row(
-                              children: [
-                                Expanded(child: Text(h, style: const TextStyle(fontWeight: FontWeight.w600))),
-                                if (crmTarget != null)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: CRMColors.primaryOf(context).withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      '-> $crmTarget',
-                                      style: TextStyle(fontSize: 10, color: CRMColors.primaryOf(context), fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            value: isChecked,
-                            onChanged: (val) {
-                              _service.setHeaderVisibility(h, val ?? false);
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: SizedBox(
+                  width: double.maxFinite,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          TextButton.icon(
+                            icon: const Icon(Icons.check_box_rounded, size: 16),
+                            label: const Text('Select All'),
+                            onPressed: () {
+                              _service.setAllHeadersVisibility(true);
                               setModalState(() {});
                               setState(() {});
                             },
-                          );
-                        },
+                          ),
+                          TextButton.icon(
+                            icon: const Icon(Icons.check_box_outline_blank_rounded, size: 16),
+                            label: const Text('Deselect All'),
+                            onPressed: () {
+                              _service.setAllHeadersVisibility(false);
+                              setModalState(() {});
+                              setState(() {});
+                            },
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      const Divider(),
+                      SizedBox(
+                        height: 350,
+                        child: ListView.builder(
+                          itemCount: currentAllHeaders.length,
+                          itemBuilder: (context, i) {
+                            final h = currentAllHeaders[i];
+                            final isChecked = _service.isHeaderVisible(h);
+                            final crmTarget = _service.columnMappings[h];
+
+                            return CheckboxListTile(
+                              dense: true,
+                              title: Row(
+                                children: [
+                                  Expanded(child: Text(h, style: const TextStyle(fontWeight: FontWeight.w600))),
+                                  if (crmTarget != null)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: CRMColors.primaryOf(context).withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        '-> $crmTarget',
+                                        style: TextStyle(fontSize: 10, color: CRMColors.primaryOf(context), fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              value: isChecked,
+                              onChanged: (val) {
+                                _service.setHeaderVisibility(h, val ?? false);
+                                setModalState(() {});
+                                setState(() {});
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               actions: [
@@ -4437,49 +4688,59 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             children: [
               Icon(Icons.add_box_rounded, color: CRMColors.primaryOf(context)),
               const SizedBox(width: 8),
-              const Text('Add Dynamic Column Header'),
+              const Expanded(
+                child: Text(
+                  'Add Dynamic Column Header',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Define a column name in advance (or match future webhook keys).',
-                  style: TextStyle(fontSize: 13),
-                ),
-                const SizedBox(height: CRMSpacing.m),
-                TextField(
-                  controller: textController,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    labelText: 'Header Name (e.g. Preferred Location, Move-in Date)',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-                const SizedBox(height: CRMSpacing.m),
-                const Text('Map to CRM Field (Optional):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<String>(
-                  value: selectedCrmTarget,
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  hint: const Text('None (Keep as raw custom field)'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('None (Raw JSON Field)')),
-                    ...IntegrationService.standardCrmFields.entries.map((e) {
-                      return DropdownMenuItem(value: e.key, child: Text('${e.value} (${e.key})'));
-                    }),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Define a column name in advance (or match future webhook keys).',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: CRMSpacing.m),
+                    TextField(
+                      controller: textController,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: 'Header Name (e.g. Preferred Location, Move-in Date)',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                    const SizedBox(height: CRMSpacing.m),
+                    const Text('Map to CRM Field (Optional):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    DropdownButtonFormField<String>(
+                      value: selectedCrmTarget,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      hint: const Text('None (Keep as raw custom field)'),
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('None (Raw JSON Field)')),
+                        ...IntegrationService.standardCrmFields.entries.map((e) {
+                          return DropdownMenuItem(value: e.key, child: Text('${e.value} (${e.key})'));
+                        }),
+                      ],
+                      onChanged: (val) {
+                        setModalState(() => selectedCrmTarget = val);
+                      },
+                    ),
                   ],
-                  onChanged: (val) {
-                    setModalState(() => selectedCrmTarget = val);
-                  },
                 ),
-              ],
+              ),
             ),
           ),
           actions: [
@@ -4518,123 +4779,133 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             children: [
               Icon(Icons.tune_rounded, color: CRMColors.primaryOf(context)),
               const SizedBox(width: 8),
-              Text('Header: "$header"'),
+              Expanded(
+                child: Text(
+                  'Header: "$header"',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('CRM Lead Field Mapping', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                const Text(
-                  'When leads are imported, this column value will automatically map into the selected CRM field.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  value: currentTarget,
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  hint: const Text('Select CRM Target Field'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('None (Unmapped / Raw)')),
-                    ...IntegrationService.standardCrmFields.entries.map((e) {
-                      return DropdownMenuItem(value: e.key, child: Text(e.value));
-                    }),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('CRM Lead Field Mapping', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'When leads are imported, this column value will automatically map into the selected CRM field.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: currentTarget,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      hint: const Text('Select CRM Target Field'),
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('None (Unmapped / Raw)')),
+                        ...IntegrationService.standardCrmFields.entries.map((e) {
+                          return DropdownMenuItem(value: e.key, child: Text(e.value));
+                        }),
+                      ],
+                      onChanged: (val) {
+                        setModalState(() => currentTarget = val);
+                        _service.setColumnMapping(header, val);
+                      },
+                    ),
+                    const Divider(height: 20),
+                    ListTile(
+                      leading: Icon(Icons.filter_alt_rounded, color: CRMColors.primaryOf(context)),
+                      title: const Text('Excel Filter & Sort...', style: TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: const Text('Filter distinct values, sort A-Z / Z-A', style: TextStyle(fontSize: 11)),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _showExcelColumnFilterDialog(context, header, columnTitle: header);
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.arrow_back_rounded),
+                      title: const Text('Move Column Left'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _service.moveHeader(header, -1);
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.arrow_forward_rounded),
+                      title: const Text('Move Column Right'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _service.moveHeader(header, 1);
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.swap_horiz_rounded),
+                      title: const Text('Reorder All Columns (Drag & Drop)'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _showReorderColumnsDialog(context);
+                      },
+                    ),
+                    const Divider(height: 20),
+                    ListTile(
+                      leading: const Icon(Icons.edit_rounded),
+                      title: const Text('Rename Header'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _showRenameHeaderDialog(context, header);
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.visibility_off_rounded),
+                      title: const Text('Hide this Column'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      onTap: () {
+                        _service.setHeaderVisibility(header, false);
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Column "$header" hidden from table view.')),
+                        );
+                      },
+                    ),
+                    if (_service.customHeaders.contains(header))
+                      ListTile(
+                        leading: const Icon(Icons.delete_forever_rounded, color: CRMColors.danger),
+                        title: const Text('Delete Custom Header', style: TextStyle(color: CRMColors.danger)),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        onTap: () {
+                          _service.removeCustomHeader(header);
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Custom column "$header" removed.')),
+                          );
+                        },
+                      ),
                   ],
-                  onChanged: (val) {
-                    setModalState(() => currentTarget = val);
-                    _service.setColumnMapping(header, val);
-                  },
                 ),
-                const Divider(height: 20),
-                ListTile(
-                  leading: Icon(Icons.filter_alt_rounded, color: CRMColors.primaryOf(context)),
-                  title: const Text('Excel Filter & Sort...', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Filter distinct values, sort A-Z / Z-A', style: TextStyle(fontSize: 11)),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _showExcelColumnFilterDialog(context, header, columnTitle: header);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.arrow_back_rounded),
-                  title: const Text('Move Column Left'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    await _service.moveHeader(header, -1);
-                    if (mounted) setState(() {});
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.arrow_forward_rounded),
-                  title: const Text('Move Column Right'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    await _service.moveHeader(header, 1);
-                    if (mounted) setState(() {});
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.swap_horiz_rounded),
-                  title: const Text('Reorder All Columns (Drag & Drop)'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _showReorderColumnsDialog(context);
-                  },
-                ),
-                const Divider(height: 20),
-                ListTile(
-                  leading: const Icon(Icons.edit_rounded),
-                  title: const Text('Rename Header'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _showRenameHeaderDialog(context, header);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.visibility_off_rounded),
-                  title: const Text('Hide this Column'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  onTap: () {
-                    _service.setHeaderVisibility(header, false);
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Column "$header" hidden from table view.')),
-                    );
-                  },
-                ),
-                if (_service.customHeaders.contains(header))
-                  ListTile(
-                    leading: const Icon(Icons.delete_forever_rounded, color: CRMColors.danger),
-                    title: const Text('Delete Custom Header', style: TextStyle(color: CRMColors.danger)),
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    onTap: () {
-                      _service.removeCustomHeader(header);
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Custom column "$header" removed.')),
-                      );
-                    },
-                  ),
-              ],
+              ),
             ),
           ),
           actions: [
@@ -4651,11 +4922,17 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Rename Header "$oldHeader"'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'New Header Name'),
+        title: Text('Rename Header "$oldHeader"', overflow: TextOverflow.ellipsis),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: SizedBox(
+            width: double.maxFinite,
+            child: TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'New Header Name'),
+            ),
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -4689,63 +4966,73 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             children: [
               Icon(Icons.merge_type_rounded, color: CRMColors.primaryOf(context)),
               const SizedBox(width: 8),
-              const Text('Merge Multiple Headers into One'),
+              const Expanded(
+                child: Text(
+                  'Merge Multiple Headers into One',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
-          content: SizedBox(
-            width: 480,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Select multiple columns to merge (e.g. "Full Name", "Client_Name", "Name"). Their values across all ingested leads will be combined into a single target column.',
-                  style: TextStyle(fontSize: 13),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Select multiple columns to merge (e.g. "Full Name", "Client_Name", "Name"). Their values across all ingested leads will be combined into a single target column.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: CRMSpacing.m),
+                    const Text('Select Source Headers to Combine:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: 180,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: CRMColors.borderOf(context)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListView(
+                        children: headers.map((h) {
+                          final isChecked = selectedHeadersToMerge.contains(h);
+                          return CheckboxListTile(
+                            dense: true,
+                            title: Text(h),
+                            value: isChecked,
+                            onChanged: (val) {
+                              setModalState(() {
+                                if (val == true) {
+                                  selectedHeadersToMerge.add(h);
+                                } else {
+                                  selectedHeadersToMerge.remove(h);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: CRMSpacing.m),
+                    const Text('Destination Target Header:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    DropdownButtonFormField<String>(
+                      value: targetHeader.isNotEmpty && headers.contains(targetHeader) ? targetHeader : null,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: headers.map((h) => DropdownMenuItem(value: h, child: Text(h))).toList(),
+                      onChanged: (val) {
+                        if (val != null) setModalState(() => targetHeader = val);
+                      },
+                    ),
+                  ],
                 ),
-                const SizedBox(height: CRMSpacing.m),
-                const Text('Select Source Headers to Combine:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Container(
-                  height: 180,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: CRMColors.borderOf(context)),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: ListView(
-                    children: headers.map((h) {
-                      final isChecked = selectedHeadersToMerge.contains(h);
-                      return CheckboxListTile(
-                        dense: true,
-                        title: Text(h),
-                        value: isChecked,
-                        onChanged: (val) {
-                          setModalState(() {
-                            if (val == true) {
-                              selectedHeadersToMerge.add(h);
-                            } else {
-                              selectedHeadersToMerge.remove(h);
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
-                ),
-                const SizedBox(height: CRMSpacing.m),
-                const Text('Destination Target Header:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<String>(
-                  value: targetHeader.isNotEmpty && headers.contains(targetHeader) ? targetHeader : null,
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  items: headers.map((h) => DropdownMenuItem(value: h, child: Text(h))).toList(),
-                  onChanged: (val) {
-                    if (val != null) setModalState(() => targetHeader = val);
-                  },
-                ),
-              ],
+              ),
             ),
           ),
           actions: [
@@ -4785,44 +5072,54 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             children: [
               Icon(Icons.code_rounded, color: CRMColors.primaryOf(context)),
               const SizedBox(width: 8),
-              const Text('Paste JSON Payload (Simulate Ingestion)'),
+              const Expanded(
+                child: Text(
+                  'Paste JSON Payload (Simulate Ingestion)',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
-          content: SizedBox(
-            width: 520,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Source Tag:'),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<String>(
-                  value: source,
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'Meta Ads', child: Text('Meta Ads ')),
-                    DropdownMenuItem(value: 'Google Sheets', child: Text('Google Sheets ')),
-                    DropdownMenuItem(value: 'Webhook API', child: Text('Webhook API ')),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Source Tag:'),
+                    const SizedBox(height: 4),
+                    DropdownButtonFormField<String>(
+                      value: source,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'Meta Ads', child: Text('Meta Ads ')),
+                        DropdownMenuItem(value: 'Google Sheets', child: Text('Google Sheets ')),
+                        DropdownMenuItem(value: 'Webhook API', child: Text('Webhook API ')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setModalState(() => source = val);
+                      },
+                    ),
+                    const SizedBox(height: CRMSpacing.m),
+                    const Text('Raw JSON Payload:'),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: controller,
+                      maxLines: 9,
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
                   ],
-                  onChanged: (val) {
-                    if (val != null) setModalState(() => source = val);
-                  },
                 ),
-                const SizedBox(height: CRMSpacing.m),
-                const Text('Raw JSON Payload:'),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: controller,
-                  maxLines: 9,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
           actions: [
@@ -4864,59 +5161,67 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           children: [
             const Icon(Icons.data_object_rounded),
             const SizedBox(width: 8),
-            Text('Payload Inspector: ${lead.source}'),
+            Expanded(
+              child: Text(
+                'Payload Inspector: ${lead.source}',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
-        content: SizedBox(
-          width: 500,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Received: ${lead.receivedAt.toLocal()}'),
-                Text('External Lead ID: ${lead.externalLeadId ?? "N/A"}'),
-                Text('Quality: ${lead.qualityStatus} | CRM Status: ${lead.importStatus}'),
-                if (lead.isDuplicate)
-                  Text('Duplicate: ${lead.duplicateReason}', style: const TextStyle(color: CRMColors.warning, fontWeight: FontWeight.bold)),
-                if (lead.crmMatch?.inCrm == true) ...[
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 500),
+          child: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Received: ${lead.receivedAt.toLocal()}'),
+                  Text('External Lead ID: ${lead.externalLeadId ?? "N/A"}'),
+                  Text('Quality: ${lead.qualityStatus} | CRM Status: ${lead.importStatus}'),
+                  if (lead.isDuplicate)
+                    Text('Duplicate: ${lead.duplicateReason}', style: const TextStyle(color: CRMColors.warning, fontWeight: FontWeight.bold)),
+                  if (lead.crmMatch?.inCrm == true) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Already in ${lead.crmMatch?.table == "properties" ? "Properties Inventory" : "Main Leads"}: ${lead.crmMatch?.name} (${lead.crmMatch?.status})\n${lead.crmMatch?.details ?? ""}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF047857)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const Divider(),
+                  const Text('Raw JSON:', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                      color: Colors.black.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
                     ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Already in ${lead.crmMatch?.table == "properties" ? "Properties Inventory" : "Main Leads"}: ${lead.crmMatch?.name} (${lead.crmMatch?.status})\n${lead.crmMatch?.details ?? ""}',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF047857)),
-                          ),
-                        ),
-                      ],
+                    child: SelectableText(
+                      const JsonEncoder.withIndent('  ').convert(lead.rawJson),
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
                     ),
                   ),
                 ],
-                const Divider(),
-                const Text('Raw JSON:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: SelectableText(
-                    const JsonEncoder.withIndent('  ').convert(lead.rawJson),
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -5025,7 +5330,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           children: [
             Icon(Icons.home_work_rounded, color: CRMColors.primaryOf(context)),
             const SizedBox(width: 8),
-            const Text('Move to Properties page?'),
+            const Expanded(
+              child: Text(
+                'Move to Properties page?',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         content: Text(
@@ -5126,7 +5436,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           children: [
             Icon(Icons.cleaning_services_rounded, color: CRMColors.primaryOf(context)),
             const SizedBox(width: 8),
-            const Text('Clean & Merge Duplicates?'),
+            const Expanded(
+              child: Text(
+                'Clean & Merge Duplicates?',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         content: const Text(
