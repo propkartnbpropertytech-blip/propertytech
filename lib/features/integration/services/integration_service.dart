@@ -299,8 +299,8 @@ class IntegrationService extends ChangeNotifier {
   }
 
   /// Reorder headers via drag and place
-  Future<void> reorderHeaders(int oldIndex, int newIndex) async {
-    final current = List<String>.from(getDetectedHeaders());
+  Future<void> reorderHeaders(int oldIndex, int newIndex, {List<IntegrationLeadModel>? leadsSubset}) async {
+    final current = List<String>.from(getDetectedHeaders(leadsSubset: leadsSubset));
     if (oldIndex < 0 || oldIndex >= current.length) return;
     if (newIndex < 0 || newIndex > current.length) return;
 
@@ -310,15 +310,30 @@ class IntegrationService extends ChangeNotifier {
     final item = current.removeAt(oldIndex);
     current.insert(newIndex, item);
 
-    _headerOrder = current;
+    if (leadsSubset != null) {
+      final fullHeaders = List<String>.from(getDetectedHeaders());
+      final sectionIndices = <int>[];
+      for (int i = 0; i < fullHeaders.length; i++) {
+        if (current.contains(fullHeaders[i])) {
+          sectionIndices.add(i);
+        }
+      }
+      for (int i = 0; i < current.length && i < sectionIndices.length; i++) {
+        fullHeaders[sectionIndices[i]] = current[i];
+      }
+      _headerOrder = fullHeaders;
+    } else {
+      _headerOrder = current;
+    }
+
     _invalidateHeaderCache();
     await _persistHeaderOrder();
     notifyListeners();
   }
 
   /// Move a single header left (-1) or right (+1)
-  Future<void> moveHeader(String header, int direction) async {
-    final current = List<String>.from(getDetectedHeaders());
+  Future<void> moveHeader(String header, int direction, {List<IntegrationLeadModel>? leadsSubset}) async {
+    final current = List<String>.from(getDetectedHeaders(leadsSubset: leadsSubset));
     final idx = current.indexOf(header);
     if (idx == -1) return;
     final newIdx = idx + direction;
@@ -327,30 +342,71 @@ class IntegrationService extends ChangeNotifier {
     final item = current.removeAt(idx);
     current.insert(newIdx, item);
 
-    _headerOrder = current;
+    if (leadsSubset != null) {
+      final fullHeaders = List<String>.from(getDetectedHeaders());
+      final sectionIndices = <int>[];
+      for (int i = 0; i < fullHeaders.length; i++) {
+        if (current.contains(fullHeaders[i])) {
+          sectionIndices.add(i);
+        }
+      }
+      for (int i = 0; i < current.length && i < sectionIndices.length; i++) {
+        fullHeaders[sectionIndices[i]] = current[i];
+      }
+      _headerOrder = fullHeaders;
+    } else {
+      _headerOrder = current;
+    }
+
     _invalidateHeaderCache();
     await _persistHeaderOrder();
     notifyListeners();
   }
 
   /// Reset header order back to original sheet insertion order
-  Future<void> resetHeaderOrderToSheet() async {
-    _headerOrder.clear();
-    final extracted = <String>[];
-    for (final lead in _leads) {
-      for (final k in lead.rawJson.keys) {
-        final clean = k.trim();
-        if (clean.isNotEmpty &&
-            !clean.startsWith('_engine_') &&
-            clean.toLowerCase() != 'source' &&
-            clean != 'Client Name' &&
-            clean != 'Phone' &&
-            clean != 'Property Name') {
-          if (!extracted.contains(clean)) extracted.add(clean);
+  Future<void> resetHeaderOrderToSheet({List<IntegrationLeadModel>? leadsSubset}) async {
+    if (leadsSubset != null) {
+      final sectionHeaders = getDetectedHeaders(leadsSubset: leadsSubset);
+      final extracted = <String>[];
+      for (final lead in leadsSubset) {
+        for (final k in lead.rawJson.keys) {
+          final clean = k.trim();
+          if (clean.isNotEmpty &&
+              !clean.startsWith('_engine_') &&
+              clean.toLowerCase() != 'source') {
+            if (!extracted.contains(clean)) extracted.add(clean);
+          }
         }
       }
+      final fullHeaders = List<String>.from(getDetectedHeaders());
+      final sectionIndices = <int>[];
+      for (int i = 0; i < fullHeaders.length; i++) {
+        if (sectionHeaders.contains(fullHeaders[i])) {
+          sectionIndices.add(i);
+        }
+      }
+      for (int i = 0; i < extracted.length && i < sectionIndices.length; i++) {
+        fullHeaders[sectionIndices[i]] = extracted[i];
+      }
+      _headerOrder = fullHeaders;
+    } else {
+      _headerOrder.clear();
+      final extracted = <String>[];
+      for (final lead in _leads) {
+        for (final k in lead.rawJson.keys) {
+          final clean = k.trim();
+          if (clean.isNotEmpty &&
+              !clean.startsWith('_engine_') &&
+              clean.toLowerCase() != 'source' &&
+              clean != 'Client Name' &&
+              clean != 'Phone' &&
+              clean != 'Property Name') {
+            if (!extracted.contains(clean)) extracted.add(clean);
+          }
+        }
+      }
+      _headerOrder = extracted;
     }
-    _headerOrder = extracted;
     _invalidateHeaderCache();
     await _persistHeaderOrder();
     notifyListeners();
@@ -1609,12 +1665,30 @@ class IntegrationService extends ChangeNotifier {
       if (phone.isNotEmpty) seenPhones.add(phone);
       if (email.isNotEmpty) seenEmails.add(email);
 
+      final typeFromMap = (flattened['lead_type'] ?? flattened['leadType'])?.toString();
+      final String detectedLeadType;
+      if (typeFromMap != null && typeFromMap.isNotEmpty) {
+        detectedLeadType = typeFromMap;
+      } else {
+        final rawStr = jsonEncode(flattened).toLowerCase();
+        if (rawStr.contains('rent out') ||
+            rawStr.contains('property located') ||
+            rawStr.contains('expected monthly rent') ||
+            rawStr.contains('expected_monthly_rent') ||
+            rawStr.contains('rental property')) {
+          detectedLeadType = 'Property Listing';
+        } else {
+          detectedLeadType = 'Requirement';
+        }
+      }
+
       incomingFp[fingerprint] = incoming.length;
       incoming.add(
         IntegrationLeadModel(
           id: 'lead_${DateTime.now().millisecondsSinceEpoch}_${incoming.length}',
           source: source,
           receivedAt: DateTime.now(),
+          leadType: detectedLeadType,
           rawJson: flattened,
           externalLeadId: fingerprint,
           isDuplicate: isDup,
