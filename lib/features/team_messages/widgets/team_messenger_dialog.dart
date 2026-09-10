@@ -861,7 +861,7 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
           ],
         ),
         child: Column(
-          crossAxisAlignment: isMe ? CrossAlignment.end : CrossAlignment.start,
+          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Text(
               msg.message,
