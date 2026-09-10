@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:excel/excel.dart' as xl;
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/security/role_guard.dart';
@@ -17,6 +18,7 @@ import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_permission_denied.dart';
 import '../../integration/services/integration_service.dart';
 import '../../integration/models/integration_lead_model.dart';
+import '../models/campaign_followup_model.dart';
 import '../bloc/campaign_leads_bloc.dart';
 import 'campaign_subshell_header.dart';
 
@@ -30,6 +32,11 @@ class CampaignLeadsScreen extends StatefulWidget {
 class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   final IntegrationService _service = IntegrationService();
   final TextEditingController _searchController = TextEditingController();
+
+  String _viewMode = 'active'; // 'active', 'followups', 'not_interested'
+  String _followupFilter = 'all'; // 'all', 'today', 'future', 'missed'
+  List<CampaignFollowupModel> _followupsList = [];
+  bool _isLoadingFollowups = false;
 
   String _selectedSection = 'Property Listing'; // 'Property Listing' (Owners) or 'Requirement' (Tenants)
   String _selectedSourceFilter = 'All';
@@ -67,6 +74,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   int _cachedUniqueLeads = 0;
   int _cachedDupLeads = 0;
   int _cachedImportedCount = 0;
+  int _cachedInterestedCount = 0;
+  int _cachedFollowupCount = 0;
+  int _cachedNotInterestedCount = 0;
+  int _cachedNotInterestedTodayCount = 0;
+  int _cachedTotalActiveCount = 0;
   List<String> _cachedAllDetectedHeaders = [];
   List<String> _cachedVisibleHeaders = [];
   int _cachedPropertyListingCount = 0;
@@ -78,6 +90,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   int _cachedCountThisMonth = 0;
   int _cachedCountAllTime = 0;
   List<IntegrationLeadModel>? _lastServiceLeadsRef;
+  String? _lastViewMode;
   String? _lastSectionFilter;
   String? _lastSourceFilter;
   String? _lastDuplicateFilter;
@@ -107,6 +120,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   String _getDisplayNameForColumn(String columnKey) {
     if (columnKey == '#Source') return 'Source';
+    if (columnKey == '#CampaignStatus') return 'Status';
     if (columnKey == '#MetaQuality') return 'Meta Rating';
     if (columnKey == '#CrmStatus') return 'Import Status';
     if (columnKey == '#MainCrmStatus') return 'Main CRM Status';
@@ -194,6 +208,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     if (_cachedFilteredLeads != null &&
         identical(_lastServiceLeadsRef, currentLeads) &&
+        _lastViewMode == _viewMode &&
         _lastSectionFilter == _selectedSection &&
         _lastSourceFilter == _selectedSourceFilter &&
         _lastDuplicateFilter == _selectedDuplicateFilter &&
@@ -208,6 +223,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     }
 
     _lastServiceLeadsRef = currentLeads;
+    _lastViewMode = _viewMode;
     _lastSectionFilter = _selectedSection;
     _lastSourceFilter = _selectedSourceFilter;
     _lastDuplicateFilter = _selectedDuplicateFilter;
@@ -219,8 +235,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _lastSortColumn = _sortColumn;
     _lastSortAscending = _sortAscending;
 
-    // Filter by Section First (Property Listing vs Requirement)
-    var list = currentLeads.where((l) => l.leadType == _selectedSection).toList();
+    // Filter by Section and View Mode:
+    // In 'not_interested' mode, show leads where campaignStatus == 'Not interested'.
+    // In 'active' mode (default), filter out 'Not interested' leads to keep active pipeline clean.
+    var list = _viewMode == 'not_interested'
+        ? currentLeads.where((l) => l.leadType == _selectedSection && l.campaignStatus == 'Not interested').toList()
+        : currentLeads.where((l) => l.leadType == _selectedSection && l.campaignStatus != 'Not interested').toList();
 
     // Filter by Date (Today is default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
     if (_selectedDateFilter != CampaignDateFilter.allTime) {
@@ -264,6 +284,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (query.isNotEmpty) {
       list = list.where((lead) {
         if (lead.source.toLowerCase().contains(query)) return true;
+        if (lead.campaignStatus.toLowerCase().contains(query)) return true;
         if (lead.qualityStatus.toLowerCase().contains(query)) return true;
         for (final val in lead.rawJson.values) {
           if (val != null && val.toString().toLowerCase().contains(query)) {
@@ -284,6 +305,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           String cellVal;
           if (colKey == '#Source') {
             cellVal = lead.source;
+          } else if (colKey == '#CampaignStatus') {
+            cellVal = lead.campaignStatus;
           } else if (colKey == '#MetaQuality') {
             cellVal = lead.qualityStatus;
           } else if (colKey == '#CrmStatus') {
@@ -317,6 +340,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         if (_sortColumn == '#Source') {
           valA = a.source;
           valB = b.source;
+        } else if (_sortColumn == '#CampaignStatus') {
+          valA = a.campaignStatus;
+          valB = b.campaignStatus;
         } else if (_sortColumn == '#MetaQuality') {
           valA = a.qualityStatus;
           valB = b.qualityStatus;
@@ -345,7 +371,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     _cachedFilteredLeads = list;
 
-    // Single-pass computation for section counts and date filter counts
+    // Single-pass computation for section counts, date filter counts, and status metrics
     int allTimeSectionCount = 0;
     int propListingCount = 0;
     int reqCount = 0;
@@ -353,13 +379,35 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     int countYesterday = 0;
     int countLast7Days = 0;
     int countThisMonth = 0;
+    int interestedCount = 0;
+    int followupCount = 0;
+    int notInterestedCount = 0;
+    int notInterestedTodayCount = 0;
+    int totalActiveCount = 0;
 
     for (final l in currentLeads) {
       final isProp = l.leadType == 'Property Listing';
       final isReq = l.leadType == 'Requirement';
       final isSelectedSec = l.leadType == _selectedSection;
+      final isNotInterested = l.campaignStatus == 'Not interested';
 
-      if (isSelectedSec) {
+      if (isNotInterested) {
+        notInterestedCount++;
+        if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.today)) {
+          notInterestedTodayCount++;
+        }
+      } else {
+        totalActiveCount++;
+      }
+
+      if (isSelectedSec && !isNotInterested) {
+        if (l.campaignStatus == 'Interested' && l.importStatus != 'Imported') {
+          interestedCount++;
+        }
+        if (l.campaignStatus == 'Follow up') {
+          followupCount++;
+        }
+
         allTimeSectionCount++;
         if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.today)) countToday++;
         if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.yesterday)) countYesterday++;
@@ -367,12 +415,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.thisMonth)) countThisMonth++;
       }
 
-      if (isProp &&
+      if (isProp && !isNotInterested &&
           CampaignLeadsState.matchesDateFilter(l.receivedAt, _selectedDateFilter,
               customStart: _customStartDate, customEnd: _customEndDate)) {
         propListingCount++;
       }
-      if (isReq &&
+      if (isReq && !isNotInterested &&
           CampaignLeadsState.matchesDateFilter(l.receivedAt, _selectedDateFilter,
               customStart: _customStartDate, customEnd: _customEndDate)) {
         reqCount++;
@@ -387,6 +435,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _cachedCountLast7Days = countLast7Days;
     _cachedCountThisMonth = countThisMonth;
     _cachedCountAllTime = allTimeSectionCount;
+    _cachedInterestedCount = interestedCount;
+    _cachedFollowupCount = followupCount;
+    _cachedNotInterestedCount = notInterestedCount;
+    _cachedNotInterestedTodayCount = notInterestedTodayCount;
+    _cachedTotalActiveCount = totalActiveCount;
 
     _cachedAllDetectedHeaders = _service.getDetectedHeaders(leadsSubset: list);
     _cachedVisibleHeaders = _service.getActiveVisibleHeaders(leadsSubset: list);
@@ -573,6 +626,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               : _moveSelectedToLeadsPage(context),
                     ),
                     CRMButton(
+                      label: _isImporting
+                          ? 'Moving...'
+                          : (_selectedSection == 'Property Listing'
+                              ? 'Move Interested to Properties (${_cachedInterestedCount})'
+                              : 'Move Interested to Leads (${_cachedInterestedCount})'),
+                      prefixIcon: Icons.star_rounded,
+                      variant: CRMButtonVariant.primary,
+                      height: 40,
+                      isLoading: _isImporting,
+                      onPressed: _cachedInterestedCount == 0 ? null : () => _moveInterestedToCrm(context),
+                    ),
+                    CRMButton(
                       label: 'Paste JSON',
                       prefixIcon: Icons.code_rounded,
                       variant: CRMButtonVariant.outline,
@@ -585,44 +650,1288 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
               const SizedBox(height: CRMSpacing.m),
 
-              // Dual-Section Segmented Tab Switcher (Property Listing Leads vs Requirement Leads)
-              _buildLeadTypeSegmentedControl(context, propertyListingCount, requirementCount),
+              // Main View Mode Selector (Active Leads, Follow-ups, Not Interested)
+              _buildViewSelector(context),
 
               const SizedBox(height: CRMSpacing.m),
 
-              // Date Range Filter Bar (Today default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
-              _buildDateFilterBar(context),
+              if (_viewMode == 'followups') ...[
+                _buildFollowupsView(context),
+              ] else if (_viewMode == 'not_interested') ...[
+                _buildNotInterestedView(context),
+              ] else ...[
+                // Dual-Section Segmented Tab Switcher (Property Listing Leads vs Requirement Leads)
+                _buildLeadTypeSegmentedControl(context, propertyListingCount, requirementCount),
 
-              // Notice Banner when viewing Today
-              _buildTodayNoticeBanner(context, totalLeads, _cachedAllTimeSectionCount),
-
-              const SizedBox(height: CRMSpacing.m),
-
-              // KPI Analytics Cards (Compact)
-              _buildKpiMetricsRow(context, totalLeads, uniqueLeads, dupLeads, importedCount),
-
-              const SizedBox(height: CRMSpacing.m),
-
-              // Batch Actions Bar when checkboxes are selected
-              if (_selectedLeadIds.isNotEmpty) ...[
-                _buildBatchActionBar(context, leads),
                 const SizedBox(height: CRMSpacing.m),
+
+                // Date Range Filter Bar (Today default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
+                _buildDateFilterBar(context),
+
+                // Notice Banner when viewing Today
+                _buildTodayNoticeBanner(context, totalLeads, _cachedAllTimeSectionCount),
+
+                const SizedBox(height: CRMSpacing.m),
+
+                // Highlighted Interested Leads Ready to Move Banner
+                if (_cachedInterestedCount > 0) ...[
+                  _buildInterestedLeadsAlertBanner(context),
+                  const SizedBox(height: CRMSpacing.m),
+                ],
+
+                // KPI Analytics Cards (Compact)
+                _buildKpiMetricsRow(context, totalLeads, uniqueLeads, dupLeads, importedCount),
+
+                const SizedBox(height: CRMSpacing.m),
+
+                // Batch Actions Bar when checkboxes are selected
+                if (_selectedLeadIds.isNotEmpty) ...[
+                  _buildBatchActionBar(context, leads),
+                  const SizedBox(height: CRMSpacing.m),
+                ],
+
+                // Excel Active Filters Chips Bar
+                _buildActiveFiltersBar(context),
+
+                // Excel-like Interactive Spreadsheet Section
+                  _buildExcelSpreadsheetCard(context, allDetectedHeaders, visibleHeaders, leads, pageLeads, startIndex, currentPage, totalPages),
+                ],
               ],
-
-              // Excel Active Filters Chips Bar
-              _buildActiveFiltersBar(context),
-
-              // Excel-like Interactive Spreadsheet Section
-              _buildExcelSpreadsheetCard(context, allDetectedHeaders, visibleHeaders, leads, pageLeads, startIndex, currentPage, totalPages),
-            ],
+            ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   // --- WIDGETS ---
+
+  Widget _buildViewSelector(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: CRMColors.borderOf(context)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildViewTabItem(
+              context: context,
+              title: 'Active Leads',
+              subtitle: 'Clean campaign pipeline & incoming leads',
+              icon: Icons.table_chart_rounded,
+              count: _cachedTotalActiveCount,
+              badgeColor: CRMColors.primaryOf(context),
+              isSelected: _viewMode == 'active',
+              onTap: () {
+                if (_viewMode != 'active') {
+                  setState(() {
+                    _viewMode = 'active';
+                    _cachedFilteredLeads = null;
+                    _currentPage = 1;
+                  });
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildViewTabItem(
+              context: context,
+              title: 'Follow-ups',
+              subtitle: 'Today, future & scheduled callbacks',
+              icon: Icons.access_time_filled_rounded,
+              count: _cachedFollowupCount,
+              badgeColor: const Color(0xFFF59E0B),
+              isSelected: _viewMode == 'followups',
+              onTap: () {
+                if (_viewMode != 'followups') {
+                  setState(() {
+                    _viewMode = 'followups';
+                  });
+                  _loadFollowups();
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildViewTabItem(
+              context: context,
+              title: 'Not Interested',
+              subtitle: 'Archived non-interested leads',
+              icon: Icons.do_not_disturb_on_rounded,
+              count: _cachedNotInterestedCount,
+              badgeColor: const Color(0xFFEF4444),
+              isSelected: _viewMode == 'not_interested',
+              onTap: () {
+                if (_viewMode != 'not_interested') {
+                  setState(() {
+                    _viewMode = 'not_interested';
+                    _cachedFilteredLeads = null;
+                    _currentPage = 1;
+                  });
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewTabItem({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required int count,
+    required Color badgeColor,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeBg = isDark ? const Color(0xFF262E3D) : Colors.white;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? activeBg : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+          border: isSelected
+              ? Border.all(color: CRMColors.primaryOf(context).withOpacity(0.4), width: 1.5)
+              : null,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? badgeColor.withValues(alpha: 0.15)
+                    : (isDark ? Colors.white10 : Colors.black.withOpacity(0.04)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                icon,
+                color: isSelected ? badgeColor : CRMColors.textSecondaryOf(context),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                            color: isSelected
+                                ? CRMColors.textOf(context)
+                                : CRMColors.textSecondaryOf(context),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isSelected ? badgeColor : badgeColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: isSelected ? Colors.white : badgeColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: CRMColors.textSecondaryOf(context).withOpacity(0.85),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusDropdownCell(BuildContext context, IntegrationLeadModel lead) {
+    final status = lead.campaignStatus;
+    Color badgeBg;
+    Color badgeBorder;
+    Color textColor;
+    IconData icon;
+
+    if (status == 'Interested') {
+      badgeBg = const Color(0xFF10B981).withValues(alpha: 0.15);
+      badgeBorder = const Color(0xFF10B981).withValues(alpha: 0.45);
+      textColor = const Color(0xFF10B981);
+      icon = Icons.star_rounded;
+    } else if (status == 'Follow up' || status == 'Follow-up') {
+      badgeBg = const Color(0xFFF59E0B).withValues(alpha: 0.15);
+      badgeBorder = const Color(0xFFF59E0B).withValues(alpha: 0.45);
+      textColor = const Color(0xFFF59E0B);
+      icon = Icons.schedule_rounded;
+    } else if (status == 'Not interested') {
+      badgeBg = const Color(0xFFEF4444).withValues(alpha: 0.15);
+      badgeBorder = const Color(0xFFEF4444).withValues(alpha: 0.45);
+      textColor = const Color(0xFFEF4444);
+      icon = Icons.thumb_down_alt_rounded;
+    } else {
+      badgeBg = CRMColors.primaryOf(context).withValues(alpha: 0.10);
+      badgeBorder = CRMColors.borderOf(context);
+      textColor = CRMColors.primaryOf(context);
+      icon = Icons.fiber_new_rounded;
+    }
+
+    String label = status.isEmpty ? 'New' : status;
+    if ((status == 'Follow up' || status == 'Follow-up') && lead.followupScheduledAt != null) {
+      label = 'Follow up (${DateFormat('d MMM, h:mm a').format(lead.followupScheduledAt!)})';
+    }
+
+    return PopupMenuButton<String>(
+      tooltip: 'Change Status (Follow up, Interested, Not interested)',
+      onSelected: (newStatus) async {
+        if (newStatus == 'Follow up') {
+          _showScheduleFollowupDialog(context, lead);
+        } else if (newStatus == 'Interested') {
+          await _service.updateLeadCampaignStatus(lead.id, 'Interested');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Lead marked as Interested! Highlighted row is ready to move to Leads page.'),
+                backgroundColor: Color(0xFF10B981),
+              ),
+            );
+          }
+        } else if (newStatus == 'Not interested') {
+          await _service.updateLeadCampaignStatus(lead.id, 'Not interested');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Lead marked as Not Interested and moved to Not Interested tab.'),
+                action: SnackBarAction(
+                  label: 'View',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    setState(() {
+                      _viewMode = 'not_interested';
+                      _cachedFilteredLeads = null;
+                    });
+                  },
+                ),
+              ),
+            );
+          }
+        }
+      },
+      itemBuilder: (ctx) => [
+        PopupMenuItem(
+          value: 'Follow up',
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.schedule_rounded, size: 16, color: Color(0xFFF59E0B)),
+              ),
+              const SizedBox(width: 10),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Follow up', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  Text('Set calendar date, clock time & remarks', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'Interested',
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.star_rounded, size: 16, color: Color(0xFF10B981)),
+              ),
+              const SizedBox(width: 10),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Interested', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF10B981))),
+                  Text('Highlight row & ready to move to Leads page', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'Not interested',
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.thumb_down_alt_rounded, size: 16, color: Color(0xFFEF4444)),
+              ),
+              const SizedBox(width: 10),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Not interested', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFFEF4444))),
+                  Text('Move lead to dedicated Not Interested page', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: badgeBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: badgeBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: textColor),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.arrow_drop_down_rounded, size: 16, color: textColor),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showScheduleFollowupDialog(BuildContext context, IntegrationLeadModel lead) async {
+    DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
+    TimeOfDay selectedTime = const TimeOfDay(hour: 11, minute: 0);
+    final remarksController = TextEditingController(text: lead.followupRemarks ?? '');
+
+    if (lead.followupScheduledAt != null) {
+      selectedDate = lead.followupScheduledAt!;
+      selectedTime = TimeOfDay.fromDateTime(lead.followupScheduledAt!);
+    }
+
+    final clientName = lead.getStringValue('full_name').isNotEmpty
+        ? lead.getStringValue('full_name')
+        : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Client');
+    final phone = lead.getStringValue('phone_number').isNotEmpty
+        ? lead.getStringValue('phone_number')
+        : lead.getStringValue('phone');
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.calendar_month_rounded, color: Color(0xFFF59E0B), size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Schedule Follow-up', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$clientName ${phone.isNotEmpty ? '($phone)' : ''}',
+                        style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Date & Time', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx))),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      // Date Picker Button
+                      Expanded(
+                        flex: 3,
+                        child: InkWell(
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: ctx,
+                              initialDate: selectedDate,
+                              firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                            );
+                            if (picked != null) {
+                              setDialogState(() => selectedDate = picked);
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                              border: Border.all(color: CRMColors.borderOf(ctx)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.event_rounded, size: 18, color: Color(0xFFF59E0B)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    DateFormat('EEE, d MMM yyyy').format(selectedDate),
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // Time Picker Button
+                      Expanded(
+                        flex: 2,
+                        child: InkWell(
+                          onTap: () async {
+                            final picked = await showTimePicker(
+                              context: ctx,
+                              initialTime: selectedTime,
+                            );
+                            if (picked != null) {
+                              setDialogState(() => selectedTime = picked);
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                              border: Border.all(color: CRMColors.borderOf(ctx)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.access_time_rounded, size: 18, color: Color(0xFFF59E0B)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    selectedTime.format(ctx),
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Remarks & Notes', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx))),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: remarksController,
+                    maxLines: 4,
+                    decoration: InputDecoration(
+                      hintText: 'Enter discussion notes, callback requirements, client preferences...',
+                      hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.save_rounded, size: 16),
+                label: const Text('Save Follow-up'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF59E0B),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  final scheduledDateTime = DateTime(
+                    selectedDate.year,
+                    selectedDate.month,
+                    selectedDate.day,
+                    selectedTime.hour,
+                    selectedTime.minute,
+                  );
+                  final remarks = remarksController.text.trim();
+
+                  Navigator.pop(ctx);
+
+                  final success = await _service.scheduleFollowup(lead.id, scheduledDateTime, remarks);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          success
+                              ? 'Follow-up scheduled for ${DateFormat('d MMM, h:mm a').format(scheduledDateTime)}!'
+                              : 'Failed to schedule follow-up. Please check connection.',
+                        ),
+                        backgroundColor: success ? const Color(0xFFF59E0B) : CRMColors.danger,
+                      ),
+                    );
+                    _loadFollowups();
+                  }
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _moveInterestedToCrm(BuildContext context) async {
+    final interestedLeads = _service.leads.where((l) =>
+        l.leadType == _selectedSection &&
+        l.campaignStatus == 'Interested' &&
+        l.importStatus != 'Imported').toList();
+
+    if (interestedLeads.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No new interested leads to move in this section.')),
+      );
+      return;
+    }
+
+    final ids = interestedLeads.map((l) => l.id).toList();
+    final targetPage = _selectedSection == 'Property Listing' ? 'Properties' : 'Leads';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.star_rounded, color: Color(0xFF10B981)),
+            const SizedBox(width: 8),
+            Text('Move to $targetPage Page?'),
+          ],
+        ),
+        content: Text(
+          'Move ${ids.length} interested lead(s) to the $targetPage page? Our CRM will automatically ingest and manage these leads.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Move ${ids.length} to $targetPage'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isImporting = true);
+    final count = _selectedSection == 'Property Listing'
+        ? await _service.importLeadsToProperties(ids)
+        : await _service.importLeadsToCrm(ids);
+    if (!mounted) return;
+    setState(() {
+      _isImporting = false;
+      _selectedLeadIds.clear();
+      _cachedFilteredLeads = null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Successfully moved $count interested lead(s) to $targetPage page.'),
+        backgroundColor: const Color(0xFF10B981),
+      ),
+    );
+  }
+
+  Widget _buildInterestedLeadsAlertBanner(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10B981).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10B981).withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.star_rounded, color: Color(0xFF10B981), size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$_cachedInterestedCount Interested Lead${_cachedInterestedCount > 1 ? 's' : ''} Ready for CRM',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF10B981)),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'These leads are marked as interested. Click below to transfer them directly into the ${_selectedSection == 'Property Listing' ? 'Properties' : 'Leads'} page.',
+                  style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                ),
+              ],
+            ),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+            label: Text(
+              _selectedSection == 'Property Listing'
+                  ? 'Move to Properties ($_cachedInterestedCount)'
+                  : 'Move to Leads Page ($_cachedInterestedCount)',
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: _isImporting ? null : () => _moveInterestedToCrm(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _loadFollowups() async {
+    if (_isLoadingFollowups) return;
+    setState(() => _isLoadingFollowups = true);
+    try {
+      final list = await _service.fetchFollowups(filter: _followupFilter);
+      if (mounted) {
+        setState(() {
+          _followupsList = list;
+          _isLoadingFollowups = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingFollowups = false);
+      }
+    }
+  }
+
+  Widget _buildFollowupSubChip(String label, String value, int count) {
+    final isSelected = _followupFilter == value;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () {
+        setState(() => _followupFilter = value);
+        _loadFollowups();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFFF59E0B)
+              : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFFF59E0B) : CRMColors.borderOf(context),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                color: isSelected ? Colors.white : CRMColors.textOf(context),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white.withOpacity(0.25) : (isDark ? Colors.white10 : Colors.black.withOpacity(0.06)),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: isSelected ? Colors.white : CRMColors.textSecondaryOf(context),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFollowupsView(BuildContext context) {
+    List<CampaignFollowupModel> items = List.from(_followupsList);
+
+    // If items empty or incomplete, incorporate leads in memory that have scheduled followups
+    final leadFollowupIds = items.map((f) => f.leadId).toSet();
+    for (final lead in _service.leads) {
+      if ((lead.campaignStatus == 'Follow up' || lead.followupScheduledAt != null) &&
+          !leadFollowupIds.contains(lead.id)) {
+        final name = lead.getStringValue('full_name').isNotEmpty
+            ? lead.getStringValue('full_name')
+            : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Campaign Lead');
+        final phone = lead.getStringValue('phone_number').isNotEmpty
+            ? lead.getStringValue('phone_number')
+            : lead.getStringValue('phone');
+
+        items.add(CampaignFollowupModel(
+          id: 'local_${lead.id}',
+          leadId: lead.id,
+          leadType: lead.leadType,
+          clientName: name,
+          mobile: phone,
+          scheduledAt: lead.followupScheduledAt ?? DateTime.now().add(const Duration(hours: 1)),
+          remarks: lead.followupRemarks ?? '',
+          status: lead.followupStatus ?? 'Pending',
+          createdAt: lead.receivedAt,
+          lead: lead,
+        ));
+      }
+    }
+
+    if (_followupFilter == 'today') {
+      items = items.where((f) => f.isToday).toList();
+    } else if (_followupFilter == 'future') {
+      items = items.where((f) => f.isFuture).toList();
+    } else if (_followupFilter == 'missed') {
+      items = items.where((f) => f.isPast).toList();
+    }
+
+    items.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+
+    final totalCount = _followupsList.isNotEmpty ? _followupsList.length : _cachedFollowupCount;
+    final todayCount = items.where((f) => f.isToday).length;
+    final futureCount = items.where((f) => f.isFuture).length;
+    final missedCount = items.where((f) => f.isPast).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            _buildFollowupSubChip('All Follow-ups', 'all', totalCount),
+            const SizedBox(width: 8),
+            _buildFollowupSubChip('Today', 'today', todayCount),
+            const SizedBox(width: 8),
+            _buildFollowupSubChip('Future', 'future', futureCount),
+            const SizedBox(width: 8),
+            _buildFollowupSubChip('Overdue', 'missed', missedCount),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              tooltip: 'Refresh Follow-ups',
+              onPressed: _loadFollowups,
+            ),
+          ],
+        ),
+
+        const SizedBox(height: CRMSpacing.m),
+
+        if (_isLoadingFollowups)
+          const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+        else if (items.isEmpty)
+          CRMCard(
+            child: Container(
+              height: 220,
+              alignment: Alignment.center,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.schedule_rounded, size: 48, color: Color(0xFFF59E0B)),
+                  const SizedBox(height: 12),
+                  Text('No Follow-ups Found', style: CRMTypography.headline.copyWith(fontSize: 16)),
+                  const SizedBox(height: 4),
+                  Text('Schedule a follow-up from the Active Leads table using the Status dropdown.',
+                      style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 13)),
+                ],
+              ),
+            ),
+          )
+        else
+          ...items.map((item) => _buildFollowupCard(context, item)),
+      ],
+    );
+  }
+
+  Widget _buildFollowupCard(BuildContext context, CampaignFollowupModel item) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    Color tagColor = const Color(0xFF3B82F6);
+    String tagLabel = 'Upcoming';
+    if (item.isToday) {
+      tagColor = const Color(0xFFF59E0B);
+      tagLabel = 'Today';
+    } else if (item.isPast) {
+      tagColor = const Color(0xFFEF4444);
+      tagLabel = 'Overdue';
+    }
+
+    final formattedDateTime = DateFormat('EEE, d MMM yyyy • h:mm a').format(item.scheduledAt);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: CRMSpacing.s),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: CRMColors.borderOf(context)),
+        boxShadow: CRMShadows.soft,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: tagColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.schedule_rounded, color: tagColor, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      item.clientName,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: tagColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        tagLabel,
+                        style: TextStyle(color: tagColor, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        item.leadType,
+                        style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.calendar_today_rounded, size: 13, color: tagColor),
+                    const SizedBox(width: 5),
+                    Text(
+                      formattedDateTime,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tagColor),
+                    ),
+                    if (item.mobile.isNotEmpty) ...[
+                      const SizedBox(width: 12),
+                      Icon(Icons.phone_rounded, size: 13, color: CRMColors.textSecondaryOf(context)),
+                      const SizedBox(width: 5),
+                      Text(item.mobile, style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context))),
+                    ],
+                  ],
+                ),
+                if (item.remarks.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: CRMColors.borderOf(context)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.notes_rounded, size: 14, color: Colors.grey),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            item.remarks,
+                            style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Actions
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (item.mobile.isNotEmpty) ...[
+                IconButton(
+                  icon: const Icon(Icons.phone_rounded, color: Color(0xFF10B981), size: 18),
+                  tooltip: 'Call Client',
+                  onPressed: () => _launchTel(item.mobile),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF22C55E), size: 18),
+                  tooltip: 'Chat on WhatsApp',
+                  onPressed: () => _launchWhatsApp(item.mobile, item.clientName),
+                ),
+              ],
+              IconButton(
+                icon: const Icon(Icons.edit_calendar_rounded, color: Color(0xFFF59E0B), size: 18),
+                tooltip: 'Reschedule Follow-up',
+                onPressed: () {
+                  final lead = item.lead ?? _service.leads.firstWhere(
+                    (l) => l.id == item.leadId,
+                    orElse: () => IntegrationLeadModel(
+                      id: item.leadId,
+                      source: 'Meta Ads',
+                      receivedAt: item.createdAt,
+                      rawJson: {'full_name': item.clientName, 'phone_number': item.mobile},
+                    ),
+                  );
+                  _showScheduleFollowupDialog(context, lead);
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.star_rounded, color: Color(0xFF10B981), size: 18),
+                tooltip: 'Mark Interested',
+                onPressed: () async {
+                  await _service.updateLeadCampaignStatus(item.leadId, 'Interested');
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Marked as Interested! You can move this lead to CRM.'),
+                        backgroundColor: Color(0xFF10B981),
+                      ),
+                    );
+                    _loadFollowups();
+                  }
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.thumb_down_alt_rounded, color: Color(0xFFEF4444), size: 18),
+                tooltip: 'Mark Not Interested',
+                onPressed: () async {
+                  await _service.updateLeadCampaignStatus(item.leadId, 'Not interested');
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Moved to Not Interested list.')),
+                    );
+                    _loadFollowups();
+                  }
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotInterestedView(BuildContext context) {
+    final notInterestedLeads = _service.leads
+        .where((l) => l.campaignStatus == 'Not interested')
+        .toList();
+
+    final propListingCount = notInterestedLeads.where((l) => l.leadType == 'Property Listing').length;
+    final reqCount = notInterestedLeads.where((l) => l.leadType == 'Requirement').length;
+    final totalCount = notInterestedLeads.length;
+    final todayCount = notInterestedLeads
+        .where((l) => CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.today))
+        .length;
+
+    final query = _searchQuery.trim().toLowerCase();
+    final displayedLeads = query.isEmpty
+        ? notInterestedLeads
+        : notInterestedLeads.where((l) {
+            if (l.source.toLowerCase().contains(query)) return true;
+            for (final val in l.rawJson.values) {
+              if (val != null && val.toString().toLowerCase().contains(query)) return true;
+            }
+            return false;
+          }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            _buildMetricItem(context, 'Total Not Interested', totalCount.toString(), Icons.do_not_disturb_on_rounded, const Color(0xFFEF4444)),
+            const SizedBox(width: CRMSpacing.s),
+            _buildMetricItem(context, 'Not Interested Today', todayCount.toString(), Icons.today_rounded, const Color(0xFFF97316)),
+            const SizedBox(width: CRMSpacing.s),
+            _buildMetricItem(context, 'Property Listings', propListingCount.toString(), Icons.home_work_rounded, const Color(0xFF0284C7)),
+            const SizedBox(width: CRMSpacing.s),
+            _buildMetricItem(context, 'Requirements', reqCount.toString(), Icons.people_alt_rounded, const Color(0xFF10B981)),
+          ],
+        ),
+
+        const SizedBox(height: CRMSpacing.m),
+
+        CRMCard(
+          elevated: true,
+          title: 'Not Interested Leads',
+          subtitle: 'Archived leads kept separate to keep active leads clean. You can restore them anytime.',
+          child: displayedLeads.isEmpty
+              ? Container(
+                  height: 200,
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.check_circle_outline_rounded, size: 44, color: Color(0xFF10B981)),
+                      const SizedBox(height: 12),
+                      Text('No Not-Interested Leads', style: CRMTypography.headline.copyWith(fontSize: 16)),
+                      const SizedBox(height: 4),
+                      Text('Any lead marked as "Not interested" will be kept here safely.',
+                          style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 13)),
+                    ],
+                  ),
+                )
+              : Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: CRMColors.borderOf(context)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        headingRowColor: WidgetStateProperty.all(CRMColors.surfaceElevatedOf(context)),
+                        columns: const [
+                          DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Source', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Type', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Phone', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Email', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Date Received', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
+                        ],
+                        rows: displayedLeads.asMap().entries.map((entry) {
+                          final idx = entry.key;
+                          final lead = entry.value;
+                          final name = lead.getStringValue('full_name').isNotEmpty
+                              ? lead.getStringValue('full_name')
+                              : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : '-');
+                          final phone = lead.getStringValue('phone_number').isNotEmpty
+                              ? lead.getStringValue('phone_number')
+                              : (lead.getStringValue('phone').isNotEmpty ? lead.getStringValue('phone') : '-');
+                          final email = lead.getStringValue('email').isNotEmpty ? lead.getStringValue('email') : '-';
+
+                          return DataRow(
+                            cells: [
+                              DataCell(Text('${idx + 1}')),
+                              DataCell(
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.terracotta.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(lead.source, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                ),
+                              ),
+                              DataCell(Text(lead.leadType, style: const TextStyle(fontSize: 12))),
+                              DataCell(Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                              DataCell(Text(phone, style: const TextStyle(fontSize: 12))),
+                              DataCell(Text(email, style: const TextStyle(fontSize: 12))),
+                              DataCell(Text(DateFormat('d MMM yyyy, h:mm a').format(lead.receivedAt), style: const TextStyle(fontSize: 11))),
+                              DataCell(
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ElevatedButton.icon(
+                                      icon: const Icon(Icons.restore_rounded, size: 14),
+                                      label: const Text('Restore to Active'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: CRMColors.primaryOf(context),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                      ),
+                                      onPressed: () async {
+                                        await _service.updateLeadCampaignStatus(lead.id, 'New');
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Lead restored to Active Leads.')),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                    const SizedBox(width: 6),
+                                    IconButton(
+                                      icon: const Icon(Icons.schedule_rounded, size: 16, color: Color(0xFFF59E0B)),
+                                      tooltip: 'Schedule Follow-up',
+                                      onPressed: () => _showScheduleFollowupDialog(context, lead),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.star_rounded, size: 16, color: Color(0xFF10B981)),
+                                      tooltip: 'Mark Interested',
+                                      onPressed: () async {
+                                        await _service.updateLeadCampaignStatus(lead.id, 'Interested');
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Lead moved to Interested.')),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline_rounded, size: 16, color: CRMColors.danger),
+                                      tooltip: 'Delete Lead',
+                                      onPressed: () => _confirmDeleteSingleLeadDialog(context, lead),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _launchTel(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    final uri = Uri.parse('tel:$clean');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  Future<void> _launchWhatsApp(String phone, String clientName) async {
+    var clean = phone.replaceAll(RegExp(r'[^\d]'), '');
+    if (clean.length == 10) clean = '91$clean';
+    final uri = Uri.parse('https://wa.me/$clean?text=Hello%20${Uri.encodeComponent(clientName)},%20following%20up%20regarding%20your%20property%20inquiry.');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
 
   Widget _buildLeadTypeSegmentedControl(BuildContext context, int propCount, int reqCount) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -797,37 +2106,34 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   Widget _buildKpiMetricsRow(BuildContext context, int total, int unique, int dups, int imported) {
     final destinationLabel = _selectedSection == 'Property Listing' ? 'In Inventory' : 'In CRM Leads';
     final destinationIcon = _selectedSection == 'Property Listing' ? Icons.home_work_rounded : Icons.contacts_rounded;
-    final isMobile = MediaQuery.of(context).size.width < 600;
+    final isMobile = MediaQuery.of(context).size.width < 800;
+
+    final items = [
+      _buildMetricItem(context, 'Total Leads', total.toString(), Icons.inbox_rounded, CRMColors.primaryOf(context)),
+      _buildMetricItem(context, 'Interested', _cachedInterestedCount.toString(), Icons.star_rounded, const Color(0xFF10B981)),
+      _buildMetricItem(context, 'Follow-ups', _cachedFollowupCount.toString(), Icons.schedule_rounded, const Color(0xFFF59E0B)),
+      _buildMetricItem(context, 'Unique Leads', unique.toString(), Icons.verified_user_rounded, CRMColors.success),
+      _buildMetricItem(context, 'Duplicates', dups.toString(), Icons.copy_rounded, CRMColors.warning),
+      _buildMetricItem(context, destinationLabel, imported.toString(), destinationIcon, CRMColors.info),
+    ];
+
     if (isMobile) {
       return Column(
         children: [
-          Row(
-            children: [
-              _buildMetricItem(context, 'Total Leads', total.toString(), Icons.inbox_rounded, CRMColors.primaryOf(context)),
-              const SizedBox(width: CRMSpacing.s),
-              _buildMetricItem(context, 'Unique Leads', unique.toString(), Icons.verified_user_rounded, CRMColors.success),
-            ],
-          ),
+          Row(children: [items[0], const SizedBox(width: CRMSpacing.s), items[1]]),
           const SizedBox(height: CRMSpacing.s),
-          Row(
-            children: [
-              _buildMetricItem(context, 'Duplicates', dups.toString(), Icons.copy_rounded, CRMColors.warning),
-              const SizedBox(width: CRMSpacing.s),
-              _buildMetricItem(context, destinationLabel, imported.toString(), destinationIcon, CRMColors.info),
-            ],
-          ),
+          Row(children: [items[2], const SizedBox(width: CRMSpacing.s), items[3]]),
+          const SizedBox(height: CRMSpacing.s),
+          Row(children: [items[4], const SizedBox(width: CRMSpacing.s), items[5]]),
         ],
       );
     }
     return Row(
       children: [
-        _buildMetricItem(context, 'Total Leads', total.toString(), Icons.inbox_rounded, CRMColors.primaryOf(context)),
-        const SizedBox(width: CRMSpacing.s),
-        _buildMetricItem(context, 'Unique Leads', unique.toString(), Icons.verified_user_rounded, CRMColors.success),
-        const SizedBox(width: CRMSpacing.s),
-        _buildMetricItem(context, 'Duplicates', dups.toString(), Icons.copy_rounded, CRMColors.warning),
-        const SizedBox(width: CRMSpacing.s),
-        _buildMetricItem(context, destinationLabel, imported.toString(), destinationIcon, CRMColors.info),
+        for (int i = 0; i < items.length; i++) ...[
+          if (i > 0) const SizedBox(width: CRMSpacing.s),
+          items[i],
+        ],
       ],
     );
   }
@@ -1793,9 +3099,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       columns: [
                         const DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
                         _buildExcelDataColumn(context, title: 'Source', columnKey: '#Source', isStandard: true),
-                        _buildExcelDataColumn(context, title: 'Meta Rating', columnKey: '#MetaQuality', isStandard: true),
-                        _buildExcelDataColumn(context, title: 'Import Status', columnKey: '#CrmStatus', isStandard: true),
-                        _buildExcelDataColumn(context, title: 'Main CRM Status', columnKey: '#MainCrmStatus', isStandard: true),
+                        _buildExcelDataColumn(context, title: 'Status', columnKey: '#CampaignStatus', isStandard: true),
 
                         // Dynamic Column Headers (Only Visible Ones, strictly preserving Google Sheet / user drag-and-place order)
                         ...visibleHeaders.map((header) {
@@ -1828,6 +3132,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             });
                           },
                           color: WidgetStateProperty.resolveWith<Color?>((states) {
+                            if (lead.campaignStatus == 'Interested') {
+                              return const Color(0xFF10B981).withValues(alpha: 0.14);
+                            }
+                            if (lead.campaignStatus == 'Follow up') {
+                              return const Color(0xFFF59E0B).withValues(alpha: 0.08);
+                            }
                             if (lead.isDuplicate) {
                               return CRMColors.warning.withValues(alpha: 0.12);
                             }
@@ -1893,134 +3203,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               ),
                             ),
 
-                            // Meta Lead Quality Dropdown & Trigger
-                            DataCell(
-                              DropdownButtonHideUnderline(
-                                child: DropdownButton<String>(
-                                  value: lead.qualityStatus,
-                                  isDense: true,
-                                  items: const [
-                                    DropdownMenuItem(value: 'Pending', child: Text('Pending ')),
-                                    DropdownMenuItem(value: 'Qualified', child: Text('Qualified ')),
-                                    DropdownMenuItem(value: 'Disqualified', child: Text('Disqualified ')),
-                                    DropdownMenuItem(value: 'Converted', child: Text('Converted ')),
-                                    DropdownMenuItem(value: 'Junk', child: Text('Junk ')),
-                                  ],
-                                  onChanged: (newStatus) async {
-                                    if (newStatus != null && newStatus != lead.qualityStatus) {
-                                      final messenger = ScaffoldMessenger.of(context);
-                                      final primaryColor = CRMColors.primaryOf(context);
-                                      try {
-                                        final res = await _service.sendMetaQualityFeedback(
-                                          leadId: lead.id,
-                                          qualityStatus: newStatus,
-                                        );
-                                        if (mounted) {
-                                          messenger.showSnackBar(
-                                            SnackBar(
-                                              content: Text('Dispatched Meta Conversions API: ${res['status']} (${res['eventId']})'),
-                                              backgroundColor: primaryColor,
-                                            ),
-                                          );
-                                        }
-                                      } catch (e) {
-                                        if (mounted) {
-                                          messenger.showSnackBar(
-                                            SnackBar(content: Text('Error: $e'), backgroundColor: CRMColors.danger),
-                                          );
-                                        }
-                                      }
-                                    }
-                                  },
-                                ),
-                              ),
-                            ),
-
-                            // CRM Import Status
-                            DataCell(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (lead.isDuplicate)
-                                    Tooltip(
-                                      message: lead.duplicateReason ?? 'Duplicate lead record detected',
-                                      child: Container(
-                                        margin: const EdgeInsets.only(right: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: CRMColors.warning,
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: const Text(
-                                          'DUP',
-                                          style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                    ),
-                                  Text(
-                                    lead.importStatus,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: lead.importStatus == 'Imported'
-                                          ? CRMColors.success
-                                          : (lead.importStatus == 'Ignored' ? CRMColors.textSecondaryOf(context) : CRMColors.primaryOf(context)),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // Main CRM Status Comparison Cell
-                            DataCell(
-                              Builder(
-                                builder: (context) {
-                                  final isDark = Theme.of(context).brightness == Brightness.dark;
-                                  final match = lead.crmMatch;
-                                  final inCrm = match?.inCrm == true;
-
-                                  return Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: inCrm
-                                          ? const Color(0xFF10B981).withValues(alpha: 0.14)
-                                          : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: inCrm
-                                            ? const Color(0xFF10B981).withValues(alpha: 0.4)
-                                            : CRMColors.borderOf(context),
-                                      ),
-                                    ),
-                                    child: Tooltip(
-                                      message: inCrm
-                                          ? '${match?.name ?? ""}\n${match?.details ?? ""}\nMatched in: ${match?.table ?? "CRM"}'
-                                          : 'Lead is not yet in Main Leads or Properties inventory',
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            inCrm ? Icons.check_circle_rounded : Icons.fiber_new_rounded,
-                                            size: 13,
-                                            color: inCrm ? const Color(0xFF10B981) : CRMColors.textSecondaryOf(context),
-                                          ),
-                                          const SizedBox(width: 5),
-                                          Text(
-                                            inCrm
-                                                ? '${match?.table == 'properties' ? 'In Inventory' : 'In Leads'}: ${match?.status ?? "Active"}'
-                                                : 'Not in CRM',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: inCrm ? const Color(0xFF10B981) : CRMColors.textSecondaryOf(context),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
+                            // Status Dropdown Cell (Follow up, Interested, Not interested)
+                            DataCell(_buildStatusDropdownCell(context, lead)),
 
                             // Dynamic Visible Cells mapped to JSON keys
                             ...visibleHeaders.map((header) {
@@ -2431,6 +3615,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       String val;
       if (columnKey == '#Source') {
         val = lead.source;
+      } else if (columnKey == '#CampaignStatus') {
+        val = lead.campaignStatus;
       } else if (columnKey == '#MetaQuality') {
         val = lead.qualityStatus;
       } else if (columnKey == '#CrmStatus') {
@@ -2915,8 +4101,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final headerCells = <xl.CellValue>[
       xl.TextCellValue('#'),
       xl.TextCellValue('Source'),
-      xl.TextCellValue('Meta Quality'),
-      xl.TextCellValue('CRM Status'),
+      xl.TextCellValue('Status'),
       ...visibleHeaders.map((h) => xl.TextCellValue(h)),
       xl.TextCellValue('Received Date'),
     ];
@@ -2928,8 +4113,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       final rowCells = <xl.CellValue>[
         xl.IntCellValue(i + 1),
         xl.TextCellValue(lead.source),
-        xl.TextCellValue(lead.qualityStatus),
-        xl.TextCellValue(lead.importStatus),
+        xl.TextCellValue(lead.campaignStatus),
         ...visibleHeaders.map((h) => xl.TextCellValue(lead.getStringValue(h))),
         xl.TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(lead.receivedAt)),
       ];
