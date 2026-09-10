@@ -107,6 +107,15 @@ class RequirementsScreen extends StatefulWidget {
   State<RequirementsScreen> createState() => _RequirementsScreenState();
 }
 
+enum LeadDateFilterPreset {
+  today,
+  yesterday,
+  last7Days,
+  thisMonth,
+  customRange,
+  allTime,
+}
+
 class _RequirementsScreenState extends State<RequirementsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _wonSearchController = TextEditingController();
@@ -117,6 +126,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String? _selectedCategoryId;
   String _selectedStatus = "All";
   String _selectedReadiness = "All";
+  LeadDateFilterPreset _selectedLeadDateFilter = LeadDateFilterPreset.allTime;
+  DateTime? _customStartDate;
+  DateTime? _customEndDate;
   String get _activeListingTab => ThemeManager().isRentMode ? 'Rent' : 'Re-Sale';
   set _activeListingTab(String value) {
     ThemeManager().setRentMode(value == 'Rent');
@@ -456,6 +468,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _selectedCategoryId = null;
       _selectedStatus = "All";
       _selectedReadiness = "All";
+      _selectedLeadDateFilter = LeadDateFilterPreset.allTime;
+      _customStartDate = null;
+      _customEndDate = null;
       _activeListingTab = "Rent";
       _currentPage = 1;
     });
@@ -944,7 +959,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  Widget _buildSearchAndFiltersCard() {
+  Widget _buildSearchAndFiltersCard([List<RequirementModel> baseList = const []]) {
+    List<RequirementModel> allReqs = baseList;
+    if (allReqs.isEmpty) {
+      final blocState = context.read<RequirementsBloc>().state;
+      if (blocState is RequirementsLoaded) {
+        allReqs = blocState.requirements;
+      }
+    }
+
     final bool isMobile = MediaQuery.of(context).size.width < 600;
     String configDropdownLabel = 'BHK';
     final selectedCat = _metadata?.categories.firstWhere(
@@ -1079,6 +1102,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         DropdownMenuItem(value: "All", child: Text("All")),
                         DropdownMenuItem(value: "New", child: Text("New")),
                         DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
+                        DropdownMenuItem(value: "Call Attempted", child: Text("Call Attempted")),
                         DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
                         DropdownMenuItem(value: "Interested", child: Text("Interested")),
                         DropdownMenuItem(value: "Site Visit", child: Text("Site Visit Sche.")),
@@ -1141,6 +1165,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         DropdownMenuItem(value: "All", child: Text("All")),
                         DropdownMenuItem(value: "New", child: Text("New")),
                         DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
+                        DropdownMenuItem(value: "Call Attempted", child: Text("Call Attempted")),
                         DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
                         DropdownMenuItem(value: "Interested", child: Text("Interested")),
                         DropdownMenuItem(value: "Site Visit", child: Text("Site Visit Sche.")),
@@ -1162,9 +1187,246 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     ),
                   ],
                 ),
+          const SizedBox(height: CRMSpacing.m),
+          const Divider(height: 1),
+          const SizedBox(height: CRMSpacing.m),
+          _buildDateFilterBar(context, allReqs),
+        ],
+      ),
+    );
+  }
+
+  bool _matchesLeadDateFilter(RequirementModel req) {
+    return _matchesLeadDateFilterWithPreset(req, _selectedLeadDateFilter);
+  }
+
+  bool _matchesLeadDateFilterWithPreset(RequirementModel req, LeadDateFilterPreset preset) {
+    final createdAt = req.createdAt.toLocal();
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+    switch (preset) {
+      case LeadDateFilterPreset.today:
+        return !createdAt.isBefore(todayStart) && !createdAt.isAfter(todayEnd);
+      case LeadDateFilterPreset.yesterday:
+        final yestStart = todayStart.subtract(const Duration(days: 1));
+        final yestEnd = DateTime(yestStart.year, yestStart.month, yestStart.day, 23, 59, 59);
+        return !createdAt.isBefore(yestStart) && !createdAt.isAfter(yestEnd);
+      case LeadDateFilterPreset.last7Days:
+        final start = todayStart.subtract(const Duration(days: 6));
+        return !createdAt.isBefore(start) && !createdAt.isAfter(todayEnd);
+      case LeadDateFilterPreset.thisMonth:
+        final monthStart = DateTime(now.year, now.month, 1);
+        return !createdAt.isBefore(monthStart) && !createdAt.isAfter(todayEnd);
+      case LeadDateFilterPreset.customRange:
+        if (_customStartDate != null && _customEndDate != null) {
+          final start = DateTime(_customStartDate!.year, _customStartDate!.month, _customStartDate!.day);
+          final end = DateTime(_customEndDate!.year, _customEndDate!.month, _customEndDate!.day, 23, 59, 59);
+          return !createdAt.isBefore(start) && !createdAt.isAfter(end);
+        }
+        return true;
+      case LeadDateFilterPreset.allTime:
+        return true;
+    }
+  }
+
+  int _getLeadDateFilterCount(List<RequirementModel> baseList, LeadDateFilterPreset preset) {
+    return baseList.where((req) {
+      final matchesListingType = getListingTypeLabel(req) == _activeListingTab;
+      return matchesListingType && _matchesLeadDateFilterWithPreset(req, preset);
+    }).length;
+  }
+
+  Future<void> _pickCustomDateRange(BuildContext context) async {
+    final initialRange = DateTimeRange(
+      start: _customStartDate ?? DateTime.now().subtract(const Duration(days: 7)),
+      end: _customEndDate ?? DateTime.now(),
+    );
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: initialRange,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      builder: (ctx, child) {
+        final isDark = ThemeManager().isDarkMode;
+        return Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: isDark
+                ? ColorScheme.dark(
+                    primary: CRMColors.primaryOf(ctx),
+                    onPrimary: Colors.white,
+                    surface: const Color(0xFF1E293B),
+                    onSurface: Colors.white,
+                  )
+                : ColorScheme.light(
+                    primary: CRMColors.primaryOf(ctx),
+                    onPrimary: Colors.white,
+                    surface: Colors.white,
+                    onSurface: Colors.black87,
+                  ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _customStartDate = picked.start;
+        _customEndDate = picked.end;
+        _selectedLeadDateFilter = LeadDateFilterPreset.customRange;
+        _currentPage = 1;
+      });
+    }
+  }
+
+  Widget _buildDateFilterBar(BuildContext context, List<RequirementModel> baseList) {
+    final isDark = ThemeManager().isDarkMode;
+    final primaryColor = CRMColors.primaryOf(context);
+
+    final todayCount = _getLeadDateFilterCount(baseList, LeadDateFilterPreset.today);
+    final yesterdayCount = _getLeadDateFilterCount(baseList, LeadDateFilterPreset.yesterday);
+    final last7Count = _getLeadDateFilterCount(baseList, LeadDateFilterPreset.last7Days);
+    final thisMonthCount = _getLeadDateFilterCount(baseList, LeadDateFilterPreset.thisMonth);
+    final allTimeCount = _getLeadDateFilterCount(baseList, LeadDateFilterPreset.allTime);
+
+    final items = [
+      (LeadDateFilterPreset.today, 'Today', todayCount, Icons.calendar_today_rounded),
+      (LeadDateFilterPreset.yesterday, 'Yesterday', yesterdayCount, Icons.history_rounded),
+      (LeadDateFilterPreset.last7Days, 'Last 7 Days', last7Count, Icons.date_range_rounded),
+      (LeadDateFilterPreset.thisMonth, 'This Month', thisMonthCount, Icons.calendar_month_rounded),
+      (LeadDateFilterPreset.customRange, 'Custom Range', null, Icons.event_repeat_rounded),
+      (LeadDateFilterPreset.allTime, 'All Time', allTimeCount, Icons.all_inclusive_rounded),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.calendar_month_rounded, size: 16, color: primaryColor),
+            const SizedBox(width: 8),
+            Text(
+              'DATE FILTER:',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 6),
+            if (_selectedLeadDateFilter == LeadDateFilterPreset.today)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'DEFAULT',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF10B981),
+                  ),
+                ),
+              ),
           ],
         ),
-      );
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: items.map((item) {
+              final filter = item.$1;
+              final label = item.$2;
+              final count = item.$3;
+              final icon = item.$4;
+              final isSelected = _selectedLeadDateFilter == filter;
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    if (filter == LeadDateFilterPreset.customRange) {
+                      _pickCustomDateRange(context);
+                    } else {
+                      setState(() {
+                        _selectedLeadDateFilter = filter;
+                        _currentPage = 1;
+                      });
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? primaryColor
+                          : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected
+                            ? primaryColor
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          icon,
+                          size: 14,
+                          color: isSelected
+                              ? Colors.white
+                              : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                            color: isSelected
+                                ? Colors.white
+                                : (isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155)),
+                          ),
+                        ),
+                        if (count != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.white.withValues(alpha: 0.25)
+                                  : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$count',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isSelected
+                                    ? Colors.white
+                                    : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildListingTabButton(String label) {
@@ -2684,7 +2946,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             final matchesStatus = _selectedStatus == "All" ||
                 mappedStatus == _selectedStatus ||
                 r.status == _selectedStatus ||
-                (_selectedStatus == 'Rejected' && r.status.startsWith('Rejected'));
+                (_selectedStatus == 'Rejected' && r.status.startsWith('Rejected')) ||
+                (_selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')));
+
+            final matchesDate = _matchesLeadDateFilter(r);
 
             bool matchesSearch = true;
             if (query.isNotEmpty) {
@@ -2709,7 +2974,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   matchesSalesman;
             }
 
-            return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch;
+            return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch && matchesDate;
           }).toList();
           
           // Sort by recently updated/created (descending)
@@ -3637,7 +3902,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                       text: TextSpan(
                                         children: [
                                           TextSpan(
-                                            text: 'Internal CRM Remarks: ',
+                                            text: 'Remarks: ',
                                             style: TextStyle(
                                               color: CRMColors.textSecondaryOf(context),
                                               fontSize: 12,

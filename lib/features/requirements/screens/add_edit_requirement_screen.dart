@@ -1053,6 +1053,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               items: const [
                 DropdownMenuItem(value: "New", child: Text("New")),
                 DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
+                DropdownMenuItem(value: "Call Attempted", child: Text("Call Attempted")),
                 DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
                 DropdownMenuItem(value: "Interested", child: Text("Interested")),
                 DropdownMenuItem(value: "Site Visit", child: Text("Site Visit Sche.")),

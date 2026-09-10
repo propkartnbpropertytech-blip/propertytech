@@ -230,6 +230,25 @@ class RequirementModel {
       }
     }
 
+    String? parsedRemarks;
+    if (json['internal_crm_remarks'] != null) {
+      if (json['internal_crm_remarks'] is List && (json['internal_crm_remarks'] as List).isNotEmpty) {
+        final first = (json['internal_crm_remarks'] as List).first;
+        if (first is Map && first['remark'] != null) {
+          parsedRemarks = first['remark'].toString();
+        } else if (first is String) {
+          parsedRemarks = first;
+        }
+      } else if (json['internal_crm_remarks'] is Map) {
+        parsedRemarks = json['internal_crm_remarks']['remark']?.toString();
+      } else if (json['internal_crm_remarks'] is String) {
+        parsedRemarks = json['internal_crm_remarks'];
+      }
+    }
+    if (parsedRemarks == null || parsedRemarks.trim().isEmpty) {
+      parsedRemarks = json['remarks'] as String?;
+    }
+
     return RequirementModel(
       id: json['id'] ?? '',
       clientName: json['clientName'] ?? json['customer_name'] ?? '',
@@ -252,7 +271,7 @@ class RequirementModel {
       propertyTypeIds: propTypeIds,
       rawSiteVisits: json['site_visits'] as List<dynamic>?,
       rawShareSessions: json['share_sessions'] as List<dynamic>?,
-      remarks: json['remarks'],
+      remarks: parsedRemarks,
       notes: json['notes'] as String?,
       status: json['status'] ?? 'Active',
       createdAt: json['createdAt'] != null
