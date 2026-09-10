@@ -70,6 +70,7 @@ class RoleGuard {
     '/owners',
     '/builders',
     '/profile',
+    '/messages',
     '/bin',
     '/settings',
     '/settings/audit-logs',

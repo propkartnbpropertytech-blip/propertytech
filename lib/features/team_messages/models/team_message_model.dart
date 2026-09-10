@@ -3,6 +3,7 @@ class TeamChatUserModel {
   final String name;
   final String email;
   final String role;
+  final String? adminId;
   final int unreadCount;
   final String? lastMessage;
   final DateTime? lastMessageAt;
@@ -12,20 +13,40 @@ class TeamChatUserModel {
     required this.name,
     required this.email,
     required this.role,
+    this.adminId,
     this.unreadCount = 0,
     this.lastMessage,
     this.lastMessageAt,
   });
 
   factory TeamChatUserModel.fromJson(Map<String, dynamic> json) {
+    String r = json['role']?.toString() ?? 'Sales';
+    final adminId = json['admin_id']?.toString();
+
+    // Telecaller resolution fallback if role was stored as Admin with an admin_id
+    if (r.toLowerCase() == 'admin' && adminId != null && adminId.isNotEmpty) {
+      r = 'Telecaller';
+    }
+    if (json['roles'] is Map && json['roles']['name'] != null) {
+      final roleObjName = json['roles']['name'].toString();
+      if (roleObjName.toLowerCase() == 'telecaller') {
+        r = 'Telecaller';
+      }
+    }
+
     return TeamChatUserModel(
       id: json['id']?.toString() ?? '',
-      name: json['name']?.toString() ?? 'User',
+      name: json['name']?.toString() ?? json['full_name']?.toString() ?? 'User',
       email: json['email']?.toString() ?? '',
-      role: json['role']?.toString() ?? '',
-      unreadCount: json['unread_count'] is int ? json['unread_count'] : int.tryParse(json['unread_count']?.toString() ?? '0') ?? 0,
+      role: r,
+      adminId: adminId,
+      unreadCount: json['unread_count'] is int
+          ? json['unread_count']
+          : int.tryParse(json['unread_count']?.toString() ?? '0') ?? 0,
       lastMessage: json['last_message']?.toString(),
-      lastMessageAt: json['last_message_at'] != null ? DateTime.tryParse(json['last_message_at'].toString()) : null,
+      lastMessageAt: json['last_message_at'] != null
+          ? DateTime.tryParse(json['last_message_at'].toString())
+          : null,
     );
   }
 
@@ -35,6 +56,7 @@ class TeamChatUserModel {
       'name': name,
       'email': email,
       'role': role,
+      'admin_id': adminId,
       'unread_count': unreadCount,
       'last_message': lastMessage,
       'last_message_at': lastMessageAt?.toIso8601String(),

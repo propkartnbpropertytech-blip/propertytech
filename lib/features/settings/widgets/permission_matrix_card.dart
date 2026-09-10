@@ -1213,6 +1213,7 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
       (title: 'Employees & Users', route: '/users', icon: Icons.people_outline_rounded, perm: 'page.employees'),
       (title: 'Reports & Insights', route: '/reports', icon: Icons.bar_chart_rounded, perm: 'page.reports'),
       (title: 'Campaign & Webhooks', route: '/campaign', icon: Icons.campaign_outlined, perm: 'page.campaign'),
+      (title: 'Team Messages', route: '/messages', icon: Icons.chat_bubble_outline_rounded, perm: 'page.messages'),
       (title: 'Document Library', route: '/library', icon: Icons.folder_outlined, perm: 'page.library'),
       (title: 'Settings & Config', route: '/settings', icon: Icons.settings_outlined, perm: 'page.settings'),
       (title: 'Recycle Bin', route: '/bin', icon: Icons.delete_outline_rounded, perm: 'page.bin'),

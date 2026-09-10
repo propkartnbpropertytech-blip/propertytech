@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/theme/theme_manager.dart';
@@ -11,12 +12,8 @@ import '../services/team_messages_service.dart';
 class TeamMessengerDialog extends StatefulWidget {
   const TeamMessengerDialog({super.key});
 
-  static Future<void> show(BuildContext context) {
-    return showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogCtx) => const TeamMessengerDialog(),
-    );
+  static Future<void> show(BuildContext context) async {
+    context.go('/messages');
   }
 
   @override

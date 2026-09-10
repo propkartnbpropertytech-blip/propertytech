@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/theme/theme_presets.dart';
 import '../../auth/bloc/auth_bloc.dart';
-import '../../team_messages/widgets/team_messenger_dialog.dart';
 
 class ModernTopBar extends StatefulWidget {
   final VoidCallback onToggleSidebar;
@@ -769,7 +768,7 @@ class _ModernTopBarState extends State<ModernTopBar> {
                   IconButton(
                     onPressed: widget.onMessagesTap ??
                         () {
-                          TeamMessengerDialog.show(context);
+                          context.go('/messages');
                         },
                     icon: Icon(
                       Icons.chat_bubble_outline_rounded,

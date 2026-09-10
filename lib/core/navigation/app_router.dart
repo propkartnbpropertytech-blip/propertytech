@@ -50,6 +50,7 @@ import '../../features/reports/bloc/reports_bloc.dart';
 import '../../features/reports/bloc/reports_event.dart';
 import '../utils/seo_helper.dart';
 import 'mobile_system_back_handler.dart';
+import '../../features/team_messages/screens/team_messages_screen.dart';
 
 
 class GoRouterRefreshStream extends ChangeNotifier {
@@ -279,6 +280,13 @@ class AppRouter {
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
               child: const ProfileScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/messages',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const TeamMessagesScreen(),
             ),
           ),
           GoRoute(
