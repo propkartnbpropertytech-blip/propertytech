@@ -71,6 +71,7 @@ class _CRMMultiSelectDropdownState extends State<CRMMultiSelectDropdown> {
   OverlayEntry _createOverlayEntry() {
     RenderBox renderBox = context.findRenderObject() as RenderBox;
     var size = renderBox.size;
+    String searchQuery = '';
 
     return OverlayEntry(
       builder: (context) => Stack(
@@ -92,42 +93,85 @@ class _CRMMultiSelectDropdownState extends State<CRMMultiSelectDropdown> {
                 borderRadius: BorderRadius.circular(CRMBorderRadius.s),
                 shadowColor: Colors.black.withOpacity(0.1),
                 child: Container(
-                  constraints: const BoxConstraints(maxHeight: 250),
+                  constraints: const BoxConstraints(maxHeight: 280),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(CRMBorderRadius.s),
                     border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.4), width: 0.5),
                   ),
                   child: StatefulBuilder(
                     builder: (BuildContext context, StateSetter setOverlayState) {
+                      final filteredItems = widget.items.where((item) {
+                        if (searchQuery.trim().isEmpty) return true;
+                        return item.name.toLowerCase().contains(searchQuery.trim().toLowerCase());
+                      }).toList();
+
                       return Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(
-                            child: ListView(
-                              padding: EdgeInsets.zero,
-                              shrinkWrap: true,
-                              children: widget.items.map((item) {
-                                final isChecked = widget.selectedIds.contains(item.id);
-                                return CheckboxListTile(
-                                  activeColor: CRMColors.primary,
-                                  title: Text(item.name, style: TextStyle(color: CRMColors.textOf(context), fontSize: 13)),
-                                  value: isChecked,
-                                  dense: true,
-                                  controlAffinity: ListTileControlAffinity.trailing,
-                                  onChanged: (bool? checked) {
-                                    setState(() {
-                                      if (checked == true) {
-                                        widget.selectedIds.add(item.id);
-                                      } else {
-                                        widget.selectedIds.remove(item.id);
-                                      }
-                                    });
-                                    setOverlayState(() {});
-                                    widget.onChanged(List<String>.from(widget.selectedIds));
-                                  },
-                                );
-                              }).toList(),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+                            child: SizedBox(
+                              height: 34,
+                              child: TextField(
+                                onChanged: (val) {
+                                  setOverlayState(() {
+                                    searchQuery = val;
+                                  });
+                                },
+                                decoration: InputDecoration(
+                                  hintText: 'Search...',
+                                  hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                                  prefixIcon: const Icon(Icons.search, size: 16),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(6),
+                                    borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(6),
+                                    borderSide: BorderSide(color: CRMColors.primaryOf(context)),
+                                  ),
+                                ),
+                                style: TextStyle(fontSize: 12, color: CRMColors.textOf(context)),
+                              ),
                             ),
+                          ),
+                          const Divider(height: 1, thickness: 0.5),
+                          Expanded(
+                            child: filteredItems.isEmpty
+                                ? Padding(
+                                    padding: const EdgeInsets.all(12.0),
+                                    child: Text(
+                                      'No items found',
+                                      style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 12),
+                                    ),
+                                  )
+                                : ListView(
+                                    padding: EdgeInsets.zero,
+                                    shrinkWrap: true,
+                                    children: filteredItems.map((item) {
+                                      final isChecked = widget.selectedIds.contains(item.id);
+                                      return CheckboxListTile(
+                                        activeColor: CRMColors.primary,
+                                        title: Text(item.name, style: TextStyle(color: CRMColors.textOf(context), fontSize: 13)),
+                                        value: isChecked,
+                                        dense: true,
+                                        controlAffinity: ListTileControlAffinity.trailing,
+                                        onChanged: (bool? checked) {
+                                          setState(() {
+                                            if (checked == true) {
+                                              widget.selectedIds.add(item.id);
+                                            } else {
+                                              widget.selectedIds.remove(item.id);
+                                            }
+                                          });
+                                          setOverlayState(() {});
+                                          widget.onChanged(List<String>.from(widget.selectedIds));
+                                        },
+                                      );
+                                    }).toList(),
+                                  ),
                           ),
                           const Divider(height: 1, thickness: 0.5),
                           Padding(

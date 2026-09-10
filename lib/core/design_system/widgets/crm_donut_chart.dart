@@ -45,7 +45,7 @@ class DonutChart3DPainter extends CustomPainter {
 
     for (int i = 3; i >= 1; i--) {
       final shadowPaint = Paint()
-        ..color = (isDark ? Colors.black : const Color(0xFF94A3B8))
+        ..color = (isDark ? Colors.black : CRMColors.sand).withValues(alpha: 0.18)
             .withOpacity(0.06 * i)
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth + (i * 1.5)
@@ -63,6 +63,10 @@ class DonutChart3DPainter extends CustomPainter {
 
     for (final sector in sectors) {
       final sweepAngle = (sector.value / total) * animatedSweepTotal;
+      if (total <= 0 || sweepAngle <= 0.0001) {
+        startAngle += sweepAngle;
+        continue;
+      }
       final midAngle = startAngle + sweepAngle / 2;
 
       final arcPaint = Paint()
@@ -73,13 +77,14 @@ class DonutChart3DPainter extends CustomPainter {
 
       final darkerColor = Color.lerp(sector.color, Colors.black, 0.25)!;
       final lighterColor = Color.lerp(sector.color, Colors.white, 0.2)!;
+      final endAngle = math.max(startAngle + sweepAngle, startAngle + 0.001);
       arcPaint.shader = ui.Gradient.sweep(
         center,
         [lighterColor, sector.color, darkerColor, sector.color],
         [0.0, 0.3, 0.7, 1.0],
         TileMode.clamp,
         startAngle,
-        startAngle + sweepAngle,
+        endAngle,
       );
 
       final arcRect =
@@ -136,7 +141,7 @@ class DonutChart3DPainter extends CustomPainter {
     canvas.drawCircle(center, innerRadius - 1, innerPaint);
 
     final innerRingPaint = Paint()
-      ..color = (isDark ? Colors.white : const Color(0xFF94A3B8)).withOpacity(0.08)
+      ..color = (isDark ? Colors.white : CRMColors.sand).withValues(alpha: 0.12)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.5
       ..isAntiAlias = true;

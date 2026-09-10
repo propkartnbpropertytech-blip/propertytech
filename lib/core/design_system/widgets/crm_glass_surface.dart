@@ -32,25 +32,31 @@ class CRMGlassSurface extends StatelessWidget {
     final sigma = reduceMotion ? CRMBlur.reduced : blurSigma;
     final radius = borderRadius ?? BorderRadius.circular(CRMBorderRadius.xl);
 
+    final surface = Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: color ?? CRMColors.glassOf(context),
+        borderRadius: radius,
+        border: border ??
+            Border.all(
+              color: CRMColors.borderOf(context),
+              width: 1.0,
+            ),
+        boxShadow: boxShadow ?? CRMShadows.glass,
+      ),
+      child: child,
+    );
+
+    if (sigma <= 0) {
+      return ClipRRect(borderRadius: radius, child: surface);
+    }
+
     return RepaintBoundary(
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              color: color ?? CRMColors.glassOf(context),
-              borderRadius: radius,
-              border: border ??
-                  Border.all(
-                    color: CRMColors.borderOf(context).withOpacity(0.45),
-                    width: 0.5,
-                  ),
-              boxShadow: boxShadow ?? CRMShadows.glass,
-            ),
-            child: child,
-          ),
+          child: surface,
         ),
       ),
     );

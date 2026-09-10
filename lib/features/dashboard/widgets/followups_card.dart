@@ -91,12 +91,26 @@ class _FollowupsCardState extends State<FollowupsCard> {
       }
     }
 
+    final isRentMode = ThemeManager().isRentMode;
     final activeFollowups = latestDashFollowupsMap.values.where((f) {
       final statusLower = f.status.toLowerCase();
-      return statusLower != 'completed' &&
-          statusLower != 'resolved' &&
-          statusLower != 'closed' &&
-          statusLower != 'done';
+      if (statusLower == 'completed' ||
+          statusLower == 'resolved' ||
+          statusLower == 'closed' ||
+          statusLower == 'done') {
+        return false;
+      }
+
+      final listingTypeLower = (f.propertyTitle ?? '').toLowerCase();
+      if (listingTypeLower.isNotEmpty) {
+        final fIsRent = listingTypeLower.contains('rent');
+        final fIsSale = listingTypeLower.contains('sale') || listingTypeLower.contains('resale');
+        if (fIsRent || fIsSale) {
+          if (isRentMode != fIsRent) return false;
+        }
+      }
+
+      return true;
     }).toList();
 
     final todayList = <DashboardFollowup>[];
@@ -105,7 +119,10 @@ class _FollowupsCardState extends State<FollowupsCard> {
 
     for (final f in activeFollowups) {
       final parsed = _parseFollowupDateTime(f.followupDate);
-      if (parsed == null) continue;
+      if (parsed == null) {
+        dueList.add(f);
+        continue;
+      }
       final fDate = DateTime(parsed.year, parsed.month, parsed.day);
       if (fDate.isBefore(today)) {
         dueList.add(f);
@@ -413,7 +430,7 @@ class _FollowupsCardState extends State<FollowupsCard> {
       if (item.notes != null && item.notes!.isNotEmpty) item.notes!,
     ].join(' · ');
 
-    final dt = DateTime.tryParse(item.followupDate);
+    final dt = _parseFollowupDateTime(item.followupDate);
     final timeText = dt != null
         ? DateFormat('d MMM, h:mm a').format(dt)
         : (item.followupDate.isNotEmpty ? item.followupDate : 'Scheduled');

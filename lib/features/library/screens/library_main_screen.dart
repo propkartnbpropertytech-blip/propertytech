@@ -23,36 +23,8 @@ class LibraryMainScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CRMPageHeader(
-                title: 'Document Library',
-                benefit:
-                    'Select a document vault to upload, filter, view, and manage your property records.',
-                breadcrumbs: [
-                  MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: GestureDetector(
-                      onTap: () => context.go('/dashboard'),
-                      child: Text(
-                        'CRM',
-                        style: CRMTypography.caption.copyWith(
-                          color: CRMColors.textSecondaryOf(context),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 14,
-                    color: CRMColors.textMutedOf(context),
-                  ),
-                  Text(
-                    'Library',
-                    style: CRMTypography.captionBold.copyWith(
-                      color: CRMColors.primaryOf(context),
-                    ),
-                  ),
-                ],
+              const CRMPageHeader(
+                title: 'Library',
               ),
               const SizedBox(height: CRMSpacing.xl),
 

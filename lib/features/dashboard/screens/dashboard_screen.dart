@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import '../../../core/storage/repository_coordinator.dart';
 import 'package:flutter/foundation.dart';
@@ -16,12 +15,10 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
-import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/skeletons.dart';
-import '../../../core/design_system/widgets/crm_donut_chart.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../bloc/dashboard_bloc.dart';
@@ -30,8 +27,15 @@ import '../../../core/api/dio_client.dart';
 import '../../../core/utils/currency.dart';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/storage/model_mappers.dart';
-
 import '../../../core/theme/theme_manager.dart';
+import '../../../core/security/role_guard.dart';
+import '../widgets/welcome_header.dart';
+import '../widgets/stat_card.dart';
+import '../widgets/recent_properties_card.dart';
+import '../widgets/todays_schedule_card.dart';
+import '../widgets/followups_card.dart';
+import '../widgets/analytics_section.dart';
+import '../../requirements/screens/requirements_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -47,14 +51,13 @@ class _DashboardScreenState extends State<DashboardScreen>
   set _activeTab(String value) {
     ThemeManager().setRentMode(value == 'Rental');
   }
+
   Set<String> _selectedAreaFilters = {};
   String _priceSortOrder = 'none'; // 'none', 'high_to_low', 'low_to_high'
-  String? _chartFilterLabel;
-  bool _showPortfolioChart = false;
 
   // Pagination states
   int _propertyPage = 1;
-  static const int _propertiesPerPage = 5;
+  static const int _propertiesPerPage = 8;
 
   int _followupPage = 1;
   static const int _followupsPerPage = 5;
@@ -72,10 +75,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   late AnimationController _nameShimmerController;
   static bool _greetingPlayedThisSession = false;
   final Map<String, Future<PropertyModel?>> _propertyDetailFutures = {};
-  StreamSubscription? _dashboardSub;
 
   bool get _isRent => _activeTab == 'Rental';
-  Color get _atmosphere => CRMColors.atmosphereAccent(_isRent);
+  Color get _atmosphere => CRMColors.terracotta;
 
   Future<PropertyModel?> _propertyDetailFuture(String id) {
     return _propertyDetailFutures.putIfAbsent(
@@ -99,16 +101,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       _nameShimmerController.value = 1.0;
     }
     context.read<DashboardBloc>().add(LoadDashboard());
-    _dashboardSub = RepositoryCoordinator().dashboardStream.listen((_) {
-      if (mounted) {
-        context.read<DashboardBloc>().add(LoadDashboard());
-      }
-    });
   }
 
   @override
   void dispose() {
-    _dashboardSub?.cancel();
     _nameShimmerController.dispose();
     _propertyDetailFutures.clear();
     super.dispose();
@@ -124,8 +120,18 @@ class _DashboardScreenState extends State<DashboardScreen>
   String _getFormattedDate() {
     final now = DateTime.now();
     final months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${now.day} ${months[now.month - 1]} ${now.year}';
   }
@@ -165,7 +171,8 @@ class _DashboardScreenState extends State<DashboardScreen>
               );
             } else if (state is DashboardError) {
               return _buildErrorState(state.message);
-            } else if (state is DashboardLoadedState || state is DashboardRefreshing) {
+            } else if (state is DashboardLoadedState ||
+                state is DashboardRefreshing) {
               final data = (state is DashboardLoadedState)
                   ? state.data
                   : (state as DashboardRefreshing).data;
@@ -187,60 +194,216 @@ class _DashboardScreenState extends State<DashboardScreen>
                         maxWidth: CRMBreakpoints.maxContentWidth,
                       ),
                       child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // 1. Welcome Header
-                      _buildWelcomeHeader(userName, dateString, greeting),
-                      const SizedBox(height: CRMSpacing.l),
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 1. Welcome Header
+                          WelcomeHeader(
+                            userName: userName.isNotEmpty
+                                ? userName
+                                : (RoleGuard.currentUser?.fullName ?? 'User'),
+                          ),
+                          const SizedBox(height: 20),
 
-                      // 2. Responsive Main Content Area
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final isDesktop = constraints.maxWidth >= 900;
-                          if (isDesktop) {
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 3,
-                                  child: Column(
-                                    children: [
-                                      _buildKPIGrids(data.summary, isDesktop: true),
-                                      const SizedBox(height: CRMSpacing.l),
-                                      _buildRecentProperties(data.recentProperties),
-                                    ],
+                          // Atmosphere (Desk Mode) Switch Header
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _isRent
+                                      ? 'Rental Desk Overview'
+                                      : 'Re-Sale Desk Overview',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: ThemeManager().isDarkMode
+                                        ? const Color(0xFFF8FAFC)
+                                        : const Color(0xFF14213D),
+                                    letterSpacing: -0.2,
                                   ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(width: CRMSpacing.l),
-                                Expanded(
-                                  flex: 2,
-                                  child: Column(
-                                    children: [
-                                      _buildTodayWork(data.checklist),
-                                      const SizedBox(height: CRMSpacing.l),
-                                      _buildFollowups(data.followups, data.siteVisits),
-                                    ],
+                              ),
+                              const SizedBox(width: 8),
+                              _buildModernAtmosphereToggle(),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // 2. Responsive Main Content Area
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final isDesktop = constraints.maxWidth >= 1100;
+                              final isTablet =
+                                  constraints.maxWidth >= 680 &&
+                                  constraints.maxWidth < 1100;
+
+                              // Collect & filter properties dynamically
+                              final List<_DisplayProperty> displayItems =
+                                  data.recentProperties.map((p) {
+                                DateTime parsedDate = DateTime.now();
+                                if (p.createdAt.isNotEmpty) {
+                                  parsedDate =
+                                      DateTime.tryParse(p.createdAt) ??
+                                      DateTime.now();
+                                }
+                                return _DisplayProperty(
+                                  id: p.id,
+                                  title: p.title,
+                                  areaName: p.areaName,
+                                  price: p.price,
+                                  listingType: p.listingType,
+                                  createdAt: parsedDate,
+                                  status: p.status,
+                                );
+                              }).toList();
+
+                              List<_DisplayProperty> tabFiltered = displayItems
+                                  .where((p) {
+                                final typeLower = p.listingType.toLowerCase();
+                                if (_isRent) {
+                                  return typeLower.contains('rent');
+                                } else {
+                                  return !typeLower.contains('rent');
+                                }
+                              }).toList();
+
+                              if (_selectedAreaFilters.isNotEmpty) {
+                                tabFiltered = tabFiltered
+                                    .where(
+                                      (p) => _selectedAreaFilters
+                                          .contains(p.areaName),
+                                    )
+                                    .toList();
+                              }
+
+                              if (_priceSortOrder == 'high_to_low') {
+                                tabFiltered.sort((a, b) => b.price.compareTo(a.price));
+                              } else if (_priceSortOrder == 'low_to_high') {
+                                tabFiltered.sort((a, b) => a.price.compareTo(b.price));
+                              } else {
+                                tabFiltered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                              }
+
+                              final totalCount = tabFiltered.length;
+                              final totalPages =
+                                  (totalCount / _propertiesPerPage).ceil();
+                              final currentPage = _propertyPage.clamp(
+                                1,
+                                totalPages > 0 ? totalPages : 1,
+                              );
+                              final startIndex =
+                                  (currentPage - 1) * _propertiesPerPage;
+                              final endIndex =
+                                  (startIndex + _propertiesPerPage).clamp(
+                                0,
+                                totalCount,
+                              );
+
+                              final pageItems = (startIndex < totalCount)
+                                  ? tabFiltered.sublist(startIndex, endIndex)
+                                  : <_DisplayProperty>[];
+
+                              final recentPropsToDisplay = pageItems.map((p) {
+                                return RecentProperty(
+                                  id: p.id,
+                                  code: '',
+                                  title: p.title,
+                                  area: '',
+                                  price: p.price,
+                                  status: p.status,
+                                  areaName: p.areaName,
+                                  listingType: p.listingType,
+                                  createdBy: '',
+                                  createdAt: p.createdAt.toIso8601String(),
+                                );
+                              }).toList();
+
+                              final recentPropsWidget = RecentPropertiesCard(
+                                properties: recentPropsToDisplay,
+                                propertyDetailFuture: _propertyDetailFuture,
+                                onPropertyTap: (p) => _openPropertyDetails(p.id),
+                                onFilterTap: () => _showFilterModal(displayItems),
+                                activeFilterCount: _selectedAreaFilters.length +
+                                    (_priceSortOrder != 'none' ? 1 : 0),
+                                currentPage: currentPage,
+                                totalPages: totalPages > 0 ? totalPages : 1,
+                                onNextPage: () => setState(() => _propertyPage++),
+                                onPrevPage: () => setState(() => _propertyPage--),
+                              );
+
+                              final scheduleWidget = TodaysScheduleCard(
+                                siteVisits: data.siteVisits,
+                                onSiteVisitTap: _openSiteVisit,
+                              );
+
+                              final followupsWidget = FollowupsCard(
+                                followups: data.followups,
+                                onFollowupTap: (f) => _showEditFollowupDialog(f),
+                                onAddFollowup: () => _showCreateFollowupDialog(),
+                                onViewAll: () =>
+                                    context.go('/requirements?tab=Follow-ups'),
+                              );
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // KPI Cards (Strictly NO percentage values)
+                                  _buildModernKpiCards(
+                                    data,
+                                    isDesktop,
+                                    isTablet,
                                   ),
-                                ),
-                              ],
-                            );
-                          } else {
-                            return Column(
-                              children: [
-                                _buildKPIGrids(data.summary, isDesktop: false),
-                                const SizedBox(height: CRMSpacing.l),
-                                _buildRecentProperties(data.recentProperties),
-                                const SizedBox(height: CRMSpacing.l),
-                                _buildTodayWork(data.checklist),
-                                const SizedBox(height: CRMSpacing.l),
-                                _buildFollowups(data.followups, data.siteVisits),
-                              ],
-                            );
-                          }
-                        },
+                                  const SizedBox(height: 24),
+
+                                  // Middle Section: Recent Properties & (Note + Follow-ups)
+                                  if (isDesktop)
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          flex: 7,
+                                          child: recentPropsWidget,
+                                        ),
+                                        const SizedBox(width: 20),
+                                        Expanded(
+                                          flex: 5,
+                                          child: Column(
+                                            children: [
+                                              scheduleWidget,
+                                              const SizedBox(height: 20),
+                                              followupsWidget,
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  else
+                                    Column(
+                                      children: [
+                                        recentPropsWidget,
+                                        const SizedBox(height: 20),
+                                        scheduleWidget,
+                                        const SizedBox(height: 20),
+                                        followupsWidget,
+                                      ],
+                                    ),
+
+                                  const SizedBox(height: 24),
+
+                                  // Analytics Section: Inventory Overview + Top Locations
+                                  AnalyticsSection(
+                                    data: data,
+                                    isRent: _isRent,
+                                  ),
+                                  SizedBox(height: isDesktop ? 32 : 96),
+                                ],
+                              );
+                            },
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
                     ),
                   ),
                 ),
@@ -253,115 +416,271 @@ class _DashboardScreenState extends State<DashboardScreen>
           Positioned.fill(
             child: Container(
               color: Colors.black.withOpacity(0.35),
-              child: const Center(
-                child: CircularProgressIndicator(),
-              ),
+              child: const Center(child: CircularProgressIndicator()),
             ),
           ),
       ],
     );
   }
 
-  Widget _buildWelcomeHeader(String name, String dateString, String greeting) {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 600;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    Widget nameWidget = AnimatedBuilder(
-      animation: _nameShimmerController,
-      builder: (context, _) {
-        final t = _nameShimmerController.value;
-        final shimmer = (t < 1.0)
-            ? LinearGradient(
-                begin: Alignment(-1.5 + 3 * t, 0),
-                end: Alignment(-0.5 + 3 * t, 0),
-                colors: [
-                  CRMColors.textOf(context),
-                  CRMColors.primaryOf(context),
-                  CRMColors.accentOf(context),
-                  CRMColors.textOf(context),
-                ],
-                stops: const [0.0, 0.35, 0.55, 1.0],
-              )
-            : null;
-
-        final style = CRMTypography.greetingName.copyWith(
-          fontSize: isMobile ? 24 : 32,
-          color: CRMColors.textOf(context),
-        );
-
-        if (shimmer == null) {
-          return Text(name, style: style);
-        }
-        return ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) => shimmer.createShader(bounds),
-          child: Text(name, style: style.copyWith(color: Colors.white)),
-        );
-      },
-    );
-
-    Widget leftColumn = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          greeting,
-          style: CRMTypography.body.copyWith(
-            color: CRMColors.textSecondaryOf(context),
-            fontSize: isMobile ? 14 : 16,
-          ),
-        ),
-        nameWidget,
-      ],
-    );
-
-    Widget rightColumn = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+  Widget _buildModernAtmosphereToggle() {
+    final isDark = ThemeManager().isDarkMode;
+    final isRent = _isRent;
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            CRMColors.primaryOf(context).withValues(alpha: isDark ? 0.18 : 0.1),
-            CRMColors.cardBgOf(context),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: CRMColors.primaryOf(context).withValues(alpha: 0.28),
-        ),
+        color: isDark ? const Color(0xFF243044) : const Color(0xFFF1F4F9),
+        borderRadius: BorderRadius.circular(9),
       ),
-      child: Column(
-        crossAxisAlignment:
-            isMobile ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            dateString,
-            style: CRMTypography.bodyMedium.copyWith(
-              color: CRMColors.primaryOf(context),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          _buildTogglePill('Rental', isRent, isDark),
+          _buildTogglePill('Re-Sale', !isRent, isDark),
         ],
       ),
     );
+  }
 
-    if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildTogglePill(String label, bool isSelected, bool isDark) {
+    final themeManager = ThemeManager();
+    final primaryColor = themeManager.primaryColor;
+    final primaryHoverColor = themeManager.primaryHoverColor;
+
+    return GestureDetector(
+      onTap: () {
+        if ((label == 'Rental' && !_isRent) || (label == 'Re-Sale' && _isRent)) {
+          setState(() {
+            _activeTab = label;
+            _propertyPage = 1;
+          });
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDark ? const Color(0xFF1E293B) : Colors.white)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label == 'Rental' ? 'Rent' : 'Re-Sale',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected
+                ? (isDark ? primaryHoverColor : primaryColor)
+                : (isDark
+                    ? const Color(0xFF94A3B8)
+                    : const Color(0xFF68738A)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernKpiCards(
+    DashboardData data,
+    bool isDesktop,
+    bool isTablet,
+  ) {
+    final themeManager = ThemeManager();
+    final primaryColor = themeManager.primaryColor;
+
+    final availableCount = _isRent
+        ? data.summary.rentalAvailable
+        : data.summary.resaleAvailable;
+    final siteVisitsCount = _isRent
+        ? data.summary.rentalRented
+        : data.summary.resaleSold;
+    final reqsCount = _isRent
+        ? data.summary.rentalRequirements
+        : data.summary.resaleRequirements;
+    final wonDealsCount = _isRent
+        ? data.summary.rentalWonRequirements
+        : data.summary.resaleWonRequirements;
+
+    final card1 = StatCard(
+      title: 'Available Inventory',
+      value: '$availableCount',
+      icon: Icons.home_work_outlined,
+      accentColor: primaryColor,
+      onTap: () => context.go('/properties'),
+    );
+
+    final card2 = StatCard(
+      title: 'Site Visits Done',
+      value: '$siteVisitsCount',
+      icon: Icons.location_on_outlined,
+      accentColor: const Color(0xFF3B82F6),
+      onTap: () => context.go('/dashboard'),
+    );
+
+    final card3 = StatCard(
+      title: 'Leads',
+      value: '$reqsCount',
+      icon: Icons.assignment_outlined,
+      accentColor: const Color(0xFF8B5CF6),
+      onTap: () => context.go('/requirements'),
+    );
+
+    final card4 = StatCard(
+      title: 'Deals Won',
+      value: '$wonDealsCount',
+      icon: Icons.handshake_outlined,
+      accentColor: const Color(0xFFF97316),
+      onTap: () => context.go('/requirements'),
+    );
+
+    if (isDesktop) {
+      return Row(
         children: [
-          leftColumn,
-          const SizedBox(height: CRMSpacing.s),
-          rightColumn,
+          Expanded(child: card1),
+          const SizedBox(width: 16),
+          Expanded(child: card2),
+          const SizedBox(width: 16),
+          Expanded(child: card3),
+          const SizedBox(width: 16),
+          Expanded(child: card4),
+        ],
+      );
+    } else if (isTablet) {
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(child: card1),
+              const SizedBox(width: 16),
+              Expanded(child: card2),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: card3),
+              const SizedBox(width: 16),
+              Expanded(child: card4),
+            ],
+          ),
+        ],
+      );
+    } else {
+      // Mobile 2x2 responsive grid
+      final isVeryNarrow = MediaQuery.of(context).size.width < 340;
+      if (isVeryNarrow) {
+        return Column(
+          children: [
+            card1,
+            const SizedBox(height: 10),
+            card2,
+            const SizedBox(height: 10),
+            card3,
+            const SizedBox(height: 10),
+            card4,
+          ],
+        );
+      }
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(child: card1),
+              const SizedBox(width: 10),
+              Expanded(child: card2),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: card3),
+              const SizedBox(width: 10),
+              Expanded(child: card4),
+            ],
+          ),
         ],
       );
     }
+  }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: leftColumn),
-        rightColumn,
-      ],
+  Widget _buildWelcomeHeader(String name, String dateString, String greeting) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 640;
+        final title = Text(
+          compact
+              ? '$greeting ${name.isNotEmpty ? name : 'there'}'
+              : 'Dashboard',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: CRMTypography.pageTitle.copyWith(
+            fontSize: compact ? 22 : 28,
+            fontWeight: FontWeight.w700,
+            color: CRMColors.textOf(context),
+          ),
+        );
+
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              title,
+              const SizedBox(height: CRMSpacing.s),
+              Wrap(
+                spacing: CRMSpacing.s,
+                runSpacing: CRMSpacing.s,
+                children: [_buildDateChip(dateString)],
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(child: title),
+            Flexible(
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: CRMSpacing.s,
+                runSpacing: CRMSpacing.s,
+                children: [_buildDateChip(dateString)],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDateChip(String dateString) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: CRMColors.groupedBackground,
+        borderRadius: BorderRadius.circular(CRMBorderRadius.button),
+        border: Border.all(color: CRMColors.borderOf(context)),
+      ),
+      child: Text(
+        dateString,
+        style: CRMTypography.caption.copyWith(
+          color: CRMColors.textSecondaryOf(context),
+          fontWeight: FontWeight.w500,
+          fontSize: 12,
+        ),
+      ),
     );
   }
 
@@ -374,284 +693,185 @@ class _DashboardScreenState extends State<DashboardScreen>
     } else if (combined.contains('sale') || combined.contains('resale')) {
       return 'Re-Sale';
     }
-    return 'Other';
+    return 'All';
   }
 
-  Widget _buildKPIGrids(DashboardSummary summary, {required bool isDesktop}) {
-    final atmosphere = _atmosphere;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final int availableVal =
-        _isRent ? summary.rentalAvailable : summary.resaleAvailable;
-    final int closedVal = _isRent ? summary.rentalRented : summary.resaleSold;
-    final int requirementsVal =
-        _isRent ? summary.rentalRequirements : summary.resaleRequirements;
-    final int wonVal =
-        _isRent ? summary.rentalWonRequirements : summary.resaleWonRequirements;
-
-    final authState = context.read<AuthBloc>().state;
-    String role = 'Sales';
-    if (authState is Authenticated) {
-      role = authState.user.role;
+  int _todayFollowupCount(List<DashboardFollowup> followups) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final seen = <String>{};
+    var count = 0;
+    for (final f in followups) {
+      final statusLower = f.status.toLowerCase();
+      if (statusLower == 'completed' ||
+          statusLower == 'resolved' ||
+          statusLower == 'closed' ||
+          statusLower == 'done') {
+        continue;
+      }
+      final key = (f.requirementId != null && f.requirementId!.isNotEmpty)
+          ? f.requirementId!
+          : f.id;
+      if (!seen.add(key)) continue;
+      final parsed = DateTime.tryParse(f.followupDate);
+      if (parsed == null) continue;
+      final fDate = DateTime(parsed.year, parsed.month, parsed.day);
+      if (fDate.isAtSameMomentAs(today) || fDate.isBefore(today)) {
+        count++;
+      }
     }
+    return count;
+  }
 
-    String availableTitle = 'Available Inventory';
-    String siteVisitTitle = 'My Site Visits Done';
-    String requirementsTitle = 'My Requirements';
-    String wonTitle = 'My Won';
+  Widget _buildDeskMetrics(DashboardData data, {required bool isDesktop}) {
+    final summary = data.summary;
+    final availableVal = _isRent
+        ? summary.rentalAvailable
+        : summary.resaleAvailable;
+    final siteVisitsVal = _isRent ? summary.rentalRented : summary.resaleSold;
+    final leadsVal = _isRent
+        ? summary.rentalRequirements
+        : summary.resaleRequirements;
+    final wonVal = _isRent
+        ? summary.rentalWonRequirements
+        : summary.resaleWonRequirements;
 
-    if (role == 'Super Admin') {
-      availableTitle = 'All Properties';
-      siteVisitTitle = 'All Site Visits Done';
-      requirementsTitle = 'All Requirements';
-      wonTitle = 'All Won';
-    } else if (role == 'Admin' || role == 'Telecaller') {
-      availableTitle = 'Available Inventory';
-      siteVisitTitle = 'Site visits done';
-      requirementsTitle = 'Leads';
-      wonTitle = 'Won';
-    }
-
-    final List<Widget> cards = [
-      CRMKPICard(
-        title: availableTitle,
-        value: '$availableVal',
-        icon: Icons.check_circle_outline_rounded,
-        iconColor: CRMColors.success,
-        onTap: () => context.go('/properties'),
-      ),
-      CRMKPICard(
-        title: siteVisitTitle,
-        value: '$closedVal',
-        icon: Icons.directions_walk_rounded,
-        iconColor: _isRent ? CRMColors.info : CRMColors.warning,
-      ),
-      CRMKPICard(
-        title: requirementsTitle,
-        value: '$requirementsVal',
-        icon: Icons.assignment_turned_in_outlined,
-        iconColor: CRMColors.secondaryOf(context),
-        onTap: () => context.go('/requirements'),
-      ),
-      CRMKPICard(
-        title: wonTitle,
-        value: '$wonVal',
-        icon: Icons.emoji_events_outlined,
-        iconColor: CRMColors.success,
-      ),
-    ];
-
-    final sectors = [
-      ChartSector(
-        label: 'Available',
-        value: availableVal.toDouble().clamp(0.01, double.infinity),
-        color: atmosphere,
-      ),
-      ChartSector(
-        label: siteVisitTitle,
-        value: closedVal.toDouble().clamp(0.01, double.infinity),
-        color: _isRent ? CRMColors.info : CRMColors.warning,
-      ),
-      ChartSector(
-        label: 'Requirements',
-        value: requirementsVal.toDouble().clamp(0.01, double.infinity),
-        color: CRMColors.secondaryOf(context),
-      ),
-      ChartSector(
-        label: 'Won',
-        value: wonVal.toDouble().clamp(0.01, double.infinity),
-        color: CRMColors.success,
-      ),
-    ];
-
-    final int crossAxisCount = isDesktop
-        ? 2
-        : CRMBreakpoints.kpiColumns(context, desktop: 4);
-    final double childAspectRatio = isDesktop
-        ? 2.0
-        : CRMBreakpoints.kpiAspectRatio(context);
-
-    return AnimatedContainer(
-      duration: CRMMotion.atmosphere,
-      curve: CRMMotion.emphasized,
-      padding: const EdgeInsets.all(CRMSpacing.s),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            atmosphere.withValues(alpha: isDark ? 0.12 : 0.07),
-            Colors.transparent,
+    final metrics = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _isRent ? 'Rental desk' : 'Re-Sale desk',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: CRMTypography.sectionTitle.copyWith(
+                  color: CRMColors.textOf(context),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            _buildAtmosphereToggle(),
           ],
         ),
-        border: Border.all(color: atmosphere.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(
-              left: CRMSpacing.xs,
-              bottom: CRMSpacing.m,
-              right: CRMSpacing.xs,
+        const SizedBox(height: CRMSpacing.m),
+        CRMHeroMetric(
+          label: 'Available Inventory',
+          value: '$availableVal',
+          icon: Icons.home_work_rounded,
+          backgroundColor: CRMColors.strongCard,
+          accentColor: CRMColors.terracotta,
+          onTap: () => context.go('/properties'),
+        ),
+        const SizedBox(height: CRMSpacing.s),
+        CRMResponsiveKpiRow(
+          minCardWidth: 148,
+          children: [
+            CRMTintedMetric(
+              label: 'Site visits done',
+              value: '$siteVisitsVal',
+              backgroundColor: CRMColors.cardBgOf(context),
+              accentColor: CRMColors.textMutedOf(context),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _isRent ? 'Rental desk' : 'Re-Sale desk',
-                        style: CRMTypography.sectionTitle.copyWith(
-                          color: CRMColors.textOf(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _buildAtmosphereToggle(),
-              ],
+            CRMTintedMetric(
+              label: 'Leads',
+              value: '$leadsVal',
+              backgroundColor: CRMColors.cardBgOf(context),
+              accentColor: CRMColors.textMutedOf(context),
+              onTap: () => context.go('/requirements'),
             ),
-          ),
-          AnimatedSwitcher(
-            duration: CRMMotion.atmosphere,
-            switchInCurve: CRMMotion.emphasized,
-            child: KeyedSubtree(
-              key: ValueKey(_activeTab),
-              child: GridView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: CRMSpacing.m,
-                  mainAxisSpacing: CRMSpacing.m,
-                  childAspectRatio: childAspectRatio,
-                ),
-                itemCount: cards.length,
-                itemBuilder: (context, index) => cards[index],
-              ),
+            CRMTintedMetric(
+              label: 'Won',
+              value: '$wonVal',
+              backgroundColor: CRMColors.cardBgOf(context),
+              accentColor: CRMColors.terracotta,
             ),
-          ),
-          const SizedBox(height: CRMSpacing.xs),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () {
-                setState(() {
-                  _showPortfolioChart = !_showPortfolioChart;
-                  if (!_showPortfolioChart) {
-                    _chartFilterLabel = null;
-                  }
-                });
-              },
-              icon: Icon(
-                _showPortfolioChart
-                    ? Icons.expand_less_rounded
-                    : Icons.pie_chart_outline_rounded,
-                size: 18,
-                color: atmosphere,
-              ),
-              label: Text(
-                _showPortfolioChart ? 'Hide chart' : 'View chart',
-                style: CRMTypography.captionBold.copyWith(color: atmosphere),
-              ),
-              style: TextButton.styleFrom(
-                foregroundColor: atmosphere,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
-            ),
-          ),
-          AnimatedSize(
-            duration: CRMMotion.sheet,
-            curve: CRMMotion.emphasized,
-            alignment: Alignment.topCenter,
-            child: _showPortfolioChart
-                ? Padding(
-                    padding: const EdgeInsets.only(top: CRMSpacing.s),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        TweenAnimationBuilder<double>(
-                          key: const ValueKey('portfolio-chart-enter'),
-                          tween: Tween(begin: 0, end: 1),
-                          duration: CRMMotion.entrySettle,
-                          curve: CRMMotion.emphasized,
-                          builder: (context, value, child) {
-                            return Opacity(
-                              opacity: value,
-                              child: Transform.translate(
-                                offset: Offset(0, 12 * (1 - value)),
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: CRMDonutChartCard(
-                            title: 'Portfolio mix',
-                            subtitle:
-                                'See where inventory, demand, and wins sit — tap a slice to focus',
-                            sectors: sectors,
-                            accent: atmosphere,
-                            replayOnUpdate: false,
-                            onSectorTap: (sector) {
-                              setState(() {
-                                _chartFilterLabel = sector.label;
-                              });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Focusing ${_isRent ? 'Rent' : 'Re-Sale'} · ${sector.label}',
-                                  ),
-                                  behavior: SnackBarBehavior.floating,
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        if (_chartFilterLabel != null) ...[
-                          const SizedBox(height: CRMSpacing.s),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: ActionChip(
-                              label: Text('Filter: $_chartFilterLabel'),
-                              avatar: const Icon(
-                                Icons.filter_alt_rounded,
-                                size: 16,
-                              ),
-                              onPressed: () =>
-                                  setState(() => _chartFilterLabel = null),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
+    );
+
+    if (!isDesktop) return metrics;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 5, child: metrics),
+        const SizedBox(width: CRMSpacing.m),
+        Expanded(flex: 3, child: _buildTodayWork(data.checklist)),
+      ],
+    );
+  }
+
+  Widget _buildInventoryOverview(DashboardSummary summary) {
+    final int availableVal = _isRent
+        ? summary.rentalAvailable
+        : summary.resaleAvailable;
+    final int closedVal = _isRent ? summary.rentalRented : summary.resaleSold;
+    final int requirementsVal = _isRent
+        ? summary.rentalRequirements
+        : summary.resaleRequirements;
+    final int wonVal = _isRent
+        ? summary.rentalWonRequirements
+        : summary.resaleWonRequirements;
+
+    return CRMInventoryOverview(
+      title: _isRent ? 'Rental inventory' : 'Re-sale inventory',
+      bars: [
+        CRMInventoryBar(
+          label: 'Available',
+          value: availableVal,
+          color: CRMColors.strongCard,
+        ),
+        CRMInventoryBar(
+          label: 'Active Requirements',
+          value: requirementsVal,
+          color: CRMColors.terracotta,
+        ),
+        CRMInventoryBar(
+          label: _isRent ? 'Rented' : 'Sold',
+          value: closedVal,
+          color: CRMColors.textMuted,
+        ),
+        CRMInventoryBar(
+          label: 'Deals Won',
+          value: wonVal,
+          color: CRMColors.terracottaHover,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPriorityFollowupsCard(List<DashboardFollowup> followups) {
+    final count = _todayFollowupCount(followups);
+    return CRMPriorityActionCard(
+      title: "Today's Follow-ups",
+      value: '$count',
+      caption: count == 1 ? 'pending' : 'pending',
+      actionLabel: 'View Follow-ups',
+      backgroundColor: CRMColors.strongCard,
+      accentColor: CRMColors.terracotta,
+      onAction: () {
+        context.go('/requirements?tab=Follow-ups&subTab=Today');
+      },
     );
   }
 
   Widget _buildAtmosphereToggle() {
-    return AnimatedContainer(
-      duration: CRMMotion.tabSwitch,
-      height: 44,
-      padding: const EdgeInsets.all(4),
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: CRMColors.cardBgOf(context),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _atmosphere.withValues(alpha: 0.45)),
-        boxShadow: CRMShadows.atmosphereGlow(_atmosphere),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.button),
+        border: Border.all(color: CRMColors.borderOf(context)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildMetricsTabButton('Rental'),
-          const SizedBox(width: 4),
           _buildMetricsTabButton('Re-Sale'),
         ],
       ),
@@ -660,60 +880,52 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _buildMetricsTabButton(String label) {
     final isSelected = _activeTab == label;
-    final accent = label == 'Rental' ? CRMColors.rentAccent : CRMColors.resaleAccent;
+    final selectedFill = label == 'Rental'
+        ? CRMColors.rentAccent
+        : CRMColors.terracotta;
     return GestureDetector(
       onTap: () {
         setState(() {
           _activeTab = label;
           _propertyPage = 1;
-          _chartFilterLabel = null;
         });
       },
       child: AnimatedContainer(
         duration: CRMMotion.tabSwitch,
         curve: CRMMotion.emphasized,
-        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.l),
+        padding: const EdgeInsets.symmetric(
+          horizontal: CRMSpacing.m,
+          vertical: 6,
+        ),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          gradient: isSelected
-              ? LinearGradient(
-                  colors: CRMColors.atmosphereGradient(label == 'Rental'),
-                )
-              : null,
-          color: isSelected ? null : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.35),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : null,
+          color: isSelected ? selectedFill : Colors.transparent,
+          borderRadius: BorderRadius.circular(CRMBorderRadius.button - 1),
         ),
         child: Text(
           label == 'Rental' ? 'Rent' : label,
-          style: TextStyle(
-            fontSize: 14,
+          style: CRMTypography.captionBold.copyWith(
+            fontSize: 12,
             color: isSelected
-                ? (label == 'Re-Sale' && CRMColors.isDark ? const Color(0xFF111827) : Colors.white)
+                ? CRMColors.onAtmosphereAccent(label == 'Rental')
                 : CRMColors.textSecondaryOf(context),
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
     );
   }
 
-
-
-  Widget _buildRecentProperties(List<RecentProperty> dashboardRecentProperties) {
+  Widget _buildRecentProperties(
+    List<RecentProperty> dashboardRecentProperties,
+  ) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 600;
 
     // Collect display items from dashboardRecentProperties directly
-    final List<_DisplayProperty> displayItems = dashboardRecentProperties.map((p) {
+    final List<_DisplayProperty> displayItems = dashboardRecentProperties.map((
+      p,
+    ) {
       DateTime parsedDate = DateTime.now();
       if (p.createdAt.isNotEmpty) {
         parsedDate = DateTime.tryParse(p.createdAt) ?? DateTime.now();
@@ -755,7 +967,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       tabFiltered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     }
 
-    final hasActiveFilter = _selectedAreaFilters.isNotEmpty || _priceSortOrder != 'none';
+    final hasActiveFilter =
+        _selectedAreaFilters.isNotEmpty || _priceSortOrder != 'none';
 
     // 4. Pagination
     final totalCount = tabFiltered.length;
@@ -772,135 +985,153 @@ class _DashboardScreenState extends State<DashboardScreen>
     return AnimatedContainer(
       duration: CRMMotion.atmosphere,
       child: CRMCard(
-      elevated: true,
-      accentBorder: _atmosphere.withValues(alpha: 0.28),
-      title: 'Recent Properties',
-      subtitle: _isRent
-          ? 'Latest rental inventory matching your desk — act without leaving the dashboard'
-          : 'Latest re-sale inventory matching your desk — act without leaving the dashboard',
-      headerAction: OutlinedButton.icon(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: hasActiveFilter ? _atmosphere : CRMColors.textSecondaryOf(context),
-          side: BorderSide(
-            color: hasActiveFilter ? _atmosphere : CRMColors.borderOf(context),
+        elevated: true,
+        accentBorder: _atmosphere.withValues(alpha: 0.28),
+        title: 'Recent Properties',
+        headerAction: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: hasActiveFilter
+                ? _atmosphere
+                : CRMColors.textSecondaryOf(context),
+            side: BorderSide(
+              color: hasActiveFilter
+                  ? _atmosphere
+                  : CRMColors.borderOf(context),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          onPressed: () => _showFilterModal(displayItems),
+          icon: Icon(
+            Icons.tune_rounded,
+            size: 16,
+            color: hasActiveFilter
+                ? _atmosphere
+                : CRMColors.textSecondaryOf(context),
+          ),
+          label: Text(
+            hasActiveFilter
+                ? 'Filter (${_selectedAreaFilters.length + (_priceSortOrder != 'none' ? 1 : 0)})'
+                : 'Filter',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: hasActiveFilter ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
         ),
-        onPressed: () => _showFilterModal(displayItems),
-        icon: Icon(
-          Icons.tune_rounded,
-          size: 16,
-          color: hasActiveFilter ? _atmosphere : CRMColors.textSecondaryOf(context),
-        ),
-        label: Text(
-          hasActiveFilter ? 'Filter (${_selectedAreaFilters.length + (_priceSortOrder != 'none' ? 1 : 0)})' : 'Filter',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: hasActiveFilter ? FontWeight.bold : FontWeight.normal,
+        child: Padding(
+          padding: const EdgeInsets.only(top: CRMSpacing.s),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Display Active Filter Chips if any
+              if (hasActiveFilter) ...[
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    if (_priceSortOrder != 'none')
+                      Chip(
+                        label: Text(
+                          _priceSortOrder == 'high_to_low'
+                              ? 'Price: High to Low'
+                              : 'Price: Low to High',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        onDeleted: () {
+                          setState(() {
+                            _priceSortOrder = 'none';
+                            _propertyPage = 1;
+                          });
+                        },
+                        deleteIcon: const Icon(Icons.cancel_rounded, size: 14),
+                      ),
+                    ..._selectedAreaFilters.map((area) {
+                      return Chip(
+                        label: Text(area, style: const TextStyle(fontSize: 11)),
+                        onDeleted: () {
+                          setState(() {
+                            _selectedAreaFilters.remove(area);
+                            _propertyPage = 1;
+                          });
+                        },
+                        deleteIcon: const Icon(Icons.cancel_rounded, size: 14),
+                      );
+                    }),
+                  ],
+                ),
+                const SizedBox(height: CRMSpacing.s),
+              ],
+
+              // Table Content (Code and Status columns removed!)
+              tabFiltered.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Text(
+                          'No properties found matching criteria.',
+                          style: TextStyle(
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: pageItems
+                          .map((p) => _buildRecentPropertyCard(p))
+                          .toList(),
+                    ),
+
+              // Pagination Controls for Recent Properties
+              if (totalPages > 1) ...[
+                const SizedBox(height: CRMSpacing.m),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Page $currentPage of $totalPages ($totalCount listings)',
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.chevron_left_rounded,
+                            size: 20,
+                          ),
+                          onPressed: currentPage > 1
+                              ? () => setState(() => _propertyPage--)
+                              : null,
+                          tooltip: 'Previous Page',
+                        ),
+                        Text(
+                          '$currentPage / $totalPages',
+                          style: CRMTypography.captionBold.copyWith(
+                            color: CRMColors.textOf(context),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                          ),
+                          onPressed: currentPage < totalPages
+                              ? () => setState(() => _propertyPage++)
+                              : null,
+                          tooltip: 'Next Page',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ],
           ),
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.only(top: CRMSpacing.s),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-
-            // Display Active Filter Chips if any
-            if (hasActiveFilter) ...[
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  if (_priceSortOrder != 'none')
-                    Chip(
-                      label: Text(
-                        _priceSortOrder == 'high_to_low' ? 'Price: High to Low' : 'Price: Low to High',
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      onDeleted: () {
-                        setState(() {
-                          _priceSortOrder = 'none';
-                          _propertyPage = 1;
-                        });
-                      },
-                      deleteIcon: const Icon(Icons.cancel_rounded, size: 14),
-                    ),
-                  ..._selectedAreaFilters.map((area) {
-                    return Chip(
-                      label: Text(area, style: const TextStyle(fontSize: 11)),
-                      onDeleted: () {
-                        setState(() {
-                          _selectedAreaFilters.remove(area);
-                          _propertyPage = 1;
-                        });
-                      },
-                      deleteIcon: const Icon(Icons.cancel_rounded, size: 14),
-                    );
-                  }),
-                ],
-              ),
-              const SizedBox(height: CRMSpacing.s),
-            ],
-
-            // Table Content (Code and Status columns removed!)
-            tabFiltered.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 24),
-                      child: Text(
-                        'No properties found matching criteria.',
-                        style: TextStyle(color: CRMColors.textSecondaryOf(context)),
-                      ),
-                    ),
-                  )
-                : Column(
-                    children: pageItems.map((p) => _buildRecentPropertyCard(p)).toList(),
-                  ),
-
-            // Pagination Controls for Recent Properties
-            if (totalPages > 1) ...[
-              const SizedBox(height: CRMSpacing.m),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Page $currentPage of $totalPages ($totalCount listings)',
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                  ),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                        onPressed: currentPage > 1
-                            ? () => setState(() => _propertyPage--)
-                            : null,
-                        tooltip: 'Previous Page',
-                      ),
-                      Text(
-                        '$currentPage / $totalPages',
-                        style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.chevron_right_rounded, size: 20),
-                        onPressed: currentPage < totalPages
-                            ? () => setState(() => _propertyPage++)
-                            : null,
-                        tooltip: 'Next Page',
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    ),
     );
   }
-
-
 
   void _showFilterModal(List<_DisplayProperty> allItems) {
     // Extract all distinct non-empty area names
@@ -928,7 +1159,9 @@ class _DashboardScreenState extends State<DashboardScreen>
             builder: (context, setModalState) {
               final filteredAreas = distinctAreas.where((area) {
                 if (locationSearchQuery.isEmpty) return true;
-                return area.toLowerCase().contains(locationSearchQuery.toLowerCase());
+                return area.toLowerCase().contains(
+                  locationSearchQuery.toLowerCase(),
+                );
               }).toList();
 
               return SafeArea(
@@ -936,7 +1169,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                 child: Container(
                   decoration: BoxDecoration(
                     color: CRMColors.cardBgOf(context),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(CRMBorderRadius.l)),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(CRMBorderRadius.l),
+                    ),
                   ),
                   padding: EdgeInsets.only(
                     left: CRMSpacing.m,
@@ -964,7 +1199,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                         children: [
                           Text(
                             'Filter Recent Properties',
-                            style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
+                            style: CRMTypography.sectionTitle.copyWith(
+                              color: CRMColors.textOf(context),
+                            ),
                           ),
                           IconButton(
                             icon: const Icon(Icons.close_rounded),
@@ -976,7 +1213,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                       Flexible(
                         child: ConstrainedBox(
                           constraints: BoxConstraints(
-                            maxHeight: MediaQuery.of(context).size.height * 0.45,
+                            maxHeight:
+                                MediaQuery.of(context).size.height * 0.45,
                           ),
                           child: SingleChildScrollView(
                             child: Column(
@@ -991,12 +1229,15 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 ),
                                 const SizedBox(height: 4),
                                 RadioListTile<String>(
-                                  title: const Text('Default Order (Newest First)'),
+                                  title: const Text(
+                                    'Default Order (Newest First)',
+                                  ),
                                   value: 'none',
                                   groupValue: tempPriceSort,
                                   dense: true,
                                   activeColor: CRMColors.primary,
-                                  onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                                  onChanged: (val) =>
+                                      setModalState(() => tempPriceSort = val!),
                                 ),
                                 RadioListTile<String>(
                                   title: const Text('Price: High to Low'),
@@ -1004,7 +1245,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   groupValue: tempPriceSort,
                                   dense: true,
                                   activeColor: CRMColors.primary,
-                                  onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                                  onChanged: (val) =>
+                                      setModalState(() => tempPriceSort = val!),
                                 ),
                                 RadioListTile<String>(
                                   title: const Text('Price: Low to High'),
@@ -1012,7 +1254,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   groupValue: tempPriceSort,
                                   dense: true,
                                   activeColor: CRMColors.primary,
-                                  onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                                  onChanged: (val) =>
+                                      setModalState(() => tempPriceSort = val!),
                                 ),
                                 const Divider(height: 24),
                                 Text(
@@ -1024,20 +1267,38 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 ),
                                 const SizedBox(height: 8),
                                 TextField(
-                                  style: TextStyle(color: CRMColors.textOf(context)),
+                                  style: TextStyle(
+                                    color: CRMColors.textOf(context),
+                                  ),
                                   decoration: InputDecoration(
                                     hintText: 'Search locations / areas...',
-                                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                                    prefixIcon: const Icon(
+                                      Icons.search_rounded,
+                                      size: 18,
+                                    ),
                                     filled: true,
                                     fillColor: CRMColors.backgroundOf(context),
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                                      borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                                      borderRadius: BorderRadius.circular(
+                                        CRMBorderRadius.s,
+                                      ),
+                                      borderSide: BorderSide(
+                                        color: CRMColors.borderOf(context),
+                                      ),
                                     ),
                                     enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                                      borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                                      borderRadius: BorderRadius.circular(
+                                        CRMBorderRadius.s,
+                                      ),
+                                      borderSide: BorderSide(
+                                        color: CRMColors.borderOf(
+                                          context,
+                                        ).withOpacity(0.5),
+                                      ),
                                     ),
                                   ),
                                   onChanged: (val) {
@@ -1049,17 +1310,28 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 const SizedBox(height: 8),
                                 if (filteredAreas.isEmpty)
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                    ),
                                     child: Text(
-                                      distinctAreas.isEmpty ? 'No area options available.' : 'No matching locations found.',
-                                      style: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                                      distinctAreas.isEmpty
+                                          ? 'No area options available.'
+                                          : 'No matching locations found.',
+                                      style: TextStyle(
+                                        color: CRMColors.textSecondaryOf(
+                                          context,
+                                        ),
+                                      ),
                                     ),
                                   )
                                 else
                                   ...filteredAreas.map((area) {
                                     final isChecked = tempAreas.contains(area);
                                     return CheckboxListTile(
-                                      title: Text(area, style: const TextStyle(fontSize: 14)),
+                                      title: Text(
+                                        area,
+                                        style: const TextStyle(fontSize: 14),
+                                      ),
                                       value: isChecked,
                                       dense: true,
                                       activeColor: CRMColors.primary,
@@ -1126,14 +1398,18 @@ class _DashboardScreenState extends State<DashboardScreen>
             builder: (context, setModalState) {
               final filteredAreas = distinctAreas.where((area) {
                 if (locationSearchQuery.isEmpty) return true;
-                return area.toLowerCase().contains(locationSearchQuery.toLowerCase());
+                return area.toLowerCase().contains(
+                  locationSearchQuery.toLowerCase(),
+                );
               }).toList();
 
               return AlertDialog(
                 backgroundColor: CRMColors.cardBgOf(context),
                 title: Text(
                   'Filter Recent Properties',
-                  style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
+                  style: CRMTypography.sectionTitle.copyWith(
+                    color: CRMColors.textOf(context),
+                  ),
                 ),
                 content: SizedBox(
                   width: 400,
@@ -1156,7 +1432,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                           groupValue: tempPriceSort,
                           dense: true,
                           activeColor: CRMColors.primary,
-                          onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                          onChanged: (val) =>
+                              setModalState(() => tempPriceSort = val!),
                         ),
                         RadioListTile<String>(
                           title: const Text('Price: High to Low'),
@@ -1164,7 +1441,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                           groupValue: tempPriceSort,
                           dense: true,
                           activeColor: CRMColors.primary,
-                          onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                          onChanged: (val) =>
+                              setModalState(() => tempPriceSort = val!),
                         ),
                         RadioListTile<String>(
                           title: const Text('Price: Low to High'),
@@ -1172,7 +1450,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                           groupValue: tempPriceSort,
                           dense: true,
                           activeColor: CRMColors.primary,
-                          onChanged: (val) => setModalState(() => tempPriceSort = val!),
+                          onChanged: (val) =>
+                              setModalState(() => tempPriceSort = val!),
                         ),
                         const Divider(height: 24),
                         Text(
@@ -1187,17 +1466,33 @@ class _DashboardScreenState extends State<DashboardScreen>
                           style: TextStyle(color: CRMColors.textOf(context)),
                           decoration: InputDecoration(
                             hintText: 'Search locations / areas...',
-                            prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                            prefixIcon: const Icon(
+                              Icons.search_rounded,
+                              size: 18,
+                            ),
                             filled: true,
                             fillColor: CRMColors.backgroundOf(context),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                              borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                              borderRadius: BorderRadius.circular(
+                                CRMBorderRadius.s,
+                              ),
+                              borderSide: BorderSide(
+                                color: CRMColors.borderOf(context),
+                              ),
                             ),
                             enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                              borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                              borderRadius: BorderRadius.circular(
+                                CRMBorderRadius.s,
+                              ),
+                              borderSide: BorderSide(
+                                color: CRMColors.borderOf(
+                                  context,
+                                ).withOpacity(0.5),
+                              ),
                             ),
                           ),
                           onChanged: (val) {
@@ -1211,15 +1506,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             child: Text(
-                              distinctAreas.isEmpty ? 'No area options available.' : 'No matching locations found.',
-                              style: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                              distinctAreas.isEmpty
+                                  ? 'No area options available.'
+                                  : 'No matching locations found.',
+                              style: TextStyle(
+                                color: CRMColors.textSecondaryOf(context),
+                              ),
                             ),
                           )
                         else
                           ...filteredAreas.map((area) {
                             final isChecked = tempAreas.contains(area);
                             return CheckboxListTile(
-                              title: Text(area, style: const TextStyle(fontSize: 14)),
+                              title: Text(
+                                area,
+                                style: const TextStyle(fontSize: 14),
+                              ),
                               value: isChecked,
                               dense: true,
                               activeColor: CRMColors.primary,
@@ -1278,8 +1580,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-
-
   Widget _buildRecentPropertyCard(_DisplayProperty p) {
     return FutureBuilder<PropertyModel?>(
       future: _propertyDetailFuture(p.id),
@@ -1312,188 +1612,202 @@ class _DashboardScreenState extends State<DashboardScreen>
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-                onTap: () => _openPropertyDetails(p.id),
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      // Image on the left
-                      Stack(
-                        children: [
-                          GestureDetector(
-                            onTap: hasImage
-                                ? () => _showFullImageDialog(context, firstImage)
-                                : null,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: SizedBox(
-                                width: 110,
-                                height: 85,
-                                child: hasImage
-                                    ? _buildPropertyThumbnail(firstImage)
-                                    : Container(
-                                        color: _atmosphere.withValues(alpha: 0.12),
-                                        child: Icon(
-                                          (fullProperty != null && fullProperty.videos.isNotEmpty)
-                                              ? Icons.play_circle_outline_rounded
-                                              : Icons.apartment_rounded,
-                                          color: _atmosphere,
-                                          size: 32,
-                                        ),
+              onTap: () => _openPropertyDetails(p.id),
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    // Image on the left
+                    Stack(
+                      children: [
+                        GestureDetector(
+                          onTap: hasImage
+                              ? () => _showFullImageDialog(context, firstImage)
+                              : null,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: SizedBox(
+                              width: 110,
+                              height: 85,
+                              child: hasImage
+                                  ? _buildPropertyThumbnail(firstImage)
+                                  : Container(
+                                      color: _atmosphere.withValues(
+                                        alpha: 0.12,
                                       ),
+                                      child: Icon(
+                                        (fullProperty != null &&
+                                                fullProperty.videos.isNotEmpty)
+                                            ? Icons.play_circle_outline_rounded
+                                            : Icons.apartment_rounded,
+                                        color: _atmosphere,
+                                        size: 32,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                        if (hasImage &&
+                            fullProperty != null &&
+                            fullProperty.videos.isNotEmpty)
+                          Positioned(
+                            right: 6,
+                            bottom: 6,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.6),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white30,
+                                  width: 1,
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.play_arrow_rounded,
+                                color: Colors.redAccent,
+                                size: 14,
                               ),
                             ),
                           ),
-                          if (hasImage && fullProperty != null && fullProperty.videos.isNotEmpty)
-                            Positioned(
-                              right: 6,
-                              bottom: 6,
-                              child: Container(
-                                padding: const EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.6),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white30,
-                                    width: 1,
-                                  ),
+                        if (hasStatus)
+                          Positioned(
+                            top: 6,
+                            left: 6,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: Colors.white24,
+                                  width: 1,
                                 ),
-                                child: const Icon(
-                                  Icons.play_arrow_rounded,
-                                  color: Colors.redAccent,
-                                  size: 14,
+                              ),
+                              child: Text(
+                                displayStatus.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
                                 ),
                               ),
                             ),
-                          if (hasStatus)
-                            Positioned(
-                              top: 6,
-                              left: 6,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.6),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: Colors.white24,
-                                    width: 1,
-                                  ),
-                                ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    // Details on the right
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            p.title,
+                            style: CRMTypography.cardTitle.copyWith(
+                              color: CRMColors.textOf(context),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.location_on_outlined,
+                                size: 14,
+                                color: CRMColors.textSecondaryOf(context),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
                                 child: Text(
-                                  displayStatus.toUpperCase(),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
+                                  p.areaName,
+                                  style: CRMTypography.bodyMedium.copyWith(
+                                    color: CRMColors.textSecondaryOf(context),
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(width: 16),
-                      // Details on the right
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              p.title,
-                              style: CRMTypography.cardTitle.copyWith(
-                                color: CRMColors.textOf(context),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.location_on_outlined,
-                                  size: 14,
-                                  color: CRMColors.textSecondaryOf(context),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                CRMCurrencyFormatter.formatShort(p.price),
+                                style: CRMTypography.body.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: _atmosphere,
+                                  fontSize: 14,
                                 ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    p.areaName,
-                                    style: CRMTypography.bodyMedium.copyWith(
+                              ),
+                              if (snapshot.connectionState ==
+                                      ConnectionState.done &&
+                                  fullProperty != null)
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.bed_outlined,
+                                      size: 15,
                                       color: CRMColors.textSecondaryOf(context),
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  CRMCurrencyFormatter.formatShort(p.price),
-                                  style: CRMTypography.body.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: _atmosphere,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                if (snapshot.connectionState == ConnectionState.done && fullProperty != null)
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.bed_outlined,
-                                        size: 15,
-                                        color: CRMColors.textSecondaryOf(context),
-                                      ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        '$bedCount',
-                                        style: CRMTypography.caption.copyWith(
-                                          color: CRMColors.textSecondaryOf(context),
-                                          fontWeight: FontWeight.bold,
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '$bedCount',
+                                      style: CRMTypography.caption.copyWith(
+                                        color: CRMColors.textSecondaryOf(
+                                          context,
                                         ),
+                                        fontWeight: FontWeight.bold,
                                       ),
-                                      const SizedBox(width: 8),
-                                      Icon(
-                                        Icons.bathroom_outlined,
-                                        size: 15,
-                                        color: CRMColors.textSecondaryOf(context),
-                                      ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        '$bathCount',
-                                        style: CRMTypography.caption.copyWith(
-                                          color: CRMColors.textSecondaryOf(context),
-                                          fontWeight: FontWeight.bold,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      Icons.bathroom_outlined,
+                                      size: 15,
+                                      color: CRMColors.textSecondaryOf(context),
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '$bathCount',
+                                      style: CRMTypography.caption.copyWith(
+                                        color: CRMColors.textSecondaryOf(
+                                          context,
                                         ),
+                                        fontWeight: FontWeight.bold,
                                       ),
-                                    ],
-                                  )
-                                else if (snapshot.connectionState == ConnectionState.waiting)
-                                  const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(strokeWidth: 1.5),
-                                  )
-                                else
-                                  const SizedBox(),
-                              ],
-                            ),
-                          ],
-                        ),
+                                    ),
+                                  ],
+                                )
+                              else if (snapshot.connectionState ==
+                                  ConnectionState.waiting)
+                                const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.5,
+                                  ),
+                                )
+                              else
+                                const SizedBox(),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
+            ),
           ),
         );
       },
@@ -1561,11 +1875,17 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     // Self-clean optimistic added checklist items: remove when an item with the same title is in the source list
     _optimisticAddedChecklistItems.removeWhere((addedItem) {
-      return items.any((x) => x.title.trim().toLowerCase() == addedItem.title.trim().toLowerCase());
+      return items.any(
+        (x) =>
+            x.title.trim().toLowerCase() ==
+            addedItem.title.trim().toLowerCase(),
+      );
     });
 
     final allItems = [...items, ..._optimisticAddedChecklistItems];
-    final activeItems = allItems.where((item) => !_optimisticDeletedChecklistIds.contains(item.id)).toList();
+    final activeItems = allItems
+        .where((item) => !_optimisticDeletedChecklistIds.contains(item.id))
+        .toList();
 
     final totalCount = activeItems.length;
     final totalPages = (totalCount / _notesPerPage).ceil();
@@ -1581,8 +1901,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     return CRMCard(
       elevated: true,
       accentBorder: CRMColors.primaryOf(context).withValues(alpha: 0.22),
-      title: "Today's Focus",
-      subtitle: 'Notes that need attention before you leave the desk',
+      title: 'Notes',
       headerAction: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1599,7 +1918,11 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
           IconButton(
-            icon: Icon(Icons.add_circle_outline_rounded, color: CRMColors.primary, size: 20),
+            icon: Icon(
+              Icons.add_circle_outline_rounded,
+              color: CRMColors.primary,
+              size: 20,
+            ),
             onPressed: _isChecklistLoading ? null : _showAddChecklistDialog,
             tooltip: 'Add Task',
           ),
@@ -1611,7 +1934,10 @@ class _DashboardScreenState extends State<DashboardScreen>
             ? Center(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: Text('No tasks for today.', style: TextStyle(color: CRMColors.textSecondaryOf(context))),
+                  child: Text(
+                    'No tasks for today.',
+                    style: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                  ),
                 ),
               )
             : Column(
@@ -1625,12 +1951,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                       children: [
                         Text(
                           'Page $currentPage of $totalPages ($totalCount notes)',
-                          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                          style: CRMTypography.caption.copyWith(
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
                         ),
                         Row(
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                              icon: const Icon(
+                                Icons.chevron_left_rounded,
+                                size: 20,
+                              ),
                               onPressed: currentPage > 1
                                   ? () => setState(() => _notePage--)
                                   : null,
@@ -1638,10 +1969,15 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                             Text(
                               '$currentPage / $totalPages',
-                              style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                              style: CRMTypography.captionBold.copyWith(
+                                color: CRMColors.textOf(context),
+                              ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.chevron_right_rounded, size: 20),
+                              icon: const Icon(
+                                Icons.chevron_right_rounded,
+                                size: 20,
+                              ),
                               onPressed: currentPage < totalPages
                                   ? () => setState(() => _notePage++)
                                   : null,
@@ -1658,7 +1994,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Future<void> _updateLocalChecklistState(String itemId, bool isCompleted) async {}
+  Future<void> _updateLocalChecklistState(
+    String itemId,
+    bool isCompleted,
+  ) async {}
 
   Future<void> _deleteLocalChecklistItem(String itemId) async {}
 
@@ -1669,7 +2008,10 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     return Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.s),
-      padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
+      padding: const EdgeInsets.symmetric(
+        horizontal: CRMSpacing.m,
+        vertical: CRMSpacing.xs,
+      ),
       decoration: BoxDecoration(
         color: CRMColors.backgroundOf(context).withOpacity(0.4),
         borderRadius: BorderRadius.circular(CRMBorderRadius.s),
@@ -1691,9 +2033,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                       if (!item.id.startsWith('temp_')) {
                         try {
                           await _updateLocalChecklistState(item.id, val);
-                          await DioClient.dio.patch('/checklist/${item.id}/toggle', data: {'is_completed': val});
+                          await DioClient.dio.patch(
+                            '/checklist/${item.id}/toggle',
+                            data: {'is_completed': val},
+                          );
                           if (mounted) {
-                            context.read<DashboardBloc>().add(RefreshDashboard());
+                            context.read<DashboardBloc>().add(
+                              RefreshDashboard(),
+                            );
                           }
                         } catch (_) {
                           if (mounted) {
@@ -1731,7 +2078,9 @@ class _DashboardScreenState extends State<DashboardScreen>
           IconButton(
             icon: Icon(
               Icons.delete_outline_rounded,
-              color: _isChecklistLoading ? CRMColors.textSecondaryOf(context) : CRMColors.danger,
+              color: _isChecklistLoading
+                  ? CRMColors.textSecondaryOf(context)
+                  : CRMColors.danger,
               size: 18,
             ),
             onPressed: _isChecklistLoading
@@ -1740,7 +2089,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                     final itemId = item.id;
                     setState(() {
                       _optimisticDeletedChecklistIds.add(itemId);
-                      _optimisticAddedChecklistItems.removeWhere((x) => x.id == itemId);
+                      _optimisticAddedChecklistItems.removeWhere(
+                        (x) => x.id == itemId,
+                      );
                       _isChecklistLoading = true;
                     });
                     if (!itemId.startsWith('temp_')) {
@@ -1801,7 +2152,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         } catch (_) {
           if (mounted) {
             setState(() {
-              _optimisticAddedChecklistItems.removeWhere((x) => x.id == tempItem.id);
+              _optimisticAddedChecklistItems.removeWhere(
+                (x) => x.id == tempItem.id,
+              );
             });
           }
         } finally {
@@ -1821,7 +2174,12 @@ class _DashboardScreenState extends State<DashboardScreen>
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: CRMColors.cardBgOf(context),
-          title: Text('Add New Task', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+          title: Text(
+            'Add New Task',
+            style: CRMTypography.sectionTitle.copyWith(
+              color: CRMColors.textOf(context),
+            ),
+          ),
           content: TextField(
             controller: controller,
             textInputAction: TextInputAction.done,
@@ -1829,7 +2187,9 @@ class _DashboardScreenState extends State<DashboardScreen>
               hintText: 'Task Title',
               filled: true,
               fillColor: CRMColors.backgroundOf(context),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+              ),
             ),
             autofocus: true,
             onSubmitted: (val) => saveTask(val, ctx),
@@ -1849,14 +2209,20 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildBigFollowupTabSwitcher(int activeFollowups, int activeSiteVisits) {
+  Widget _buildBigFollowupTabSwitcher(
+    int activeFollowups,
+    int activeSiteVisits,
+  ) {
     return Container(
       height: 48,
       padding: const EdgeInsets.all(CRMSpacing.xxs),
       decoration: BoxDecoration(
         color: CRMColors.backgroundOf(context),
         borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-        border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 0.5),
+        border: Border.all(
+          color: CRMColors.borderOf(context).withOpacity(0.6),
+          width: 0.5,
+        ),
       ),
       child: Row(
         children: [
@@ -1883,17 +2249,24 @@ class _DashboardScreenState extends State<DashboardScreen>
         duration: CRMMotion.tabSwitch,
         curve: CRMMotion.easeOut,
         decoration: BoxDecoration(
-          color: isSelected ? CRMColors.primary.withOpacity(0.14) : Colors.transparent,
+          color: isSelected
+              ? CRMColors.primary.withOpacity(0.14)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(CRMBorderRadius.xs),
           border: isSelected
-              ? Border.all(color: CRMColors.primary.withOpacity(0.3), width: 0.5)
+              ? Border.all(
+                  color: CRMColors.primary.withOpacity(0.3),
+                  width: 0.5,
+                )
               : null,
         ),
         alignment: Alignment.center,
         child: Text(
           '$label ($count)',
           style: CRMTypography.bodyMedium.copyWith(
-            color: isSelected ? CRMColors.primary : CRMColors.textSecondaryOf(context),
+            color: isSelected
+                ? CRMColors.primary
+                : CRMColors.textSecondaryOf(context),
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
           ),
         ),
@@ -1901,7 +2274,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildDashboardSubTabPill(String label, String tabKey, int count, IconData icon, Color color) {
+  Widget _buildDashboardSubTabPill(
+    String label,
+    String tabKey,
+    int count,
+    IconData icon,
+    Color color,
+  ) {
     final bool isSelected = _dashboardFollowupSubTab == tabKey;
     return InkWell(
       onTap: () {
@@ -1915,17 +2294,25 @@ class _DashboardScreenState extends State<DashboardScreen>
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.12) : Colors.transparent,
+          color: isSelected
+              ? color.withValues(alpha: 0.12)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? color : CRMColors.borderOf(context).withValues(alpha: 0.5),
+            color: isSelected
+                ? color
+                : CRMColors.borderOf(context).withValues(alpha: 0.5),
             width: isSelected ? 1.5 : 1.0,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: isSelected ? color : CRMColors.textSecondaryOf(context)),
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected ? color : CRMColors.textSecondaryOf(context),
+            ),
             const SizedBox(width: 5),
             Text(
               label,
@@ -1957,7 +2344,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildFollowups(List<DashboardFollowup> followups, List<DashboardSiteVisit> siteVisits) {
+  Widget _buildFollowups(
+    List<DashboardFollowup> followups,
+    List<DashboardSiteVisit> siteVisits,
+  ) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
@@ -1969,7 +2359,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (existing == null) {
         latestDashFollowupsMap[key] = f;
       } else {
-        final dtExisting = DateTime.tryParse(existing.followupDate) ?? DateTime(1970);
+        final dtExisting =
+            DateTime.tryParse(existing.followupDate) ?? DateTime(1970);
         final dtCurrent = DateTime.tryParse(f.followupDate) ?? DateTime(1970);
         if (dtCurrent.isAfter(dtExisting)) {
           latestDashFollowupsMap[key] = f;
@@ -1980,9 +2371,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     final activeFollowups = latestDashFollowupsMap.values.where((f) {
       final statusLower = f.status.toLowerCase();
       return statusLower != 'completed' &&
-             statusLower != 'resolved' &&
-             statusLower != 'closed' &&
-             statusLower != 'done';
+          statusLower != 'resolved' &&
+          statusLower != 'closed' &&
+          statusLower != 'done';
     }).toList();
 
     final todayFollowups = <DashboardFollowup>[];
@@ -2002,13 +2393,28 @@ class _DashboardScreenState extends State<DashboardScreen>
       }
     }
 
-    todayFollowups.sort((a, b) => (DateTime.tryParse(b.followupDate) ?? DateTime(0)).compareTo(DateTime.tryParse(a.followupDate) ?? DateTime(0)));
-    dueFollowups.sort((a, b) => (DateTime.tryParse(b.followupDate) ?? DateTime(0)).compareTo(DateTime.tryParse(a.followupDate) ?? DateTime(0)));
-    futureFollowups.sort((a, b) => (DateTime.tryParse(b.followupDate) ?? DateTime(0)).compareTo(DateTime.tryParse(a.followupDate) ?? DateTime(0)));
+    todayFollowups.sort(
+      (a, b) => (DateTime.tryParse(b.followupDate) ?? DateTime(0)).compareTo(
+        DateTime.tryParse(a.followupDate) ?? DateTime(0),
+      ),
+    );
+    dueFollowups.sort(
+      (a, b) => (DateTime.tryParse(b.followupDate) ?? DateTime(0)).compareTo(
+        DateTime.tryParse(a.followupDate) ?? DateTime(0),
+      ),
+    );
+    futureFollowups.sort(
+      (a, b) => (DateTime.tryParse(b.followupDate) ?? DateTime(0)).compareTo(
+        DateTime.tryParse(a.followupDate) ?? DateTime(0),
+      ),
+    );
 
     final filteredSiteVisits = siteVisits.where((sv) {
       final statusLower = sv.status.toLowerCase();
-      if (statusLower == 'completed' || statusLower == 'resolved' || statusLower == 'closed' || statusLower == 'done') {
+      if (statusLower == 'completed' ||
+          statusLower == 'resolved' ||
+          statusLower == 'closed' ||
+          statusLower == 'done') {
         return false;
       }
       final parsed = DateTime.tryParse(sv.visitDate);
@@ -2019,8 +2425,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     }).toList();
 
     filteredSiteVisits.sort((a, b) {
-      final dateA = DateTime.tryParse(a.visitDate) ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final dateB = DateTime.tryParse(b.visitDate) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final dateA =
+          DateTime.tryParse(a.visitDate) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final dateB =
+          DateTime.tryParse(b.visitDate) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
       return dateB.compareTo(dateA);
     });
 
@@ -2035,7 +2445,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       targetFollowups = todayFollowups;
     }
 
-    final totalCount = isSiteVisitsTab ? filteredSiteVisits.length : targetFollowups.length;
+    final totalCount = isSiteVisitsTab
+        ? filteredSiteVisits.length
+        : targetFollowups.length;
     final totalPages = (totalCount / _followupsPerPage).ceil();
     final currentPage = _followupPage.clamp(1, totalPages > 0 ? totalPages : 1);
 
@@ -2044,8 +2456,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     final pageItems = (startIndex < totalCount)
         ? (isSiteVisitsTab
-            ? filteredSiteVisits.sublist(startIndex, endIndex)
-            : targetFollowups.sublist(startIndex, endIndex))
+              ? filteredSiteVisits.sublist(startIndex, endIndex)
+              : targetFollowups.sublist(startIndex, endIndex))
         : [];
 
     final dateStr = DateFormat('dd/MM/yyyy').format(_selectedFollowupDate);
@@ -2060,7 +2472,11 @@ class _DashboardScreenState extends State<DashboardScreen>
           style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
         ),
         IconButton(
-          icon: Icon(Icons.calendar_today_rounded, color: CRMColors.primary, size: 18),
+          icon: Icon(
+            Icons.calendar_today_rounded,
+            color: CRMColors.primary,
+            size: 18,
+          ),
           onPressed: () async {
             final picked = await showDatePicker(
               context: context,
@@ -2077,6 +2493,17 @@ class _DashboardScreenState extends State<DashboardScreen>
           },
           tooltip: 'Filter by Date',
         ),
+        IconButton(
+          icon: Icon(
+            Icons.open_in_new_rounded,
+            color: CRMColors.primary,
+            size: 18,
+          ),
+          onPressed: () => context.go(
+            '/requirements?tab=Follow-ups&subTab=$_dashboardFollowupSubTab',
+          ),
+          tooltip: 'Open in Leads',
+        ),
       ],
     );
 
@@ -2090,87 +2517,119 @@ class _DashboardScreenState extends State<DashboardScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildBigFollowupTabSwitcher(activeFollowups.length, filteredSiteVisits.length),
+            _buildBigFollowupTabSwitcher(
+              activeFollowups.length,
+              filteredSiteVisits.length,
+            ),
             const SizedBox(height: CRMSpacing.m),
             if (!isSiteVisitsTab) ...[
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    _buildDashboardSubTabPill("Today's Follow-ups", "Today", todayFollowups.length, Icons.today_rounded, CRMColors.success),
+                    _buildDashboardSubTabPill(
+                      "Today's Follow-ups",
+                      "Today",
+                      todayFollowups.length,
+                      Icons.today_rounded,
+                      CRMColors.success,
+                    ),
                     const SizedBox(width: CRMSpacing.s),
-                    _buildDashboardSubTabPill("Due Follow-ups", "Due", dueFollowups.length, Icons.warning_amber_rounded, CRMColors.warning),
+                    _buildDashboardSubTabPill(
+                      "Due Follow-ups",
+                      "Due",
+                      dueFollowups.length,
+                      Icons.warning_amber_rounded,
+                      CRMColors.warning,
+                    ),
                     const SizedBox(width: CRMSpacing.s),
-                    _buildDashboardSubTabPill("Future Follow-ups", "Future", futureFollowups.length, Icons.next_plan_rounded, CRMColors.info),
+                    _buildDashboardSubTabPill(
+                      "Future Follow-ups",
+                      "Future",
+                      futureFollowups.length,
+                      Icons.next_plan_rounded,
+                      CRMColors.info,
+                    ),
                   ],
                 ),
               ),
               const SizedBox(height: CRMSpacing.m),
             ],
             if (isMobile) ...[
-              Align(
-                alignment: Alignment.centerRight,
-                child: dateSelection,
-              ),
+              Align(alignment: Alignment.centerRight, child: dateSelection),
               const SizedBox(height: CRMSpacing.s),
             ],
-                pageItems.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                          child: Text(
-                            isSiteVisitsTab
-                                ? 'No scheduled site visits for $dateStr.'
-                                : 'No ${_dashboardFollowupSubTab.toLowerCase()} follow-ups available.',
-                            style: TextStyle(color: CRMColors.textSecondaryOf(context)),
-                          ),
+            pageItems.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Text(
+                        isSiteVisitsTab
+                            ? 'No scheduled site visits for $dateStr.'
+                            : 'No ${_dashboardFollowupSubTab.toLowerCase()} follow-ups available.',
+                        style: TextStyle(
+                          color: CRMColors.textSecondaryOf(context),
                         ),
-                      )
-                    : Column(
-                        children: [
-                          ...pageItems.map((item) {
-                            if (isSiteVisitsTab) {
-                              return _buildSiteVisitTile(item as DashboardSiteVisit);
-                            } else {
-                              return _buildFollowupTile(item as DashboardFollowup);
-                            }
-                          }),
-                          if (totalPages > 1) ...[
-                            const SizedBox(height: CRMSpacing.m),
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: [
+                      ...pageItems.map((item) {
+                        if (isSiteVisitsTab) {
+                          return _buildSiteVisitTile(
+                            item as DashboardSiteVisit,
+                          );
+                        } else {
+                          return _buildFollowupTile(item as DashboardFollowup);
+                        }
+                      }),
+                      if (totalPages > 1) ...[
+                        const SizedBox(height: CRMSpacing.m),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Page $currentPage of $totalPages ($totalCount total)',
+                              style: CRMTypography.caption.copyWith(
+                                color: CRMColors.textSecondaryOf(context),
+                              ),
+                            ),
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  'Page $currentPage of $totalPages ($totalCount total)',
-                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.chevron_left_rounded,
+                                    size: 20,
+                                  ),
+                                  onPressed: currentPage > 1
+                                      ? () => setState(() => _followupPage--)
+                                      : null,
+                                  tooltip: 'Previous Page',
                                 ),
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                                      onPressed: currentPage > 1
-                                          ? () => setState(() => _followupPage--)
-                                          : null,
-                                      tooltip: 'Previous Page',
-                                    ),
-                                    Text(
-                                      '$currentPage / $totalPages',
-                                      style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.chevron_right_rounded, size: 20),
-                                      onPressed: currentPage < totalPages
-                                          ? () => setState(() => _followupPage++)
-                                          : null,
-                                      tooltip: 'Next Page',
-                                    ),
-                                  ],
+                                Text(
+                                  '$currentPage / $totalPages',
+                                  style: CRMTypography.captionBold.copyWith(
+                                    color: CRMColors.textOf(context),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 20,
+                                  ),
+                                  onPressed: currentPage < totalPages
+                                      ? () => setState(() => _followupPage++)
+                                      : null,
+                                  tooltip: 'Next Page',
                                 ),
                               ],
                             ),
                           ],
-                        ],
-                      ),
+                        ),
+                      ],
+                    ],
+                  ),
           ],
         ),
       ),
@@ -2180,12 +2639,18 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildSiteVisitTile(DashboardSiteVisit sv) {
     final date = DateTime.tryParse(sv.visitDate)?.toLocal() ?? DateTime.now();
     final hourInt = date.hour;
-    final displayHour = hourInt > 12 ? hourInt - 12 : (hourInt == 0 ? 12 : hourInt);
+    final displayHour = hourInt > 12
+        ? hourInt - 12
+        : (hourInt == 0 ? 12 : hourInt);
     final amPm = hourInt >= 12 ? 'PM' : 'AM';
-    final formattedTime = "${displayHour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $amPm";
+    final formattedTime =
+        "${displayHour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $amPm";
     final formattedDate = "${date.day}/${date.month}/${date.year}";
 
-    return Container(
+    return InkWell(
+      onTap: () => _openSiteVisit(sv),
+      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+      child: Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.s),
       padding: const EdgeInsets.all(CRMSpacing.m),
       decoration: BoxDecoration(
@@ -2197,11 +2662,15 @@ class _DashboardScreenState extends State<DashboardScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CircleAvatar(
-            backgroundColor: sv.status == 'Pending' ? CRMColors.warning.withOpacity(0.1) : CRMColors.success.withOpacity(0.1),
+            backgroundColor: sv.status == 'Pending'
+                ? CRMColors.warning.withOpacity(0.1)
+                : CRMColors.success.withOpacity(0.1),
             radius: 18,
             child: Icon(
               Icons.location_on_rounded,
-              color: sv.status == 'Pending' ? CRMColors.warning : CRMColors.success,
+              color: sv.status == 'Pending'
+                  ? CRMColors.warning
+                  : CRMColors.success,
               size: 18,
             ),
           ),
@@ -2212,39 +2681,59 @@ class _DashboardScreenState extends State<DashboardScreen>
               children: [
                 Text(
                   sv.requirementCustomerName ?? 'Client Site Visit',
-                  style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold),
+                  style: CRMTypography.bodyMedium.copyWith(
+                    color: CRMColors.textOf(context),
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 if (sv.propertyCode != null || sv.propertyTitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     'Property: ${sv.propertyCode ?? ""} - ${sv.propertyTitle ?? ""}',
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                    style: CRMTypography.caption.copyWith(
+                      color: CRMColors.textSecondaryOf(context),
+                    ),
                   ),
                 ],
                 if (sv.remarks != null && sv.remarks!.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
                     sv.remarks!,
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic),
+                    style: CRMTypography.caption.copyWith(
+                      color: CRMColors.textSecondaryOf(context),
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 6),
                 Text(
                   'Scheduled: $formattedDate at $formattedTime',
-                  style: CRMTypography.caption.copyWith(color: CRMColors.primary, fontWeight: FontWeight.w600),
+                  style: CRMTypography.caption.copyWith(
+                    color: CRMColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 if (context.read<AuthBloc>().state is Authenticated &&
-                    (context.read<AuthBloc>().state as Authenticated).user.role != 'Sales' &&
+                    (context.read<AuthBloc>().state as Authenticated)
+                            .user
+                            .role !=
+                        'Sales' &&
                     sv.creatorName != null &&
                     sv.creatorName!.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textSecondaryOf(context)),
+                      Icon(
+                        Icons.person_outline_rounded,
+                        size: 12,
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         'Assigned to: ${sv.creatorName}',
-                        style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
+                        style: CRMTypography.captionBold.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
                       ),
                     ],
                   ),
@@ -2254,7 +2743,11 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           if (sv.status == 'Pending') ...[
             IconButton(
-              icon: Icon(Icons.check_circle_outline_rounded, color: CRMColors.success, size: 20),
+              icon: Icon(
+                Icons.check_circle_outline_rounded,
+                color: CRMColors.success,
+                size: 20,
+              ),
               onPressed: () {
                 showDialog(
                   context: context,
@@ -2263,11 +2756,15 @@ class _DashboardScreenState extends State<DashboardScreen>
                       backgroundColor: CRMColors.cardBgOf(context),
                       title: Text(
                         'Site Visit Outcome',
-                        style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
+                        style: CRMTypography.sectionTitle.copyWith(
+                          color: CRMColors.textOf(context),
+                        ),
                       ),
                       content: Text(
                         'What was the outcome of this site visit?',
-                        style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+                        style: CRMTypography.body.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
                       ),
                       actions: [
                         TextButton(
@@ -2288,7 +2785,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                           variant: CRMButtonVariant.primary,
                           onPressed: () async {
                             Navigator.pop(dialogContext);
-                            await _handleSiteVisitOutcome(sv, 'Site Visit Done');
+                            await _handleSiteVisitOutcome(
+                              sv,
+                              'Site Visit Done',
+                            );
                           },
                         ),
                       ],
@@ -2301,35 +2801,47 @@ class _DashboardScreenState extends State<DashboardScreen>
           ],
         ],
       ),
+    ),
     );
   }
 
-  Future<void> _handleSiteVisitOutcome(DashboardSiteVisit sv, String outcomeStatus) async {
+  Future<void> _handleSiteVisitOutcome(
+    DashboardSiteVisit sv,
+    String outcomeStatus,
+  ) async {
     try {
       // 1. Mark the site visit as completed in the backend
-      await DioClient.dio.patch('/site-visits/${sv.id}/status', data: {'status': 'Completed'});
-      
+      await DioClient.dio.patch(
+        '/site-visits/${sv.id}/status',
+        data: {'status': 'Completed'},
+      );
+
       // 2. Automatically update the requirement status in the backend and local cache
       if (sv.requirementId != null) {
-        final localReq = await RepositoryCoordinator().requirementLocal.getRequirement(sv.requirementId!);
+        final localReq = await RepositoryCoordinator().requirementLocal
+            .getRequirement(sv.requirementId!);
         if (localReq != null) {
           final model = localReq.toModel();
-          final RequirementsRepository requirementsRepository = RequirementsRepository();
+          final RequirementsRepository requirementsRepository =
+              RequirementsRepository();
           await requirementsRepository.updateRequirement(
             model.copyWith(status: outcomeStatus),
           );
         } else {
           // Fallback: send the update request directly to backend
-          await DioClient.dio.put('/requirements/${sv.requirementId}', data: {
-            'status': outcomeStatus,
-          });
+          await DioClient.dio.put(
+            '/requirements/${sv.requirementId}',
+            data: {'status': outcomeStatus},
+          );
         }
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Site visit marked as completed. Requirement updated to $outcomeStatus.'),
+            content: Text(
+              'Site visit marked as completed. Requirement updated to $outcomeStatus.',
+            ),
             backgroundColor: CRMColors.success,
           ),
         );
@@ -2351,9 +2863,12 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildFollowupTile(DashboardFollowup f) {
     final date = DateTime.tryParse(f.followupDate)?.toLocal() ?? DateTime.now();
     final hourInt = date.hour;
-    final displayHour = hourInt > 12 ? hourInt - 12 : (hourInt == 0 ? 12 : hourInt);
+    final displayHour = hourInt > 12
+        ? hourInt - 12
+        : (hourInt == 0 ? 12 : hourInt);
     final amPm = hourInt >= 12 ? 'PM' : 'AM';
-    final formattedTime = "${displayHour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $amPm";
+    final formattedTime =
+        "${displayHour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $amPm";
     final formattedDate = "${date.day}/${date.month}/${date.year}";
 
     return InkWell(
@@ -2371,11 +2886,15 @@ class _DashboardScreenState extends State<DashboardScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CircleAvatar(
-              backgroundColor: f.status == 'Pending' ? CRMColors.warning.withOpacity(0.1) : CRMColors.success.withOpacity(0.1),
+              backgroundColor: f.status == 'Pending'
+                  ? CRMColors.warning.withOpacity(0.1)
+                  : CRMColors.success.withOpacity(0.1),
               radius: 18,
               child: Icon(
                 Icons.phone_in_talk_rounded,
-                color: f.status == 'Pending' ? CRMColors.warning : CRMColors.success,
+                color: f.status == 'Pending'
+                    ? CRMColors.warning
+                    : CRMColors.success,
                 size: 18,
               ),
             ),
@@ -2386,29 +2905,58 @@ class _DashboardScreenState extends State<DashboardScreen>
                 children: [
                   Text(
                     f.clientName,
-                    style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold),
+                    style: CRMTypography.bodyMedium.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 2),
-                  Text('Mobile: ${f.mobile}', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                  Text(
+                    'Mobile: ${f.mobile}',
+                    style: CRMTypography.caption.copyWith(
+                      color: CRMColors.textSecondaryOf(context),
+                    ),
+                  ),
                   if (f.notes != null && f.notes!.isNotEmpty) ...[
                     const SizedBox(height: 4),
-                    Text(f.notes!, style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic)),
+                    Text(
+                      f.notes!,
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 6),
-                  Text('Scheduled: $formattedDate at $formattedTime', style: CRMTypography.caption.copyWith(color: CRMColors.primary, fontWeight: FontWeight.w600)),
+                  Text(
+                    'Scheduled: $formattedDate at $formattedTime',
+                    style: CRMTypography.caption.copyWith(
+                      color: CRMColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   if (context.read<AuthBloc>().state is Authenticated &&
-                      (context.read<AuthBloc>().state as Authenticated).user.role != 'Sales' &&
+                      (context.read<AuthBloc>().state as Authenticated)
+                              .user
+                              .role !=
+                          'Sales' &&
                       f.creatorName != null &&
                       f.creatorName!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(Icons.person_outline_rounded, size: 12, color: CRMColors.textSecondaryOf(context)),
+                        Icon(
+                          Icons.person_outline_rounded,
+                          size: 12,
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             'Assigned to: ${f.creatorName}',
-                            style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
+                            style: CRMTypography.captionBold.copyWith(
+                              color: CRMColors.textSecondaryOf(context),
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -2421,13 +2969,22 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             if (f.status == 'Pending') ...[
               IconButton(
-                icon: Icon(Icons.check_circle_outline_rounded, color: CRMColors.success, size: 20),
+                icon: Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: CRMColors.success,
+                  size: 20,
+                ),
                 onPressed: () async {
                   try {
-                    await DioClient.dio.patch('/followups/${f.id}/status', data: {'status': 'Completed'});
+                    await DioClient.dio.patch(
+                      '/followups/${f.id}/status',
+                      data: {'status': 'Completed'},
+                    );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Follow-up marked as completed.')),
+                        const SnackBar(
+                          content: Text('Follow-up marked as completed.'),
+                        ),
                       );
                       context.read<DashboardBloc>().add(RefreshDashboard());
                     }
@@ -2444,7 +3001,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   void _showEditFollowupDialog(DashboardFollowup f) {
     final notesController = TextEditingController(text: f.notes);
-    DateTime selectedDate = DateTime.tryParse(f.followupDate)?.toLocal() ?? DateTime.now();
+    DateTime selectedDate =
+        DateTime.tryParse(f.followupDate)?.toLocal() ?? DateTime.now();
     TimeOfDay selectedTime = TimeOfDay.fromDateTime(selectedDate);
 
     showDialog(
@@ -2453,13 +3011,21 @@ class _DashboardScreenState extends State<DashboardScreen>
         return StatefulBuilder(
           builder: (context, setModalState) {
             final hourInt = selectedTime.hour;
-            final displayHour = hourInt > 12 ? hourInt - 12 : (hourInt == 0 ? 12 : hourInt);
+            final displayHour = hourInt > 12
+                ? hourInt - 12
+                : (hourInt == 0 ? 12 : hourInt);
             final amPm = hourInt >= 12 ? 'PM' : 'AM';
-            final formattedTimeStr = "${displayHour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} $amPm";
+            final formattedTimeStr =
+                "${displayHour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} $amPm";
 
             return AlertDialog(
               backgroundColor: CRMColors.cardBgOf(context),
-              title: Text('Edit / Reschedule Follow-up', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+              title: Text(
+                'Edit / Reschedule Follow-up',
+                style: CRMTypography.sectionTitle.copyWith(
+                  color: CRMColors.textOf(context),
+                ),
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -2467,12 +3033,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                   children: [
                     Text(
                       'Client: ${f.clientName}',
-                      style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context)),
+                      style: CRMTypography.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: CRMColors.textOf(context),
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Mobile: ${f.mobile}',
-                      style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
                     ),
                     const SizedBox(height: CRMSpacing.m),
                     TextField(
@@ -2481,7 +3052,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                         labelText: 'Follow-up Notes',
                         filled: true,
                         fillColor: CRMColors.backgroundOf(context),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(
+                            CRMBorderRadius.s,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: CRMSpacing.s),
@@ -2489,15 +3064,24 @@ class _DashboardScreenState extends State<DashboardScreen>
                       contentPadding: EdgeInsets.zero,
                       title: Text(
                         'Date & Time: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} at $formattedTimeStr',
-                        style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
+                        style: CRMTypography.bodyMedium.copyWith(
+                          color: CRMColors.textOf(context),
+                        ),
                       ),
-                      trailing: Icon(Icons.access_time_rounded, color: CRMColors.primary),
+                      trailing: Icon(
+                        Icons.access_time_rounded,
+                        color: CRMColors.primary,
+                      ),
                       onTap: () async {
                         final pickedDate = await showDatePicker(
                           context: context,
                           initialDate: selectedDate,
-                          firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                          firstDate: DateTime.now().subtract(
+                            const Duration(days: 365),
+                          ),
+                          lastDate: DateTime.now().add(
+                            const Duration(days: 365),
+                          ),
                         );
                         if (pickedDate != null && ctx.mounted) {
                           final pickedTime = await showTimePicker(
@@ -2532,13 +3116,20 @@ class _DashboardScreenState extends State<DashboardScreen>
                   onPressed: () async {
                     final notes = notesController.text.trim();
                     try {
-                      await DioClient.dio.patch('/followups/${f.id}', data: {
-                        'notes': notes,
-                        'followup_date': selectedDate.toUtc().toIso8601String(),
-                      });
+                      await DioClient.dio.patch(
+                        '/followups/${f.id}',
+                        data: {
+                          'notes': notes,
+                          'followup_date': selectedDate
+                              .toUtc()
+                              .toIso8601String(),
+                        },
+                      );
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Follow-up updated successfully.')),
+                          const SnackBar(
+                            content: Text('Follow-up updated successfully.'),
+                          ),
                         );
                         context.read<DashboardBloc>().add(RefreshDashboard());
                       }
@@ -2569,13 +3160,21 @@ class _DashboardScreenState extends State<DashboardScreen>
         return StatefulBuilder(
           builder: (context, setModalState) {
             final hourInt = selectedTime.hour;
-            final displayHour = hourInt > 12 ? hourInt - 12 : (hourInt == 0 ? 12 : hourInt);
+            final displayHour = hourInt > 12
+                ? hourInt - 12
+                : (hourInt == 0 ? 12 : hourInt);
             final amPm = hourInt >= 12 ? 'PM' : 'AM';
-            final formattedTimeStr = "${displayHour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} $amPm";
+            final formattedTimeStr =
+                "${displayHour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} $amPm";
 
             return AlertDialog(
               backgroundColor: CRMColors.cardBgOf(context),
-              title: Text('Schedule Follow-up', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+              title: Text(
+                'Schedule Follow-up',
+                style: CRMTypography.sectionTitle.copyWith(
+                  color: CRMColors.textOf(context),
+                ),
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -2586,7 +3185,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                         labelText: 'Client Name',
                         filled: true,
                         fillColor: CRMColors.backgroundOf(context),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(
+                            CRMBorderRadius.s,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: CRMSpacing.s),
@@ -2597,7 +3200,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                         labelText: 'Mobile Number',
                         filled: true,
                         fillColor: CRMColors.backgroundOf(context),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(
+                            CRMBorderRadius.s,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: CRMSpacing.s),
@@ -2607,19 +3214,32 @@ class _DashboardScreenState extends State<DashboardScreen>
                         labelText: 'Follow-up Notes',
                         filled: true,
                         fillColor: CRMColors.backgroundOf(context),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(
+                            CRMBorderRadius.s,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: CRMSpacing.s),
                     ListTile(
-                      title: Text('Date & Time: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} at $formattedTimeStr'),
-                      trailing: Icon(Icons.access_time_rounded, color: CRMColors.primary),
+                      title: Text(
+                        'Date & Time: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} at $formattedTimeStr',
+                      ),
+                      trailing: Icon(
+                        Icons.access_time_rounded,
+                        color: CRMColors.primary,
+                      ),
                       onTap: () async {
                         final pickedDate = await showDatePicker(
                           context: context,
                           initialDate: selectedDate,
-                          firstDate: DateTime.now().subtract(const Duration(days: 1)),
-                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                          firstDate: DateTime.now().subtract(
+                            const Duration(days: 1),
+                          ),
+                          lastDate: DateTime.now().add(
+                            const Duration(days: 365),
+                          ),
                         );
                         if (pickedDate != null && ctx.mounted) {
                           final pickedTime = await showTimePicker(
@@ -2658,15 +3278,24 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                     if (clientName.isNotEmpty && mobile.isNotEmpty) {
                       try {
-                        await DioClient.dio.post('/followups', data: {
-                          'client_name': clientName,
-                          'mobile': mobile,
-                          'notes': notes,
-                          'followup_date': selectedDate.toUtc().toIso8601String(),
-                        });
+                        await DioClient.dio.post(
+                          '/followups',
+                          data: {
+                            'client_name': clientName,
+                            'mobile': mobile,
+                            'notes': notes,
+                            'followup_date': selectedDate
+                                .toUtc()
+                                .toIso8601String(),
+                          },
+                        );
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Follow-up scheduled successfully.')),
+                            const SnackBar(
+                              content: Text(
+                                'Follow-up scheduled successfully.',
+                              ),
+                            ),
                           );
                           context.read<DashboardBloc>().add(RefreshDashboard());
                         }
@@ -2685,6 +3314,100 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Future<void> _openSiteVisit(DashboardSiteVisit sv) async {
+    final propertyId = sv.propertyId;
+    if (propertyId != null && propertyId.isNotEmpty) {
+      _openPropertyDetails(propertyId);
+      return;
+    }
+
+    if (sv.propertyCode != null && sv.propertyCode!.isNotEmpty) {
+      final byCode = await PropertiesRepository().getPropertyById(
+        sv.propertyCode!,
+      );
+      if (byCode != null) {
+        _openPropertyDetails(byCode.id);
+        return;
+      }
+    }
+
+    final reqId = sv.requirementId;
+    if (reqId != null && reqId.isNotEmpty) {
+      try {
+        final local = await RepositoryCoordinator().requirementLocal
+            .getRequirement(reqId);
+        if (local != null && mounted) {
+          showCRMRequirementDrawer(context, local.toModel());
+          return;
+        }
+      } catch (_) {}
+
+      if (mounted) {
+        final name = sv.requirementCustomerName ?? '';
+        context.go(
+          name.isNotEmpty
+              ? '/requirements?openId=${Uri.encodeComponent(reqId)}&search=${Uri.encodeComponent(name)}'
+              : '/requirements?openId=${Uri.encodeComponent(reqId)}',
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      _showSiteVisitDetailsSheet(sv);
+    }
+  }
+
+  void _showSiteVisitDetailsSheet(DashboardSiteVisit sv) {
+    final parsed = DateTime.tryParse(sv.visitDate);
+    final when = parsed != null
+        ? DateFormat('dd MMM yyyy, hh:mm a').format(parsed.toLocal())
+        : (sv.visitDate.isNotEmpty ? sv.visitDate : 'Today');
+    final title = (sv.requirementCustomerName != null &&
+            sv.requirementCustomerName!.isNotEmpty)
+        ? sv.requirementCustomerName!
+        : (sv.propertyTitle ?? 'Site visit');
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text('Visit: $title'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Time: $when'),
+              if (sv.creatorName != null && sv.creatorName!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('Agent: ${sv.creatorName}'),
+              ],
+              if (sv.remarks != null && sv.remarks!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(sv.remarks!),
+              ],
+              const SizedBox(height: 8),
+              Text('Status: ${sv.status.isNotEmpty ? sv.status : 'Pending'}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.go('/requirements');
+              },
+              child: const Text('Open requirements'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _openPropertyDetails(String propertyId) {
     final bool isMobile = MediaQuery.of(context).size.width < 600;
     if (kIsWeb && !isMobile) {
@@ -2694,29 +3417,34 @@ class _DashboardScreenState extends State<DashboardScreen>
       setState(() {
         _isLoadingProperty = true;
       });
-      PropertiesRepository().getPropertyById(propertyId).then((p) {
-        if (mounted) {
-          setState(() {
-            _isLoadingProperty = false;
+      PropertiesRepository()
+          .getPropertyById(propertyId)
+          .then((p) {
+            if (mounted) {
+              setState(() {
+                _isLoadingProperty = false;
+              });
+              if (p != null) {
+                showCRMPropertyDrawer(context, p);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Failed to load property details.'),
+                  ),
+                );
+              }
+            }
+          })
+          .catchError((e) {
+            if (mounted) {
+              setState(() {
+                _isLoadingProperty = false;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Error loading property: $e')),
+              );
+            }
           });
-          if (p != null) {
-            showCRMPropertyDrawer(context, p);
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to load property details.')),
-            );
-          }
-        }
-      }).catchError((e) {
-        if (mounted) {
-          setState(() {
-            _isLoadingProperty = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error loading property: $e')),
-          );
-        }
-      });
     }
   }
 
@@ -2727,7 +3455,11 @@ class _DashboardScreenState extends State<DashboardScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline_rounded, color: CRMColors.danger, size: 54),
+            Icon(
+              Icons.error_outline_rounded,
+              color: CRMColors.danger,
+              size: 54,
+            ),
             const SizedBox(height: CRMSpacing.m),
             Text(
               'Failed to Load Dashboard',
@@ -2737,7 +3469,13 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
             const SizedBox(height: CRMSpacing.xs),
-            Text(message, style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)), textAlign: TextAlign.center),
+            Text(
+              message,
+              style: CRMTypography.body.copyWith(
+                color: CRMColors.textSecondaryOf(context),
+              ),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: CRMSpacing.l),
             CRMButton(
               label: 'Retry Connection',

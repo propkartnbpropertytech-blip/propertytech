@@ -9,3 +9,7 @@ Future<void> downloadFile(List<int> bytes, String filename) async {
   final xFile = XFile(file.path);
   await Share.shareXFiles([xFile], text: filename);
 }
+
+Future<void> downloadFromUrl(String url, String filename) async {
+  // Mobile fallback
+}

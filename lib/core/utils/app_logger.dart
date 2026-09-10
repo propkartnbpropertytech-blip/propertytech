@@ -30,6 +30,11 @@ class AppLogger {
     return input;
   }
 
+  /// Redacts sensitive information from a string message.
+  static String redact(String message) {
+    return _sanitize(message) as String;
+  }
+
   /// Trace log (verbose)
   static void t(dynamic message, [dynamic error, StackTrace? stackTrace]) {
     _logger.t(_sanitize(message), error: _sanitize(error), stackTrace: stackTrace);
@@ -106,3 +111,4 @@ class AppLogger {
     _logger.d('⏱️ [TELEMETRY] $operation\n   ↳ $details');
   }
 }
+

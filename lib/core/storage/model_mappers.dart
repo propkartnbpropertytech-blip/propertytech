@@ -83,8 +83,10 @@ extension PropertyLocalExtensions on PropertyLocal {
       videos: safeVideos,
       googlePlaceId: googlePlaceId,
       brokerageTypeId: brokerageTypeId,
+      brokerageTypeName: brokerageTypeName,
       adminId: adminId,
       organizationId: organizationId,
+      portalStatus: portalStatus ?? 'None',
     );
   }
 }
@@ -152,7 +154,8 @@ extension PropertyModelExtensions on PropertyModel {
       ..brokerageTypeId = brokerageTypeId
       ..brokerageTypeName = brokerageTypeName
       ..adminId = adminId
-      ..organizationId = organizationId;
+      ..organizationId = organizationId
+      ..portalStatus = portalStatus;
   }
 }
 
@@ -216,6 +219,7 @@ extension RequirementLocalExtensions on RequirementLocal {
       furnishingIds: furnishingIds ?? [],
       facingIds: facingIds ?? [],
       remarks: decodedRemarks,
+      notes: notes,
       status: status,
       createdAt: createdAt,
       adminId: adminId,
@@ -226,6 +230,9 @@ extension RequirementLocalExtensions on RequirementLocal {
       assigneeName: assigneeName,
       createdBy: createdBy,
       assignedTo: assignedTo,
+      leadSource: leadSource,
+      referralName: referralName,
+      nextFollowupDate: nextFollowupDate,
     );
   }
 }
@@ -253,6 +260,7 @@ extension RequirementModelExtensions on RequirementModel {
       ..areaIds = areaIds
       ..areaNames = areaNames
       ..remarks = remarks
+      ..notes = notes
       ..status = status
       ..createdAt = createdAt
       ..budget = (minBudget + maxBudget) / 2
@@ -263,7 +271,10 @@ extension RequirementModelExtensions on RequirementModel {
       ..listingTypeName = listingTypeName
       ..creatorName = creatorName
       ..assigneeName = assigneeName
-      ..createdBy = createdBy;
+      ..createdBy = createdBy
+      ..leadSource = leadSource
+      ..referralName = referralName
+      ..nextFollowupDate = nextFollowupDate;
   }
 }
 
@@ -500,7 +511,14 @@ extension DashboardDataExtensions on DashboardData {
         'visit_date': sv.visitDate,
         'remarks': sv.remarks,
         'status': sv.status,
-        'property': sv.propertyCode != null ? {'property_code': sv.propertyCode, 'title': sv.propertyTitle} : null,
+        'property_id': sv.propertyId,
+        'property': (sv.propertyId != null || sv.propertyCode != null)
+            ? {
+                'id': sv.propertyId,
+                'property_code': sv.propertyCode,
+                'title': sv.propertyTitle,
+              }
+            : null,
         'requirement': sv.requirementCustomerName != null ? {'customer_name': sv.requirementCustomerName, 'id': sv.requirementId} : null,
         'requirement_id': sv.requirementId,
         'creator': sv.creatorName != null ? {'full_name': sv.creatorName} : null,

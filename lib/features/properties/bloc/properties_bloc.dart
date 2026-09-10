@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:propkart/core/storage/repository_coordinator.dart';
 import '../models/property_model.dart';
 import '../repository/properties_repository.dart';
+import '../../../core/storage/model_mappers.dart';
 
 // --- Events ---
 abstract class PropertiesEvent {}
@@ -197,7 +198,9 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     Emitter<PropertiesState> emit,
   ) async {
     _lastLoadEvent = event;
-    emit(PropertiesLoading());
+    if (state is! PropertiesLoaded) {
+      emit(PropertiesLoading());
+    }
     try {
       final bookmarked = await _getBookmarkedIds();
       
@@ -278,10 +281,39 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     Emitter<PropertiesState> emit,
   ) async {
     try {
-      final saved = await _repository.updateProperty(event.id, event.propertyData);
+      PropertyModel? existingInState;
       if (state is PropertiesLoaded) {
         final current = state as PropertiesLoaded;
-        final updatedList = current.properties.map((p) => p.id == saved.id ? saved : p).toList();
+        final index = current.properties.indexWhere((p) => p.id == event.id || p.propertyCode == event.id);
+        if (index != -1) {
+          existingInState = current.properties[index];
+        }
+      }
+
+      var saved = await _repository.updateProperty(event.id, event.propertyData);
+
+      if (existingInState != null) {
+        bool restored = false;
+        if (!event.propertyData.containsKey('images') && existingInState.images.isNotEmpty) {
+          saved = saved.copyWith(images: existingInState.images);
+          restored = true;
+        }
+        if (!event.propertyData.containsKey('videos') && existingInState.videos.isNotEmpty) {
+          saved = saved.copyWith(videos: existingInState.videos);
+          restored = true;
+        }
+        if (!event.propertyData.containsKey('amenities') && existingInState.amenities.isNotEmpty) {
+          saved = saved.copyWith(amenities: existingInState.amenities);
+          restored = true;
+        }
+        if (restored) {
+          await RepositoryCoordinator().propertyLocal.saveProperties([saved.toLocal()]);
+        }
+      }
+
+      if (state is PropertiesLoaded) {
+        final current = state as PropertiesLoaded;
+        final updatedList = current.properties.map((p) => (p.id == saved.id || p.propertyCode == saved.propertyCode) ? saved : p).toList();
         emit(PropertiesLoaded(
           properties: updatedList,
           metadata: current.metadata,

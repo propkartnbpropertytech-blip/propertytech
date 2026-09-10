@@ -17,4 +17,9 @@ class SecureLog {
   static void w(String message, [Object? error]) {
     AppLogger.w(message, error);
   }
+
+  /// Redacts secrets such as Bearer tokens, JWTs, and passwords from [message].
+  static String redact(String message) {
+    return AppLogger.redact(message);
+  }
 }

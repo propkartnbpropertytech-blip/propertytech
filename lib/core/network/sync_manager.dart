@@ -107,13 +107,10 @@ class SyncManager {
   Timer? _batchTimer;
 
   Future<void> initialize() async {
-    // Realtime must only connect after authentication — call [connectAfterAuth].
-    ApiConstants.assertConfig();
   }
 
-  /// Connect realtime only when a user session exists.
+  /// Trigger delta sync after user authentication.
   Future<void> connectAfterAuth() async {
-    if (!ApiConstants.hasSupabaseConfig) return;
     await connect();
   }
 
@@ -124,44 +121,13 @@ class SyncManager {
   }
 
   Future<void> connect() async {
-    if (_state == SyncState.connected || _state == SyncState.connecting) return;
-
-    _updateState(_state == SyncState.disconnected ? SyncState.connecting : SyncState.reconnecting);
-
-    final rawWsUrl = ApiConstants.supabaseUrl
-        .replaceFirst('https://', 'wss://')
-        .replaceFirst('http://', 'ws://');
-    final wsUrl = "$rawWsUrl/realtime/v1/websocket?apikey=${ApiConstants.supabaseAnonKey}&vsn=1.0.0";
-
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
-
-      _channelSubscription = _channel!.stream.listen(
-        (message) {
-          _handleIncomingMessage(message);
-        },
-        onError: (err) {
-          _handleDisconnect("Socket Error: $err");
-        },
-        onDone: () {
-          _handleDisconnect("Socket Closed");
-        },
-      );
-
-      _joinReplicationChannel();
-      _startHeartbeat();
-
-      // Enforce Offline sequence: Reconnect ➔ Delta Sync ➔ Resolve Conflicts ➔ Replay Outbox ➔ Live Realtime
+      _updateState(SyncState.connecting);
       await triggerDeltaSync();
-
       _updateState(SyncState.connected);
       _reconnectAttempts = 0;
-      PerformanceLogger().logMetric(
-        operation: 'SyncManager: Realtime connected successfully',
-        totalMs: 0,
-      );
     } catch (e) {
-      _handleDisconnect("Connection failure: $e");
+      _handleDisconnect("Sync failure: $e");
     }
   }
 

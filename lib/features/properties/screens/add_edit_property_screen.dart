@@ -315,11 +315,13 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
       for (final amName in p.amenities) {
         final matched = widget.metadata.amenities.firstWhere(
-          (a) => a.name.toLowerCase() == amName.toLowerCase(),
+          (a) => a.name.toLowerCase() == amName.toLowerCase() || a.id == amName,
           orElse: () => LookupItem(id: '', name: ''),
         );
         if (matched.id.isNotEmpty) {
-          _selectedAmenities.add(matched.id);
+          if (!_selectedAmenities.contains(matched.id)) {
+            _selectedAmenities.add(matched.id);
+          }
         }
       }
     } else {
@@ -1355,13 +1357,13 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildStepNode(0, 'Basic Info', isMobile),
+          _buildStepNode(0, 'Basic', isMobile),
           _buildStepDivider(),
           _buildStepNode(1, 'Location', isMobile),
           _buildStepDivider(),
-          _buildStepNode(2, 'Pricing', isMobile),
+          _buildStepNode(2, 'Price', isMobile),
           _buildStepDivider(),
-          _buildStepNode(3, 'Contacts', isMobile),
+          _buildStepNode(3, 'Owner & Media', isMobile),
         ],
       ),
     );
@@ -1651,7 +1653,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: _selectedCategory,
+                    value: widget.metadata.categories.any((c) => c.id == _selectedCategory) ? _selectedCategory : null,
                     decoration: InputDecoration(
                       labelText: 'Category *',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1680,7 +1682,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: _selectedListingType,
+                    value: widget.metadata.listingTypes.any((l) => l.id == _selectedListingType) ? _selectedListingType : null,
                     decoration: InputDecoration(
                       labelText: 'Listing Type *',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1722,7 +1724,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           isExpanded: true,
-                          value: _selectedCategory,
+                          value: widget.metadata.categories.any((c) => c.id == _selectedCategory) ? _selectedCategory : null,
                           decoration: InputDecoration(
                             labelText: 'Category *',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1753,7 +1755,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           isExpanded: true,
-                          value: _selectedListingType,
+                          value: widget.metadata.listingTypes.any((l) => l.id == _selectedListingType) ? _selectedListingType : null,
                           decoration: InputDecoration(
                             labelText: 'Listing Type *',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1797,7 +1799,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: _selectedType,
+                    value: filteredTypes.any((t) => t.id == _selectedType) ? _selectedType : null,
                     decoration: InputDecoration(
                       labelText: 'Property Type *',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1821,7 +1823,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       isExpanded: true,
-                      value: _selectedConfig,
+                      value: (_selectedConfig != null && filteredConfigs.any((c) => c.id == _selectedConfig)) ? _selectedConfig : null,
                       decoration: InputDecoration(
                         labelText: 'Configuration',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1851,7 +1853,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           isExpanded: true,
-                          value: _selectedType,
+                          value: filteredTypes.any((t) => t.id == _selectedType) ? _selectedType : null,
                           decoration: InputDecoration(
                             labelText: 'Property Type *',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1877,7 +1879,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 isExpanded: true,
-                                value: _selectedConfig,
+                                value: (_selectedConfig != null && filteredConfigs.any((c) => c.id == _selectedConfig)) ? _selectedConfig : null,
                                 decoration: InputDecoration(
                                   labelText: 'Configuration',
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1906,7 +1908,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           if (isMobile && toBeAvailableId.isNotEmpty && _selectedStatus == toBeAvailableId) ...[
             DropdownButtonFormField<String>(
               isExpanded: true,
-              value: _selectedStatus,
+              value: filteredStatuses.any((s) => s.id == _selectedStatus) ? _selectedStatus : null,
               decoration: InputDecoration(
                 labelText: 'Property Status *',
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -1938,7 +1940,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: _selectedStatus,
+                    value: filteredStatuses.any((s) => s.id == _selectedStatus) ? _selectedStatus : null,
                     decoration: InputDecoration(
                       labelText: 'Property Status *',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2033,7 +2035,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         Expanded(
           child: DropdownButtonFormField<String>(
             isExpanded: true,
-            value: _selectedCity,
+            value: _cities.any((c) => c.id == _selectedCity) ? _selectedCity : null,
             decoration: InputDecoration(
               labelText: 'City *',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2058,7 +2060,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         Expanded(
           child: DropdownButtonFormField<String>(
             isExpanded: true,
-            value: _selectedArea,
+            value: _filteredAreas.any((a) => a.id == _selectedArea) ? _selectedArea : null,
             decoration: InputDecoration(
               labelText: 'Area *',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2756,7 +2758,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       children: [
         DropdownButtonFormField<String>(
           isExpanded: true,
-          value: _selectedParkingType,
+          value: ['Allocated', 'Open'].contains(_selectedParkingType) ? _selectedParkingType : 'Open',
           decoration: InputDecoration(
             labelText: 'Parking',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2789,7 +2791,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           const SizedBox(height: CRMSpacing.s),
           DropdownButtonFormField<String>(
             isExpanded: true,
-            value: _selectedParkingOption,
+            value: ['Basement 1', 'Basement 2', 'Ground Floor'].contains(_selectedParkingOption) ? _selectedParkingOption : null,
             decoration: InputDecoration(
               labelText: 'Parking Option',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2811,7 +2813,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           const SizedBox(height: CRMSpacing.s),
           DropdownButtonFormField<String>(
             isExpanded: true,
-            value: _selectedParkingSlot,
+            value: ['1', '2', '3', '4', '5'].contains(_selectedParkingSlot) ? _selectedParkingSlot : null,
             decoration: InputDecoration(
               labelText: 'Parking Slot',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2857,7 +2859,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
     final totalFloorField = DropdownButtonFormField<String>(
       isExpanded: true,
-      value: _totalFloorController.text.isEmpty ? null : _totalFloorController.text,
+      value: List.generate(50, (index) => (index + 1).toString()).contains(_totalFloorController.text.trim()) ? _totalFloorController.text.trim() : null,
       decoration: InputDecoration(
         labelText: 'Total Floors',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2924,7 +2926,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
     final furnishingField = DropdownButtonFormField<String>(
       isExpanded: true,
-      value: _selectedFurnishing,
+      value: widget.metadata.furnishings.any((f) => f.id == _selectedFurnishing) ? _selectedFurnishing : null,
       decoration: InputDecoration(
         labelText: 'Furnishing',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -2989,7 +2991,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         Expanded(
           child: DropdownButtonFormField<String>(
             isExpanded: true,
-            value: _selectedDepositMonth,
+            value: _depositMonthOptions.contains(_selectedDepositMonth) ? _selectedDepositMonth : null,
             decoration: InputDecoration(
               labelText: 'Deposit Months *',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
@@ -3595,7 +3597,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
     final nextButton = _currentStep < 3
         ? CRMButton(
-            label: 'Next Step',
+            label: 'Next',
             variant: CRMButtonVariant.primary,
             onPressed: () {
               if (_formKey.currentState!.validate()) {
@@ -3604,7 +3606,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
             },
           )
         : CRMButton(
-            label: isEdit ? 'Save Changes' : 'Publish Property',
+            label: isEdit ? 'Save Changes' : 'Save Property',
             variant: CRMButtonVariant.primary,
             onPressed: _submitForm,
           );

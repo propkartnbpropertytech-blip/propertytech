@@ -27,7 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
       "name": "Alex Mercer",
       "role": "Node Backend Engineer",
       "experience": "7 yrs",
-      "skills": ["Node.js", "Express", "Supabase", "PostgreSQL"],
+      "skills": ["Node.js", "Express", "PostgreSQL", "REST API"],
       "status": "Busy",
       "color": Colors.orangeAccent,
     },
@@ -43,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
       "name": "Marcus Vance",
       "role": "DevOps & Security Specialist",
       "experience": "8 yrs",
-      "skills": ["Docker", "Kubernetes", "CI/CD", "Supabase"],
+      "skills": ["Docker", "Kubernetes", "CI/CD", "Linux"],
       "status": "Available",
       "color": Colors.purpleAccent,
     },
@@ -77,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        backgroundColor: const Color(0xFF0F172A), // Slate 900
+        backgroundColor: const Color(0xFF1C1A18), // Slate 900
         elevation: 0,
         actions: [
           // Sign Out button
@@ -97,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF0F172A), // Slate 900
+              Color(0xFF1C1A18), // Slate 900
               Color(0xFF1E1B4B), // Indigo 950
             ],
           ),
@@ -161,7 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
-                      children: ["All", "Flutter", "Node.js", "Supabase"].map((filter) {
+                      children: ["All", "Flutter", "Node.js", "PostgreSQL"].map((filter) {
                         final isSelected = _selectedFilter == filter;
                         return Padding(
                           padding: const EdgeInsets.only(right: 8.0),
@@ -347,7 +347,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentNavigationIndex,
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFF1C1A18),
         indicatorColor: Colors.indigoAccent.withOpacity(0.2),
         destinations: const [
           NavigationDestination(

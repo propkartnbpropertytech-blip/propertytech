@@ -45,8 +45,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
   final _minAreaController = TextEditingController();
   final _maxAreaController = TextEditingController();
   final _remarksController = TextEditingController();
+  final _referralNameController = TextEditingController();
 
   String? _selectedCategoryId;
+  String? _selectedLeadSource;
   String? _selectedTypeId;
   final List<String> _selectedTypeIds = [];
   List<LookupItem> _cities = [];
@@ -55,7 +57,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
   String? _selectedListingTypeId;
   final List<String> _selectedFurnishingIds = [];
   final List<String> _selectedFacingIds = [];
-  String _selectedStatus = "Not Started";
+  String _selectedStatus = "New";
   final List<String> _selectedAreaIds = [];
   String _areaSearchQuery = '';
   String? _customerFoundMessage;
@@ -92,6 +94,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     _minAreaController.dispose();
     _maxAreaController.dispose();
     _remarksController.dispose();
+    _referralNameController.dispose();
     _pageController.dispose();
     if (!_isSaved && widget.requirement == null) {
       _saveCurrentDraft();
@@ -173,12 +176,15 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           _selectedFacingIds.addAll(req.facingIds);
           
           String statusVal = req.status;
+          if (statusVal == 'Not Started') statusVal = 'New';
           if (statusVal == 'Active' || statusVal == 'Live') statusVal = 'Interested';
           if (statusVal == 'Closed' || statusVal == 'Won') statusVal = 'Won';
           if (statusVal == 'Suspended' || statusVal == 'Dead') statusVal = 'Not Interested';
           _selectedStatus = statusVal;
 
           _selectedAreaIds.addAll(req.areaIds);
+          _selectedLeadSource = req.leadSource;
+          _referralNameController.text = req.referralName ?? '';
         }
         
         _isLoadingMetadata = false;
@@ -338,6 +344,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       'minArea': _minAreaController.text,
       'maxArea': _maxAreaController.text,
       'remarks': _remarksController.text,
+      'leadSource': _selectedLeadSource,
+      'referralName': _referralNameController.text,
       'status': _selectedStatus,
       'areaIds': _selectedAreaIds,
       'furnishings': _selectedFurnishingIds,
@@ -384,7 +392,9 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                   _minAreaController.text = draft['minArea'] ?? '';
                   _maxAreaController.text = draft['maxArea'] ?? '';
                   _remarksController.text = draft['remarks'] ?? '';
-                  _selectedStatus = draft['status'] ?? 'Not Started';
+                  _selectedLeadSource = draft['leadSource'];
+                  _referralNameController.text = draft['referralName'] ?? '';
+                  _selectedStatus = draft['status'] ?? 'New';
                   
                   final List<String> areas = List<String>.from(draft['areaIds'] ?? []);
                   _selectedAreaIds.clear();
@@ -628,6 +638,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       areaIds: _selectedAreaIds,
       areaNames: areaNames,
       remarks: _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
+      leadSource: _selectedLeadSource,
+      referralName: _selectedLeadSource?.toLowerCase() == 'referral' ? _referralNameController.text.trim() : null,
       status: _selectedStatus,
       createdAt: widget.requirement?.createdAt ?? DateTime.now(),
       furnishingIds: _selectedFurnishingIds,
@@ -740,7 +752,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  widget.requirement != null ? "Edit Requirement" : "Add Requirement",
+                  widget.requirement != null ? "Edit Lead" : "Add Lead",
                   style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
                 ),
                 IconButton(
@@ -755,7 +767,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "Edit Requirement Details",
+                  "Edit Lead Details",
                   style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context)),
                 ),
                 IconButton(
@@ -1039,6 +1051,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               label: 'Pipeline Status Stage *',
               value: _selectedStatus,
               items: const [
+                DropdownMenuItem(value: "New", child: Text("New")),
                 DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
                 DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
                 DropdownMenuItem(value: "Interested", child: Text("Interested")),
@@ -1046,8 +1059,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
                 DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
                 DropdownMenuItem(value: "Won", child: Text("Won")),
-                DropdownMenuItem(value: "Bin", child: Text("Bin")),
-                DropdownMenuItem(value: "Not Interested", child: Text("Not Interested")),
+                DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
               ],
               onChanged: (val) {
                 if (val != null && _validateStatusTransition(val)) {
@@ -1324,6 +1336,32 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
             prefixIcon: Icons.chat_bubble_outline_rounded,
             maxLines: 4,
           ),
+          const SizedBox(height: CRMSpacing.m),
+          _buildDropdown<String?>(
+            label: 'Lead Source',
+            value: _selectedLeadSource,
+            items: const [
+              DropdownMenuItem<String?>(value: 'Social Media', child: Text('Social Media')),
+              DropdownMenuItem<String?>(value: 'MagicBricks', child: Text('MagicBricks')),
+              DropdownMenuItem<String?>(value: '99acres', child: Text('99acres')),
+              DropdownMenuItem<String?>(value: 'housing.com', child: Text('housing.com')),
+              DropdownMenuItem<String?>(value: 'WhatsApp', child: Text('WhatsApp')),
+              DropdownMenuItem<String?>(value: 'Direct', child: Text('Direct')),
+              DropdownMenuItem<String?>(value: 'Referral', child: Text('Referral')),
+            ],
+            onChanged: (val) => setState(() {
+              _selectedLeadSource = val;
+            }),
+          ),
+          if (_selectedLeadSource?.toLowerCase() == 'referral') ...[
+            const SizedBox(height: CRMSpacing.m),
+            CRMTextField(
+              controller: _referralNameController,
+              labelText: 'Referral Name',
+              hintText: 'Enter referrer name...',
+              prefixIcon: Icons.person_outline_rounded,
+            ),
+          ],
         ],
       ),
     );
@@ -1356,6 +1394,12 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     if (_selectedConfigIds.isEmpty) warnings.add("Missing Configuration");
     if (_budgetController.text.isEmpty) warnings.add("Missing Budget");
     if (_selectedAreaIds.isEmpty) warnings.add("Missing Target Area");
+
+    final leadSourceDisplay = (_selectedLeadSource == null || _selectedLeadSource!.isEmpty)
+        ? "None"
+        : (_selectedLeadSource!.toLowerCase() == 'referral' && _referralNameController.text.trim().isNotEmpty
+            ? "${_selectedLeadSource!} (${_referralNameController.text.trim()})"
+            : _selectedLeadSource!);
 
     return SingleChildScrollView(
       child: Column(
@@ -1391,6 +1435,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           _buildSummaryRow("Configuration", configDisplayStr),
           _buildSummaryRow("Target Areas", "${_selectedAreaIds.length} Selected"),
           _buildSummaryRow("Budget", _budgetController.text),
+          _buildSummaryRow("Lead Source", leadSourceDisplay),
           _buildSummaryRow("Pipeline Status", _selectedStatus),
         ],
       ),

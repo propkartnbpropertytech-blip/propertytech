@@ -154,6 +154,46 @@ class RecentProperty {
   }
 }
 
+class DashboardLocationItem {
+  final String id;
+  final String code;
+  final String areaName;
+  final String categoryName;
+  final String listingType;
+  final DateTime? createdAt;
+
+  const DashboardLocationItem({
+    required this.id,
+    required this.code,
+    required this.areaName,
+    required this.categoryName,
+    required this.listingType,
+    this.createdAt,
+  });
+
+  factory DashboardLocationItem.fromJson(Map<String, dynamic> json) {
+    return DashboardLocationItem(
+      id: json['id'] ?? '',
+      code: json['code'] ?? '',
+      areaName: json['areaName'] ?? json['area_name'] ?? 'Other',
+      categoryName: json['categoryName'] ?? json['category_name'] ?? 'Residential',
+      listingType: json['listingType'] ?? json['listing_type'] ?? 'Rent',
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString())
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'code': code,
+    'areaName': areaName,
+    'categoryName': categoryName,
+    'listingType': listingType,
+    'createdAt': createdAt?.toIso8601String(),
+  };
+}
+
 class DashboardData {
   final DashboardSummary summary;
   final List<RecentActivity> activity;
@@ -161,6 +201,7 @@ class DashboardData {
   final List<ChecklistItem> checklist;
   final List<DashboardFollowup> followups;
   final List<DashboardSiteVisit> siteVisits;
+  final List<DashboardLocationItem> inventoryLocations;
 
   const DashboardData({
     required this.summary,
@@ -169,6 +210,7 @@ class DashboardData {
     required this.checklist,
     required this.followups,
     required this.siteVisits,
+    this.inventoryLocations = const [],
   });
 
   factory DashboardData.fromJson(Map<String, dynamic> json) {
@@ -192,6 +234,10 @@ class DashboardData {
           [],
       siteVisits: (json['siteVisits'] as List?)
               ?.map((item) => DashboardSiteVisit.fromJson(item))
+              .toList() ??
+          [],
+      inventoryLocations: (json['inventoryLocations'] as List?)
+              ?.map((item) => DashboardLocationItem.fromJson(item))
               .toList() ??
           [],
     );
@@ -273,6 +319,7 @@ class DashboardSiteVisit {
   final String visitDate;
   final String? remarks;
   final String status;
+  final String? propertyId;
   final String? propertyCode;
   final String? propertyTitle;
   final String? requirementCustomerName;
@@ -284,6 +331,7 @@ class DashboardSiteVisit {
     required this.visitDate,
     this.remarks,
     required this.status,
+    this.propertyId,
     this.propertyCode,
     this.propertyTitle,
     this.requirementCustomerName,
@@ -295,11 +343,13 @@ class DashboardSiteVisit {
     final property = json['property'] as Map<String, dynamic>?;
     final requirement = json['requirement'] as Map<String, dynamic>?;
     final creator = json['creator'] as Map<String, dynamic>?;
+    final propertyId = (json['property_id'] ?? property?['id'])?.toString();
     return DashboardSiteVisit(
       id: json['id'] ?? '',
       visitDate: json['visit_date'] ?? '',
       remarks: json['remarks'],
       status: json['status'] ?? 'Pending',
+      propertyId: (propertyId != null && propertyId.isNotEmpty) ? propertyId : null,
       propertyCode: property?['property_code'],
       propertyTitle: property?['title'],
       requirementCustomerName: requirement?['customer_name'],

@@ -16,15 +16,21 @@ class RoleGuard {
     return r == 'admin' || r == 'super admin';
   }
 
-  /// Campaign & Integration Webhooks — Admin and Super Admin only.
+  /// Campaign & Integration Webhooks — Admin, Super Admin, and Telecaller.
   static bool canAccessIntegration(String? role) => canAccessCampaign(role);
   static bool canAccessCampaign(String? role) {
-    final r = (role ?? '').toLowerCase();
-    return r == 'admin' || r == 'super admin';
+    final r = (role ?? '').toLowerCase().replaceAll(' ', '').replaceAll('_', '').replaceAll('-', '');
+    return r == 'admin' || r == 'superadmin' || r == 'telecaller';
   }
 
   /// Audit logs — Super Admin only (defense-in-depth).
   static bool canViewAuditLogs(String? role) => isSuperAdmin(role);
+
+  /// Reports module — Admin and Super Admin only.
+  static bool canViewReports(String? role) {
+    final r = (role ?? '').toLowerCase().trim();
+    return r == 'admin' || r == 'super admin';
+  }
 
   /// Settings mutations that affect org lookups (cities/areas).
   static bool canManageLookups(String? role) {
@@ -39,6 +45,7 @@ class RoleGuard {
   static const allowedPostLoginPaths = <String>{
     '/dashboard',
     '/properties',
+    '/search',
     '/requirements',
     '/clients',
     '/owners',
@@ -52,13 +59,22 @@ class RoleGuard {
     '/campaign',
     '/campaign/connections',
     '/campaign/leads',
+    '/reports',
+    '/reports/leads/overall-business-insight',
+    '/reports/leads/telecaller',
+    '/reports/leads/sales',
+    '/reports/leads/metrics',
+    '/reports/properties',
   };
 
   static String? sanitizeRedirectPath(String? raw, {String? role}) {
     if (raw == null || raw.isEmpty) return null;
     String path;
     try {
-      path = Uri.decodeComponent(raw);
+      path = Uri.decodeComponent(raw).trim();
+      if (path.startsWith('#')) {
+        path = path.substring(1);
+      }
     } catch (_) {
       return null;
     }
@@ -79,6 +95,9 @@ class RoleGuard {
       return '/dashboard';
     }
     if (pathOnly.startsWith('/settings/audit-logs') && !canViewAuditLogs(role)) {
+      return '/dashboard';
+    }
+    if (pathOnly.startsWith('/reports') && !canViewReports(role)) {
       return '/dashboard';
     }
     return path;

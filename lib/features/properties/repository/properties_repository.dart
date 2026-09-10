@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'package:propkart/features/properties/models/property_model.dart';
 import 'package:propkart/features/properties/services/properties_service.dart';
 import 'package:propkart/core/storage/repository_coordinator.dart';
-import 'package:propkart/core/api/cloudinary_uploader.dart';
 import 'package:propkart/core/storage/isar_collections.dart';
 import 'package:propkart/core/storage/model_mappers.dart';
+import 'package:propkart/core/storage/local_repositories.dart';
 import 'package:propkart/core/storage/performance_logger.dart';
 
 class PropertiesRepository {
@@ -20,13 +20,13 @@ class PropertiesRepository {
     String id, {
     bool refreshFromServer = false,
   }) async {
-    final local = await _coordinator.propertyLocal.getPropertyById(id);
+    final local = await _coordinator.propertyLocal.getPropertyByIdOrCode(id);
 
     if (!refreshFromServer) {
       return local?.toModel();
     }
 
-    final fresh = await _fetchAndCachePropertyById(id);
+    final fresh = await _fetchAndCachePropertyById(local?.id ?? id);
     if (fresh != null) return fresh;
     return local?.toModel();
   }
@@ -92,6 +92,10 @@ class PropertiesRepository {
     return properties;
   }
 
+  static Future<void>? _refreshInFlight;
+  static DateTime? _lastRefreshAt;
+  static const _minRefreshInterval = Duration(seconds: 45);
+
   void _triggerBackgroundPropertiesRefresh({
     String? search,
     String? categoryId,
@@ -101,8 +105,13 @@ class PropertiesRepository {
     bool? isVerified,
     bool? includeDeleted,
   }) {
+    if (_refreshInFlight != null) return;
+    if (_lastRefreshAt != null && DateTime.now().difference(_lastRefreshAt!) < _minRefreshInterval) {
+      return;
+    }
+
     final start = DateTime.now();
-    _propertiesService.getProperties(
+    _refreshInFlight = _propertiesService.getProperties(
       search: search,
       categoryId: categoryId,
       areaId: areaId,
@@ -111,6 +120,7 @@ class PropertiesRepository {
       isVerified: isVerified,
       includeDeleted: includeDeleted,
     ).then((response) async {
+      _lastRefreshAt = DateTime.now();
       final networkMs = DateTime.now().difference(start).inMilliseconds;
 
       final parseStart = DateTime.now();
@@ -134,7 +144,9 @@ class PropertiesRepository {
       );
 
       _coordinator.refreshProperties();
-    }).catchError((_) {});
+    }).catchError((_) {}).whenComplete(() {
+      _refreshInFlight = null;
+    });
   }
 
   Future<PropertyMetadataModel> getPropertyMetadata() async {
@@ -378,6 +390,18 @@ class PropertiesRepository {
   }
 
   Future<PropertyModel> updateProperty(String id, Map<String, dynamic> propertyData) async {
+    PropertyLocal? existingLocal = await _coordinator.propertyLocal.getPropertyById(id);
+    existingLocal ??= await _coordinator.propertyLocal.getPropertyByIdOrCode(id);
+    if (existingLocal == null || existingLocal.id.isEmpty) {
+      try {
+        final matches = PropertyLocalRepository.inMemory.values.where((p) => p.id == id || p.propertyCode == id);
+        if (matches.isNotEmpty) {
+          existingLocal = matches.first;
+        }
+      } catch (_) {}
+    }
+    final existingModel = existingLocal?.toModel();
+
     try {
       final response = await _propertiesService.updateProperty(id, propertyData);
       final data = response['data'] as Map<String, dynamic>? ?? {};
@@ -385,17 +409,58 @@ class PropertiesRepository {
       if ((propMap['property_images'] == null || (propMap['property_images'] as List).isEmpty) && propertyData['images'] != null) {
         propMap['images'] = propertyData['images'];
       }
-      final fresh = PropertyModel.fromJson(propMap);
+      var fresh = PropertyModel.fromJson(propMap);
+
+      if (existingModel != null) {
+        // If propertyData does NOT contain 'images' (e.g. status or portal update), preserve existing images
+        if (!propertyData.containsKey('images') || (fresh.images.isEmpty && existingModel.images.isNotEmpty)) {
+          if (existingModel.images.isNotEmpty) {
+            fresh = fresh.copyWith(images: existingModel.images);
+          }
+        }
+        if (!propertyData.containsKey('videos') || (fresh.videos.isEmpty && existingModel.videos.isNotEmpty)) {
+          if (existingModel.videos.isNotEmpty) {
+            fresh = fresh.copyWith(videos: existingModel.videos);
+          }
+        }
+        if (!propertyData.containsKey('amenities') || (fresh.amenities.isEmpty && existingModel.amenities.isNotEmpty)) {
+          if (existingModel.amenities.isNotEmpty) {
+            fresh = fresh.copyWith(amenities: existingModel.amenities);
+          }
+        }
+        if ((fresh.brokerageTypeName == null || fresh.brokerageTypeName!.isEmpty) && existingModel.brokerageTypeName != null && existingModel.brokerageTypeName!.isNotEmpty) {
+          fresh = fresh.copyWith(
+            brokerageTypeName: existingModel.brokerageTypeName,
+            brokerageTypeId: existingModel.brokerageTypeId,
+          );
+        }
+      }
 
       await _coordinator.propertyLocal.saveProperties([fresh.toLocal()]);
       _coordinator.refreshProperties();
       return fresh;
     } catch (e) {
-      final freshData = Map<String, dynamic>.from(propertyData);
-      freshData['id'] = id;
-      freshData['updated_at'] = DateTime.now().toIso8601String();
+      PropertyModel fresh;
+      if (existingModel != null) {
+        String? newPortalStatus = existingModel.portalStatus;
+        if (propertyData.containsKey('portal_status')) {
+          newPortalStatus = propertyData['portal_status'] as String?;
+        }
+        String? newStatusId = existingModel.propertyStatusId;
+        if (propertyData.containsKey('property_status_id')) {
+          newStatusId = propertyData['property_status_id'] as String?;
+        }
+        fresh = existingModel.copyWith(
+          portalStatus: newPortalStatus,
+          propertyStatusId: newStatusId,
+        );
+      } else {
+        final freshData = Map<String, dynamic>.from(propertyData);
+        freshData['id'] = id;
+        freshData['updated_at'] = DateTime.now().toIso8601String();
+        fresh = PropertyModel.fromJson(freshData);
+      }
 
-      final fresh = PropertyModel.fromJson(freshData);
       await _coordinator.propertyLocal.saveProperties([fresh.toLocal()]);
 
       final outboxItem = OutboxLocal()

@@ -5,6 +5,7 @@ import 'package:propkart/core/storage/isar_collections.dart';
 import 'package:propkart/core/storage/model_mappers.dart';
 import 'package:propkart/core/storage/performance_logger.dart';
 import 'package:propkart/core/security/role_guard.dart';
+import 'package:collection/collection.dart';
 
 class DashboardRepository {
   final DashboardService _dashboardService = DashboardService();
@@ -12,19 +13,55 @@ class DashboardRepository {
 
 
 
-  Future<DashboardData> getDashboardData() async {
+  static Future<void>? _refreshInFlight;
+  static DateTime? _lastRefreshAt;
+  static const _minRefreshInterval = Duration(seconds: 45);
+
+  Future<DashboardData> getDashboardData({
+    bool backgroundRefresh = true,
+    bool forceRefresh = false,
+  }) async {
     final start = DateTime.now();
-    
-    // Read from local Isar
-    final localDashboard = await _coordinator.dashboardLocal.getDashboard();
-    final isarReadMs = DateTime.now().difference(start).inMilliseconds;
     
     DashboardData? cachedData;
     int jsonParseMs = 0;
-    if (localDashboard != null) {
-      final parseStart = DateTime.now();
-      cachedData = localDashboard.toModel();
-      jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
+    int isarReadMs = 0;
+
+    if (!forceRefresh) {
+      // Read from local Isar
+      final localDashboard = await _coordinator.dashboardLocal.getDashboard();
+      isarReadMs = DateTime.now().difference(start).inMilliseconds;
+      if (localDashboard != null) {
+        final parseStart = DateTime.now();
+        cachedData = localDashboard.toModel();
+        jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
+      }
+    }
+
+    if (forceRefresh || cachedData == null) {
+      try {
+        final response = await _dashboardService.getDashboardData();
+        final freshData = DashboardData.fromJson(response);
+        await _coordinator.dashboardLocal.saveDashboard(freshData.toLocal());
+        final listData = response['followups'] as List? ?? [];
+        final freshFollowups = listData
+            .map((item) => DashboardFollowup.fromJson(item))
+            .toList();
+        final localEntities = freshFollowups
+            .map((f) => f.toLocal('System'))
+            .toList();
+        await _coordinator.followupLocal.saveFollowups(localEntities);
+        cachedData = freshData;
+      } catch (_) {
+        if (cachedData == null) {
+          final localDashboard = await _coordinator.dashboardLocal.getDashboard();
+          if (localDashboard != null) {
+            cachedData = localDashboard.toModel();
+          }
+        }
+      }
+    } else if (backgroundRefresh) {
+      _triggerBackgroundDashboardRefresh();
     }
 
     final totalMs = DateTime.now().difference(start).inMilliseconds;
@@ -35,26 +72,35 @@ class DashboardRepository {
       totalMs: totalMs,
     );
 
-    // Trigger async background refresh
-    _triggerBackgroundDashboardRefresh();
-
     // Get the dynamic counts of requirements to ensure they are always correct and in sync
     var localReqs = await _coordinator.requirementLocal.getRequirements();
     final currentUser = RoleGuard.currentUser;
     if (currentUser != null) {
       final role = currentUser.role;
+      final uName = currentUser.fullName.trim().toLowerCase();
       if (role == 'Admin') {
-        localReqs = localReqs.where((r) =>
-          r.createdBy == currentUser.id || r.adminId == currentUser.id
-        ).toList();
+        localReqs = localReqs.where((r) {
+          final isCreator = r.createdBy == currentUser.id ||
+              (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+              (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+          return isCreator || r.adminId == currentUser.id;
+        }).toList();
       } else if (role == 'Telecaller') {
-        localReqs = localReqs.where((r) =>
-          r.createdBy == currentUser.id || r.adminId == currentUser.adminId
-        ).toList();
+        localReqs = localReqs.where((r) {
+          final isCreator = r.createdBy == currentUser.id ||
+              (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+              (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+          return isCreator || r.adminId == currentUser.adminId;
+        }).toList();
       } else if (role != 'Super Admin') {
-        localReqs = localReqs.where((r) =>
-          r.createdBy == currentUser.id
-        ).toList();
+        localReqs = localReqs.where((r) {
+          final isCreator = r.createdBy == currentUser.id ||
+              (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+              (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+          final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+              (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
+          return isCreator || isAssignee;
+        }).toList();
       }
     }
     int rentalReqs = 0;
@@ -105,7 +151,7 @@ class DashboardRepository {
         final dtB = DateTime.tryParse(b.createdAt?.toString() ?? '') ?? DateTime(1970);
         return dtB.compareTo(dtA);
       });
-      allRecentPropsFromLocal = sortedProps.map((p) => RecentProperty(
+      allRecentPropsFromLocal = sortedProps.take(8).map((p) => RecentProperty(
         id: p.id,
         code: p.propertyCode ?? '',
         title: p.title ?? '',
@@ -119,44 +165,144 @@ class DashboardRepository {
       )).toList();
     }
 
-    final allowedReqIds = localReqs.map((r) => r.id).toSet();
-    final allowedClientNames = localReqs.map((r) => r.clientName.toLowerCase()).toSet();
+    final localLocationItems = allLocalProps.where((p) {
+      final st = p.propertyStatusName.trim().toLowerCase();
+      return st == 'available' || st == 'to be available';
+    }).map((p) => DashboardLocationItem(
+      id: p.id,
+      code: p.propertyCode,
+      areaName: (p.areaName.trim().isNotEmpty && p.areaName != 'N/A')
+          ? p.areaName.trim()
+          : 'Other',
+      categoryName: p.categoryName.trim().isNotEmpty
+          ? p.categoryName.trim()
+          : 'Residential',
+      listingType: p.listingTypeName.trim().isNotEmpty
+          ? p.listingTypeName.trim()
+          : 'Rent',
+      createdAt: p.createdAt,
+    )).toList();
+
+    final allowedReqIds = <String>{};
+    final allowedClientNames = <String>{};
+    final binnedReqIds = <String>{};
+    final binnedClientNames = <String>{};
+    final reqStatusById = <String, String>{};
+    final reqStatusByName = <String, String>{};
+
+    for (final r in localReqs) {
+      final status = (r.status ?? '').trim();
+      final name = (r.clientName ?? '').toLowerCase().trim();
+
+      if (status == 'Bin' || status == 'Rejected' || status.startsWith('Rejected') || status == 'Dead') {
+        binnedReqIds.add(r.id);
+        if (name.isNotEmpty) binnedClientNames.add(name);
+        reqStatusById[r.id] = status;
+        if (name.isNotEmpty) reqStatusByName[name] = status;
+        continue;
+      }
+
+      allowedReqIds.add(r.id);
+      if (name.isNotEmpty) allowedClientNames.add(name);
+      reqStatusById[r.id] = status;
+      if (name.isNotEmpty) reqStatusByName[name] = status;
+    }
 
     bool isAllowedItem(String? reqId, String? clientName) {
-      if (reqId != null && reqId.isNotEmpty) return allowedReqIds.contains(reqId);
-      if (clientName != null && clientName.isNotEmpty) return allowedClientNames.contains(clientName.toLowerCase());
+      if (reqId != null && reqId.isNotEmpty) {
+        if (binnedReqIds.contains(reqId)) return false;
+        return allowedReqIds.contains(reqId);
+      }
+      if (clientName != null && clientName.isNotEmpty) {
+        final cName = clientName.toLowerCase().trim();
+        if (binnedClientNames.contains(cName)) return false;
+        return allowedClientNames.contains(cName);
+      }
       return false;
     }
 
-    bool isFollowupAllowedItem(String? reqId, String? clientName) {
-      if (!isAllowedItem(reqId, clientName)) return false;
-      if (reqId != null && reqId.isNotEmpty) {
-        final match = localReqs.where((r) => r.id == reqId).firstOrNull;
-        if (match != null) {
-          final s = match.status ?? '';
-          return s == 'Follow-up' || s == 'Re-Followup';
+    final userRole = (currentUser?.role ?? '').toLowerCase();
+    final isFullAccessUser = userRole == 'admin' || userRole == 'super admin';
+
+    bool isFollowupAllowedItem(DashboardFollowup f) {
+      // Reject followups belonging to deleted or Bin/Rejected requirements
+      if (f.requirementId != null && f.requirementId!.isNotEmpty) {
+        final reqId = f.requirementId!;
+        if (binnedReqIds.contains(reqId) || reqStatusById[reqId] == 'Bin') {
+          return false;
+        }
+        if (!allowedReqIds.contains(reqId)) {
+          return false;
+        }
+      } else if (f.requirementCustomerName != null && f.requirementCustomerName!.isNotEmpty) {
+        final cName = f.requirementCustomerName!.toLowerCase().trim();
+        if (binnedClientNames.contains(cName) && !allowedClientNames.contains(cName)) {
+          return false;
+        }
+      } else if (f.clientName.isNotEmpty) {
+        final cName = f.clientName.toLowerCase().trim();
+        if (binnedClientNames.contains(cName) && !allowedClientNames.contains(cName)) {
+          return false;
         }
       }
-      if (clientName != null && clientName.isNotEmpty) {
-        final match = localReqs.where((r) => r.clientName.toLowerCase() == clientName.toLowerCase()).firstOrNull;
-        if (match != null) {
-          final s = match.status ?? '';
-          return s == 'Follow-up' || s == 'Re-Followup';
+
+      // Role-based access check
+      if (isFullAccessUser) return true;
+
+      if (currentUser != null) {
+        final userId = currentUser.id.toLowerCase();
+        final userName = currentUser.fullName.toLowerCase();
+        final creator = (f.creatorName ?? '').toLowerCase();
+        if (creator == userId || creator == userName) {
+          return true;
         }
       }
-      return true;
+
+      if (f.requirementId != null && f.requirementId!.isNotEmpty) {
+        return allowedReqIds.contains(f.requirementId);
+      }
+      if (f.requirementCustomerName != null && f.requirementCustomerName!.isNotEmpty) {
+        return allowedClientNames.contains(f.requirementCustomerName!.toLowerCase().trim());
+      }
+      return false;
     }
 
     if (cachedData != null) {
+      int localRentalAvail = 0;
+      int localResaleAvail = 0;
+      for (final p in allLocalProps) {
+        final st = (p.propertyStatusName ?? '').trim().toLowerCase();
+        if (st == 'available' || st == 'to be available') {
+          final lt = (p.listingTypeName ?? '').trim().toLowerCase();
+          if (lt.contains('rent')) {
+            localRentalAvail++;
+          } else {
+            localResaleAvail++;
+          }
+        }
+      }
+
+      final rentalAvail = cachedData.summary.rentalAvailable > 0
+          ? cachedData.summary.rentalAvailable
+          : localRentalAvail;
+      final resaleAvail = cachedData.summary.resaleAvailable > 0
+          ? cachedData.summary.resaleAvailable
+          : localResaleAvail;
+      final totalAvail = cachedData.summary.available > 0
+          ? cachedData.summary.available
+          : (rentalAvail + resaleAvail);
+
       final updatedSummary = DashboardSummary(
-        totalProperties: cachedData.summary.totalProperties,
-        available: cachedData.summary.available,
+        totalProperties: cachedData.summary.totalProperties > 0
+            ? cachedData.summary.totalProperties
+            : allLocalProps.length,
+        available: totalAvail,
         sold: resaleSiteVisits,
         rented: rentalSiteVisits,
         requirements: rentalReqs + resaleReqs,
         users: cachedData.summary.users,
-        rentalAvailable: cachedData.summary.rentalAvailable,
-        resaleAvailable: cachedData.summary.resaleAvailable,
+        rentalAvailable: rentalAvail,
+        resaleAvailable: resaleAvail,
         rentalRented: rentalSiteVisits,
         resaleSold: resaleSiteVisits,
         rentalRequirements: rentalReqs,
@@ -174,9 +320,154 @@ class DashboardRepository {
         monthlyGrowth: cachedData.summary.monthlyGrowth,
       );
 
-      final filteredFollowups = cachedData.followups.where((f) =>
-        isFollowupAllowedItem(f.requirementId, f.requirementCustomerName)
-      ).toList();
+      final allLocalFollowups = await _coordinator.followupLocal.getAllFollowups();
+      final localDashFollowups = allLocalFollowups.map((lf) => DashboardFollowup(
+        id: lf.id,
+        followupDate: lf.followupDate.toIso8601String(),
+        clientName: lf.clientName,
+        mobile: lf.mobile,
+        propertyTitle: lf.propertyTitle,
+        propertyCode: lf.propertyCode,
+        requirementCustomerName: lf.requirementCustomerName ?? lf.clientName,
+        requirementId: lf.requirementId,
+        notes: lf.notes,
+        status: lf.status,
+        creatorName: lf.createdBy,
+      )).toList();
+
+      final activeReqModels = localReqs.map((r) => r.toModel()).toList();
+
+      final combinedFollowupsMap = <String, DashboardFollowup>{};
+
+      void addFollowupToMap(DashboardFollowup f) {
+        if (!isFollowupAllowedItem(f)) return;
+
+        final req = activeReqModels.firstWhereOrNull((r) =>
+            (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+            (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+            (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+
+        if (req == null) return;
+        final reqStatus = req.status;
+        if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') {
+          return;
+        }
+
+        final key = req.id;
+        final existing = combinedFollowupsMap[key];
+        if (existing == null) {
+          combinedFollowupsMap[key] = f;
+        } else {
+          if (f.id.startsWith('local_') && !existing.id.startsWith('local_')) {
+            combinedFollowupsMap[key] = f;
+          } else if (!f.id.startsWith('local_') && existing.id.startsWith('local_')) {
+            // Keep existing local entry
+          } else {
+            combinedFollowupsMap[key] = f;
+          }
+        }
+      }
+
+      for (final f in cachedData.followups) {
+        addFollowupToMap(f);
+      }
+      for (final f in localDashFollowups) {
+        addFollowupToMap(f);
+      }
+
+      // Sync active requirements with pending followups or nextFollowupDate
+      for (final localReq in localReqs) {
+        final req = localReq.toModel();
+        final reqStatus = req.status;
+        if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') {
+          continue;
+        }
+
+        final hasFollowupStatus = reqStatus == 'Follow-up' ||
+            reqStatus == 'Re-Followup' ||
+            reqStatus == 'Site Visit' ||
+            reqStatus == 'Pending' ||
+            reqStatus == 'Active';
+        final hasNextDate = req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty;
+
+        if (hasFollowupStatus || hasNextDate) {
+          final key = req.id;
+          final existing = combinedFollowupsMap[key];
+          if (existing != null) {
+            final chosenDate = (hasNextDate && req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty)
+                ? req.nextFollowupDate!
+                : (existing.followupDate.isNotEmpty ? existing.followupDate : req.createdAt.toIso8601String());
+
+            final chosenNotes = (req.remarks != null && req.remarks!.trim().isNotEmpty)
+                ? req.remarks!
+                : ((existing.notes != null && existing.notes!.trim().isNotEmpty) ? existing.notes : (req.notes ?? ''));
+
+            combinedFollowupsMap[key] = DashboardFollowup(
+              id: existing.id,
+              requirementId: req.id,
+              clientName: existing.clientName.isNotEmpty ? existing.clientName : req.clientName,
+              mobile: existing.mobile.isNotEmpty ? existing.mobile : req.clientMobile,
+              propertyTitle: req.listingTypeName ?? existing.propertyTitle ?? 'Rent',
+              followupDate: chosenDate,
+              status: existing.status.isNotEmpty ? existing.status : reqStatus,
+              notes: chosenNotes,
+              creatorName: existing.creatorName ?? req.creatorName ?? req.assigneeName,
+            );
+          } else {
+            combinedFollowupsMap[key] = DashboardFollowup(
+              id: 'local_${req.id}',
+              requirementId: req.id,
+              clientName: req.clientName,
+              mobile: req.clientMobile,
+              propertyTitle: req.listingTypeName ?? 'Rent',
+              followupDate: hasNextDate ? req.nextFollowupDate! : req.createdAt.toIso8601String(),
+              status: reqStatus,
+              notes: req.remarks ?? req.notes,
+              creatorName: req.creatorName ?? req.assigneeName,
+            );
+          }
+        }
+      }
+
+      // Purge any followups tied to binned/deleted requirements, and assign exact listingTypeName to propertyTitle
+      final List<String> keysToRemove = [];
+      combinedFollowupsMap.forEach((key, f) {
+        final req = activeReqModels.firstWhereOrNull((r) =>
+            (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+            (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+            (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+
+        if (req == null) {
+          keysToRemove.add(key);
+        } else {
+          final reqStatus = req.status;
+          if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') {
+            keysToRemove.add(key);
+          } else {
+            final listingType = (req.listingTypeName != null && req.listingTypeName!.isNotEmpty)
+                ? req.listingTypeName!
+                : 'Rent';
+            combinedFollowupsMap[key] = DashboardFollowup(
+              id: f.id,
+              requirementId: req.id,
+              clientName: f.clientName.isNotEmpty ? f.clientName : req.clientName,
+              mobile: f.mobile.isNotEmpty ? f.mobile : req.clientMobile,
+              propertyTitle: listingType,
+              propertyCode: f.propertyCode,
+              requirementCustomerName: f.requirementCustomerName ?? req.clientName,
+              followupDate: f.followupDate,
+              notes: f.notes ?? req.remarks ?? req.notes,
+              status: f.status,
+              creatorName: f.creatorName ?? req.creatorName ?? req.assigneeName,
+            );
+          }
+        }
+      });
+      for (final k in keysToRemove) {
+        combinedFollowupsMap.remove(k);
+      }
+
+      final filteredFollowups = combinedFollowupsMap.values.toList();
 
       final filteredSiteVisits = cachedData.siteVisits.where((sv) =>
         isAllowedItem(sv.requirementId, sv.requirementCustomerName)
@@ -189,6 +480,9 @@ class DashboardRepository {
         checklist: cachedData.checklist,
         followups: filteredFollowups,
         siteVisits: filteredSiteVisits,
+        inventoryLocations: cachedData.inventoryLocations.isNotEmpty
+            ? cachedData.inventoryLocations
+            : localLocationItems,
       );
     }
 
@@ -224,7 +518,7 @@ class DashboardRepository {
     );
 
     final filteredFollowups = model.followups.where((f) =>
-      isAllowedItem(f.requirementId, f.requirementCustomerName)
+      isFollowupAllowedItem(f)
     ).toList();
 
     final filteredSiteVisits = model.siteVisits.where((sv) =>
@@ -238,12 +532,22 @@ class DashboardRepository {
       checklist: model.checklist,
       followups: filteredFollowups,
       siteVisits: filteredSiteVisits,
+      inventoryLocations: model.inventoryLocations.isNotEmpty
+          ? model.inventoryLocations
+          : localLocationItems,
     );
   }
 
   void _triggerBackgroundDashboardRefresh() {
+    final last = _lastRefreshAt;
+    if (_refreshInFlight != null) return;
+    if (last != null && DateTime.now().difference(last) < _minRefreshInterval) {
+      return;
+    }
+
+    _lastRefreshAt = DateTime.now();
     final start = DateTime.now();
-    _dashboardService.getDashboardData().then((response) async {
+    _refreshInFlight = _dashboardService.getDashboardData().then((response) async {
       final networkMs = DateTime.now().difference(start).inMilliseconds;
 
       final parseStart = DateTime.now();
@@ -271,6 +575,8 @@ class DashboardRepository {
       );
 
       _coordinator.refreshDashboard();
-    }).catchError((_) {});
+    }).catchError((_) {}).whenComplete(() {
+      _refreshInFlight = null;
+    });
   }
 }

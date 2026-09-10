@@ -902,8 +902,11 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final int cols = constraints.maxWidth > 500 ? 2 : 1;
-        final double itemWidth = cols == 2 ? (constraints.maxWidth - CRMSpacing.m) / 2 : constraints.maxWidth;
+        final double maxW = constraints.maxWidth;
+        final int cols = maxW > 350 ? 3 : (maxW > 240 ? 2 : 1);
+        final double availableW = maxW - (CRMSpacing.m * 2);
+        final double tileSpacing = 16.0;
+        final double tileWidth = ((availableW - (cols - 1) * tileSpacing - 2.0) / cols).floorToDouble();
 
         return CRMCard(
           padding: const EdgeInsets.all(CRMSpacing.m),
@@ -912,18 +915,42 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
             children: [
               Text(
                 title,
-                style: CRMTypography.bodyMedium.copyWith(color: primaryColor ?? CRMColors.primaryOf(context), fontWeight: FontWeight.bold),
+                style: CRMTypography.sectionTitle.copyWith(color: primaryColor ?? CRMColors.textOf(context), fontWeight: FontWeight.bold, fontSize: 16),
               ),
-              const SizedBox(height: CRMSpacing.s),
-              Divider(color: CRMColors.borderOf(context).withValues(alpha: 0.6), thickness: 0.5),
-              const SizedBox(height: CRMSpacing.s),
+              const SizedBox(height: CRMSpacing.m),
               Wrap(
-                spacing: CRMSpacing.m,
-                runSpacing: CRMSpacing.s,
+                spacing: tileSpacing,
+                runSpacing: 16,
                 children: items.map((item) {
                   return SizedBox(
-                    width: itemWidth,
-                    child: _buildDetailRow(item.label, item.value, item.icon),
+                    width: tileWidth,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.label,
+                          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(item.icon, size: 14, color: primaryColor ?? CRMColors.primaryOf(context)),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Tooltip(
+                                message: item.value,
+                                child: Text(
+                                  item.value,
+                                  style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context), fontSize: 13),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   );
                 }).toList(),
               ),
@@ -934,30 +961,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
     );
   }
 
-  Widget _buildDetailRow(String label, String value, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: CRMColors.textSecondaryOf(context)),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: CRMTypography.body.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   String? _getAvailableFromFormatted(Map<String, dynamic> p) {
     final statusNameRaw = (p['property_status_name'] ?? '').toString().toLowerCase();

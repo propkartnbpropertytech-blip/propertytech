@@ -1,4 +1,8 @@
 class AppConstants {
+  // App Info
+  static const String appVersion = '2.0.1';
+  static const String buildNumber = '9';
+
   // API Config
   static const String baseUrl = 'https://api-propkart.nbpropertytech.com/api/v1';
   static const Duration connectTimeout = Duration(seconds: 15);

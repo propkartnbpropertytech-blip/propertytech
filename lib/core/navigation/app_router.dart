@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../features/auth/bloc/auth_bloc.dart';
@@ -7,6 +8,7 @@ import '../../features/auth/login_screen.dart';
 import '../../features/auth/reset_password_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/properties/screens/properties_screen.dart';
+import '../../features/properties/screens/property_search_screen.dart';
 import '../../features/properties/screens/property_detail_screen.dart';
 import '../../features/properties/bloc/properties_bloc.dart';
 import '../../features/users/screens/users_screen.dart';
@@ -38,6 +40,14 @@ import '../../features/library/screens/resale_library_screen.dart';
 import '../../features/library/screens/service_agent_library_screen.dart';
 import '../../features/campaign/screens/connections_screen.dart';
 import '../../features/campaign/screens/campaign_leads_screen.dart';
+import '../../features/reports/screens/reports_shell.dart';
+import '../../features/reports/screens/leads/overall_business_insight_screen.dart';
+import '../../features/reports/screens/leads/telecaller_report_placeholder.dart';
+import '../../features/reports/screens/leads/sales_report_placeholder.dart';
+import '../../features/reports/screens/leads/lead_metrics_screen.dart';
+import '../../features/reports/screens/properties/properties_coming_soon_screen.dart';
+import '../../features/reports/bloc/reports_bloc.dart';
+import '../../features/reports/bloc/reports_event.dart';
 import '../utils/seo_helper.dart';
 import 'mobile_system_back_handler.dart';
 
@@ -64,10 +74,40 @@ class AppRouter {
 
   AppRouter(this.authBloc);
 
+  static String _getWebInitialLocation() {
+    if (kIsWeb) {
+      String frag = Uri.base.fragment.trim();
+      if (frag.startsWith('#')) {
+        frag = frag.substring(1).trim();
+      }
+      if (frag.isNotEmpty && !frag.contains('/splash') && !frag.contains('/login') && !frag.contains('/get-started')) {
+        final sanitized = RoleGuard.sanitizeRedirectPath(frag);
+        if (sanitized != null && sanitized.isNotEmpty) {
+          return sanitized;
+        }
+      }
+      final fromParam = Uri.base.queryParameters['from'];
+      final sanitizedFrom = RoleGuard.sanitizeRedirectPath(fromParam);
+      if (sanitizedFrom != null && sanitizedFrom.isNotEmpty) {
+        return sanitizedFrom;
+      }
+    }
+    return '/splash';
+  }
+
   late final router = GoRouter(
-    initialLocation: '/splash',
+    initialLocation: _getWebInitialLocation(),
     refreshListenable: GoRouterRefreshStream(authBloc.stream),
     routes: [
+      GoRoute(
+        path: '/',
+        redirect: (context, state) {
+          final from = state.uri.queryParameters['from'];
+          final sanitizedFrom = RoleGuard.sanitizeRedirectPath(from);
+          if (sanitizedFrom != null) return sanitizedFrom;
+          return '/splash';
+        },
+      ),
       GoRoute(
         path: '/splash',
         builder: (context, state) => const SplashScreen(),
@@ -107,6 +147,22 @@ class AppRouter {
           token: state.uri.queryParameters['token'],
         ),
       ),
+      GoRoute(
+        path: '/search',
+        pageBuilder: (context, state) => crmFadeSlidePage(
+          key: state.pageKey,
+          name: state.name,
+          child: BlocProvider(
+            create: (context) => PropertiesBloc(),
+            child: PropertySearchScreen(
+              initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
+              initialListingType: state.uri.queryParameters['listingType'],
+              initialCategoryTab: state.uri.queryParameters['categoryTab'],
+              initialBhk: state.uri.queryParameters['bhk'],
+            ),
+          ),
+        ),
+      ),
       ShellRoute(
         builder: (context, state, child) => CRMAppShell(child: child),
         routes: [
@@ -141,7 +197,7 @@ class AppRouter {
           ),
           GoRoute(
             path: '/campaign',
-            redirect: (context, state) => '/campaign/leads',
+            redirect: (context, state) => '/campaign/connections',
           ),
           GoRoute(
             path: '/campaign/connections',
@@ -163,10 +219,17 @@ class AppRouter {
           ),
           GoRoute(
             path: '/requirements',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const RequirementsScreen(),
-            ),
+            pageBuilder: (context, state) {
+              final tab = state.uri.queryParameters['tab'];
+              final subTab = state.uri.queryParameters['subTab'];
+              return crmFadeSlidePage(
+                key: state.pageKey,
+                child: RequirementsScreen(
+                  initialTab: tab,
+                  initialSubTab: subTab,
+                ),
+              );
+            },
           ),
           GoRoute(
             path: '/clients',
@@ -257,6 +320,57 @@ class AppRouter {
               child: const ServiceAgentLibraryScreen(),
             ),
           ),
+          ShellRoute(
+            builder: (context, state, child) => BlocProvider<ReportsBloc>(
+              create: (context) => ReportsBloc()..add(const LoadReportEvent()),
+              child: ReportsShell(child: child),
+            ),
+            routes: [
+              GoRoute(
+                path: '/reports',
+                redirect: (context, state) => '/reports/leads/overall-business-insight',
+              ),
+              GoRoute(
+                path: '/reports/leads',
+                redirect: (context, state) => '/reports/leads/overall-business-insight',
+              ),
+              GoRoute(
+                path: '/reports/leads/overall-business-insight',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const OverallBusinessInsightScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/leads/telecaller',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const TelecallerReportPlaceholderScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/leads/sales',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const SalesReportPlaceholderScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/leads/metrics',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const LeadMetricsScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/properties',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const PropertiesComingSoonScreen(),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       GoRoute(
@@ -338,6 +452,7 @@ class AppRouter {
       final isPublicShare = state.matchedLocation.startsWith('/share/') || state.uri.path.startsWith('/share/');
       final onUsers = state.matchedLocation.startsWith('/users');
       final onAudit = state.matchedLocation.startsWith('/settings/audit-logs');
+      final onReports = state.matchedLocation.startsWith('/reports');
       final onTerms = state.matchedLocation == '/terms-and-conditions' || state.matchedLocation == '/terms_and_conditions' || state.uri.path == '/terms-and-conditions' || state.uri.path == '/terms_and_conditions';
       final onPrivacy = state.matchedLocation == '/privacy-policy' || state.matchedLocation == '/privacy_policy' || state.uri.path == '/privacy-policy' || state.uri.path == '/privacy_policy';
       final onResetPassword = state.matchedLocation == '/reset-password' || state.uri.path == '/reset-password';
@@ -372,6 +487,9 @@ class AppRouter {
         if (onAudit && !RoleGuard.canViewAuditLogs(role)) {
           return '/dashboard';
         }
+        if (onReports && !RoleGuard.canViewReports(role)) {
+          return '/dashboard';
+        }
 
         if (loggingIn || onGetStarted) {
           final from = state.uri.queryParameters['from'];
@@ -381,8 +499,19 @@ class AppRouter {
           if (!SyncManager().isSyncCompleted) {
             return null;
           }
-          final from = state.uri.queryParameters['from'];
-          return RoleGuard.sanitizeRedirectPath(from, role: role) ?? '/dashboard';
+          final from = state.uri.queryParameters['from'] ?? (kIsWeb ? Uri.base.queryParameters['from'] : null);
+          final sanitizedFrom = RoleGuard.sanitizeRedirectPath(from, role: role);
+          if (sanitizedFrom != null) return sanitizedFrom;
+
+          if (kIsWeb) {
+            final fragment = Uri.base.fragment;
+            if (fragment.isNotEmpty && !fragment.contains('/splash') && !fragment.contains('/login') && !fragment.contains('/get-started')) {
+              final sanitizedFragment = RoleGuard.sanitizeRedirectPath(fragment, role: role);
+              if (sanitizedFragment != null) return sanitizedFragment;
+            }
+          }
+
+          return '/dashboard';
         }
         return null;
       }
@@ -423,7 +552,7 @@ class AppRouter {
       );
     } else if (location.startsWith('/requirements')) {
       SeoHelper.updateTags(
-        title: 'Requirements | PropKart CRM',
+        title: 'Leads | PropKart CRM',
         description: 'Review client listing requests and buy/rent matchmaking preferences.',
         noIndex: true,
       );
@@ -470,6 +599,12 @@ class AppRouter {
       SeoHelper.updateTags(
         title: 'Shared Libraries | PropKart CRM',
         description: 'View rental and resale property library databases.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/reports')) {
+      SeoHelper.updateTags(
+        title: 'Reports & Analytics | PropKart CRM',
+        description: 'Review lead performance, overall business insights, and pipeline analytics.',
         noIndex: true,
       );
     } else if (location.startsWith('/splash')) {

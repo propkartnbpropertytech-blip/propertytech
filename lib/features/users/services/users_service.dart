@@ -1,223 +1,67 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/api/api_client.dart';
-import '../../../core/api/api_constants.dart';
 import '../../../core/api/api_exception.dart';
-import '../../../core/api/cloudinary_uploader.dart';
 
 class UsersService {
   final ApiClient _apiClient = ApiClient();
-  SupabaseClient get _supabase => Supabase.instance.client;
 
   Future<Map<String, dynamic>> getUsers({
     String? search,
     String? roleId,
     String? status,
   }) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        final sessionUser = _supabase.auth.currentUser;
-        if (sessionUser == null) throw Exception("Unauthenticated");
-
-        // Fetch user profile of requester to get role name
-        final requesterProfile = await _supabase
-            .from('users')
-            .select('*, roles(name)')
-            .eq('id', sessionUser.id)
-            .maybeSingle();
-
-        final requesterRole = requesterProfile != null && requesterProfile['roles'] != null
-            ? requesterProfile['roles']['name']?.toString()
-            : null;
-
-        var query = _supabase
-            .from('users')
-            .select('*, roles(id, name, description)')
-            .isFilter('deleted_at', null);
-
-        // Apply RBAC filters based on role
-        if (requesterRole == 'Admin' || requesterRole == 'Telecaller') {
-          // Admins and Telecallers only see themselves and users they manage (admin_id = current user's ID)
-          query = query.or('id.eq.${sessionUser.id},admin_id.eq.${sessionUser.id}');
-        } else if (requesterRole == 'Sales') {
-          // Sales users only see themselves
-          query = query.eq('id', sessionUser.id);
-        } else if (requesterRole == 'Super Admin') {
-          // Super Admins see all users in organization (enforced by RLS anyway)
-          if (requesterProfile != null && requesterProfile['organization_id'] != null) {
-            query = query.eq('organization_id', requesterProfile['organization_id']);
-          }
-        }
-
-        if (status != null && status != 'All') {
-          query = query.eq('is_active', status == 'Active');
-        }
-        if (roleId != null && roleId.isNotEmpty) {
-          query = query.eq('role_id', roleId);
-        }
-        if (search != null && search.isNotEmpty) {
-          query = query.or('full_name.ilike.%$search%,email.ilike.%$search%,mobile.ilike.%$search%');
-        }
-
-        final response = await query.order('created_at', ascending: false);
-        final list = (response as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
-
-        return {
-          'success': true,
-          'message': 'Users fetched successfully.',
-          'data': {
-            'users': list,
-          }
-        };
-      } catch (e) {
-        throw ApiException(message: e.toString());
+    try {
+      final Map<String, dynamic> queryParameters = {};
+      if (search != null && search.isNotEmpty) {
+        queryParameters['search'] = search;
       }
-    } else {
-      try {
-        final Map<String, dynamic> queryParameters = {};
-        if (search != null && search.isNotEmpty) {
-          queryParameters['search'] = search;
-        }
-        if (roleId != null && roleId.isNotEmpty) {
-          queryParameters['roleId'] = roleId;
-        }
-        if (status != null && status != 'All') {
-          queryParameters['status'] = status;
-        }
-
-        final response = await _apiClient.get(
-          '/users',
-          queryParameters: queryParameters,
-        );
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
+      if (roleId != null && roleId.isNotEmpty) {
+        queryParameters['roleId'] = roleId;
       }
+      if (status != null && status != 'All') {
+        queryParameters['status'] = status;
+      }
+
+      final response = await _apiClient.get(
+        '/users',
+        queryParameters: queryParameters,
+      );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
   Future<Map<String, dynamic>> getRoles() async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        final response = await _supabase.from('roles').select('*');
-        final list = (response as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
-        return {
-          'success': true,
-          'message': 'Roles fetched successfully.',
-          'data': {
-            'roles': list,
-          }
-        };
-      } catch (e) {
-        throw ApiException(message: e.toString());
+    try {
+      final response = await _apiClient.get('/users/roles');
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
       }
-    } else {
-      try {
-        final response = await _apiClient.get('/users/roles');
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
   Future<Map<String, dynamic>> createUser(Map<String, dynamic> userData) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        final currentUserId = _supabase.auth.currentUser?.id;
-        if (currentUserId == null) throw Exception('Unauthorized user.');
-
-        // Fetch creator's profile to obtain organization_id and role
-        final creatorProfile = await _supabase
-            .from('users')
-            .select('organization_id, roles(name)')
-            .eq('id', currentUserId)
-            .single();
-
-        final creatorOrgId = creatorProfile['organization_id'];
-        final creatorRole = creatorProfile['roles'] != null
-            ? creatorProfile['roles']['name']?.toString()
-            : null;
-
-        // If creator is Admin, Super Admin, or Telecaller, they are the parent admin of this user
-        final String? adminId = (creatorRole == 'Admin' || creatorRole == 'Super Admin' || creatorRole == 'Telecaller')
-            ? (userData['admin_id'] ?? currentUserId)
-            : userData['admin_id'];
-        final String? orgId = creatorOrgId ?? userData['organization_id'];
-
-        final response = await _supabase.rpc(
-          'admin_create_user',
-          params: {
-            'p_email': userData['email'],
-            'p_password': userData['password'],
-            'p_full_name': userData['full_name'] ?? '',
-            'p_role_id': userData['role_id'],
-            'p_organization_id': orgId,
-            'p_admin_id': adminId,
-            'p_mobile': userData['mobile'],
-          },
-        );
-
-        if (response != null && response['success'] == true) {
-          final userId = response['user']['id'];
-
-          // Sync profile_photo only — password_hash is already set by admin_create_user
-          if (userData['profile_photo'] != null) {
-            try {
-              await _supabase.from('users').update({
-                'profile_photo': userData['profile_photo'],
-              }).eq('id', userId);
-            } catch (e) {
-              debugPrint("Syncing user metadata to public.users table notice: $e");
-            }
-          }
-
-          final joinedUser = await _supabase
-              .from('users')
-              .select('*, roles(id, name, description)')
-              .eq('id', userId)
-              .single();
-
-          return {
-            'success': true,
-            'message': 'User created successfully.',
-            'data': {'user': joinedUser}
-          };
-        }
-        throw ApiException(message: response?['message'] ?? 'Failed to create user via RPC.');
-      } catch (e) {
-        final errStr = e.toString();
-        if (errStr.contains('users_email_partial_key') || errStr.contains('Key (email)')) {
-          throw ApiException(message: 'A user with this email address already exists. Please use a different email.');
-        }
-        if (errStr.contains('users_mobile_key') || errStr.contains('Key (mobile)')) {
-          throw ApiException(message: 'A sales user with this mobile number already exists.');
-        }
-        throw ApiException(message: errStr);
+    try {
+      final response = await _apiClient.post('/users', userData);
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
       }
-    } else {
-      try {
-        final response = await _apiClient.post('/users', userData);
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
@@ -225,57 +69,16 @@ class UsersService {
     String id,
     Map<String, dynamic> userData,
   ) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        final cleanData = Map<String, dynamic>.from(userData)
-          ..remove('id')
-          ..remove('email')
-          ..remove('role')
-          ..remove('roles');
-
-        // If password is provided, update public.users + auth.users via RPC
-        if (cleanData.containsKey('password') && cleanData['password'] != null && cleanData['password'].toString().isNotEmpty) {
-          final newPassword = cleanData['password'].toString();
-          await _supabase.rpc(
-            'admin_update_password',
-            params: {
-              'p_user_id': id,
-              'p_new_password': newPassword,
-            },
-          );
-        }
-        cleanData.remove('password');
-        cleanData.remove('password_hash');
-
-        final response = await _supabase
-            .from('users')
-            .update(cleanData)
-            .eq('id', id)
-            .select('*, roles(id, name)')
-            .single();
-
-        return {
-          'success': true,
-          'message': 'User updated successfully.',
-          'data': {
-            'user': response,
-          }
-        };
-      } catch (e) {
-        throw ApiException(message: e.toString());
+    try {
+      final response = await _apiClient.put('/users/$id', userData);
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
       }
-    } else {
-      try {
-        final response = await _apiClient.put('/users/$id', userData);
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
@@ -283,144 +86,33 @@ class UsersService {
     String id,
     bool isActive,
   ) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        final response = await _supabase
-            .from('users')
-            .update({'is_active': isActive})
-            .eq('id', id)
-            .select('*, roles(id, name)')
-            .single();
-
-        return {
-          'success': true,
-          'message': 'User status updated successfully.',
-          'data': {
-            'user': response,
-          }
-        };
-      } catch (e) {
-        throw ApiException(message: e.toString());
+    try {
+      final response = await _apiClient.patch(
+        '/users/$id/status',
+        {'isActive': isActive},
+      );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
       }
-    } else {
-      try {
-        final response = await _apiClient.patch(
-          '/users/$id/status',
-          {'isActive': isActive},
-        );
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 
   Future<Map<String, dynamic>> deleteUser(String id) async {
-    if (ApiConstants.useSupabaseDirect) {
-      try {
-        // 1. Fetch user row to check profile_photo URL for Cloudinary cleanup
-        try {
-          final userRow = await _supabase
-              .from('users')
-              .select('id, profile_photo')
-              .eq('id', id)
-              .maybeSingle();
-
-          if (userRow != null && userRow['profile_photo'] != null) {
-            final photoUrl = userRow['profile_photo'].toString();
-            if (photoUrl.contains('cloudinary.com')) {
-              await CloudinaryUploader.delete(url: photoUrl, resourceType: 'image');
-            }
-          }
-        } catch (e) {
-          debugPrint("Cloudinary photo delete notice: $e");
-        }
-
-        // 2. Delete associated password_reset_requests
-        try {
-          await _supabase
-              .from('password_reset_requests')
-              .delete()
-              .or('user_id.eq.$id,requested_by.eq.$id');
-        } catch (_) {}
-
-        // Nullify foreign key references to allow hard delete (without deleting listed properties)
-        try {
-          await _supabase.from('properties').update({'created_by': null}).eq('created_by', id);
-        } catch (e) {
-          debugPrint("Nullify properties.created_by error: $e");
-        }
-        try {
-          await _supabase.from('requirements').update({'created_by': null}).eq('created_by', id);
-        } catch (e) {
-          debugPrint("Nullify requirements.created_by error: $e");
-        }
-        try {
-          await _supabase.from('requirements').update({'admin_id': null}).eq('admin_id', id);
-        } catch (e) {
-          debugPrint("Nullify requirements.admin_id error: $e");
-        }
-        try {
-          await _supabase.from('site_visits').update({'scheduled_by': null}).eq('scheduled_by', id);
-        } catch (e) {
-          debugPrint("Nullify site_visits.scheduled_by error: $e");
-        }
-        try {
-          await _supabase.from('tasks').update({'created_by': null}).eq('created_by', id);
-        } catch (e) {
-          debugPrint("Nullify tasks.created_by error: $e");
-        }
-        try {
-          await _supabase.from('tasks').update({'assigned_to': null}).eq('assigned_to', id);
-        } catch (e) {
-          debugPrint("Nullify tasks.assigned_to error: $e");
-        }
-        try {
-          await _supabase.from('share_sessions').update({'shared_by': null}).eq('shared_by', id);
-        } catch (e) {
-          debugPrint("Nullify share_sessions.shared_by error: $e");
-        }
-
-        // 3. Execute RPC to delete user from Supabase Auth & DB
-        for (final paramKey in ['p_user_id', 'p_id', 'p_target_user_id', 'user_id', 'id']) {
-          try {
-            await _supabase.rpc('admin_delete_user', params: {paramKey: id});
-            break;
-          } catch (_) {}
-        }
-
-        // 4. Hard-delete user row permanently from public.users table
-        final response = await _supabase
-            .from('users')
-            .delete()
-            .eq('id', id)
-            .select();
-
-        return {
-          'success': true,
-          'message': 'User deleted successfully.',
-          'data': response.isNotEmpty ? response.first : {'id': id}
-        };
-      } catch (e) {
-        throw ApiException(message: e.toString());
+    try {
+      final response = await _apiClient.delete('/users/$id');
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
       }
-    } else {
-      try {
-        final response = await _apiClient.delete('/users/$id');
-        if (response.data is Map<String, dynamic>) {
-          return response.data as Map<String, dynamic>;
-        }
-        throw ApiException(message: "Invalid response format from server.");
-      } on DioException catch (e) {
-        throw ApiException.fromDioException(e);
-      } catch (e) {
-        throw ApiException(message: e.toString());
-      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
     }
   }
 }

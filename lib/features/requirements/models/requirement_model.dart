@@ -23,6 +23,7 @@ class RequirementModel {
   final List<dynamic>? rawSiteVisits;
   final List<dynamic>? rawShareSessions;
   final String? remarks;
+  final String? notes;
   final String status; // 'Active', 'Closed', 'Suspended'
   final DateTime createdAt;
   final String? adminId;
@@ -36,6 +37,19 @@ class RequirementModel {
   final String? createdBy;
   final String? creatorMobile;
   final String? creatorEmail;
+  final String? leadSource;
+  final String? referralName;
+  final String? metaLeadId;
+  final String? metaPageId;
+  final String? metaFormId;
+  final String? metaCampaignId;
+  final String? metaCampaignName;
+  final String? metaAdsetId;
+  final String? metaAdsetName;
+  final String? metaAdId;
+  final String? metaAdName;
+  final Map<String, dynamic>? metaCustomFields;
+  final String? leadQuality;
 
   RequirementModel({
     required this.id,
@@ -60,6 +74,7 @@ class RequirementModel {
     this.rawSiteVisits,
     this.rawShareSessions,
     this.remarks,
+    this.notes,
     required this.status,
     required this.createdAt,
     this.adminId,
@@ -73,7 +88,44 @@ class RequirementModel {
     this.createdBy,
     this.creatorMobile,
     this.creatorEmail,
+    this.leadSource,
+    this.referralName,
+    this.metaLeadId,
+    this.metaPageId,
+    this.metaFormId,
+    this.metaCampaignId,
+    this.metaCampaignName,
+    this.metaAdsetId,
+    this.metaAdsetName,
+    this.metaAdId,
+    this.metaAdName,
+    this.metaCustomFields,
+    this.leadQuality,
   });
+
+  bool get isMetaLead => metaLeadId != null && metaLeadId!.isNotEmpty;
+  String? get metaCampaignDisplayName => metaCampaignName ?? metaCampaignId;
+  String? get metaAdDisplayName => metaAdName ?? metaAdId;
+
+  String? get leadSourceDisplay {
+    if (isMetaLead) {
+      if (metaCampaignName != null && metaCampaignName!.isNotEmpty) {
+        return 'Meta Ads ($metaCampaignName)';
+      }
+      return 'Meta Ads';
+    }
+    final src = (leadSource != null && leadSource!.trim().isNotEmpty)
+        ? leadSource!.trim()
+        : null;
+    if (src == null) return null;
+    if (src.toLowerCase() == 'referral' || src.toLowerCase() == 'referrel') {
+      if (referralName != null && referralName!.trim().isNotEmpty) {
+        return 'Referral (${referralName!.trim()})';
+      }
+      return 'Referral';
+    }
+    return src;
+  }
 
   factory RequirementModel.fromJson(Map<String, dynamic> json) {
     // Handle category name from joined category object
@@ -166,6 +218,18 @@ class RequirementModel {
       aNames = [json['area']['area_name']?.toString() ?? ''];
     }
 
+    // Extract lead source and referral name
+    String? parsedLeadSource = (json['leadSource'] ?? json['lead_source'] ?? json['source']) as String?;
+    String? parsedReferralName = (json['referralName'] ?? json['referral_name'] ?? json['referred_by']) as String?;
+
+    if (parsedLeadSource != null && parsedLeadSource.startsWith('Referral (')) {
+      final match = RegExp(r'^Referral\s*\((.*?)\)$', caseSensitive: false).firstMatch(parsedLeadSource);
+      if (match != null) {
+        parsedReferralName = match.group(1);
+        parsedLeadSource = 'Referral';
+      }
+    }
+
     return RequirementModel(
       id: json['id'] ?? '',
       clientName: json['clientName'] ?? json['customer_name'] ?? '',
@@ -189,6 +253,7 @@ class RequirementModel {
       rawSiteVisits: json['site_visits'] as List<dynamic>?,
       rawShareSessions: json['share_sessions'] as List<dynamic>?,
       remarks: json['remarks'],
+      notes: json['notes'] as String?,
       status: json['status'] ?? 'Active',
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
@@ -239,6 +304,23 @@ class RequirementModel {
       createdBy: (json['created_by'] ?? json['createdBy']) as String?,
       creatorMobile: (json['creatorMobile'] ?? json['creator_mobile']) as String?,
       creatorEmail: (json['creatorEmail'] ?? json['creator_email']) as String?,
+      leadSource: parsedLeadSource,
+      referralName: parsedReferralName,
+      metaLeadId: (json['meta_lead_id'] ?? json['metaLeadId'])?.toString(),
+      metaPageId: (json['meta_page_id'] ?? json['metaPageId'])?.toString(),
+      metaFormId: (json['meta_form_id'] ?? json['metaFormId'])?.toString(),
+      metaCampaignId: (json['meta_campaign_id'] ?? json['metaCampaignId'])?.toString(),
+      metaCampaignName: (json['meta_campaign_name'] ?? json['metaCampaignName'])?.toString(),
+      metaAdsetId: (json['meta_adset_id'] ?? json['metaAdsetId'])?.toString(),
+      metaAdsetName: (json['meta_adset_name'] ?? json['metaAdsetName'])?.toString(),
+      metaAdId: (json['meta_ad_id'] ?? json['metaAdId'])?.toString(),
+      metaAdName: (json['meta_ad_name'] ?? json['metaAdName'])?.toString(),
+      metaCustomFields: json['meta_custom_fields'] is Map
+          ? Map<String, dynamic>.from(json['meta_custom_fields'] as Map)
+          : json['metaCustomFields'] is Map
+              ? Map<String, dynamic>.from(json['metaCustomFields'] as Map)
+              : null,
+      leadQuality: (json['lead_quality'] ?? json['leadQuality'])?.toString(),
     );
   }
 
@@ -277,10 +359,27 @@ class RequirementModel {
       'createdBy': createdBy,
       'creatorMobile': creatorMobile,
       'creatorEmail': creatorEmail,
+      'leadSource': leadSource,
+      'referralName': referralName,
+      'meta_lead_id': metaLeadId,
+      'meta_page_id': metaPageId,
+      'meta_form_id': metaFormId,
+      'meta_campaign_id': metaCampaignId,
+      'meta_campaign_name': metaCampaignName,
+      'meta_adset_id': metaAdsetId,
+      'meta_adset_name': metaAdsetName,
+      'meta_ad_id': metaAdId,
+      'meta_ad_name': metaAdName,
+      'meta_custom_fields': metaCustomFields,
+      'lead_quality': leadQuality,
     };
   }
 
   Map<String, dynamic> toBackendJson() {
+    final String? formattedSource = leadSource != null && leadSource!.toLowerCase() == 'referral' && referralName != null && referralName!.isNotEmpty
+        ? 'Referral ($referralName)'
+        : leadSource;
+
     return {
       'customer_name': clientName,
       'mobile': clientMobile,
@@ -299,12 +398,29 @@ class RequirementModel {
       'configuration_ids': configurationIds.isNotEmpty ? configurationIds : (configurationId != null ? [configurationId!] : null),
       'property_type_ids': propertyTypeIds.isNotEmpty ? propertyTypeIds : [propertyTypeId],
       'remarks': remarks,
+      'notes': notes,
       'status': status,
+      'next_followup_date': nextFollowupDate,
+      'nextFollowupDate': nextFollowupDate,
       'assigned_to': (assignedTo == null || assignedTo!.isEmpty) ? null : assignedTo,
       'furnishing_type_ids': furnishingIds,
       'facing_type_ids': facingIds,
       'furnishing_type_id': furnishingIds.isNotEmpty ? furnishingIds.first : null,
       'facing_type_id': facingIds.isNotEmpty ? facingIds.first : null,
+      'lead_source': leadSource,
+      'referral_name': referralName,
+      'source': formattedSource,
+      if (metaLeadId != null) 'meta_lead_id': metaLeadId,
+      if (metaPageId != null) 'meta_page_id': metaPageId,
+      if (metaFormId != null) 'meta_form_id': metaFormId,
+      if (metaCampaignId != null) 'meta_campaign_id': metaCampaignId,
+      if (metaCampaignName != null) 'meta_campaign_name': metaCampaignName,
+      if (metaAdsetId != null) 'meta_adset_id': metaAdsetId,
+      if (metaAdsetName != null) 'meta_adset_name': metaAdsetName,
+      if (metaAdId != null) 'meta_ad_id': metaAdId,
+      if (metaAdName != null) 'meta_ad_name': metaAdName,
+      if (metaCustomFields != null) 'meta_custom_fields': metaCustomFields,
+      if (leadQuality != null) 'lead_quality': leadQuality,
     };
   }
 
@@ -416,6 +532,7 @@ class RequirementModel {
     List<dynamic>? rawSiteVisits,
     List<dynamic>? rawShareSessions,
     String? remarks,
+    String? notes,
     String? status,
     DateTime? createdAt,
     String? adminId,
@@ -429,6 +546,19 @@ class RequirementModel {
     String? createdBy,
     String? creatorMobile,
     String? creatorEmail,
+    String? leadSource,
+    String? referralName,
+    String? metaLeadId,
+    String? metaPageId,
+    String? metaFormId,
+    String? metaCampaignId,
+    String? metaCampaignName,
+    String? metaAdsetId,
+    String? metaAdsetName,
+    String? metaAdId,
+    String? metaAdName,
+    Map<String, dynamic>? metaCustomFields,
+    String? leadQuality,
   }) {
     return RequirementModel(
       id: id ?? this.id,
@@ -453,6 +583,7 @@ class RequirementModel {
       rawSiteVisits: rawSiteVisits ?? this.rawSiteVisits,
       rawShareSessions: rawShareSessions ?? this.rawShareSessions,
       remarks: remarks ?? this.remarks,
+      notes: notes ?? this.notes,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       adminId: adminId ?? this.adminId,
@@ -466,6 +597,19 @@ class RequirementModel {
       createdBy: createdBy ?? this.createdBy,
       creatorMobile: creatorMobile ?? this.creatorMobile,
       creatorEmail: creatorEmail ?? this.creatorEmail,
+      leadSource: leadSource ?? this.leadSource,
+      referralName: referralName ?? this.referralName,
+      metaLeadId: metaLeadId ?? this.metaLeadId,
+      metaPageId: metaPageId ?? this.metaPageId,
+      metaFormId: metaFormId ?? this.metaFormId,
+      metaCampaignId: metaCampaignId ?? this.metaCampaignId,
+      metaCampaignName: metaCampaignName ?? this.metaCampaignName,
+      metaAdsetId: metaAdsetId ?? this.metaAdsetId,
+      metaAdsetName: metaAdsetName ?? this.metaAdsetName,
+      metaAdId: metaAdId ?? this.metaAdId,
+      metaAdName: metaAdName ?? this.metaAdName,
+      metaCustomFields: metaCustomFields ?? this.metaCustomFields,
+      leadQuality: leadQuality ?? this.leadQuality,
     );
   }
 }

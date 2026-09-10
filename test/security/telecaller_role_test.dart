@@ -6,6 +6,7 @@ void main() {
     test('Telecaller is recognized as having Admin privileges but cannot manage employees', () {
       expect(RoleGuard.isAdmin('Telecaller'), isTrue);
       expect(RoleGuard.canManageEmployees('Telecaller'), isFalse);
+      expect(RoleGuard.canAccessCampaign('Telecaller'), isTrue);
     });
 
     test('Telecaller cannot view audit logs or manage lookups', () {
