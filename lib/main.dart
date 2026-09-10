@@ -21,6 +21,7 @@ import 'core/theme/theme_manager.dart';
 import 'core/storage/isar_service.dart';
 import 'core/storage/performance_logger.dart';
 import 'core/network/sync_manager.dart';
+import 'core/network/sync_bloc.dart';
 import 'core/storage/repository_coordinator.dart';
 
 import 'core/api/api_constants.dart';
@@ -29,6 +30,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:flutter/foundation.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_web_plugins/url_strategy.dart';
+import 'core/platform/video_player_init.dart';
 
 void main() async {
   if (kIsWeb) {
@@ -37,6 +39,7 @@ void main() async {
 
   Future<void> bootstrap() async {
     WidgetsFlutterBinding.ensureInitialized();
+    initWindowsVideoPlayer();
 
     // Keep Isar on the critical path (offline reads). Defer logging/sync
     // until after the first frame so Android cold start stays responsive.
@@ -211,6 +214,10 @@ class _MyAppState extends State<MyApp> {
             create: (context) => BuildersBloc(
               buildersRepository: context.read<BuildersRepository>(),
             ),
+          ),
+          BlocProvider(
+            create: (context) => SyncBloc()
+              ..add(const StartPeriodicSync(Duration(seconds: 9))),
           ),
         ],
         child: ListenableBuilder(

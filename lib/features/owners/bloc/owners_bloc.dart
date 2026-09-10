@@ -80,7 +80,9 @@ class OwnersBloc extends Bloc<OwnersEvent, OwnersState> {
     Emitter<OwnersState> emit,
   ) async {
     _lastFetchEvent = event;
-    emit(OwnersLoading());
+    if (state is! OwnersLoaded) {
+      emit(OwnersLoading());
+    }
     try {
       final list = await ownersRepository.getOwners(search: event.search);
       emit(OwnersLoaded(owners: list));

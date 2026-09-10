@@ -110,7 +110,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         final user = await _authRepository.getProfile();
         RoleGuard.currentUser = user;
         emit(Authenticated(user: user));
-        unawaited(SyncManager().connectAfterAuth());
+        unawaited(() async {
+          try {
+            await SyncManager().performStartupSync();
+            SyncManager().isSyncCompleted = true;
+          } catch (syncErr) {
+            AppLogger.w('Startup background sync warning', syncErr);
+          }
+        }());
       } else {
         RoleGuard.currentUser = null;
         emit(Unauthenticated());
@@ -170,6 +177,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     try {
       await SessionCleanup.clearLocalSession(clearToken: true);
     } catch (_) {}
+    unawaited(SyncManager().disconnect());
   }
 
   Future<void> _onSessionExpired(
@@ -179,6 +187,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     try {
       await SessionCleanup.clearLocalSession(clearToken: true);
     } catch (_) {}
+    unawaited(SyncManager().disconnect());
     RoleGuard.currentUser = null;
     emit(Unauthenticated());
   }

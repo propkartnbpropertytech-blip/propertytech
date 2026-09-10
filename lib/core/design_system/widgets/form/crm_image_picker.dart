@@ -2,12 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http_parser/http_parser.dart';
-import 'package:propkart/core/api/dio_client.dart';
 import 'package:propkart/core/api/cloudinary_uploader.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../crm_network_image.dart';
 import '../../tokens/app_colors.dart';
 import '../../tokens/app_spacing.dart';
 import '../../tokens/app_typography.dart';
@@ -40,6 +37,15 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
   bool _isUploading = false;
 
   Future<void> _showSourceDialog(int index) async {
+    if (!kIsWeb && Platform.isWindows) {
+      if (index < widget.imageUrls.length) {
+        _pickImageSingle(index, ImageSource.gallery);
+      } else {
+        _pickImagesMultiple(ImageSource.gallery);
+      }
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
@@ -89,28 +95,34 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
       List<int> uploadBytes;
       String filename = pickedFile.name;
 
-      if (kIsWeb) {
+      if (kIsWeb || (!kIsWeb && Platform.isWindows)) {
         uploadBytes = await pickedFile.readAsBytes();
         if (uploadBytes.length > 10 * 1024 * 1024) {
           throw Exception("Image size exceeds the 10 MB file limit.");
         }
       } else {
         final File file = File(pickedFile.path);
-        final String targetPath = "${Directory.systemTemp.path}/compressed_img_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
-        
-        XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
-          file.absolute.path,
-          targetPath,
-          quality: 70,
-          format: isPng ? CompressFormat.png : CompressFormat.jpeg,
-          minWidth: 1000,
-          minHeight: 1000,
-        );
-
         File uploadFile = file;
-        if (compressedFile != null) {
-          uploadFile = File(compressedFile.path);
-          filename = isPng ? 'upload_image.png' : 'upload_image.jpg';
+
+        try {
+          final String targetPath = "${Directory.systemTemp.path}/compressed_img_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
+          
+          XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
+            file.absolute.path,
+            targetPath,
+            quality: 70,
+            format: isPng ? CompressFormat.png : CompressFormat.jpeg,
+            minWidth: 1000,
+            minHeight: 1000,
+          );
+
+          if (compressedFile != null) {
+            uploadFile = File(compressedFile.path);
+            filename = isPng ? 'upload_image.png' : 'upload_image.jpg';
+          }
+        } catch (compressErr) {
+          debugPrint("Image compression skipped/fallback: $compressErr");
+          uploadFile = file;
         }
 
         uploadBytes = await uploadFile.readAsBytes();
@@ -202,28 +214,34 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
         List<int> uploadBytes;
         String filename = pickedFile.name;
 
-        if (kIsWeb) {
+        if (kIsWeb || (!kIsWeb && Platform.isWindows)) {
           uploadBytes = await pickedFile.readAsBytes();
           if (uploadBytes.length > 10 * 1024 * 1024) {
             throw Exception("Image size exceeds the 10 MB file limit.");
           }
         } else {
           final File file = File(pickedFile.path);
-          final String targetPath = "${Directory.systemTemp.path}/compressed_img_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
-          
-          XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
-            file.absolute.path,
-            targetPath,
-            quality: 70,
-            format: isPng ? CompressFormat.png : CompressFormat.jpeg,
-            minWidth: 1000,
-            minHeight: 1000,
-          );
-
           File uploadFile = file;
-          if (compressedFile != null) {
-            uploadFile = File(compressedFile.path);
-            filename = isPng ? 'upload_image.png' : 'upload_image.jpg';
+
+          try {
+            final String targetPath = "${Directory.systemTemp.path}/compressed_img_${DateTime.now().millisecondsSinceEpoch}.${isPng ? 'png' : 'jpg'}";
+            
+            XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
+              file.absolute.path,
+              targetPath,
+              quality: 70,
+              format: isPng ? CompressFormat.png : CompressFormat.jpeg,
+              minWidth: 1000,
+              minHeight: 1000,
+            );
+
+            if (compressedFile != null) {
+              uploadFile = File(compressedFile.path);
+              filename = isPng ? 'upload_image.png' : 'upload_image.jpg';
+            }
+          } catch (compressErr) {
+            debugPrint("Image compression skipped/fallback: $compressErr");
+            uploadFile = file;
           }
 
           uploadBytes = await uploadFile.readAsBytes();
@@ -401,39 +419,22 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                if (kIsWeb)
-                                  Image.network(
-                                    imageUrl,
-                                    fit: BoxFit.cover,
-                                    cacheWidth: 240,
-                                    cacheHeight: 240,
-                                    gaplessPlayback: true,
-                                    errorBuilder: (context, error, stackTrace) => Container(
-                                      color: CRMColors.backgroundOf(context),
-                                      child: Icon(
-                                        Icons.broken_image_outlined,
-                                        color: CRMColors.textSecondaryOf(context),
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  CachedNetworkImage(
-                                    imageUrl: imageUrl,
-                                    fit: BoxFit.cover,
-                                    memCacheWidth: 240,
-                                    memCacheHeight: 240,
-                                    fadeInDuration: Duration.zero,
-                                    placeholder: (context, url) => const Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                    errorWidget: (context, url, error) => Container(
-                                      color: CRMColors.backgroundOf(context),
-                                      child: Icon(
-                                        Icons.broken_image_outlined,
-                                        color: CRMColors.textSecondaryOf(context),
-                                      ),
+                                CrmNetworkImage(
+                                  url: imageUrl,
+                                  fit: BoxFit.cover,
+                                  cacheLogicalWidth: 240,
+                                  cacheLogicalHeight: 240,
+                                  placeholder: (context) => const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                  error: (context) => Container(
+                                    color: CRMColors.backgroundOf(context),
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: CRMColors.textSecondaryOf(context),
                                     ),
                                   ),
+                                ),
                                 // Reorder Arrows stacked on top of the image preview
                                 if (index > 0)
                                   Positioned(

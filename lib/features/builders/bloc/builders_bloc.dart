@@ -81,7 +81,9 @@ class BuildersBloc extends Bloc<BuildersEvent, BuildersState> {
     Emitter<BuildersState> emit,
   ) async {
     _lastFetchEvent = event;
-    emit(BuildersLoading());
+    if (state is! BuildersLoaded) {
+      emit(BuildersLoading());
+    }
     try {
       final list = await buildersRepository.getBuilders(
         search: event.search,
