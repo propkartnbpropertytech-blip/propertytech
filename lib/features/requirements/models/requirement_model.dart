@@ -231,22 +231,33 @@ class RequirementModel {
     }
 
     String? parsedRemarks;
-    if (json['internal_crm_remarks'] != null) {
+    if (json['remarks'] != null && json['remarks'].toString().trim().isNotEmpty) {
+      parsedRemarks = json['remarks'].toString().trim();
+    }
+    if ((parsedRemarks == null || parsedRemarks.isEmpty) && json['internal_crm_remarks'] != null) {
       if (json['internal_crm_remarks'] is List && (json['internal_crm_remarks'] as List).isNotEmpty) {
-        final first = (json['internal_crm_remarks'] as List).first;
-        if (first is Map && first['remark'] != null) {
-          parsedRemarks = first['remark'].toString();
-        } else if (first is String) {
-          parsedRemarks = first;
+        final remarksList = List.from(json['internal_crm_remarks']);
+        remarksList.sort((a, b) {
+          if (a is Map && b is Map) {
+            final aTime = a['created_at']?.toString() ?? a['createdAt']?.toString() ?? '';
+            final bTime = b['created_at']?.toString() ?? b['createdAt']?.toString() ?? '';
+            if (aTime.isNotEmpty && bTime.isNotEmpty) {
+              return aTime.compareTo(bTime);
+            }
+          }
+          return 0;
+        });
+        final last = remarksList.last;
+        if (last is Map && last['remark'] != null) {
+          parsedRemarks = last['remark']?.toString();
+        } else if (last is String) {
+          parsedRemarks = last;
         }
       } else if (json['internal_crm_remarks'] is Map) {
         parsedRemarks = json['internal_crm_remarks']['remark']?.toString();
       } else if (json['internal_crm_remarks'] is String) {
         parsedRemarks = json['internal_crm_remarks'];
       }
-    }
-    if (parsedRemarks == null || parsedRemarks.trim().isEmpty) {
-      parsedRemarks = json['remarks'] as String?;
     }
 
     return RequirementModel(

@@ -226,7 +226,11 @@ class RequirementsRepository {
     try {
       final response = await _requirementsService.updateRequirement(req.id, req.toBackendJson());
       final data = response['data'] as Map<String, dynamic>? ?? {};
-      final fresh = RequirementModel.fromJson(data['requirement'] ?? {});
+      final reqJson = Map<String, dynamic>.from(data['requirement'] as Map? ?? {});
+      if (req.remarks != null && req.remarks!.trim().isNotEmpty) {
+        reqJson['remarks'] = req.remarks!.trim();
+      }
+      final fresh = RequirementModel.fromJson(reqJson);
 
       await _coordinator.requirementLocal.saveRequirements([fresh.toLocal()]);
       _coordinator.refreshRequirements();
