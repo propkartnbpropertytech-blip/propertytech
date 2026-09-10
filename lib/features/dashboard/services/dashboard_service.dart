@@ -34,4 +34,56 @@ class DashboardService {
       throw ApiException(message: e.toString());
     }
   }
+
+  Future<List<Map<String, dynamic>>> getDashboardNotes() async {
+    try {
+      final response = await _apiClient.get('/dashboard/notes');
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final list = response.data['data'] as List? ?? [];
+        return list.map((item) => item as Map<String, dynamic>).toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> createDashboardNote(String content) async {
+    try {
+      final response = await _apiClient.post('/dashboard/notes', {'content': content});
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return response.data['data'] as Map<String, dynamic>?;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> updateDashboardNote(String noteId, {String? content, bool? isCompleted}) async {
+    try {
+      final response = await _apiClient.patch('/dashboard/notes/$noteId', {
+        if (content != null) 'content': content,
+        if (isCompleted != null) 'is_completed': isCompleted,
+      });
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return response.data['data'] as Map<String, dynamic>?;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> deleteDashboardNote(String noteId) async {
+    try {
+      final response = await _apiClient.delete('/dashboard/notes/$noteId');
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
 }

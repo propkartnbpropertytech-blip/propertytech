@@ -151,7 +151,7 @@ class DashboardRepository {
         final dtB = DateTime.tryParse(b.createdAt?.toString() ?? '') ?? DateTime(1970);
         return dtB.compareTo(dtA);
       });
-      allRecentPropsFromLocal = sortedProps.take(8).map((p) => RecentProperty(
+      allRecentPropsFromLocal = sortedProps.take(16).map((p) => RecentProperty(
         id: p.id,
         code: p.propertyCode ?? '',
         title: p.title ?? '',
@@ -398,9 +398,7 @@ class DashboardRepository {
                 ? req.nextFollowupDate!
                 : (existing.followupDate.isNotEmpty ? existing.followupDate : req.createdAt.toIso8601String());
 
-            final chosenNotes = (req.remarks != null && req.remarks!.trim().isNotEmpty)
-                ? req.remarks!
-                : ((existing.notes != null && existing.notes!.trim().isNotEmpty) ? existing.notes : (req.notes ?? ''));
+            final chosenNotes = existing.notes;
 
             combinedFollowupsMap[key] = DashboardFollowup(
               id: existing.id,
@@ -422,7 +420,7 @@ class DashboardRepository {
               propertyTitle: req.listingTypeName ?? 'Rent',
               followupDate: hasNextDate ? req.nextFollowupDate! : req.createdAt.toIso8601String(),
               status: reqStatus,
-              notes: req.remarks ?? req.notes,
+              notes: null,
               creatorName: req.creatorName ?? req.assigneeName,
             );
           }
@@ -456,7 +454,7 @@ class DashboardRepository {
               propertyCode: f.propertyCode,
               requirementCustomerName: f.requirementCustomerName ?? req.clientName,
               followupDate: f.followupDate,
-              notes: f.notes ?? req.remarks ?? req.notes,
+              notes: f.notes,
               status: f.status,
               creatorName: f.creatorName ?? req.creatorName ?? req.assigneeName,
             );

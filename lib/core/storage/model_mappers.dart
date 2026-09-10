@@ -193,9 +193,9 @@ extension RequirementLocalExtensions on RequirementLocal {
       }
     }
 
-    if (parsedListingTypeId == null || parsedListingTypeId.isEmpty) {
-      parsedListingTypeId = 'Unknown';
-      parsedListingTypeName = 'Unknown';
+    if (parsedListingTypeId != null && parsedListingTypeId.isEmpty) {
+      parsedListingTypeId = null;
+      parsedListingTypeName = null;
     }
 
     return RequirementModel(

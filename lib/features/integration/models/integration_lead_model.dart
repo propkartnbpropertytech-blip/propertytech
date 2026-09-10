@@ -16,6 +16,7 @@ class IntegrationLeadModel {
   final DateTime? metaFeedbackSentAt;
   final int enquiryCount;
   final String leadType; // 'Property Listing', 'Requirement'
+  final CrmMatchInfo? crmMatch;
 
   IntegrationLeadModel({
     required this.id,
@@ -32,6 +33,7 @@ class IntegrationLeadModel {
     this.metaFeedbackSentAt,
     this.enquiryCount = 1,
     this.leadType = 'Requirement',
+    this.crmMatch,
   });
 
   /// Extract cell value by dynamic key
@@ -73,6 +75,7 @@ class IntegrationLeadModel {
     DateTime? metaFeedbackSentAt,
     int? enquiryCount,
     String? leadType,
+    CrmMatchInfo? crmMatch,
   }) {
     return IntegrationLeadModel(
       id: id ?? this.id,
@@ -89,6 +92,7 @@ class IntegrationLeadModel {
       metaFeedbackSentAt: metaFeedbackSentAt ?? this.metaFeedbackSentAt,
       enquiryCount: enquiryCount ?? this.enquiryCount,
       leadType: leadType ?? this.leadType,
+      crmMatch: crmMatch ?? this.crmMatch,
     );
   }
 
@@ -108,6 +112,7 @@ class IntegrationLeadModel {
       'meta_feedback_sent_at': metaFeedbackSentAt?.toIso8601String(),
       'enquiry_count': enquiryCount,
       'lead_type': leadType,
+      'crm_match': crmMatch?.toJson(),
     };
   }
 
@@ -150,6 +155,57 @@ class IntegrationLeadModel {
           : null,
       enquiryCount: int.tryParse(json['enquiry_count']?.toString() ?? '1') ?? 1,
       leadType: type,
+      crmMatch: json['crm_match'] is Map<String, dynamic>
+          ? CrmMatchInfo.fromJson(Map<String, dynamic>.from(json['crm_match']))
+          : null,
     );
   }
+}
+
+/// Real-time cross-table comparison result against requirements and properties tables
+class CrmMatchInfo {
+  final bool inCrm;
+  final String? table; // 'requirements' or 'properties'
+  final String? recordId;
+  final String? code;
+  final String? name;
+  final String? status;
+  final String? details;
+  final DateTime? createdAt;
+
+  const CrmMatchInfo({
+    this.inCrm = false,
+    this.table,
+    this.recordId,
+    this.code,
+    this.name,
+    this.status,
+    this.details,
+    this.createdAt,
+  });
+
+  factory CrmMatchInfo.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const CrmMatchInfo(inCrm: false);
+    return CrmMatchInfo(
+      inCrm: json['in_crm'] == true,
+      table: json['table']?.toString(),
+      recordId: json['record_id']?.toString(),
+      code: json['code']?.toString(),
+      name: json['name']?.toString(),
+      status: json['status']?.toString(),
+      details: json['details']?.toString(),
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'in_crm': inCrm,
+    'table': table,
+    'record_id': recordId,
+    'code': code,
+    'name': name,
+    'status': status,
+    'details': details,
+    'created_at': createdAt?.toIso8601String(),
+  };
 }

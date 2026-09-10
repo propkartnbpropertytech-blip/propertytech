@@ -17,6 +17,7 @@ import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_permission_denied.dart';
 import '../../integration/services/integration_service.dart';
 import '../../integration/models/integration_lead_model.dart';
+import '../bloc/campaign_leads_bloc.dart';
 import 'campaign_subshell_header.dart';
 
 class CampaignLeadsScreen extends StatefulWidget {
@@ -33,6 +34,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   String _selectedSection = 'Property Listing'; // 'Property Listing' (Owners) or 'Requirement' (Tenants)
   String _selectedSourceFilter = 'All';
   String _selectedDuplicateFilter = 'All';
+  CampaignDateFilter _selectedDateFilter = CampaignDateFilter.today; // TODAY IS DEFAULT
+  DateTime? _customStartDate;
+  DateTime? _customEndDate;
   final Set<String> _selectedLeadIds = {};
   bool _isImporting = false;
   bool _isSyncingSheet = false;
@@ -67,10 +71,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   List<String> _cachedVisibleHeaders = [];
   int _cachedPropertyListingCount = 0;
   int _cachedRequirementCount = 0;
+  int _cachedAllTimeSectionCount = 0;
+  int _cachedCountToday = 0;
+  int _cachedCountYesterday = 0;
+  int _cachedCountLast7Days = 0;
+  int _cachedCountThisMonth = 0;
+  int _cachedCountAllTime = 0;
   List<IntegrationLeadModel>? _lastServiceLeadsRef;
   String? _lastSectionFilter;
   String? _lastSourceFilter;
   String? _lastDuplicateFilter;
+  CampaignDateFilter? _lastDateFilter;
+  DateTime? _lastCustomStartDate;
+  DateTime? _lastCustomEndDate;
   String? _lastSearchQuery;
 
   // Excel Column Filters & Sorting
@@ -96,6 +109,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (columnKey == '#Source') return 'Source';
     if (columnKey == '#MetaQuality') return 'Meta Rating';
     if (columnKey == '#CrmStatus') return 'Import Status';
+    if (columnKey == '#MainCrmStatus') return 'Main CRM Status';
 
     final clean = columnKey.trim();
     final lower = clean.toLowerCase();
@@ -183,6 +197,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         _lastSectionFilter == _selectedSection &&
         _lastSourceFilter == _selectedSourceFilter &&
         _lastDuplicateFilter == _selectedDuplicateFilter &&
+        _lastDateFilter == _selectedDateFilter &&
+        _lastCustomStartDate == _customStartDate &&
+        _lastCustomEndDate == _customEndDate &&
         _lastSearchQuery == _searchQuery &&
         _lastColumnFiltersHash == currentFiltersHash &&
         _lastSortColumn == _sortColumn &&
@@ -194,6 +211,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _lastSectionFilter = _selectedSection;
     _lastSourceFilter = _selectedSourceFilter;
     _lastDuplicateFilter = _selectedDuplicateFilter;
+    _lastDateFilter = _selectedDateFilter;
+    _lastCustomStartDate = _customStartDate;
+    _lastCustomEndDate = _customEndDate;
     _lastSearchQuery = _searchQuery;
     _lastColumnFiltersHash = currentFiltersHash;
     _lastSortColumn = _sortColumn;
@@ -201,6 +221,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     // Filter by Section First (Property Listing vs Requirement)
     var list = currentLeads.where((l) => l.leadType == _selectedSection).toList();
+
+    // Filter by Date (Today is default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
+    if (_selectedDateFilter != CampaignDateFilter.allTime) {
+      list = list.where((l) => CampaignLeadsState.matchesDateFilter(
+        l.receivedAt,
+        _selectedDateFilter,
+        customStart: _customStartDate,
+        customEnd: _customEndDate,
+      )).toList();
+    }
 
     var u = 0;
     var d = 0;
@@ -258,6 +288,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             cellVal = lead.qualityStatus;
           } else if (colKey == '#CrmStatus') {
             cellVal = lead.importStatus;
+          } else if (colKey == '#MainCrmStatus') {
+            cellVal = lead.crmMatch?.inCrm == true
+                ? '${lead.crmMatch?.table == 'properties' ? 'In Inventory' : 'In Leads'} (${lead.crmMatch?.status ?? "Active"})'
+                : 'Not in CRM';
           } else {
             cellVal = lead.getStringValue(colKey).trim();
           }
@@ -289,6 +323,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         } else if (_sortColumn == '#CrmStatus') {
           valA = a.importStatus;
           valB = b.importStatus;
+        } else if (_sortColumn == '#MainCrmStatus') {
+          valA = a.crmMatch?.inCrm == true ? 'In CRM' : 'Not in CRM';
+          valB = b.crmMatch?.inCrm == true ? 'In CRM' : 'Not in CRM';
         } else {
           valA = a.getStringValue(_sortColumn!).trim();
           valB = b.getStringValue(_sortColumn!).trim();
@@ -307,8 +344,50 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     }
 
     _cachedFilteredLeads = list;
-    _cachedPropertyListingCount = currentLeads.where((l) => l.leadType == 'Property Listing').length;
-    _cachedRequirementCount = currentLeads.where((l) => l.leadType == 'Requirement').length;
+
+    // Single-pass computation for section counts and date filter counts
+    int allTimeSectionCount = 0;
+    int propListingCount = 0;
+    int reqCount = 0;
+    int countToday = 0;
+    int countYesterday = 0;
+    int countLast7Days = 0;
+    int countThisMonth = 0;
+
+    for (final l in currentLeads) {
+      final isProp = l.leadType == 'Property Listing';
+      final isReq = l.leadType == 'Requirement';
+      final isSelectedSec = l.leadType == _selectedSection;
+
+      if (isSelectedSec) {
+        allTimeSectionCount++;
+        if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.today)) countToday++;
+        if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.yesterday)) countYesterday++;
+        if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.last7Days)) countLast7Days++;
+        if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.thisMonth)) countThisMonth++;
+      }
+
+      if (isProp &&
+          CampaignLeadsState.matchesDateFilter(l.receivedAt, _selectedDateFilter,
+              customStart: _customStartDate, customEnd: _customEndDate)) {
+        propListingCount++;
+      }
+      if (isReq &&
+          CampaignLeadsState.matchesDateFilter(l.receivedAt, _selectedDateFilter,
+              customStart: _customStartDate, customEnd: _customEndDate)) {
+        reqCount++;
+      }
+    }
+
+    _cachedAllTimeSectionCount = allTimeSectionCount;
+    _cachedPropertyListingCount = propListingCount;
+    _cachedRequirementCount = reqCount;
+    _cachedCountToday = countToday;
+    _cachedCountYesterday = countYesterday;
+    _cachedCountLast7Days = countLast7Days;
+    _cachedCountThisMonth = countThisMonth;
+    _cachedCountAllTime = allTimeSectionCount;
+
     _cachedAllDetectedHeaders = _service.getDetectedHeaders(leadsSubset: list);
     _cachedVisibleHeaders = _service.getActiveVisibleHeaders(leadsSubset: list);
   }
@@ -353,47 +432,102 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final endIndex = (startIndex + _pageSize).clamp(0, leads.length);
     final pageLeads = leads.isEmpty ? const <IntegrationLeadModel>[] : leads.sublist(startIndex, endIndex);
 
-    return Scaffold(
-      backgroundColor: CRMColors.backgroundOf(context),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(CRMSpacing.l),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Page Header
-              CampaignSubshellHeader(
-                activeTab: 'leads',
-                trailing: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.end,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _buildAutoSyncLiveBadge(context),
-                    CRMButton(
-                      label: _service.isFetchingServerLeads ? 'Refreshing...' : 'Refresh Leads',
-                      prefixIcon: Icons.refresh_rounded,
-                      variant: CRMButtonVariant.outline,
-                      height: 40,
-                      isLoading: _service.isFetchingServerLeads,
-                      onPressed: _service.isFetchingServerLeads
-                          ? null
-                          : () async {
-                              final count = await _service.fetchServerLeads();
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      count > 0
-                                          ? 'Fetched $count new leads from server.'
-                                          : 'Campaign leads are up to date.',
-                                    ),
-                                  ),
-                                );
-                              }
-                            },
+    return BlocListener<CampaignLeadsBloc, CampaignLeadsState>(
+      listenWhen: (previous, current) =>
+          current.newLeadsJustArrivedCount > 0 ||
+          (previous.errorMessage == null && current.errorMessage != null),
+      listener: (context, state) {
+        if (state.newLeadsJustArrivedCount > 0) {
+          final count = state.newLeadsJustArrivedCount;
+          final names = state.recentlyArrivedLeads.map((l) {
+            final n = l.getStringValue('full_name').isNotEmpty
+                ? l.getStringValue('full_name')
+                : l.getStringValue('name');
+            return n.isNotEmpty ? n : 'New Lead';
+          }).take(2).join(', ');
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.25),
+                      shape: BoxShape.circle,
                     ),
+                    child: const Icon(Icons.flash_on_rounded, color: Colors.amber, size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '⚡ $count New Meta Lead${count > 1 ? 's' : ''} Received Live!',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        Text(
+                          names.isNotEmpty ? '$names • Staged and up to date' : 'All campaign data is up to date.',
+                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF1E293B),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          context.read<CampaignLeadsBloc>().add(const AcknowledgeNewLeadsEvent());
+        }
+      },
+      child: Scaffold(
+        backgroundColor: CRMColors.backgroundOf(context),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(CRMSpacing.l),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Page Header
+                CampaignSubshellHeader(
+                  activeTab: 'leads',
+                  trailing: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _buildAutoSyncLiveBadge(context),
+                      CRMButton(
+                        label: _service.isFetchingServerLeads ? 'Refreshing...' : 'Refresh Leads',
+                        prefixIcon: Icons.refresh_rounded,
+                        variant: CRMButtonVariant.outline,
+                        height: 40,
+                        isLoading: _service.isFetchingServerLeads,
+                        onPressed: _service.isFetchingServerLeads
+                            ? null
+                            : () async {
+                                await _service.syncMetaLeads();
+                                final count = await _service.fetchServerLeads();
+                                if (mounted) {
+                                  context.read<CampaignLeadsBloc>().add(const FetchCampaignLeadsEvent(silent: true));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        count > 0
+                                            ? 'Synced with Meta! $count leads up to date.'
+                                            : 'Campaign leads are up to date.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                      ),
                     CRMButton(
                       label: 'Clean Duplicates',
                       prefixIcon: Icons.cleaning_services_rounded,
@@ -456,6 +590,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
               const SizedBox(height: CRMSpacing.m),
 
+              // Date Range Filter Bar (Today default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
+              _buildDateFilterBar(context),
+
+              // Notice Banner when viewing Today
+              _buildTodayNoticeBanner(context, totalLeads, _cachedAllTimeSectionCount),
+
+              const SizedBox(height: CRMSpacing.m),
+
               // KPI Analytics Cards (Compact)
               _buildKpiMetricsRow(context, totalLeads, uniqueLeads, dupLeads, importedCount),
 
@@ -476,8 +618,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // --- WIDGETS ---
 
@@ -733,6 +876,318 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ),
     );
   }
+
+  // --- DATE RANGE FILTERS & LIVE 1-MINUTE HEARTBEAT ---
+
+  Widget _buildDateFilterBar(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Read pre-computed counters directly from cache (O(1) instant build)
+    final countToday = _cachedCountToday;
+    final countYesterday = _cachedCountYesterday;
+    final countLast7Days = _cachedCountLast7Days;
+    final countThisMonth = _cachedCountThisMonth;
+    final countAllTime = _cachedCountAllTime;
+
+    String customRangeLabel = 'Custom Range';
+    if (_customStartDate != null && _customEndDate != null) {
+      final f = DateFormat('d MMM');
+      customRangeLabel = '${f.format(_customStartDate!)} - ${f.format(_customEndDate!)}';
+    }
+
+    final items = [
+      (CampaignDateFilter.today, 'Today', countToday, Icons.today_rounded),
+      (CampaignDateFilter.yesterday, 'Yesterday', countYesterday, Icons.history_rounded),
+      (CampaignDateFilter.last7Days, 'Last 7 Days', countLast7Days, Icons.date_range_rounded),
+      (CampaignDateFilter.thisMonth, 'This Month', countThisMonth, Icons.calendar_month_rounded),
+      (CampaignDateFilter.customRange, customRangeLabel, null, Icons.calendar_today_rounded),
+      (CampaignDateFilter.allTime, 'All Time', countAllTime, Icons.all_inclusive_rounded),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: CRMColors.borderOf(context)),
+        boxShadow: CRMShadows.soft,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.calendar_month_rounded, size: 16, color: CRMColors.primaryOf(context)),
+              const SizedBox(width: 8),
+              Text(
+                'DATE FILTER:',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                  color: CRMColors.textSecondaryOf(context),
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (_selectedDateFilter == CampaignDateFilter.today)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'DEFAULT',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF10B981),
+                    ),
+                  ),
+                ),
+              const Spacer(),
+              // 1-minute ping heartbeat badge
+              _buildOneMinutePingBadge(context),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: items.map((item) {
+                final filter = item.$1;
+                final label = item.$2;
+                final count = item.$3;
+                final icon = item.$4;
+                final isSelected = _selectedDateFilter == filter;
+
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      if (filter == CampaignDateFilter.customRange) {
+                        _pickCustomDateRange(context);
+                      } else {
+                        setState(() {
+                          _selectedDateFilter = filter;
+                          _cachedFilteredLeads = null;
+                          _currentPage = 1;
+                        });
+                        context.read<CampaignLeadsBloc>().add(
+                          SetCampaignDateFilterEvent(filter: filter),
+                        );
+                      }
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? CRMColors.primaryOf(context)
+                            : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected
+                              ? CRMColors.primaryOf(context)
+                              : CRMColors.borderOf(context),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            icon,
+                            size: 14,
+                            color: isSelected ? Colors.white : CRMColors.textSecondaryOf(context),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                              color: isSelected ? Colors.white : CRMColors.textOf(context),
+                            ),
+                          ),
+                          if (count != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? Colors.white.withOpacity(0.25)
+                                    : (isDark ? Colors.white10 : Colors.black.withOpacity(0.06)),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '$count',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: isSelected ? Colors.white : CRMColors.textSecondaryOf(context),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOneMinutePingBadge(BuildContext context) {
+    return BlocBuilder<CampaignLeadsBloc, CampaignLeadsState>(
+      builder: (context, state) {
+        final lastPing = state.lastPingAt;
+        String pingText = 'Live ping: 1m';
+        if (state.isPinging) {
+          pingText = 'Pinging Meta...';
+        } else if (lastPing != null) {
+          final diff = DateTime.now().difference(lastPing);
+          if (diff.inSeconds < 60) {
+            pingText = 'Live • Just now';
+          } else {
+            pingText = 'Live • ${diff.inMinutes}m ago';
+          }
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10B981).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFF10B981),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                pingText,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF10B981),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTodayNoticeBanner(BuildContext context, int totalLeads, int allTimeCount) {
+    if (_selectedDateFilter != CampaignDateFilter.today) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: CRMSpacing.s),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0284C7).withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF0284C7).withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline_rounded, color: Color(0xFF0284C7), size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                style: TextStyle(fontSize: 12, color: CRMColors.textOf(context)),
+                children: [
+                  const TextSpan(text: 'Showing '),
+                  TextSpan(
+                    text: "Today's leads ($totalLeads)",
+                    style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0284C7)),
+                  ),
+                  const TextSpan(text: ' by default. Fresh leads arrive automatically every 1 minute.'),
+                ],
+              ),
+            ),
+          ),
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () {
+              setState(() {
+                _selectedDateFilter = CampaignDateFilter.allTime;
+                _cachedFilteredLeads = null;
+                _currentPage = 1;
+              });
+              context.read<CampaignLeadsBloc>().add(
+                const SetCampaignDateFilterEvent(filter: CampaignDateFilter.allTime),
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'View All ($allTimeCount)',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0284C7),
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF0284C7)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickCustomDateRange(BuildContext context) async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: now.add(const Duration(days: 1)),
+      initialDateRange: _customStartDate != null && _customEndDate != null
+          ? DateTimeRange(start: _customStartDate!, end: _customEndDate!)
+          : DateTimeRange(start: now.subtract(const Duration(days: 7)), end: now),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedDateFilter = CampaignDateFilter.customRange;
+        _customStartDate = picked.start;
+        _customEndDate = picked.end;
+        _cachedFilteredLeads = null;
+        _currentPage = 1;
+      });
+      context.read<CampaignLeadsBloc>().add(
+        SetCampaignDateFilterEvent(
+          filter: CampaignDateFilter.customRange,
+          customStart: picked.start,
+          customEnd: picked.end,
+        ),
+      );
+    }
+  }
+
 
   // --- MULTI-SELECT BATCH ACTION BAR ---
   Widget _buildBatchActionBar(BuildContext context, List<IntegrationLeadModel> visibleLeads) {
@@ -1340,6 +1795,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         _buildExcelDataColumn(context, title: 'Source', columnKey: '#Source', isStandard: true),
                         _buildExcelDataColumn(context, title: 'Meta Rating', columnKey: '#MetaQuality', isStandard: true),
                         _buildExcelDataColumn(context, title: 'Import Status', columnKey: '#CrmStatus', isStandard: true),
+                        _buildExcelDataColumn(context, title: 'Main CRM Status', columnKey: '#MainCrmStatus', isStandard: true),
 
                         // Dynamic Column Headers (Only Visible Ones, strictly preserving Google Sheet / user drag-and-place order)
                         ...visibleHeaders.map((header) {
@@ -1511,6 +1967,58 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                     ),
                                   ),
                                 ],
+                              ),
+                            ),
+
+                            // Main CRM Status Comparison Cell
+                            DataCell(
+                              Builder(
+                                builder: (context) {
+                                  final isDark = Theme.of(context).brightness == Brightness.dark;
+                                  final match = lead.crmMatch;
+                                  final inCrm = match?.inCrm == true;
+
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: inCrm
+                                          ? const Color(0xFF10B981).withValues(alpha: 0.14)
+                                          : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: inCrm
+                                            ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                                            : CRMColors.borderOf(context),
+                                      ),
+                                    ),
+                                    child: Tooltip(
+                                      message: inCrm
+                                          ? '${match?.name ?? ""}\n${match?.details ?? ""}\nMatched in: ${match?.table ?? "CRM"}'
+                                          : 'Lead is not yet in Main Leads or Properties inventory',
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            inCrm ? Icons.check_circle_rounded : Icons.fiber_new_rounded,
+                                            size: 13,
+                                            color: inCrm ? const Color(0xFF10B981) : CRMColors.textSecondaryOf(context),
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            inCrm
+                                                ? '${match?.table == 'properties' ? 'In Inventory' : 'In Leads'}: ${match?.status ?? "Active"}'
+                                                : 'Not in CRM',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: inCrm ? const Color(0xFF10B981) : CRMColors.textSecondaryOf(context),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
 
@@ -1927,6 +2435,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         val = lead.qualityStatus;
       } else if (columnKey == '#CrmStatus') {
         val = lead.importStatus;
+      } else if (columnKey == '#MainCrmStatus') {
+        val = lead.crmMatch?.inCrm == true
+            ? '${lead.crmMatch?.table == 'properties' ? 'In Inventory' : 'In Leads'} (${lead.crmMatch?.status ?? "Active"})'
+            : 'Not in CRM';
       } else {
         val = lead.getStringValue(columnKey).trim();
       }
@@ -3182,6 +3694,29 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 Text('Quality: ${lead.qualityStatus} | CRM Status: ${lead.importStatus}'),
                 if (lead.isDuplicate)
                   Text('Duplicate: ${lead.duplicateReason}', style: const TextStyle(color: CRMColors.warning, fontWeight: FontWeight.bold)),
+                if (lead.crmMatch?.inCrm == true) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Already in ${lead.crmMatch?.table == "properties" ? "Properties Inventory" : "Main Leads"}: ${lead.crmMatch?.name} (${lead.crmMatch?.status})\n${lead.crmMatch?.details ?? ""}',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF047857)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const Divider(),
                 const Text('Raw JSON:', style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),

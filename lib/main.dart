@@ -14,6 +14,8 @@ import 'features/requirements/bloc/requirements_bloc.dart';
 import 'features/clients/bloc/clients_bloc.dart';
 import 'features/owners/bloc/owners_bloc.dart';
 import 'features/builders/bloc/builders_bloc.dart';
+import 'features/campaign/bloc/campaign_leads_bloc.dart';
+import 'features/integration/services/integration_service.dart';
 import 'core/navigation/app_router.dart';
 import 'core/design_system/theme/propkart_theme.dart';
 import 'core/theme/theme_manager.dart';
@@ -21,7 +23,6 @@ import 'core/theme/theme_manager.dart';
 import 'core/storage/isar_service.dart';
 import 'core/storage/performance_logger.dart';
 import 'core/network/sync_manager.dart';
-import 'core/network/sync_bloc.dart';
 import 'core/storage/repository_coordinator.dart';
 
 import 'core/api/api_constants.dart';
@@ -216,8 +217,9 @@ class _MyAppState extends State<MyApp> {
             ),
           ),
           BlocProvider(
-            create: (context) => SyncBloc()
-              ..add(const StartPeriodicSync(Duration(seconds: 9))),
+            create: (context) => CampaignLeadsBloc(
+              integrationService: IntegrationService(),
+            )..add(const FetchCampaignLeadsEvent()),
           ),
         ],
         child: ListenableBuilder(

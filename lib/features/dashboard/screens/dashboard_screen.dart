@@ -285,6 +285,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 tabFiltered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
                               }
 
+                              if (tabFiltered.length > 16) {
+                                tabFiltered = tabFiltered.sublist(0, 16);
+                              }
+
                               final totalCount = tabFiltered.length;
                               final totalPages =
                                   (totalCount / _propertiesPerPage).ceil();

@@ -521,6 +521,19 @@ class IntegrationService extends ChangeNotifier {
     }
   }
 
+  /// Proactively pull latest leads from Meta Graph API
+  Future<Map<String, dynamic>> syncMetaLeads() async {
+    try {
+      final response = await _apiClient.post('/integrations/leads/sync-meta', {});
+      await fetchServerLeads(resetWithServer: true);
+      return response.data is Map<String, dynamic> ? response.data as Map<String, dynamic> : {'success': true};
+    } catch (e) {
+      debugPrint('Error syncing Meta leads: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+
   void watchCampaignUi() {
     _campaignUiWatchers++;
     unawaited(ensureLoaded().then((_) => fetchServerLeads(silent: true)));
@@ -754,19 +767,21 @@ class IntegrationService extends ChangeNotifier {
     for (final lead in _leads) {
       final phone = _normalizePhone(_extractPhone(lead.rawJson));
       final email = _extractEmail(lead.rawJson).toLowerCase().trim();
+      final phoneKey = '${lead.leadType}_$phone';
+      final emailKey = '${lead.leadType}_$email';
 
       bool isDup = false;
       String? dupReason;
 
-      if (phone.isNotEmpty && phoneSeen.containsKey(phone)) {
+      if (phone.isNotEmpty && phoneSeen.containsKey(phoneKey)) {
         isDup = true;
-        dupReason = 'Duplicate phone number matches lead ${phoneSeen[phone]} ($phone)';
-      } else if (email.isNotEmpty && emailSeen.containsKey(email)) {
+        dupReason = 'Duplicate phone number matches ${lead.leadType} lead ${phoneSeen[phoneKey]} ($phone)';
+      } else if (email.isNotEmpty && emailSeen.containsKey(emailKey)) {
         isDup = true;
-        dupReason = 'Duplicate email matches lead ${emailSeen[email]} ($email)';
+        dupReason = 'Duplicate email matches ${lead.leadType} lead ${emailSeen[emailKey]} ($email)';
       } else {
-        if (phone.isNotEmpty) phoneSeen[phone] = lead.id;
-        if (email.isNotEmpty) emailSeen[email] = lead.id;
+        if (phone.isNotEmpty) phoneSeen[phoneKey] = lead.id;
+        if (email.isNotEmpty) emailSeen[emailKey] = lead.id;
       }
 
       updated.add(lead.copyWith(
@@ -837,9 +852,24 @@ class IntegrationService extends ChangeNotifier {
 
   /// Import selected campaign rows into the Leads page (requirements).
   Future<int> importLeadsToCrm(List<String> leadIds) async {
-    int importedCount = 0;
     if (leadIds.isEmpty) return 0;
 
+    // 1. Try smart backend conversion engine first
+    try {
+      final response = await _apiClient.post(
+        '/integrations/leads/convert-to-crm',
+        {'leadIds': leadIds},
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final count = response.data['count'] ?? 0;
+        await fetchServerLeads(resetWithServer: true);
+        return count is int ? count : (int.tryParse(count.toString()) ?? 0);
+      }
+    } catch (e) {
+      debugPrint('[IntegrationService] Backend convert-to-crm error: $e. Falling back to local ingestion.');
+    }
+
+    int importedCount = 0;
     final coordinator = RepositoryCoordinator();
     coordinator.beginBulkMutation();
     try {
@@ -1079,9 +1109,24 @@ class IntegrationService extends ChangeNotifier {
 
   /// Import selected Property Listing leads into the Properties inventory page
   Future<int> importLeadsToProperties(List<String> leadIds) async {
-    int importedCount = 0;
     if (leadIds.isEmpty) return 0;
 
+    // 1. Try smart backend conversion engine first
+    try {
+      final response = await _apiClient.post(
+        '/integrations/leads/convert-to-crm',
+        {'leadIds': leadIds},
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final count = response.data['count'] ?? 0;
+        await fetchServerLeads(resetWithServer: true);
+        return count is int ? count : (int.tryParse(count.toString()) ?? 0);
+      }
+    } catch (e) {
+      debugPrint('[IntegrationService] Backend convert-to-properties error: $e. Falling back to local ingestion.');
+    }
+
+    int importedCount = 0;
     final coordinator = RepositoryCoordinator();
     coordinator.beginBulkMutation();
     try {

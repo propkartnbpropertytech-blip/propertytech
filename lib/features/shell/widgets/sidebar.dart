@@ -13,6 +13,7 @@ class ModernSidebar extends StatefulWidget {
   final int leadsBadgeCount;
   final VoidCallback? onItemTapped;
   final bool isCollapsed;
+  final double? customWidth;
 
   const ModernSidebar({
     super.key,
@@ -23,6 +24,7 @@ class ModernSidebar extends StatefulWidget {
     this.leadsBadgeCount = 0,
     this.onItemTapped,
     this.isCollapsed = false,
+    this.customWidth,
   });
 
   @override
@@ -59,9 +61,10 @@ class _ModernSidebarState extends State<ModernSidebar> {
     final userEmail = widget.userEmail;
     final leadsBadgeCount = widget.leadsBadgeCount;
     final isCollapsed = widget.isCollapsed;
+    final sidebarWidth = widget.customWidth ?? (isCollapsed ? 70.0 : 260.0);
 
     return Container(
-      width: isCollapsed ? 70 : 260,
+      width: sidebarWidth,
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF0F172A) : Colors.white,
         border: Border(

@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../models/dashboard_summary.dart';
+import '../services/dashboard_service.dart';
 
 class PersonalNoteItem {
   final String id;
@@ -46,8 +46,8 @@ class PersonalNoteItem {
     return PersonalNoteItem(
       id: json['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
       content: json['content']?.toString() ?? '',
-      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
-      isCompleted: json['isCompleted'] as bool? ?? json['completed'] as bool? ?? false,
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? json['createdAt']?.toString() ?? '') ?? DateTime.now(),
+      isCompleted: json['is_completed'] as bool? ?? json['isCompleted'] as bool? ?? json['completed'] as bool? ?? false,
     );
   }
 }
@@ -114,63 +114,71 @@ class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
   Future<void> _loadNotes() async {
     final userId = _getUserId(context);
     _currentUserId = userId;
-    final key = 'personal_notes_$userId';
-    final prefs = await SharedPreferences.getInstance();
-    final rawJson = prefs.getString(key);
-    if (rawJson != null && rawJson.isNotEmpty) {
-      try {
-        final List decoded = jsonDecode(rawJson);
-        if (mounted) {
-          setState(() {
-            _notes = decoded
-                .map((item) => PersonalNoteItem.fromJson(Map<String, dynamic>.from(item)))
-                .toList();
-            _isLoading = false;
-          });
-        }
-        return;
-      } catch (_) {}
-    }
-    if (mounted) {
-      setState(() {
-        _notes = [];
-        _isLoading = false;
-      });
-    }
-  }
 
-  Future<void> _saveNotes() async {
-    final userId = _getUserId(context);
-    final key = 'personal_notes_$userId';
-    final prefs = await SharedPreferences.getInstance();
-    final rawJson = jsonEncode(_notes.map((n) => n.toJson()).toList());
-    await prefs.setString(key, rawJson);
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+
+    try {
+      final remoteNotesJson = await DashboardService().getDashboardNotes();
+      final loadedNotes = remoteNotesJson
+          .map((item) => PersonalNoteItem.fromJson(item))
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _notes = loadedNotes;
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   void _addNote(String text) async {
     if (text.trim().isEmpty) return;
+
+    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
     final newNote = PersonalNoteItem(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: tempId,
       content: text.trim(),
       createdAt: DateTime.now(),
       isCompleted: false,
     );
+
     setState(() {
       _notes.insert(0, newNote);
       _currentPage = 1;
     });
-    await _saveNotes();
+
+    final createdData = await DashboardService().createDashboardNote(text.trim());
+    if (createdData != null && mounted) {
+      final createdNote = PersonalNoteItem.fromJson(createdData);
+      setState(() {
+        final index = _notes.indexWhere((n) => n.id == tempId);
+        if (index != -1) {
+          _notes[index] = createdNote;
+        }
+      });
+    }
   }
 
   void _toggleNoteCompletion(String id) async {
     final index = _notes.indexWhere((note) => note.id == id);
     if (index != -1) {
+      final target = _notes[index];
+      final newStatus = !target.isCompleted;
+
       setState(() {
-        _notes[index] = _notes[index].copyWith(
-          isCompleted: !_notes[index].isCompleted,
-        );
+        _notes[index] = target.copyWith(isCompleted: newStatus);
       });
-      await _saveNotes();
+
+      if (!id.startsWith('temp_')) {
+        await DashboardService().updateDashboardNote(id, isCompleted: newStatus);
+      }
     }
   }
 
@@ -182,7 +190,10 @@ class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
         _currentPage = totalPages;
       }
     });
-    await _saveNotes();
+
+    if (!id.startsWith('temp_')) {
+      await DashboardService().deleteDashboardNote(id);
+    }
   }
 
   void _showAddNoteDialog(BuildContext context) {
@@ -349,7 +360,15 @@ class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
         ? _notes.sublist(startIndex, endIndex)
         : <PersonalNoteItem>[];
 
-    return Container(
+    return BlocListener<AuthBloc, AuthState>(
+      listener: (context, state) {
+        final userId = _getUserId(context);
+        if (_currentUserId != userId) {
+          _currentUserId = userId;
+          _loadNotes();
+        }
+      },
+      child: Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -679,6 +698,7 @@ class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
           ],
         ],
       ),
-    );
+    ),
+  );
   }
 }
