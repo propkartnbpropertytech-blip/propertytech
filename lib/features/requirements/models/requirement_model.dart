@@ -346,6 +346,7 @@ class RequirementModel {
       'configurationIds': configurationIds,
       'propertyTypeIds': propertyTypeIds,
       'remarks': remarks,
+      'notes': notes,
       'status': status,
       'createdAt': createdAt.toIso8601String(),
       'adminId': adminId,
@@ -380,33 +381,49 @@ class RequirementModel {
         ? 'Referral ($referralName)'
         : leadSource;
 
+    String? cleanUuid(String? val) {
+      if (val == null) return null;
+      final trimmed = val.trim();
+      if (trimmed.isEmpty || trimmed.toLowerCase() == 'unknown' || trimmed.toLowerCase() == 'n/a' || trimmed == 'None') return null;
+      return trimmed;
+    }
+
+    final catId = cleanUuid(categoryId);
+    final propTypeId = cleanUuid(propertyTypeId);
+    final configId = cleanUuid(configurationId);
+    final listTypeId = cleanUuid(listingTypeId);
+    final assignTo = cleanUuid(assignedTo);
+
+    final cleanPropTypeIds = propertyTypeIds.map((id) => cleanUuid(id)).whereType<String>().toList();
+    final cleanConfigIds = configurationIds.map((id) => cleanUuid(id)).whereType<String>().toList();
+
     return {
       'customer_name': clientName,
       'mobile': clientMobile,
-      'category_id': categoryId,
-      'property_type_id': propertyTypeId,
-      'configuration_id': configurationId,
-      'listing_type_id': listingTypeId,
+      'category_id': catId,
+      'property_type_id': propTypeId,
+      'configuration_id': configId,
+      'listing_type_id': listTypeId,
       'budget': (minBudget + maxBudget) / 2,
       'budget_from': minBudget,
       'budget_to': maxBudget,
       'min_area': minArea,
       'max_area': maxArea,
-      'area_id': areaIds.isNotEmpty ? areaIds.first : null,
-      'area_ids': areaIds,
+      'area_id': areaIds.isNotEmpty ? cleanUuid(areaIds.first) : null,
+      'area_ids': areaIds.map((id) => cleanUuid(id)).whereType<String>().toList(),
       'area_names': areaNames,
-      'configuration_ids': configurationIds.isNotEmpty ? configurationIds : (configurationId != null ? [configurationId!] : null),
-      'property_type_ids': propertyTypeIds.isNotEmpty ? propertyTypeIds : [propertyTypeId],
+      'configuration_ids': cleanConfigIds.isNotEmpty ? cleanConfigIds : (configId != null ? [configId] : null),
+      'property_type_ids': cleanPropTypeIds.isNotEmpty ? cleanPropTypeIds : (propTypeId != null ? [propTypeId] : null),
       'remarks': remarks,
+      'internal_crm_remarks': remarks,
       'notes': notes,
       'status': status,
       'next_followup_date': nextFollowupDate,
-      'nextFollowupDate': nextFollowupDate,
-      'assigned_to': (assignedTo == null || assignedTo!.isEmpty) ? null : assignedTo,
+      'assigned_to': assignTo,
       'furnishing_type_ids': furnishingIds,
       'facing_type_ids': facingIds,
-      'furnishing_type_id': furnishingIds.isNotEmpty ? furnishingIds.first : null,
-      'facing_type_id': facingIds.isNotEmpty ? facingIds.first : null,
+      'furnishing_type_id': furnishingIds.isNotEmpty ? cleanUuid(furnishingIds.first) : null,
+      'facing_type_id': facingIds.isNotEmpty ? cleanUuid(facingIds.first) : null,
       'lead_source': leadSource,
       'referral_name': referralName,
       'source': formattedSource,

@@ -39,6 +39,8 @@ class CRMAppShell extends StatefulWidget {
 class _CRMAppShellState extends State<CRMAppShell>
     with SingleTickerProviderStateMixin {
   bool _isSidebarExpanded = true;
+  double _sidebarWidth = 245.0;
+  bool _isDraggingSidebar = false;
   final TextEditingController _searchController = TextEditingController();
   late PersistentTabController _tabController;
   int _previousIndex = 0;
@@ -968,18 +970,48 @@ class _CRMAppShellState extends State<CRMAppShell>
                     : null,
                 body: Row(
                   children: [
-                    if (showSidebar)
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: _isSidebarExpanded ? 245.0 : 70.0,
+                    if (showSidebar) ...[
+                      SizedBox(
+                        width: _sidebarWidth,
                         child: ModernSidebar(
                           currentPath: location,
                           userName: currentUserName,
                           userEmail: currentUserEmail,
                           userRole: currentUserRole,
-                          isCollapsed: !_isSidebarExpanded,
+                          isCollapsed: _sidebarWidth < 150.0,
+                          customWidth: _sidebarWidth,
                         ),
                       ),
+                      MouseRegion(
+                        cursor: SystemMouseCursors.resizeColumn,
+                        child: GestureDetector(
+                          onDoubleTap: () {
+                            setState(() {
+                              if (_sidebarWidth > 150.0) {
+                                _sidebarWidth = 70.0;
+                                _isSidebarExpanded = false;
+                              } else {
+                                _sidebarWidth = 245.0;
+                                _isSidebarExpanded = true;
+                              }
+                            });
+                          },
+                          onPanStart: (_) {
+                            setState(() => _isDraggingSidebar = true);
+                          },
+                          onPanUpdate: (details) {
+                            setState(() {
+                              _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(70.0, 360.0);
+                              _isSidebarExpanded = _sidebarWidth > 150.0;
+                            });
+                          },
+                          onPanEnd: (_) {
+                            setState(() => _isDraggingSidebar = false);
+                          },
+                          child: SidebarResizerDivider(isDragging: _isDraggingSidebar),
+                        ),
+                      ),
+                    ],
                     Expanded(
                       child: Column(
                         children: [
@@ -990,7 +1022,13 @@ class _CRMAppShellState extends State<CRMAppShell>
                                   Scaffold.of(scaffoldContext).openDrawer();
                                 } else {
                                   setState(() {
-                                    _isSidebarExpanded = !_isSidebarExpanded;
+                                    if (_sidebarWidth > 150.0) {
+                                      _sidebarWidth = 70.0;
+                                      _isSidebarExpanded = false;
+                                    } else {
+                                      _sidebarWidth = 245.0;
+                                      _isSidebarExpanded = true;
+                                    }
                                   });
                                 }
                               },
@@ -2867,6 +2905,64 @@ class CustomBottomNavBar extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class SidebarResizerDivider extends StatefulWidget {
+  final bool isDragging;
+
+  const SidebarResizerDivider({super.key, this.isDragging = false});
+
+  @override
+  State<SidebarResizerDivider> createState() => _SidebarResizerDividerState();
+}
+
+class _SidebarResizerDividerState extends State<SidebarResizerDivider> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = ThemeManager().isDarkMode;
+    final primaryColor = ThemeManager().primaryColor;
+    final isActive = widget.isDragging || _isHovered;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: isActive ? 6.0 : 4.0,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          color: isActive
+              ? primaryColor
+              : (isDark ? const Color(0xFF334155) : const Color(0xFFE8ECF2)),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: primaryColor.withValues(alpha: 0.35),
+                    blurRadius: 4,
+                    spreadRadius: 1,
+                  )
+                ]
+              : null,
+        ),
+        child: Center(
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 150),
+            opacity: isActive ? 1.0 : 0.0,
+            child: Container(
+              width: 2,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
         ),
       ),
     );

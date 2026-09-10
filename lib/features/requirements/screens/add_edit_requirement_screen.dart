@@ -171,16 +171,15 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           if (_selectedConfigIds.isEmpty && req.configurationId != null) {
             _selectedConfigIds.add(req.configurationId!);
           }
-          _selectedListingTypeId = req.listingTypeId;
+          if (req.listingTypeId != null && req.listingTypeId != 'Unknown' && req.listingTypeId!.isNotEmpty) {
+            _selectedListingTypeId = req.listingTypeId;
+          } else if (_listingTypes.isNotEmpty) {
+            _selectedListingTypeId = _listingTypes.first.id;
+          }
           _selectedFurnishingIds.addAll(req.furnishingIds);
           _selectedFacingIds.addAll(req.facingIds);
           
-          String statusVal = req.status;
-          if (statusVal == 'Not Started') statusVal = 'New';
-          if (statusVal == 'Active' || statusVal == 'Live') statusVal = 'Interested';
-          if (statusVal == 'Closed' || statusVal == 'Won') statusVal = 'Won';
-          if (statusVal == 'Suspended' || statusVal == 'Dead') statusVal = 'Not Interested';
-          _selectedStatus = statusVal;
+          _selectedStatus = req.status;
 
           _selectedAreaIds.addAll(req.areaIds);
           _selectedLeadSource = req.leadSource;
@@ -638,9 +637,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       areaIds: _selectedAreaIds,
       areaNames: areaNames,
       remarks: _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
+      notes: widget.requirement?.notes,
       leadSource: _selectedLeadSource,
       referralName: _selectedLeadSource?.toLowerCase() == 'referral' ? _referralNameController.text.trim() : null,
-      status: _selectedStatus,
+      status: widget.requirement?.status ?? _selectedStatus,
       createdAt: widget.requirement?.createdAt ?? DateTime.now(),
       furnishingIds: _selectedFurnishingIds,
       facingIds: _selectedFacingIds,

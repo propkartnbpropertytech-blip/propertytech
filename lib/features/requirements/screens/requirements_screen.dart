@@ -2497,7 +2497,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
                                                 await RequirementsRepository().updateRequirementFields(
                                                   req.id,
-                                                  {'notes': updatedNotes},
+                                                  {'notes': updatedNotes, 'new_note': formattedEntry},
                                                 );
 
                                                 _removeNotesPopover();
@@ -2580,13 +2580,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       builder: (dialogContext) {
         return _ViewAllNotesDialogWidget(
           requirement: req,
-          onSave: (updatedNotes) async {
+          onSave: (updatedNotes, updatedReqModel, newNote, [deletedNote]) async {
             context.read<RequirementsBloc>().add(
-              UpdateRequirementEvent(req.copyWith(notes: updatedNotes)),
+              UpdateRequirementEvent(updatedReqModel),
             );
             await RequirementsRepository().updateRequirementFields(
               req.id,
-              {'notes': updatedNotes},
+              {
+                'notes': updatedNotes,
+                if (newNote != null && newNote.isNotEmpty) 'new_note': newNote,
+                if (deletedNote != null && deletedNote.isNotEmpty) 'deleted_note': deletedNote,
+              },
             );
             if (mounted) {
               setState(() {
@@ -4452,9 +4456,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         ? req.nextFollowupDate!
                         : (existing.followupDate.isNotEmpty ? existing.followupDate : req.createdAt.toIso8601String());
 
-                    final chosenNotes = (req.remarks != null && req.remarks!.trim().isNotEmpty)
-                        ? req.remarks!
-                        : ((existing.notes != null && existing.notes!.trim().isNotEmpty) ? existing.notes : (req.notes ?? ''));
+                    final chosenNotes = existing.notes;
 
                     latestReqFollowupsMap[key] = DashboardFollowup(
                       id: existing.id,
@@ -4478,7 +4480,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       propertyTitle: req.listingTypeName ?? 'Rent',
                       followupDate: hasNextDate ? req.nextFollowupDate! : req.createdAt.toIso8601String(),
                       status: reqStatus,
-                      notes: req.remarks ?? req.notes,
+                      notes: null,
                       creatorName: req.creatorName ?? req.assigneeName,
                     );
                   }
@@ -4534,26 +4536,43 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 }
               }
 
+              todayFollowups.sort((a, b) {
+                final dtA = _parseFollowupDateTime(a.followupDate) ?? DateTime(1970);
+                final dtB = _parseFollowupDateTime(b.followupDate) ?? DateTime(1970);
+                return dtA.compareTo(dtB);
+              });
+
+              dueFollowups.sort((a, b) {
+                final dtA = _parseFollowupDateTime(a.followupDate) ?? DateTime(1970);
+                final dtB = _parseFollowupDateTime(b.followupDate) ?? DateTime(1970);
+                return dtB.compareTo(dtA);
+              });
+
+              futureFollowups.sort((a, b) {
+                final dtA = _parseFollowupDateTime(a.followupDate) ?? DateTime(1970);
+                final dtB = _parseFollowupDateTime(b.followupDate) ?? DateTime(1970);
+                return dtA.compareTo(dtB); // Earliest future date first (e.g. 11/09, 12/09, 13/09)
+              });
+
+              allClientsFollowups.sort((a, b) {
+                final dtA = _parseFollowupDateTime(a.followupDate) ?? DateTime(1970);
+                final dtB = _parseFollowupDateTime(b.followupDate) ?? DateTime(1970);
+                return dtB.compareTo(dtA);
+              });
+
               List<DashboardFollowup> selectedList;
               if (_selectedFollowupSubTab == 'Due') {
                 selectedList = dueFollowups;
               } else if (_selectedFollowupSubTab == 'Future') {
                 selectedList = futureFollowups;
                 if (_reqFollowupDateFilter != null) {
-                  final filterDay = DateTime(
-                    _reqFollowupDateFilter!.year,
-                    _reqFollowupDateFilter!.month,
-                    _reqFollowupDateFilter!.day,
-                  );
-                  if (filterDay != todayDate) {
-                    selectedList = futureFollowups.where((f) {
-                      final parsed = _parseFollowupDateTime(f.followupDate);
-                      if (parsed == null) return false;
-                      return parsed.year == _reqFollowupDateFilter!.year &&
-                          parsed.month == _reqFollowupDateFilter!.month &&
-                          parsed.day == _reqFollowupDateFilter!.day;
-                    }).toList();
-                  }
+                  selectedList = futureFollowups.where((f) {
+                    final parsed = _parseFollowupDateTime(f.followupDate);
+                    if (parsed == null) return false;
+                    return parsed.year == _reqFollowupDateFilter!.year &&
+                        parsed.month == _reqFollowupDateFilter!.month &&
+                        parsed.day == _reqFollowupDateFilter!.day;
+                  }).toList();
                 }
               } else if (_selectedFollowupSubTab == 'AllClients') {
                 selectedList = allClientsFollowups;
@@ -4605,7 +4624,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       _currentFollowupPage = 1;
                       if (tabKey == 'Today') {
                         _reqFollowupDateFilter = DateTime.now();
-                      } else if (tabKey == 'Due' || tabKey == 'AllClients') {
+                      } else {
                         _reqFollowupDateFilter = null;
                       }
                     });
@@ -5831,7 +5850,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         _followupTime.hour,
         _followupTime.minute,
       );
-      final isoDateStr = scheduledDateTime.toIso8601String();
+      final isoDateStr = scheduledDateTime.toUtc().toIso8601String();
 
       if (widget.isSiteVisit) {
         await DioClient.dio.post('/site-visits', data: {
@@ -5900,7 +5919,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         final saved = await requirementsRepository.updateRequirement(updatedReq);
         final finalReq = saved.copyWith(
           nextFollowupDate: (saved.nextFollowupDate != null && saved.nextFollowupDate!.isNotEmpty) ? saved.nextFollowupDate : isoDateStr,
-          remarks: (saved.remarks != null && saved.remarks!.isNotEmpty) ? saved.remarks : remarks,
+          remarks: (saved.remarks != null && saved.remarks!.isNotEmpty) ? saved.remarks : widget.requirement.remarks,
           createdBy: (saved.createdBy != null && saved.createdBy!.isNotEmpty) ? saved.createdBy : widget.requirement.createdBy,
           creatorName: (saved.creatorName != null && saved.creatorName!.isNotEmpty) ? saved.creatorName : widget.requirement.creatorName,
           assignedTo: (saved.assignedTo != null && saved.assignedTo!.isNotEmpty) ? saved.assignedTo : widget.requirement.assignedTo,
@@ -8403,7 +8422,7 @@ List<_NoteItemData> _parseNotesList(String? rawNotes) {
 
 class _ViewAllNotesDialogWidget extends StatefulWidget {
   final RequirementModel requirement;
-  final Function(String) onSave;
+  final Function(String updatedNotes, RequirementModel updatedReqModel, String? newNote, [String? deletedNote]) onSave;
 
   const _ViewAllNotesDialogWidget({
     required this.requirement,
@@ -8432,11 +8451,17 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
   }
 
   void _deleteNote(int indexToDelete, List<_NoteItemData> currentList) {
-    currentList.removeAt(indexToDelete);
+    final itemToDelete = currentList[indexToDelete];
+    final deletedNoteStr = (itemToDelete.timestamp == 'Saved Note' || itemToDelete.timestamp == 'Initial Note')
+        ? itemToDelete.content
+        : '[${itemToDelete.timestamp}] ${itemToDelete.content}';
+
+    final newList = List<_NoteItemData>.from(currentList);
+    newList.removeAt(indexToDelete);
 
     String updatedNotesStr = '';
-    if (currentList.isNotEmpty) {
-      updatedNotesStr = currentList.map((item) {
+    if (newList.isNotEmpty) {
+      updatedNotesStr = newList.map((item) {
         if (item.timestamp == 'Saved Note' || item.timestamp == 'Initial Note') {
           return item.content;
         } else {
@@ -8445,10 +8470,11 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
       }).join('\n');
     }
 
-    widget.onSave(updatedNotesStr);
+    final updatedReq = _currentReq.copyWith(notes: updatedNotesStr);
     setState(() {
-      _currentReq = _currentReq.copyWith(notes: updatedNotesStr);
+      _currentReq = updatedReq;
     });
+    widget.onSave(updatedNotesStr, updatedReq, null, deletedNoteStr);
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -8470,12 +8496,13 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
         ? '$existingClean\n$formattedEntry'
         : formattedEntry;
 
-    widget.onSave(updatedNotes);
+    final updatedReq = _currentReq.copyWith(notes: updatedNotes);
     setState(() {
-      _currentReq = _currentReq.copyWith(notes: updatedNotes);
+      _currentReq = updatedReq;
       _newNoteController.clear();
       _isAdding = false;
     });
+    widget.onSave(updatedNotes, updatedReq, formattedEntry);
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(

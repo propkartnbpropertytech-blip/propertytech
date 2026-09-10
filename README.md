@@ -14,8 +14,8 @@
 
   <p>
     <a href="https://propkart.nbpropertytech.com"><img src="https://img.shields.io/badge/Live_App-propkart.nbpropertytech.com-159B73?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live app" /></a>
-    <img src="https://img.shields.io/badge/Version-2.0.1-10B981?style=for-the-badge&logo=flutter&logoColor=white" alt="Version 2.0.1" />
-    <img src="https://img.shields.io/badge/Build-9-14213D?style=for-the-badge" alt="Build 9" />
+    <img src="https://img.shields.io/badge/Version-2.1.0-10B981?style=for-the-badge&logo=flutter&logoColor=white" alt="Version 2.1.0" />
+    <img src="https://img.shields.io/badge/Build-10-14213D?style=for-the-badge" alt="Build 10" />
   </p>
 
   <p>

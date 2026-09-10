@@ -136,30 +136,14 @@ class RequirementsRepository {
       final localEntities = freshList.map((r) {
         final local = r.toLocal();
         final existing = existingLocalMap[r.id];
-        if (existing != null && existing.nextFollowupDate != null && existing.nextFollowupDate!.trim().isNotEmpty) {
+        if ((local.nextFollowupDate == null || local.nextFollowupDate!.trim().isEmpty) && existing != null) {
           local.nextFollowupDate = existing.nextFollowupDate;
-          if (existing.remarks != null && existing.remarks!.trim().isNotEmpty) {
-            local.remarks = existing.remarks;
-          }
         }
-        bool isSameMobile(String m1, String m2) {
-          final d1 = m1.replaceAll(RegExp(r'\D'), '');
-          final d2 = m2.replaceAll(RegExp(r'\D'), '');
-          if (d1.isEmpty || d2.isEmpty) return false;
-          if (d1 == d2) return true;
-          final s1 = d1.length >= 10 ? d1.substring(d1.length - 10) : d1;
-          final s2 = d2.length >= 10 ? d2.substring(d2.length - 10) : d2;
-          return s1 == s2;
+        if ((local.remarks == null || local.remarks!.trim().isEmpty) && existing != null) {
+          local.remarks = existing.remarks;
         }
-        final localFollowup = FollowupLocalRepository.inMemory.values.firstWhereOrNull(
-          (f) => (f.requirementId != null && f.requirementId == r.id) ||
-                 (f.mobile.isNotEmpty && r.clientMobile.isNotEmpty && isSameMobile(f.mobile, r.clientMobile))
-        );
-        if (localFollowup != null) {
-          local.nextFollowupDate = localFollowup.followupDate.toIso8601String();
-          if (localFollowup.notes != null && localFollowup.notes!.trim().isNotEmpty) {
-            local.remarks = localFollowup.notes;
-          }
+        if ((local.notes == null || local.notes!.trim().isEmpty) && existing != null) {
+          local.notes = existing.notes;
         }
         return local;
       }).toList();
@@ -277,7 +261,11 @@ class RequirementsRepository {
       final freshJson = respData['requirement'] as Map<String, dynamic>?;
       if (freshJson != null) {
         final fresh = RequirementModel.fromJson(freshJson);
-        await _coordinator.requirementLocal.saveRequirements([fresh.toLocal()]);
+        final localItem = fresh.toLocal();
+        if (data.containsKey('notes')) {
+          localItem.notes = data['notes'] as String?;
+        }
+        await _coordinator.requirementLocal.saveRequirements([localItem]);
       } else {
         final existingList = await _coordinator.requirementLocal.getRequirements();
         final matches = existingList.where((r) => r.id == id).toList();

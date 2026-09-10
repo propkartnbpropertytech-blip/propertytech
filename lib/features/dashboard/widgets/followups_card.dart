@@ -97,7 +97,9 @@ class _FollowupsCardState extends State<FollowupsCard> {
       if (statusLower == 'completed' ||
           statusLower == 'resolved' ||
           statusLower == 'closed' ||
-          statusLower == 'done') {
+          statusLower == 'done' ||
+          statusLower == 'bin' ||
+          statusLower == 'deleted') {
         return false;
       }
 
