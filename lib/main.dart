@@ -14,6 +14,8 @@ import 'features/requirements/bloc/requirements_bloc.dart';
 import 'features/clients/bloc/clients_bloc.dart';
 import 'features/owners/bloc/owners_bloc.dart';
 import 'features/builders/bloc/builders_bloc.dart';
+import 'features/campaign/bloc/campaign_leads_bloc.dart';
+import 'features/integration/services/integration_service.dart';
 import 'core/navigation/app_router.dart';
 import 'core/design_system/theme/propkart_theme.dart';
 import 'core/theme/theme_manager.dart';
@@ -211,6 +213,11 @@ class _MyAppState extends State<MyApp> {
             create: (context) => BuildersBloc(
               buildersRepository: context.read<BuildersRepository>(),
             ),
+          ),
+          BlocProvider(
+            create: (context) => CampaignLeadsBloc(
+              integrationService: IntegrationService(),
+            )..add(const FetchCampaignLeadsEvent()),
           ),
         ],
         child: ListenableBuilder(
