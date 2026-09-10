@@ -7,7 +7,6 @@ class ApiConstants {
 
   static const String cloudinaryCloudName = "jdvya1gl";
   static const String cloudinaryApiKey = "131871686761399";
-  static const String cloudinaryApiSecret = "mXh1pyefWhgjKN5oi8fp3Xe7a7w";
 
   static const sentryDsn = String.fromEnvironment(
     'SENTRY_DSN',

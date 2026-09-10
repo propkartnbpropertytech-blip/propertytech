@@ -12,6 +12,14 @@
 .swiftpm/
 migrate_working_dir/
 
+# Secrets and Credentials
+.env*
+*creds*
+*secret*
+*.txt
+!README.md
+!CMakeLists.txt
+
 # IntelliJ related
 *.iml
 *.ipr

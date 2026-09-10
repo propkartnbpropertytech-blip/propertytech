@@ -16,7 +16,6 @@ import 'crm_brand_lockup.dart';
 import '../../api/dio_client.dart';
 import '../../utils/budget_formatter.dart';
 import '../../network/sync_manager.dart';
-import '../../network/sync_bloc.dart';
 import 'dart:async';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../features/properties/services/properties_service.dart';
@@ -97,7 +96,6 @@ class _CRMAppShellState extends State<CRMAppShell>
       await NotificationCenter.init();
       _fetchNotifications();
       _notificationsTimer?.cancel();
-      _notifCenterSub?.cancel();
       _notificationsTimer = Timer.periodic(const Duration(minutes: 5), (
         _,
       ) async {
@@ -902,13 +900,7 @@ class _CRMAppShellState extends State<CRMAppShell>
       curve: CRMMotion.emphasized,
     );
 
-    return BlocListener<SyncBloc, SyncBlocState>(
-      listener: (context, syncState) {
-        if (syncState is SyncBlocSuccess && syncState.recordsUpdated > 0) {
-          debugPrint("⚡ [CRMAppShell] Realtime sync: ${syncState.recordsUpdated} records refreshed seamlessly.");
-        }
-      },
-      child: MobileSystemBackHandler(
+    return MobileSystemBackHandler(
       onBeforeBack: () async {
         if (_searchOverlayEntry != null || _isMobileSearchActive) {
           _hideSearchOverlay();
@@ -1171,7 +1163,6 @@ class _CRMAppShellState extends State<CRMAppShell>
           ),
         ],
       ),
-    ),
     );
   }
 

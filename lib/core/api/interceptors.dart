@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -11,7 +12,7 @@ class JwtInterceptor extends Interceptor {
   final SecureStorage _secureStorage = SecureStorage();
   final AuthRepository _authRepository = AuthRepository();
 
-  bool _isRefreshing = false;
+  static Completer<bool>? _refreshCompleter;
 
   /// Paths that must not trigger forced logout / refresh on 401.
   static const _authExemptPrefixes = <String>[
@@ -94,39 +95,53 @@ class JwtInterceptor extends Interceptor {
     final path = err.requestOptions.path;
 
     if (status == 401 && !_matchesAny(path, _authExemptPrefixes)) {
-      if (!_isRefreshing) {
-        _isRefreshing = true;
+      bool refreshed = false;
+      if (_refreshCompleter != null) {
+        // Another parallel request is currently refreshing the session.
+        // Wait for it instead of immediately triggering forced logout.
+        refreshed = await _refreshCompleter!.future;
+      } else {
+        final completer = Completer<bool>();
+        _refreshCompleter = completer;
         try {
-          final refreshed = await _authRepository.refreshSession();
-          if (refreshed) {
-            final opts = err.requestOptions;
-            if (kIsWeb) {
-              opts.headers['X-Auth-Transport'] = 'cookie';
-              final token = await _secureStorage.getToken();
-              if (token != null && token.isNotEmpty) {
-                opts.headers['Authorization'] = 'Bearer $token';
-              } else {
-                opts.headers.remove('Authorization');
-              }
-            } else {
-              final token = await _secureStorage.getToken();
-              opts.headers['Authorization'] = 'Bearer $token';
-            }
-            try {
-              final clone = await _retryClient(opts).fetch(opts);
-              _isRefreshing = false;
-              return handler.resolve(clone);
-            } catch (_) {
-              // fall through to logout
-            }
-          }
+          refreshed = await _authRepository.refreshSession();
+          completer.complete(refreshed);
+        } catch (e) {
+          completer.complete(false);
+          refreshed = false;
         } finally {
-          _isRefreshing = false;
+          _refreshCompleter = null;
         }
       }
 
-      await SessionCleanup.clearLocalSession(clearToken: true);
-      SessionCleanup.notifyForcedLogout();
+      if (refreshed) {
+        final opts = err.requestOptions;
+        if (kIsWeb) {
+          opts.headers['X-Auth-Transport'] = 'cookie';
+          final token = await _secureStorage.getToken();
+          if (token != null && token.isNotEmpty) {
+            opts.headers['Authorization'] = 'Bearer $token';
+          } else {
+            opts.headers.remove('Authorization');
+          }
+        } else {
+          final token = await _secureStorage.getToken();
+          if (token != null && token.isNotEmpty) {
+            opts.headers['Authorization'] = 'Bearer $token';
+          }
+        }
+        try {
+          final clone = await _retryClient(opts).fetch(opts);
+          return handler.resolve(clone);
+        } catch (retryErr) {
+          if (retryErr is DioException) {
+            return handler.reject(retryErr);
+          }
+        }
+      } else {
+        await SessionCleanup.clearLocalSession(clearToken: true);
+        SessionCleanup.notifyForcedLogout();
+      }
     }
     super.onError(err, handler);
   }

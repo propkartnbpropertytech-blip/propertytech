@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:io' show File;
 import 'dart:typed_data';
 import '../../../core/api/api_constants.dart';
+import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
@@ -48,22 +49,15 @@ class _AgentImageUploadWidgetState extends State<AgentImageUploadWidget> {
         setState(() => _uploadProgress = i / 10.0);
       }
       final uploadBytes = Uint8List.fromList(bytes);
-      final int timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      const folder = 'agent_profiles';
-      final toSign = 'folder=$folder&timestamp=$timestamp${ApiConstants.cloudinaryApiSecret}';
-      final signature = sha1.convert(utf8.encode(toSign)).toString();
       final ext = (file.extension ?? 'jpg').toLowerCase();
-      final contentType = ext == 'png' ? MediaType('image', 'png') : MediaType('image', 'jpeg');
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(uploadBytes, filename: file.name, contentType: contentType),
-        'api_key': ApiConstants.cloudinaryApiKey,
-        'timestamp': timestamp,
-        'signature': signature,
-        'folder': folder,
-      });
-      final response = await Dio(BaseOptions(connectTimeout: const Duration(seconds: 60), receiveTimeout: const Duration(seconds: 60), sendTimeout: const Duration(seconds: 60)))
-          .post('https://api.cloudinary.com/v1_1/${ApiConstants.cloudinaryCloudName}/image/upload', data: formData);
-      final uploadedUrl = (response.data?['secure_url'] ?? '').toString();
+      final mimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
+      final uploadedUrl = await CloudinaryUploader.upload(
+        bytes: uploadBytes,
+        filename: file.name,
+        mimeType: mimeType,
+        resourceType: 'image',
+        folder: 'agent_profiles',
+      );
       if (uploadedUrl.isEmpty || !uploadedUrl.contains('res.cloudinary.com')) throw Exception('Invalid Cloudinary response');
       if (!mounted) return;
       setState(() { _imageUrl = uploadedUrl; _isUploading = false; _uploadProgress = 1.0; });
