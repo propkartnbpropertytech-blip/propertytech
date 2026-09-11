@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/design_system/widgets/crm_brand_lockup.dart';
 import 'user_profile_card.dart';
 
@@ -98,84 +99,102 @@ class _ModernSidebarState extends State<ModernSidebar> {
 
             // ── Navigation Items ───────────────────────────────
             Expanded(
-              child: ListView(
-                padding: EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: isCollapsed ? 6 : 12,
+              child: ListenableBuilder(
+                listenable: PermissionMatrixService.instance,
+                builder: (context, _) => ListView(
+                  padding: EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: isCollapsed ? 6 : 12,
+                  ),
+                  children: [
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/dashboard'))
+                      _buildNavItem(
+                        context,
+                        title: 'Dashboard',
+                        icon: Icons.grid_view_rounded,
+                        route: '/dashboard',
+                        isActive:
+                            currentPath.startsWith('/dashboard') ||
+                            currentPath == '/',
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/properties'))
+                      _buildNavItem(
+                        context,
+                        title: 'Properties',
+                        icon: Icons.home_work_outlined,
+                        route: '/properties',
+                        isActive: currentPath.startsWith('/properties'),
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/requirements'))
+                      _buildNavItem(
+                        context,
+                        title: 'Leads',
+                        icon: Icons.assignment_outlined,
+                        route: '/requirements',
+                        isActive: currentPath.startsWith('/requirements'),
+                        badgeCount: leadsBadgeCount > 0 ? leadsBadgeCount : null,
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        (RoleGuard.canManageEmployees(widget.userRole) &&
+                         RoleGuard.canViewPage(widget.userRole, '/users')))
+                      _buildNavItem(
+                        context,
+                        title: 'Employees',
+                        icon: Icons.people_outline_rounded,
+                        route: '/users',
+                        isActive: currentPath.startsWith('/users'),
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        (RoleGuard.canViewReports(widget.userRole) &&
+                         RoleGuard.canViewPage(widget.userRole, '/reports')))
+                      _buildNavItem(
+                        context,
+                        title: 'Reports',
+                        icon: Icons.bar_chart_rounded,
+                        route: '/reports/leads/overall-business-insight',
+                        isActive: currentPath.startsWith('/reports'),
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        (RoleGuard.canAccessCampaign(widget.userRole) &&
+                         RoleGuard.canViewPage(widget.userRole, '/campaign')))
+                      _buildCampaignTreeItem(
+                        context,
+                        isDark: isDark,
+                        primaryColor: primaryColor,
+                        primaryHoverColor: primaryHoverColor,
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/library'))
+                      _buildNavItem(
+                        context,
+                        title: 'Library',
+                        icon: Icons.folder_outlined,
+                        route: '/library',
+                        isActive: currentPath.startsWith('/library'),
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/settings'))
+                      _buildNavItem(
+                        context,
+                        title: 'Settings',
+                        icon: Icons.settings_outlined,
+                        route: '/settings',
+                        isActive: currentPath.startsWith('/settings'),
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/bin'))
+                      _buildNavItem(
+                        context,
+                        title: 'Recycle Bin',
+                        icon: Icons.delete_outline_rounded,
+                        route: '/bin',
+                        isActive: currentPath.startsWith('/bin'),
+                      ),
+                  ],
                 ),
-                children: [
-                  _buildNavItem(
-                    context,
-                    title: 'Dashboard',
-                    icon: Icons.grid_view_rounded,
-                    route: '/dashboard',
-                    isActive:
-                        currentPath.startsWith('/dashboard') ||
-                        currentPath == '/',
-                  ),
-                  _buildNavItem(
-                    context,
-                    title: 'Properties',
-                    icon: Icons.home_work_outlined,
-                    route: '/properties',
-                    isActive: currentPath.startsWith('/properties'),
-                  ),
-                  _buildNavItem(
-                    context,
-                    title: 'Leads',
-                    icon: Icons.assignment_outlined,
-                    route: '/requirements',
-                    isActive: currentPath.startsWith('/requirements'),
-                    badgeCount: leadsBadgeCount > 0 ? leadsBadgeCount : null,
-                  ),
-                  if (widget.userRole.isEmpty ||
-                      RoleGuard.canManageEmployees(widget.userRole))
-                    _buildNavItem(
-                      context,
-                      title: 'Employees',
-                      icon: Icons.people_outline_rounded,
-                      route: '/users',
-                      isActive: currentPath.startsWith('/users'),
-                    ),
-                  if (widget.userRole.isEmpty ||
-                      RoleGuard.canViewReports(widget.userRole))
-                    _buildNavItem(
-                      context,
-                      title: 'Reports',
-                      icon: Icons.bar_chart_rounded,
-                      route: '/reports/leads/overall-business-insight',
-                      isActive: currentPath.startsWith('/reports'),
-                    ),
-                  if (widget.userRole.isEmpty ||
-                      RoleGuard.canAccessCampaign(widget.userRole))
-                    _buildCampaignTreeItem(
-                      context,
-                      isDark: isDark,
-                      primaryColor: primaryColor,
-                      primaryHoverColor: primaryHoverColor,
-                    ),
-                  _buildNavItem(
-                    context,
-                    title: 'Library',
-                    icon: Icons.folder_outlined,
-                    route: '/library',
-                    isActive: currentPath.startsWith('/library'),
-                  ),
-                  _buildNavItem(
-                    context,
-                    title: 'Settings',
-                    icon: Icons.settings_outlined,
-                    route: '/settings',
-                    isActive: currentPath.startsWith('/settings'),
-                  ),
-                  _buildNavItem(
-                    context,
-                    title: 'Recycle Bin',
-                    icon: Icons.delete_outline_rounded,
-                    route: '/bin',
-                    isActive: currentPath.startsWith('/bin'),
-                  ),
-                ],
               ),
             ),
 

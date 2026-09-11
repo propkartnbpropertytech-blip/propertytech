@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:propkart/core/security/role_guard.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('RoleGuard', () {
     test('Sales cannot manage employees', () {
       expect(RoleGuard.canManageEmployees('Sales'), isFalse);

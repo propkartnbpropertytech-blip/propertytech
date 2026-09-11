@@ -14,6 +14,7 @@ import '../../../core/theme/theme_manager.dart';
 import '../../../core/theme/theme_presets.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import 'sync_debug_screen.dart';
+import '../widgets/permission_matrix_card.dart';
 import '../../../core/storage/isar_service.dart';
 import '../../../core/constants/app_constants.dart';
 
@@ -752,6 +753,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const _SettingsNavItem(id: 'appearance', label: 'Appearance', icon: Icons.tune_rounded),
       const _SettingsNavItem(id: 'locations', label: 'Locations', icon: Icons.location_city_outlined),
       if (isSuperAdmin)
+        const _SettingsNavItem(id: 'permissions', label: 'Permission Matrix', icon: Icons.admin_panel_settings_rounded),
+      if (isSuperAdmin)
         const _SettingsNavItem(id: 'audit', label: 'Audit Logs', icon: Icons.history_rounded),
       const _SettingsNavItem(id: 'system', label: 'System', icon: Icons.info_outline_rounded),
     ];
@@ -770,6 +773,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return _buildAppearanceCard(isAdminOrSuperAdmin);
         case 'locations':
           return _buildLocationConfigCard();
+        case 'permissions':
+          if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
+          return const PermissionMatrixCard();
         case 'audit':
           return _buildAuditLogsCard();
         case 'system':

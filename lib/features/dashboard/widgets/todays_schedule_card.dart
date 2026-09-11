@@ -43,10 +43,14 @@ class PersonalNoteItem {
       };
 
   factory PersonalNoteItem.fromJson(Map<String, dynamic> json) {
+    final rawDateStr = json['created_at']?.toString() ?? json['createdAt']?.toString() ?? '';
+    final parsed = DateTime.tryParse(rawDateStr);
+    final localDate = parsed != null ? parsed.toLocal() : DateTime.now();
+
     return PersonalNoteItem(
       id: json['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
       content: json['content']?.toString() ?? '',
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? json['createdAt']?.toString() ?? '') ?? DateTime.now(),
+      createdAt: localDate,
       isCompleted: json['is_completed'] as bool? ?? json['isCompleted'] as bool? ?? json['completed'] as bool? ?? false,
     );
   }
@@ -332,17 +336,18 @@ class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
   }
 
   String _formatDate(DateTime dt) {
+    final localDt = dt.toLocal();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final date = DateTime(dt.year, dt.month, dt.day);
+    final date = DateTime(localDt.year, localDt.month, localDt.day);
 
-    final timeStr = DateFormat('hh:mm a').format(dt);
+    final timeStr = DateFormat('hh:mm a').format(localDt);
     if (date.isAtSameMomentAs(today)) {
       return 'Today · $timeStr';
     } else if (date.isAtSameMomentAs(today.subtract(const Duration(days: 1)))) {
       return 'Yesterday · $timeStr';
     } else {
-      return DateFormat('dd MMM yyyy · hh:mm a').format(dt);
+      return DateFormat('dd MMM yyyy · hh:mm a').format(localDt);
     }
   }
 

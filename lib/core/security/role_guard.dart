@@ -1,6 +1,8 @@
 import '../../features/auth/models/user_model.dart';
+import 'permission_matrix_service.dart';
 
-/// Client-side RBAC helpers. Server must still enforce every mutation.
+/// Client-side RBAC helpers backed by dynamic PermissionMatrixService.
+/// Server must still enforce every mutation.
 class RoleGuard {
   static UserModel? currentUser;
   static bool isSuperAdmin(String? role) =>
@@ -11,31 +13,48 @@ class RoleGuard {
     return r == 'admin' || r == 'super admin' || r == 'telecaller';
   }
 
-  static bool canManageEmployees(String? role) {
-    final r = (role ?? '').toLowerCase();
-    return r == 'admin' || r == 'super admin';
+  /// General permission evaluator
+  static bool hasPermission(String? role, String key) {
+    return PermissionMatrixService.instance.hasPermission(role, key);
   }
 
-  /// Campaign & Integration Webhooks — Admin, Super Admin, and Telecaller.
+  /// Evaluates whether a role can view/access a given App Shell page route
+  static bool canViewPage(String? role, String route) {
+    return PermissionMatrixService.instance.canViewRoute(role, route);
+  }
+
+  static bool canManageEmployees(String? role) {
+    if (isSuperAdmin(role)) return true;
+    return PermissionMatrixService.instance.hasPermission(role, 'page.employees') ||
+        PermissionMatrixService.instance.hasPermission(role, 'team.view');
+  }
+
+  /// Campaign & Integration Webhooks — Super Admin, Admin, and Telecaller by default,
+  /// but dynamically controllable via PermissionMatrixService.
   static bool canAccessIntegration(String? role) => canAccessCampaign(role);
   static bool canAccessCampaign(String? role) {
-    final r = (role ?? '').toLowerCase().replaceAll(' ', '').replaceAll('_', '').replaceAll('-', '');
-    return r == 'admin' || r == 'superadmin' || r == 'telecaller';
+    if (isSuperAdmin(role)) return true;
+    return PermissionMatrixService.instance.hasPermission(role, 'page.campaign') ||
+        PermissionMatrixService.instance.hasPermission(role, 'campaign.view_inbox');
   }
 
   /// Audit logs — Super Admin only (defense-in-depth).
-  static bool canViewAuditLogs(String? role) => isSuperAdmin(role);
+  static bool canViewAuditLogs(String? role) {
+    return isSuperAdmin(role) &&
+        PermissionMatrixService.instance.hasPermission(role, 'page.audit_logs');
+  }
 
-  /// Reports module — Admin and Super Admin only.
+  /// Reports module — Admin and Super Admin by default, controllable via matrix.
   static bool canViewReports(String? role) {
-    final r = (role ?? '').toLowerCase().trim();
-    return r == 'admin' || r == 'super admin';
+    if (isSuperAdmin(role)) return true;
+    return PermissionMatrixService.instance.hasPermission(role, 'page.reports') ||
+        PermissionMatrixService.instance.hasPermission(role, 'reports.overall_insight');
   }
 
   /// Settings mutations that affect org lookups (cities/areas).
   static bool canManageLookups(String? role) {
-    final r = (role ?? '').toLowerCase();
-    return r == 'super admin' || r == 'admin' || r == 'sales';
+    if (isSuperAdmin(role)) return true;
+    return PermissionMatrixService.instance.hasPermission(role, 'system.manage_lookups');
   }
 
   /// Only Super Admin may assign/create/update/delete Admin accounts.
@@ -98,6 +117,9 @@ class RoleGuard {
       return '/dashboard';
     }
     if (pathOnly.startsWith('/reports') && !canViewReports(role)) {
+      return '/dashboard';
+    }
+    if (!canViewPage(role, pathOnly)) {
       return '/dashboard';
     }
     return path;
