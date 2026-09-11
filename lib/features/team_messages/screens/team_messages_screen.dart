@@ -9,7 +9,6 @@ import '../../../core/theme/theme_manager.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
-import '../../../core/design_system/widgets/cards.dart';
 import '../models/team_message_model.dart';
 import '../services/team_messages_service.dart';
 
@@ -28,34 +27,54 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _messageFocusNode = FocusNode();
+  final FocusNode _keyboardFocusNode = FocusNode();
 
   List<TeamChatUserModel> _users = [];
   TeamChatUserModel? _selectedUser;
   List<TeamMessageModel> _messages = [];
 
+  List<TeamChatUserModel> _filteredUsers = [];
+  Map<String, List<TeamChatUserModel>> _groupedUsers = {};
+  List<String> _sortedTeamKeys = [];
+
   bool _isLoadingUsers = true;
   bool _isLoadingMessages = false;
   bool _isSending = false;
+  bool _isFetchingUsers = false;
+  bool _isFetchingConversation = false;
   String _selectedRoleFilter = 'All';
   String _searchQuery = '';
   bool _viewingAdminChat = false;
   final Set<String> _collapsedTeams = {};
 
-  Timer? _pollTimer;
+  Timer? _conversationPollTimer;
+  Timer? _usersPollTimer;
 
   @override
   void initState() {
     super.initState();
     _loadUsers();
-    // Live polling every 3.5 seconds
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 3500), (_) {
-      _pollUpdates();
+
+    // Poll active conversation every 4 seconds
+    _conversationPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (_selectedUser != null && !_isFetchingConversation && !_isLoadingMessages && mounted) {
+        _loadConversation(_selectedUser!.id, silent: true);
+      }
+    });
+
+    // Poll team users roster every 15 seconds (for unread counts & status)
+    _usersPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!_isFetchingUsers && !_isLoadingUsers && mounted) {
+        _loadUsers(silent: true);
+      }
     });
   }
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
+    _conversationPollTimer?.cancel();
+    _usersPollTimer?.cancel();
+    _keyboardFocusNode.dispose();
     _messageController.dispose();
     _searchController.dispose();
     _scrollController.dispose();
@@ -63,22 +82,92 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
     super.dispose();
   }
 
+  void _recomputeFilteredAndGroupedUsers() {
+    final filtered = _users.where((user) {
+      final matchesSearch = _searchQuery.isEmpty ||
+          user.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          user.email.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          user.role.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          (user.teamName ?? '').toLowerCase().contains(_searchQuery.toLowerCase());
+
+      if (!matchesSearch) return false;
+
+      if (_selectedRoleFilter == 'All') return true;
+      if (_selectedRoleFilter == 'Admins') {
+        return user.role.toLowerCase().contains('admin');
+      }
+      if (_selectedRoleFilter == 'Telecallers') {
+        return user.role.toLowerCase().contains('telecaller');
+      }
+      if (_selectedRoleFilter == 'Sales') {
+        return user.role.toLowerCase().contains('sales');
+      }
+      return true;
+    }).toList();
+
+    final Map<String, List<TeamChatUserModel>> map = {};
+    for (final u in filtered) {
+      final key = u.teamName ?? 'General Team';
+      if (!map.containsKey(key)) {
+        map[key] = [];
+      }
+      map[key]!.add(u);
+    }
+
+    int roleRank(String r) {
+      final s = r.toLowerCase();
+      if (s.contains('admin')) return 1;
+      if (s.contains('telecaller')) return 2;
+      return 3;
+    }
+
+    for (final key in map.keys) {
+      map[key]!.sort((a, b) {
+        final rankDiff = roleRank(a.role) - roleRank(b.role);
+        if (rankDiff != 0) return rankDiff;
+        return a.name.compareTo(b.name);
+      });
+    }
+
+    final keys = map.keys.toList();
+    keys.sort((a, b) {
+      final aIsProp = a.toLowerCase().contains('propkart');
+      final bIsProp = b.toLowerCase().contains('propkart');
+      if (aIsProp && !bIsProp) return -1;
+      if (!aIsProp && bIsProp) return 1;
+      return a.compareTo(b);
+    });
+
+    _filteredUsers = filtered;
+    _groupedUsers = map;
+    _sortedTeamKeys = keys;
+  }
+
   Future<void> _loadUsers({bool silent = false}) async {
+    if (_isFetchingUsers) return;
+    _isFetchingUsers = true;
+
     if (!silent) {
       setState(() => _isLoadingUsers = true);
     }
     try {
       final fetchedUsers = await _service.getTeamUsers();
       if (mounted) {
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        final isMobile = screenWidth < 768;
+        TeamChatUserModel? userToLoad;
+
         setState(() {
           _users = fetchedUsers;
           _isLoadingUsers = false;
-          // Auto-select first user if none selected and on desktop
-          final isMobile = MediaQuery.of(context).size.width < 768;
+          _recomputeFilteredAndGroupedUsers();
+
           if (_selectedUser == null && _users.isNotEmpty && !isMobile) {
             final firstTeam = _sortedTeamKeys.firstOrNull;
-            final firstUser = (firstTeam != null ? _groupedUsers[firstTeam]?.firstOrNull : null) ?? _users.first;
-            _selectUser(firstUser);
+            userToLoad = (firstTeam != null ? _groupedUsers[firstTeam]?.firstOrNull : null) ?? _users.first;
+            _selectedUser = userToLoad;
+            _viewingAdminChat = false;
+            _isLoadingMessages = true;
           } else if (_selectedUser != null) {
             final match = _users.where((u) => u.id == _selectedUser!.id).firstOrNull;
             if (match != null) {
@@ -86,11 +175,18 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
             }
           }
         });
+
+        if (userToLoad != null && mounted) {
+          _loadConversation(userToLoad!.id);
+        }
       }
     } catch (e) {
+      debugPrint('[TeamMessages] Error loading users: $e');
       if (mounted && !silent) {
         setState(() => _isLoadingUsers = false);
       }
+    } finally {
+      _isFetchingUsers = false;
     }
   }
 
@@ -106,6 +202,9 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
   }
 
   Future<void> _loadConversation(String otherUserId, {bool silent = false}) async {
+    if (_isFetchingConversation) return;
+    _isFetchingConversation = true;
+
     try {
       final authState = context.read<AuthBloc>().state;
       final isSuperAdmin = authState is Authenticated &&
@@ -119,23 +218,23 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
         withAdminId: withAdminId,
       );
       if (mounted) {
+        final hadMessagesBefore = _messages.isNotEmpty;
+        final hasNewMessages = fetchedMessages.length != _messages.length;
         setState(() {
           _messages = fetchedMessages;
           _isLoadingMessages = false;
         });
-        _scrollToBottom();
+        if (!hadMessagesBefore || hasNewMessages) {
+          _scrollToBottom();
+        }
       }
     } catch (e) {
+      debugPrint('[TeamMessages] Error loading conversation: $e');
       if (mounted && !silent) {
         setState(() => _isLoadingMessages = false);
       }
-    }
-  }
-
-  void _pollUpdates() {
-    _loadUsers(silent: true);
-    if (_selectedUser != null) {
-      _loadConversation(_selectedUser!.id, silent: true);
+    } finally {
+      _isFetchingConversation = false;
     }
   }
 
@@ -193,71 +292,7 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
     });
   }
 
-  List<TeamChatUserModel> get _filteredUsers {
-    return _users.where((user) {
-      final matchesSearch = _searchQuery.isEmpty ||
-          user.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          user.email.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          user.role.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          (user.teamName ?? '').toLowerCase().contains(_searchQuery.toLowerCase());
 
-      if (!matchesSearch) return false;
-
-      if (_selectedRoleFilter == 'All') return true;
-      if (_selectedRoleFilter == 'Admins') {
-        return user.role.toLowerCase().contains('admin');
-      }
-      if (_selectedRoleFilter == 'Telecallers') {
-        return user.role.toLowerCase().contains('telecaller');
-      }
-      if (_selectedRoleFilter == 'Sales') {
-        return user.role.toLowerCase().contains('sales');
-      }
-      return true;
-    }).toList();
-  }
-
-  Map<String, List<TeamChatUserModel>> get _groupedUsers {
-    final filtered = _filteredUsers;
-    final Map<String, List<TeamChatUserModel>> map = {};
-    for (final u in filtered) {
-      final key = u.teamName ?? 'General Team';
-      if (!map.containsKey(key)) {
-        map[key] = [];
-      }
-      map[key]!.add(u);
-    }
-
-    // Sort inside each team: Admin (1), Telecaller (2), Sales (3)
-    int roleRank(String r) {
-      final s = r.toLowerCase();
-      if (s.contains('admin')) return 1;
-      if (s.contains('telecaller')) return 2;
-      return 3;
-    }
-
-    for (final key in map.keys) {
-      map[key]!.sort((a, b) {
-        final rankDiff = roleRank(a.role) - roleRank(b.role);
-        if (rankDiff != 0) return rankDiff;
-        return a.name.compareTo(b.name);
-      });
-    }
-
-    return map;
-  }
-
-  List<String> get _sortedTeamKeys {
-    final keys = _groupedUsers.keys.toList();
-    keys.sort((a, b) {
-      final aIsProp = a.toLowerCase().contains('propkart');
-      final bIsProp = b.toLowerCase().contains('propkart');
-      if (aIsProp && !bIsProp) return -1;
-      if (!aIsProp && bIsProp) return 1;
-      return a.compareTo(b);
-    });
-    return keys;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -270,9 +305,9 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
     final currentUserId = authState is Authenticated ? authState.user.id : '';
     final currentUserRole = authState is Authenticated ? authState.user.role : '';
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
+    return ColoredBox(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: SafeArea(
         child: Padding(
           padding: EdgeInsets.all(isMobile ? CRMSpacing.s : CRMSpacing.l),
           child: Column(
@@ -283,15 +318,23 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
 
               const SizedBox(height: CRMSpacing.m),
 
-              // ── Main Body Messenger Card ──────────────────────────
+              // ── Main Body Messenger Container ─────────────────────
               Expanded(
-                child: CRMCard(
-                  padding: EdgeInsets.zero,
+                child: Container(
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
                   child: isMobile
                       ? (_selectedUser == null
                           ? _buildUserSidebar(isDark, primaryColor)
                           : _buildChatThread(isDark, primaryColor, currentUserId, currentUserRole, isMobile: true))
                       : Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             // Left User Roster Column
                             SizedBox(
@@ -416,7 +459,12 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
             children: [
               TextField(
                 controller: _searchController,
-                onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                onChanged: (val) {
+                  setState(() {
+                    _searchQuery = val.trim();
+                    _recomputeFilteredAndGroupedUsers();
+                  });
+                },
                 style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
                 decoration: InputDecoration(
                   hintText: 'Search team member...',
@@ -427,7 +475,10 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
                           icon: const Icon(Icons.clear, size: 16),
                           onPressed: () {
                             _searchController.clear();
-                            setState(() => _searchQuery = '');
+                            setState(() {
+                              _searchQuery = '';
+                              _recomputeFilteredAndGroupedUsers();
+                            });
                           },
                         )
                       : null,
@@ -475,7 +526,10 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
                         ),
                         visualDensity: VisualDensity.compact,
                         onSelected: (_) {
-                          setState(() => _selectedRoleFilter = role);
+                          setState(() {
+                            _selectedRoleFilter = role;
+                            _recomputeFilteredAndGroupedUsers();
+                          });
                         },
                       ),
                     );
@@ -1016,7 +1070,7 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
             children: [
               Expanded(
                 child: KeyboardListener(
-                  focusNode: FocusNode(),
+                  focusNode: _keyboardFocusNode,
                   onKeyEvent: (event) {
                     if (event is KeyDownEvent &&
                         event.logicalKey == LogicalKeyboardKey.enter &&
@@ -1091,8 +1145,8 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.65,
+        constraints: const BoxConstraints(
+          maxWidth: 520,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(

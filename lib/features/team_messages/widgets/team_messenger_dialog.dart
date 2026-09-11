@@ -25,6 +25,7 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
   final TextEditingController _messageController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _keyboardFocusNode = FocusNode();
 
   List<TeamChatUserModel> _users = [];
   TeamChatUserModel? _selectedUser;
@@ -51,6 +52,7 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _keyboardFocusNode.dispose();
     _messageController.dispose();
     _searchController.dispose();
     _scrollController.dispose();
@@ -460,7 +462,7 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
                   : ListView.separated(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       itemCount: _filteredUsers.length,
-                      separatorBuilder: (_, __) => Divider(
+                      separatorBuilder: (context, index) => Divider(
                         height: 1,
                         indent: 64,
                         color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
@@ -760,12 +762,12 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
           child: Row(
             children: [
               Expanded(
-                child: RawKeyboardListener(
-                  focusNode: FocusNode(),
-                  onKey: (event) {
-                    if (event is RawKeyDownEvent &&
+                child: KeyboardListener(
+                  focusNode: _keyboardFocusNode,
+                  onKeyEvent: (event) {
+                    if (event is KeyDownEvent &&
                         event.logicalKey == LogicalKeyboardKey.enter &&
-                        !event.isShiftPressed) {
+                        !HardwareKeyboard.instance.isShiftPressed) {
                       _sendMessage();
                     }
                   },
