@@ -10,8 +10,10 @@ class FallbackInterceptor extends Interceptor {
         err.type == DioExceptionType.receiveTimeout ||
         err.type == DioExceptionType.connectionError;
 
-    // Only retry on the backup if the request originally targeted the primary baseUrl
-    if (isNetworkError && err.requestOptions.baseUrl == ApiConstants.primaryBaseUrl) {
+    // Only retry on the backup if a distinct backup exists and request targeted primary baseUrl
+    if (isNetworkError &&
+        ApiConstants.primaryBaseUrl != ApiConstants.backupBaseUrl &&
+        err.requestOptions.baseUrl == ApiConstants.primaryBaseUrl) {
       final options = err.requestOptions;
       
       // Update the base URL to point to the backup/fallback server

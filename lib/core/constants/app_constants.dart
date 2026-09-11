@@ -1,7 +1,7 @@
 class AppConstants {
   // App Info
-  static const String appVersion = '2.1.0';
-  static const String buildNumber = '10';
+  static const String appVersion = '2.1.1';
+  static const String buildNumber = '11';
 
   // API Config
   static const String baseUrl = 'https://api-propkart.nbpropertytech.com/api/v1';

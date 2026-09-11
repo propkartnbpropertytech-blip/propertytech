@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
@@ -46,9 +47,32 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
   String _searchQuery = '';
   bool _viewingAdminChat = false;
   final Set<String> _collapsedTeams = {};
+  final Map<String, String> _userWallpapers = {};
 
   Timer? _conversationPollTimer;
   Timer? _usersPollTimer;
+
+  Future<void> _loadUserWallpaper(String targetUserId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString('chat_wallpaper_$targetUserId');
+      if (saved != null && mounted) {
+        setState(() {
+          _userWallpapers[targetUserId] = saved;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveUserWallpaper(String targetUserId, String themeId) async {
+    setState(() {
+      _userWallpapers[targetUserId] = themeId;
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('chat_wallpaper_$targetUserId', themeId);
+    } catch (_) {}
+  }
 
   @override
   void initState() {
@@ -191,6 +215,7 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
   }
 
   Future<void> _selectUser(TeamChatUserModel user) async {
+    _loadUserWallpaper(user.id);
     setState(() {
       _selectedUser = user;
       _viewingAdminChat = false;
@@ -923,6 +948,13 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
                 ),
               ),
               IconButton(
+                icon: const Icon(Icons.wallpaper_rounded, size: 18),
+                onPressed: () => _showWallpaperPicker(context, targetUser.id, targetUser.name),
+                tooltip: 'Chat Theme / Wallpaper',
+                color: CRMColors.primary,
+              ),
+              const SizedBox(width: 4),
+              IconButton(
                 icon: const Icon(Icons.refresh_rounded, size: 18),
                 onPressed: () => _loadConversation(targetUser.id),
                 tooltip: 'Refresh chat',
@@ -1004,55 +1036,60 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
 
         // Message bubbles list
         Expanded(
-          child: _isLoadingMessages
-              ? const Center(child: CircularProgressIndicator())
-              : _messages.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.chat_bubble_outline_rounded, size: 40, color: CRMColors.textSecondaryOf(context)),
-                          const SizedBox(height: 12),
-                          Text(
-                            'No messages yet',
-                            style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Send a greeting to start chatting with ${targetUser.name}',
-                            style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                          ),
-                        ],
+          child: _buildWallpaperBackground(
+            targetUserId: targetUser.id,
+            isDark: isDark,
+            child: _isLoadingMessages
+                ? const Center(child: CircularProgressIndicator())
+                : _messages.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.chat_bubble_outline_rounded, size: 40, color: CRMColors.textSecondaryOf(context)),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No messages yet',
+                              style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Send a greeting to start chatting with ${targetUser.name}',
+                              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = _messages[index];
+                          final bool isMe;
+                          final String? senderLabel;
+
+                          if (_viewingAdminChat) {
+                            isMe = msg.senderId != targetUser.id;
+                            senderLabel = msg.senderId == targetUser.id
+                                ? targetUser.name
+                                : (targetUser.adminName ?? 'Admin');
+                          } else {
+                            isMe = msg.senderId == currentUserId;
+                            senderLabel = null;
+                          }
+
+                          return _buildMessageBubble(
+                            msg,
+                            isMe,
+                            primaryColor,
+                            isDark,
+                            senderLabel: senderLabel,
+                            currentUserRole: currentUserRole,
+                          );
+                        },
                       ),
-                    )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final msg = _messages[index];
-                        final bool isMe;
-                        final String? senderLabel;
-
-                        if (_viewingAdminChat) {
-                          isMe = msg.senderId != targetUser.id;
-                          senderLabel = msg.senderId == targetUser.id
-                              ? targetUser.name
-                              : (targetUser.adminName ?? 'Admin');
-                        } else {
-                          isMe = msg.senderId == currentUserId;
-                          senderLabel = null;
-                        }
-
-                        return _buildMessageBubble(
-                          msg,
-                          isMe,
-                          primaryColor,
-                          isDark,
-                          senderLabel: senderLabel,
-                        );
-                      },
-                    ),
+          ),
         ),
 
         // Input composer bar
@@ -1127,12 +1164,64 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
     );
   }
 
+  Future<void> _deleteMessage(String messageId) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Message'),
+        content: const Text('Are you sure you want to delete this message?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final success = await _service.deleteMessage(messageId);
+      if (success && mounted) {
+        setState(() {
+          _messages.removeWhere((m) => m.id == messageId);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Message deleted successfully'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        _loadUsers(silent: true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete message: ${e.toString()}'),
+            backgroundColor: CRMColors.danger,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildMessageBubble(
     TeamMessageModel msg,
     bool isMe,
     Color primaryColor,
     bool isDark, {
     String? senderLabel,
+    String currentUserRole = '',
   }) {
     final bubbleColor = isMe
         ? primaryColor
@@ -1140,6 +1229,7 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
     final textColor = isMe
         ? Colors.white
         : (isDark ? Colors.white : const Color(0xFF0F172A));
+    final canDelete = isMe || currentUserRole.toLowerCase().contains('admin');
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -1208,6 +1298,24 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
                     color: msg.isRead ? Colors.lightBlueAccent : Colors.white70,
                   ),
                 ],
+                if (canDelete) ...[
+                  const SizedBox(width: 6),
+                  InkWell(
+                    onTap: () => _deleteMessage(msg.id),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Tooltip(
+                      message: 'Delete message',
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: Icon(
+                          Icons.delete_outline_rounded,
+                          size: 13,
+                          color: isMe ? Colors.white70 : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ],
@@ -1254,5 +1362,190 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
     if (diff.inHours < 24) return '${diff.inHours}h';
     if (diff.inDays == 1) return 'yesterday';
     return DateFormat('MMM d').format(time.toLocal());
+  }
+
+  Widget _buildWallpaperBackground({
+    required String targetUserId,
+    required bool isDark,
+    required Widget child,
+  }) {
+    final themeId = _userWallpapers[targetUserId] ?? 'default';
+
+    BoxDecoration decoration;
+    switch (themeId) {
+      case 'amber':
+        decoration = BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF2C1F0E), const Color(0xFF17130B)]
+                : [const Color(0xFFFFFBEB), const Color(0xFFFEF3C7)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        );
+        break;
+      case 'emerald':
+        decoration = BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF0F291E), const Color(0xFF07140E)]
+                : [const Color(0xFFECFDF5), const Color(0xFFD1FAE5)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        );
+        break;
+      case 'ocean':
+        decoration = BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF0C2440), const Color(0xFF071220)]
+                : [const Color(0xFFF0F9FF), const Color(0xFFE0F2FE)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        );
+        break;
+      case 'sunset':
+        decoration = BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF3B182C), const Color(0xFF1A0A14)]
+                : [const Color(0xFFFDF2F8), const Color(0xFFFCE7F3)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        );
+        break;
+      case 'midnight':
+        decoration = const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF090D16), Color(0xFF111827)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        );
+        break;
+      case 'violet':
+        decoration = BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF251A3E), const Color(0xFF100B1E)]
+                : [const Color(0xFFF5F3FF), const Color(0xFFEDE9FE)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        );
+        break;
+      case 'default':
+      default:
+        decoration = BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        );
+        break;
+    }
+
+    return Container(
+      decoration: decoration,
+      child: child,
+    );
+  }
+
+  void _showWallpaperPicker(BuildContext context, String targetUserId, String targetUserName) {
+    final currentTheme = _userWallpapers[targetUserId] ?? 'default';
+
+    final wallpapers = [
+      {'id': 'default', 'name': 'Classic Default', 'color': const Color(0xFF64748B)},
+      {'id': 'amber', 'name': 'Warm Amber', 'color': const Color(0xFFF59E0B)},
+      {'id': 'emerald', 'name': 'Emerald Mint', 'color': const Color(0xFF10B981)},
+      {'id': 'ocean', 'name': 'Ocean Sky', 'color': const Color(0xFF0EA5E9)},
+      {'id': 'sunset', 'name': 'Sunset Rose', 'color': const Color(0xFFEC4899)},
+      {'id': 'violet', 'name': 'Royal Violet', 'color': const Color(0xFF8B5CF6)},
+      {'id': 'midnight', 'name': 'Midnight Dark', 'color': const Color(0xFF1E293B)},
+    ];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.wallpaper_rounded, color: CRMColors.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Chat Theme ($targetUserName)',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Choose a background theme for your chat with $targetUserName:',
+                style: const TextStyle(fontSize: 12.5, color: Colors.grey),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: wallpapers.map((w) {
+                  final isSelected = currentTheme == w['id'];
+                  final color = w['color'] as Color;
+                  return InkWell(
+                    onTap: () {
+                      _saveUserWallpaper(targetUserId, w['id'] as String);
+                      Navigator.of(ctx).pop();
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 110,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected ? color : color.withValues(alpha: 0.3),
+                          width: isSelected ? 2.5 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: color,
+                            child: isSelected ? const Icon(Icons.check_rounded, size: 16, color: Colors.white) : null,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            w['name'] as String,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              color: color,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 }

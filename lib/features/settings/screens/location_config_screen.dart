@@ -9,6 +9,7 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../properties/models/property_model.dart';
+import '../../properties/repository/properties_repository.dart';
 import '../../properties/services/properties_service.dart';
 import '../../../core/storage/local_repositories.dart';
 
@@ -22,6 +23,7 @@ class LocationConfigScreen extends StatefulWidget {
 class _LocationConfigScreenState extends State<LocationConfigScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final PropertiesService _propertiesService = PropertiesService();
+  final PropertiesRepository _propertiesRepository = PropertiesRepository();
   bool _isLoading = true;
 
   // Data lists
@@ -78,17 +80,26 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final response = await _propertiesService.getPropertyMetadata();
-      final data = response['data'] as Map<String, dynamic>? ?? {};
-      final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
+      final meta = await _propertiesRepository.getPropertyMetadata();
       setState(() {
         _cities = meta.cities..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
         _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
         _isLoading = false;
       });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      _showSnackBar('Failed to load configuration data: $e', isError: true);
+    } catch (_) {
+      try {
+        final response = await _propertiesService.getPropertyMetadata();
+        final data = response['data'] as Map<String, dynamic>? ?? {};
+        final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
+        setState(() {
+          _cities = meta.cities..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+          _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+          _isLoading = false;
+        });
+      } catch (e) {
+        setState(() => _isLoading = false);
+        _showSnackBar('Failed to load configuration data: $e', isError: true);
+      }
     }
   }
 

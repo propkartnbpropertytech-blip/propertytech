@@ -263,6 +263,17 @@ class RequirementLocalRepository {
 
   static final Map<String, RequirementLocal> inMemory = {};
 
+  Future<RequirementLocal?> getRequirementById(String id) async {
+    if (kIsWeb) {
+      if (inMemory.containsKey(id)) return inMemory[id];
+      for (final r in inMemory.values) {
+        if (r.id == id) return r;
+      }
+      return null;
+    }
+    return await _isar.requirementLocals.filter().idEqualTo(id).findFirst();
+  }
+
   Future<List<RequirementLocal>> getRequirements({
     String? search,
     String? configurationId,
