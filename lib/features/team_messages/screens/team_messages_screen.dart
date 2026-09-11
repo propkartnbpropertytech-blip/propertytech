@@ -9,7 +9,6 @@ import '../../../core/theme/theme_manager.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
-import '../../../core/design_system/widgets/cards.dart';
 import '../models/team_message_model.dart';
 import '../services/team_messages_service.dart';
 
@@ -154,15 +153,21 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
     try {
       final fetchedUsers = await _service.getTeamUsers();
       if (mounted) {
-        TeamChatUserModel? userToSelect;
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        final isMobile = screenWidth < 768;
+        TeamChatUserModel? userToLoad;
+
         setState(() {
           _users = fetchedUsers;
           _isLoadingUsers = false;
           _recomputeFilteredAndGroupedUsers();
 
-          if (_selectedUser == null && _users.isNotEmpty) {
+          if (_selectedUser == null && _users.isNotEmpty && !isMobile) {
             final firstTeam = _sortedTeamKeys.firstOrNull;
-            userToSelect = (firstTeam != null ? _groupedUsers[firstTeam]?.firstOrNull : null) ?? _users.first;
+            userToLoad = (firstTeam != null ? _groupedUsers[firstTeam]?.firstOrNull : null) ?? _users.first;
+            _selectedUser = userToLoad;
+            _viewingAdminChat = false;
+            _isLoadingMessages = true;
           } else if (_selectedUser != null) {
             final match = _users.where((u) => u.id == _selectedUser!.id).firstOrNull;
             if (match != null) {
@@ -171,12 +176,8 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
           }
         });
 
-        // Auto-select first user on desktop OUTSIDE of setState!
-        if (userToSelect != null && mounted) {
-          final isMobile = MediaQuery.sizeOf(context).width < 768;
-          if (!isMobile) {
-            _selectUser(userToSelect!);
-          }
+        if (userToLoad != null && mounted) {
+          _loadConversation(userToLoad!.id);
         }
       }
     } catch (e) {
@@ -304,9 +305,9 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
     final currentUserId = authState is Authenticated ? authState.user.id : '';
     final currentUserRole = authState is Authenticated ? authState.user.role : '';
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
+    return ColoredBox(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: SafeArea(
         child: Padding(
           padding: EdgeInsets.all(isMobile ? CRMSpacing.s : CRMSpacing.l),
           child: Column(
@@ -317,15 +318,23 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
 
               const SizedBox(height: CRMSpacing.m),
 
-              // ── Main Body Messenger Card ──────────────────────────
+              // ── Main Body Messenger Container ─────────────────────
               Expanded(
-                child: CRMCard(
-                  padding: EdgeInsets.zero,
+                child: Container(
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
                   child: isMobile
                       ? (_selectedUser == null
                           ? _buildUserSidebar(isDark, primaryColor)
                           : _buildChatThread(isDark, primaryColor, currentUserId, currentUserRole, isMobile: true))
                       : Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             // Left User Roster Column
                             SizedBox(
@@ -1136,8 +1145,8 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.65,
+        constraints: const BoxConstraints(
+          maxWidth: 520,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
