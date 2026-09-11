@@ -152,6 +152,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   StreamSubscription? _dashboardStreamSub;
   OverlayEntry? _notesOverlayEntry;
   final Set<String> _selectedRequirementIds = {};
+  final ScrollController _scrollController = ScrollController();
+  String? _highlightedRequirementId;
+  List<RequirementModel> _cachedRequirements = [];
 
   Future<void> _confirmBulkMoveToBin(List<RequirementModel> pageItems) async {
     final count = _selectedRequirementIds.length;
@@ -375,6 +378,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _dashboardStreamSub?.cancel();
     _searchController.dispose();
     _wonSearchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -774,6 +778,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  void _onRequirementEntered(RequirementModel req) {
+    if (!mounted) return;
+    setState(() {
+      _highlightedRequirementId = req.id;
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOut,
+      );
+    }
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          if (_highlightedRequirementId == req.id) {
+            _highlightedRequirementId = null;
+          }
+        });
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -791,7 +818,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 behavior: SnackBarBehavior.floating,
               ),
             );
-            _triggerFetch();
+            if (state.requirement != null) {
+              _onRequirementEntered(state.requirement!);
+            } else {
+              _triggerFetch();
+            }
+          } else if (state is RequirementsLoaded && state.newlyAdded != null) {
+            _onRequirementEntered(state.newlyAdded!);
           } else if (state is RequirementsError) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -803,6 +836,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           }
         },
         child: SingleChildScrollView(
+          controller: _scrollController,
           padding: const EdgeInsets.all(CRMSpacing.l),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1765,6 +1799,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
         if (state is UsersLoaded) {
+          final authState = context.read<AuthBloc>().state;
+          final currentUser = authState is Authenticated ? authState.user : null;
+
           String? currentAssignedTo;
           if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
             currentAssignedTo = req.assignedTo;
@@ -1789,69 +1826,133 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           }
 
           final salesmen = state.users.where((u) {
+            final isAssigned = currentAssignedTo != null && u.id == currentAssignedTo;
+            if (isAssigned) return true;
+
             final role = u.roleName.toLowerCase();
             final isSales = role.contains('sales') || role.contains('executive') || role.contains('telecaller') || role == 'employee';
-            final isAssigned = currentAssignedTo != null && u.id == currentAssignedTo;
-            return isSales || isAssigned;
+            if (!isSales) return false;
+
+            if (currentUser != null) {
+              final curRole = currentUser.role.toLowerCase();
+              if (curRole == 'super admin') return true;
+
+              if (curRole == 'admin') {
+                return u.adminId == currentUser.id || u.id == currentUser.id;
+              }
+
+              if (curRole == 'telecaller' || curRole.contains('sales')) {
+                final teamAdminId = currentUser.adminId;
+                if (teamAdminId != null && teamAdminId.isNotEmpty) {
+                  return u.adminId == teamAdminId || u.id == teamAdminId;
+                }
+              }
+            }
+
+            return true;
           }).toList();
 
           final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
           final dropdownValue = hasValue ? currentAssignedTo : null;
-          return DropdownButton<String?>(
-            value: dropdownValue,
-            hint: Text(
-              'Assign to',
-              style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
-            ),
-            underline: Container(),
-            items: [
-              DropdownMenuItem<String?>(
-                value: null,
-                child: Text(
-                  'Unassigned',
-                  style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
-                ),
+          return Container(
+            height: 36,
+            constraints: const BoxConstraints(minWidth: 125, maxWidth: 160),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: CRMColors.borderOf(context),
+                width: 1.2,
               ),
-              ...salesmen.map((u) {
-                return DropdownMenuItem<String?>(
-                  value: u.id,
-                  child: Text(
-                    u.fullName,
-                    style: CRMTypography.bodyMedium.copyWith(
-                      color: CRMColors.textOf(context),
-                      fontWeight: u.id == currentAssignedTo ? FontWeight.bold : FontWeight.normal,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                value: dropdownValue,
+                isDense: true,
+                isExpanded: true,
+                hint: Text(
+                  'Assign to',
+                  style: CRMTypography.caption.copyWith(
+                    color: CRMColors.textSecondaryOf(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                items: [
+                  DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text(
+                      'Unassigned',
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
                   ),
-                );
-              }),
-            ],
-            onChanged: (String? newSalesmanId) {
-              String? newSalesmanName;
-              if (newSalesmanId != null) {
-                final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
-                newSalesmanName = u.fullName;
-              }
-              
-              context.read<RequirementsBloc>().add(
-                UpdateRequirementEvent(
-                  req.copyWith(
-                    assignedTo: newSalesmanId ?? '',
-                    assigneeName: newSalesmanName ?? '',
+                  ...salesmen.map((u) {
+                    final isSelected = u.id == currentAssignedTo;
+                    return DropdownMenuItem<String?>(
+                      value: u.id,
+                      child: Text(
+                        u.fullName,
+                        style: CRMTypography.caption.copyWith(
+                          color: isSelected ? CRMColors.primary : CRMColors.textOf(context),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: (String? newSalesmanId) {
+                  String? newSalesmanName;
+                  if (newSalesmanId != null) {
+                    final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
+                    newSalesmanName = u.fullName;
+                  }
+                  
+                  context.read<RequirementsBloc>().add(
+                    UpdateRequirementEvent(
+                      req.copyWith(
+                        assignedTo: newSalesmanId ?? '',
+                        assigneeName: newSalesmanName ?? '',
+                      ),
+                    ),
+                  );
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(newSalesmanName != null 
+                          ? 'Lead assigned to $newSalesmanName successfully.'
+                          : 'Lead unassigned successfully.'),
+                      backgroundColor: CRMColors.success,
+                    ),
+                  );
+                },
+                icon: Container(
+                  margin: const EdgeInsets.only(left: 4),
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: CRMColors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Icon(
+                    Icons.arrow_drop_down_rounded,
+                    color: CRMColors.primary,
+                    size: 18,
                   ),
                 ),
-              );
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(newSalesmanName != null 
-                      ? 'Lead assigned to $newSalesmanName successfully.'
-                      : 'Lead unassigned successfully.'),
-                  backgroundColor: CRMColors.success,
-                ),
-              );
-            },
-            icon: Icon(Icons.arrow_drop_down, color: CRMColors.textSecondaryOf(context), size: 18),
-            dropdownColor: CRMColors.cardBgOf(context),
+                dropdownColor: CRMColors.cardBgOf(context),
+              ),
+            ),
           );
         }
         return const SizedBox(
@@ -1867,6 +1968,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
         if (state is UsersLoaded) {
+          final authState = context.read<AuthBloc>().state;
+          final currentUser = authState is Authenticated ? authState.user : null;
+
           String? currentAssignedTo;
           if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
             currentAssignedTo = req.assignedTo;
@@ -1891,72 +1995,119 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           }
 
           final salesmen = state.users.where((u) {
+            final isAssigned = currentAssignedTo != null && u.id == currentAssignedTo;
+            if (isAssigned) return true;
+
             final role = u.roleName.toLowerCase();
             final isSales = role.contains('sales') || role.contains('executive') || role.contains('telecaller') || role == 'employee';
-            final isAssigned = currentAssignedTo != null && u.id == currentAssignedTo;
-            return isSales || isAssigned;
+            if (!isSales) return false;
+
+            if (currentUser != null) {
+              final curRole = currentUser.role.toLowerCase();
+              if (curRole == 'super admin') return true;
+
+              if (curRole == 'admin') {
+                return u.adminId == currentUser.id || u.id == currentUser.id;
+              }
+
+              if (curRole == 'telecaller' || curRole.contains('sales')) {
+                final teamAdminId = currentUser.adminId;
+                if (teamAdminId != null && teamAdminId.isNotEmpty) {
+                  return u.adminId == teamAdminId || u.id == teamAdminId;
+                }
+              }
+            }
+
+            return true;
           }).toList();
 
           final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
           final dropdownValue = hasValue ? currentAssignedTo : null;
-          return DropdownButtonHideUnderline(
-            child: DropdownButton<String?>(
-              value: dropdownValue,
-              isDense: true,
-              isExpanded: true,
-              hint: Text(
-                'Assign to',
-                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+          return Container(
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: CRMColors.borderOf(context),
+                width: 1.2,
               ),
-              items: [
-                DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text(
-                    'Unassigned',
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
-                  ),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                value: dropdownValue,
+                isDense: true,
+                isExpanded: true,
+                hint: Text(
+                  'Assign to',
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                ...salesmen.map((u) {
-                  return DropdownMenuItem<String?>(
-                    value: u.id,
+                items: [
+                  DropdownMenuItem<String?>(
+                    value: null,
                     child: Text(
-                      u.fullName,
-                      style: CRMTypography.captionBold.copyWith(
-                        color: CRMColors.textOf(context),
-                        fontWeight: u.id == currentAssignedTo ? FontWeight.bold : FontWeight.normal,
-                        fontSize: 11,
+                      'Unassigned',
+                      style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                    ),
+                  ),
+                  ...salesmen.map((u) {
+                    final isSelected = u.id == currentAssignedTo;
+                    return DropdownMenuItem<String?>(
+                      value: u.id,
+                      child: Text(
+                        u.fullName,
+                        style: CRMTypography.captionBold.copyWith(
+                          color: isSelected ? CRMColors.primary : CRMColors.textOf(context),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: (String? newSalesmanId) {
+                  String? newSalesmanName;
+                  if (newSalesmanId != null) {
+                    final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
+                    newSalesmanName = u.fullName;
+                  }
+                  
+                  context.read<RequirementsBloc>().add(
+                    UpdateRequirementEvent(
+                      req.copyWith(
+                        assignedTo: newSalesmanId ?? '',
+                        assigneeName: newSalesmanName ?? '',
                       ),
                     ),
                   );
-                }),
-              ],
-              onChanged: (String? newSalesmanId) {
-                String? newSalesmanName;
-                if (newSalesmanId != null) {
-                  final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
-                  newSalesmanName = u.fullName;
-                }
-                
-                context.read<RequirementsBloc>().add(
-                  UpdateRequirementEvent(
-                    req.copyWith(
-                      assignedTo: newSalesmanId ?? '',
-                      assigneeName: newSalesmanName ?? '',
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(newSalesmanName != null 
+                          ? 'Lead assigned to $newSalesmanName successfully.'
+                          : 'Lead unassigned successfully.'),
+                      backgroundColor: CRMColors.success,
                     ),
+                  );
+                },
+                icon: Container(
+                  margin: const EdgeInsets.only(left: 2),
+                  padding: const EdgeInsets.all(1),
+                  decoration: BoxDecoration(
+                    color: CRMColors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(3),
                   ),
-                );
-                
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(newSalesmanName != null 
-                        ? 'Lead assigned to $newSalesmanName successfully.'
-                        : 'Lead unassigned successfully.'),
-                    backgroundColor: CRMColors.success,
+                  child: Icon(
+                    Icons.arrow_drop_down_rounded,
+                    color: CRMColors.primary,
+                    size: 16,
                   ),
-                );
-              },
-              icon: Icon(Icons.arrow_drop_down, color: CRMColors.textSecondaryOf(context), size: 14),
-              dropdownColor: CRMColors.cardBgOf(context),
+                ),
+                dropdownColor: CRMColors.cardBgOf(context),
+              ),
             ),
           );
         }
@@ -2913,12 +3064,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           current is RequirementsInitial ||
           current is RequirementsError,
       builder: (context, state) {
-        final isLoading = state is RequirementsLoading || state is RequirementsInitial;
+        if (state is RequirementsLoaded) {
+          _cachedRequirements = state.requirements;
+        }
+        final rawLoadedList = state is RequirementsLoaded ? state.requirements : _cachedRequirements;
+        final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
         List<RequirementModel> requirements = [];
 
-        if (state is RequirementsLoaded) {
+        if (rawLoadedList.isNotEmpty) {
           final query = _searchController.text.trim().toLowerCase();
-          requirements = state.requirements.where((r) {
+          requirements = rawLoadedList.where((r) {
             if (currentUser != null && currentUser.role == 'Sales') {
               if (!_salesCanViewRequirement(r, currentUser)) {
                 return false;
@@ -3037,7 +3192,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             ? CRMColors.warning
                             : CRMColors.danger;
 
+                    final isHighlighted = req.id == _highlightedRequirementId;
+
                     return DataRow(
+                      color: isHighlighted
+                          ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
+                          : null,
                       cells: [
                         DataCell(
                           SizedBox(
@@ -3509,10 +3669,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           final String areasText = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : 'All Areas';
           final String listingType = getListingTypeLabel(req);
           final bool isSelected = _selectedRequirementIds.contains(req.id);
+          final bool isHighlighted = req.id == _highlightedRequirementId;
 
           return Padding(
             padding: const EdgeInsets.only(bottom: CRMSpacing.m),
             child: CRMCard(
+              borderColor: isHighlighted ? CRMColors.primaryOf(context) : null,
+              backgroundColor: isHighlighted ? CRMColors.primaryOf(context).withOpacity(0.08) : null,
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -5729,11 +5892,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           currentUser = authState.user;
         }
 
-        final isLoading = state is RequirementsLoading || state is RequirementsInitial;
+        if (state is RequirementsLoaded) {
+          _cachedRequirements = state.requirements;
+        }
+        final rawLoadedList = state is RequirementsLoaded ? state.requirements : _cachedRequirements;
+        final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
         List<RequirementModel> requirements = [];
 
-        if (state is RequirementsLoaded) {
-          requirements = state.requirements.where((r) {
+        if (rawLoadedList.isNotEmpty) {
+          requirements = rawLoadedList.where((r) {
             if (currentUser != null && currentUser.role == 'Sales') {
               if (!_salesCanViewRequirement(r, currentUser)) {
                 return false;
@@ -5762,7 +5929,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
               final remarks = (r.remarks ?? '').toLowerCase();
               final areas = r.areaNames.join(' ').toLowerCase();
-              
+
               bool matchesSalesman = false;
               if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
                 final creator = (r.creatorName ?? '').toLowerCase();
@@ -5829,7 +5996,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     const DataColumn(label: Text('Actions')),
                   ],
                   rows: pageItems.map((req) {
+                    final isHighlighted = req.id == _highlightedRequirementId;
                     return DataRow(
+                      color: isHighlighted
+                          ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
+                          : null,
                       cells: [
                         DataCell(
                           SizedBox(

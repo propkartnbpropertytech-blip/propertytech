@@ -85,12 +85,16 @@ class PropertiesLoaded extends PropertiesState {
   final PropertyMetadataModel? metadata;
   final Set<String> bookmarkedIds;
   final String activeTab;
+  final PropertyModel? newlyAdded;
+  final bool isSilentRefreshing;
 
   PropertiesLoaded({
     required this.properties,
     this.metadata,
     required this.bookmarkedIds,
     required this.activeTab,
+    this.newlyAdded,
+    this.isSilentRefreshing = false,
   });
 
   PropertiesLoaded copyWith({
@@ -98,12 +102,16 @@ class PropertiesLoaded extends PropertiesState {
     PropertyMetadataModel? metadata,
     Set<String>? bookmarkedIds,
     String? activeTab,
+    PropertyModel? newlyAdded,
+    bool? isSilentRefreshing,
   }) {
     return PropertiesLoaded(
       properties: properties ?? this.properties,
       metadata: metadata ?? this.metadata,
       bookmarkedIds: bookmarkedIds ?? this.bookmarkedIds,
       activeTab: activeTab ?? this.activeTab,
+      newlyAdded: newlyAdded,
+      isSilentRefreshing: isSilentRefreshing ?? this.isSilentRefreshing,
     );
   }
 }
@@ -198,7 +206,14 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     Emitter<PropertiesState> emit,
   ) async {
     _lastLoadEvent = event;
-    if (state is! PropertiesLoaded) {
+    if (state is PropertiesLoaded) {
+      final current = state as PropertiesLoaded;
+      if (current.properties.isNotEmpty) {
+        emit(current.copyWith(isSilentRefreshing: true));
+      } else {
+        emit(PropertiesLoading());
+      }
+    } else {
       emit(PropertiesLoading());
     }
     try {
@@ -265,14 +280,22 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     CreatePropertyEvent event,
     Emitter<PropertiesState> emit,
   ) async {
-    emit(PropertiesLoading());
     try {
       final saved = await _repository.createProperty(event.propertyData);
+      if (state is PropertiesLoaded) {
+        final current = state as PropertiesLoaded;
+        final updatedList = [saved, ...current.properties.where((p) => p.id != saved.id)];
+        emit(current.copyWith(
+          properties: updatedList,
+          newlyAdded: saved,
+          isSilentRefreshing: false,
+        ));
+      }
       emit(PropertyCreatedState(saved));
-      add(LoadPropertiesEvent(activeTab: event.activeTab));
+      add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: false));
     } catch (e) {
       emit(PropertiesError(e.toString()));
-      add(LoadPropertiesEvent(activeTab: event.activeTab));
+      add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: false));
     }
   }
 
@@ -356,9 +379,16 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     DeletePropertyEvent event,
     Emitter<PropertiesState> emit,
   ) async {
-    emit(PropertiesLoading());
     try {
       await _repository.softDeleteProperty(event.id);
+      if (state is PropertiesLoaded) {
+        final current = state as PropertiesLoaded;
+        final updatedList = current.properties.where((p) => p.id != event.id).toList();
+        emit(current.copyWith(
+          properties: updatedList,
+          isSilentRefreshing: false,
+        ));
+      }
       add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: true));
     } catch (e) {
       emit(PropertiesError(e.toString()));
@@ -370,9 +400,16 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     RestorePropertyEvent event,
     Emitter<PropertiesState> emit,
   ) async {
-    emit(PropertiesLoading());
     try {
       await _repository.restoreProperty(event.id);
+      if (state is PropertiesLoaded) {
+        final current = state as PropertiesLoaded;
+        final updatedList = current.properties.where((p) => p.id != event.id).toList();
+        emit(current.copyWith(
+          properties: updatedList,
+          isSilentRefreshing: false,
+        ));
+      }
       add(LoadPropertiesEvent(activeTab: event.activeTab));
     } catch (e) {
       emit(PropertiesError(e.toString()));

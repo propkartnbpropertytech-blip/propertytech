@@ -1540,8 +1540,10 @@ class IntegrationService extends ChangeNotifier {
           ? LookupItem(id: primaryProperty.listingTypeId, name: primaryProperty.listingTypeName)
           : defaultListing;
 
-      final parsedBudget = _parseBudget(mapped['budget']!);
-      final budget = parsedBudget > 0 ? parsedBudget : (primaryProperty?.price ?? 0);
+      final budgetRange = parseBudgetRange(mapped['budget']!);
+      final double budget = budgetRange.targetBudget > 0 ? budgetRange.targetBudget : (primaryProperty?.price ?? 0);
+      final double minBudget = budgetRange.minBudget > 0 ? budgetRange.minBudget : (budget > 0 ? budget * 0.8 : 0);
+      final double maxBudget = budgetRange.maxBudget > 0 ? budgetRange.maxBudget : (budget > 0 ? budget * 1.2 : 0);
       final configNeedle = mapped['configuration']!.isNotEmpty
           ? mapped['configuration']!
           : (primaryProperty?.configurationName ?? '');
@@ -1556,16 +1558,39 @@ class IntegrationService extends ChangeNotifier {
           name: primaryProperty.configurationName ?? '',
         );
       }
+      final rawAreaVal = lead.getStringValue('Preferred Area').isNotEmpty
+          ? lead.getStringValue('Preferred Area')
+          : (lead.getStringValue('Property Location').isNotEmpty
+              ? lead.getStringValue('Property Location')
+              : (lead.getStringValue('Area').isNotEmpty
+                  ? lead.getStringValue('Area')
+                  : (mapped['city']!.isNotEmpty
+                      ? mapped['city']!
+                      : '${primaryProperty?.areaName ?? ''} ${primaryProperty?.cityName ?? ''}')));
       final area = _matchArea(
             metadata.areas,
             metadata.cities,
-            mapped['city']!.isNotEmpty
-                ? mapped['city']!
-                : '${primaryProperty?.areaName ?? ''} ${primaryProperty?.cityName ?? ''}',
+            rawAreaVal,
           ) ??
           (primaryProperty != null && primaryProperty.areaId.isNotEmpty
               ? AreaLookup(id: primaryProperty.areaId, name: primaryProperty.areaName, cityId: primaryProperty.cityId, pincode: primaryProperty.pincode)
               : null);
+
+      String fallbackAreaName = '';
+      if (rawAreaVal.isNotEmpty) {
+        final lower = rawAreaVal.toLowerCase();
+        if (!lower.contains('any_suitable') && !lower.contains('any suitable') && lower != 'any' && lower != 'all' && lower != 'anywhere') {
+          fallbackAreaName = rawAreaVal
+              .replaceAll('_', ' ')
+              .split(' ')
+              .map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '')
+              .join(' ')
+              .trim();
+        }
+      }
+      final List<String> targetAreaNames = area != null
+          ? [area.name]
+          : (fallbackAreaName.isNotEmpty ? [fallbackAreaName] : const []);
       final campaign = mapped['campaign']!.isNotEmpty ? mapped['campaign']! : lead.source;
       final extraRemarks = mapped['remarks']!;
       final propertyNotes = matchedProperties.isEmpty
@@ -1617,10 +1642,10 @@ class IntegrationService extends ChangeNotifier {
         configurationName: config?.name,
         listingTypeId: resolvedListing?.id,
         listingTypeName: resolvedListing?.name,
-        minBudget: budget > 0 ? budget * 0.8 : 0,
-        maxBudget: budget > 0 ? budget * 1.2 : 0,
+        minBudget: minBudget,
+        maxBudget: maxBudget,
         areaIds: area != null ? [area.id] : const [],
-        areaNames: area != null ? [area.name] : const [],
+        areaNames: targetAreaNames,
         remarks: summaryRemarks,
         status: 'Active',
         leadSource: isMeta ? 'Meta Ads' : lead.source,
@@ -2415,11 +2440,63 @@ function onFormSubmit(e) {
     return mapped;
   }
 
+  static ({double minBudget, double maxBudget, double targetBudget}) parseBudgetRange(String raw) {
+    if (raw.trim().isEmpty) {
+      return (minBudget: 0.0, maxBudget: 0.0, targetBudget: 0.0);
+    }
+
+    double? parseToken(String tok) {
+      final clean = tok.toLowerCase().replaceAll(',', '').trim();
+      if (clean.endsWith('cr') || clean.endsWith('crore')) {
+        final num = double.tryParse(clean.replaceAll(RegExp(r'crore|cr'), ''));
+        return num != null ? num * 10000000 : null;
+      }
+      if (clean.endsWith('l') || clean.endsWith('lakh') || clean.endsWith('lac')) {
+        final num = double.tryParse(clean.replaceAll(RegExp(r'lakh|lac|l'), ''));
+        return num != null ? num * 100000 : null;
+      }
+      if (clean.endsWith('k') || clean.endsWith('thousand')) {
+        final num = double.tryParse(clean.replaceAll(RegExp(r'thousand|k'), ''));
+        return num != null ? num * 1000 : null;
+      }
+      final digits = clean.replaceAll(RegExp(r'[^\d.]'), '');
+      return digits.isNotEmpty ? double.tryParse(digits) : null;
+    }
+
+    final lower = raw.toLowerCase();
+    final matches = RegExp(r'\d+(?:,\d+)*(?:\.\d+)?\s*(?:cr|crore|lakh|lac|l|k|thousand)?', caseSensitive: false)
+        .allMatches(lower);
+
+    final nums = <double>[];
+    for (final m in matches) {
+      final val = parseToken(m.group(0)!);
+      if (val != null && val > 0) nums.add(val);
+    }
+
+    if (nums.length >= 2) {
+      final from = nums[0] < nums[1] ? nums[0] : nums[1];
+      final to = nums[0] > nums[1] ? nums[0] : nums[1];
+      final avg = (from + to) / 2;
+      return (minBudget: from, maxBudget: to, targetBudget: avg);
+    }
+
+    if (nums.length == 1) {
+      final val = nums[0];
+      if (lower.contains('+') || lower.contains('above') || lower.contains('more')) {
+        return (minBudget: val, maxBudget: val * 1.5, targetBudget: val);
+      }
+      if (lower.contains('below') || lower.contains('under') || lower.contains('less')) {
+        final minVal = val * 0.5 > 5000 ? val * 0.5 : 5000.0;
+        return (minBudget: minVal, maxBudget: val, targetBudget: val);
+      }
+      return (minBudget: val * 0.8, maxBudget: val * 1.2, targetBudget: val);
+    }
+
+    return (minBudget: 0.0, maxBudget: 0.0, targetBudget: 0.0);
+  }
+
   double _parseBudget(String raw) {
-    if (raw.trim().isEmpty) return 0;
-    final fromWords = BudgetFormatter.parse(raw);
-    if (fromWords > 0) return fromWords;
-    return double.tryParse(raw.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0;
+    return parseBudgetRange(raw).targetBudget;
   }
 
   LookupItem? _matchLookup(List<LookupItem> items, String needle, {String? categoryId}) {

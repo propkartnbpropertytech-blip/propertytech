@@ -40,7 +40,26 @@ class RequirementsLoading extends RequirementsState {}
 
 class RequirementsLoaded extends RequirementsState {
   final List<RequirementModel> requirements;
-  RequirementsLoaded({required this.requirements});
+  final RequirementModel? newlyAdded;
+  final bool isSilentRefreshing;
+
+  RequirementsLoaded({
+    required this.requirements,
+    this.newlyAdded,
+    this.isSilentRefreshing = false,
+  });
+
+  RequirementsLoaded copyWith({
+    List<RequirementModel>? requirements,
+    RequirementModel? newlyAdded,
+    bool? isSilentRefreshing,
+  }) {
+    return RequirementsLoaded(
+      requirements: requirements ?? this.requirements,
+      newlyAdded: newlyAdded ?? this.newlyAdded,
+      isSilentRefreshing: isSilentRefreshing ?? this.isSilentRefreshing,
+    );
+  }
 }
 
 class RequirementsError extends RequirementsState {
@@ -50,7 +69,8 @@ class RequirementsError extends RequirementsState {
 
 class RequirementsSuccess extends RequirementsState {
   final String message;
-  RequirementsSuccess(this.message);
+  final RequirementModel? requirement;
+  RequirementsSuccess(this.message, {this.requirement});
 }
 
 // --- BLoC ---
@@ -84,9 +104,11 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     Emitter<RequirementsState> emit,
   ) async {
     _lastFetchEvent = event;
-    // Avoid blanking My Won / tables when refreshing after a status change.
-    if (state is! RequirementsLoaded) {
+    final hasExistingData = state is RequirementsLoaded && (state as RequirementsLoaded).requirements.isNotEmpty;
+    if (!hasExistingData) {
       emit(RequirementsLoading());
+    } else {
+      emit((state as RequirementsLoaded).copyWith(isSilentRefreshing: true));
     }
     try {
       final list = await requirementsRepository.getRequirements(
@@ -96,9 +118,11 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         status: event.status,
         listingTypeId: event.listingTypeId,
       );
-      emit(RequirementsLoaded(requirements: list));
+      emit(RequirementsLoaded(requirements: list, isSilentRefreshing: false));
     } catch (e) {
-      emit(RequirementsError(e.toString()));
+      if (!hasExistingData) {
+        emit(RequirementsError(e.toString()));
+      }
     }
   }
 
@@ -106,10 +130,22 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     CreateRequirementEvent event,
     Emitter<RequirementsState> emit,
   ) async {
-    emit(RequirementsLoading());
     try {
-      await requirementsRepository.createRequirement(event.requirement);
-      emit(RequirementsSuccess("Requirement created successfully."));
+      final saved = await requirementsRepository.createRequirement(event.requirement);
+      if (state is RequirementsLoaded) {
+        final current = state as RequirementsLoaded;
+        final next = [saved, ...current.requirements.where((r) => r.id != saved.id)];
+        emit(RequirementsLoaded(
+          requirements: next,
+          newlyAdded: saved,
+        ));
+      } else {
+        emit(RequirementsLoaded(
+          requirements: [saved],
+          newlyAdded: saved,
+        ));
+      }
+      emit(RequirementsSuccess("Requirement created successfully.", requirement: saved));
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }
@@ -134,7 +170,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         ));
       }
 
-      emit(RequirementsSuccess("Requirement updated successfully."));
+      emit(RequirementsSuccess("Requirement updated successfully.", requirement: updated));
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }
@@ -144,9 +180,14 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     DeleteRequirementEvent event,
     Emitter<RequirementsState> emit,
   ) async {
-    emit(RequirementsLoading());
     try {
       await requirementsRepository.deleteRequirement(event.id);
+      if (state is RequirementsLoaded) {
+        final current = state as RequirementsLoaded;
+        emit(RequirementsLoaded(
+          requirements: current.requirements.where((r) => r.id != event.id).toList(),
+        ));
+      }
       emit(RequirementsSuccess("Requirement deleted successfully."));
     } catch (e) {
       emit(RequirementsError(e.toString()));

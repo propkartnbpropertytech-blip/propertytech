@@ -580,7 +580,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         label: _service.isFetchingServerLeads ? 'Refreshing...' : 'Refresh Leads',
                         prefixIcon: Icons.refresh_rounded,
                         variant: CRMButtonVariant.outline,
-                        height: 40,
+                        height: 38,
                         isLoading: _service.isFetchingServerLeads,
                         onPressed: _service.isFetchingServerLeads
                             ? null
@@ -601,72 +601,92 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 }
                               },
                       ),
-                    CRMButton(
-                      label: 'Clean Duplicates',
-                      prefixIcon: Icons.cleaning_services_rounded,
-                      variant: CRMButtonVariant.outline,
-                      height: 40,
-                      onPressed: () => _cleanDuplicatesDialog(context),
-                    ),
-                    CRMButton(
-                      label: _isSyncingSheet ? 'Syncing...' : 'Sync Google Sheet',
-                      prefixIcon: Icons.sync_rounded,
-                      variant: CRMButtonVariant.outline,
-                      height: 40,
-                      isLoading: _isSyncingSheet,
-                      onPressed: _isSyncingSheet ? null : () => _syncGoogleSheet(context),
-                    ),
-                    CRMButton(
-                      label: 'Export Excel',
-                      prefixIcon: Icons.table_view_rounded,
-                      variant: CRMButtonVariant.outline,
-                      height: 40,
-                      onPressed: () => _exportCurrentSpreadsheetToExcel(context),
-                    ),
-                    CRMButton(
-                      label: 'Import CSV',
-                      prefixIcon: Icons.upload_file_rounded,
-                      variant: CRMButtonVariant.outline,
-                      height: 40,
-                      onPressed: () => _importCsvFile(context),
-                    ),
-                    CRMButton(
-                      label: _isImporting
-                          ? 'Moving...'
-                          : (_selectedSection == 'Property Listing' ? 'Move to Properties page' : 'Move to Leads page'),
-                      prefixIcon: _selectedSection == 'Property Listing'
-                          ? Icons.home_work_rounded
-                          : Icons.drive_file_move_rounded,
-                      height: 40,
-                      isLoading: _isImporting,
-                      onPressed: _isImporting
-                          ? null
-                          : () => _selectedSection == 'Property Listing'
-                              ? _moveSelectedToPropertiesPage(context)
-                              : _moveSelectedToLeadsPage(context),
-                    ),
-                    CRMButton(
-                      label: _isImporting
-                          ? 'Moving...'
-                          : (_selectedSection == 'Property Listing'
-                              ? 'Move Interested to Properties (${_cachedInterestedCount})'
-                              : 'Move Interested to Leads (${_cachedInterestedCount})'),
-                      prefixIcon: Icons.star_rounded,
-                      variant: CRMButtonVariant.primary,
-                      height: 40,
-                      isLoading: _isImporting,
-                      onPressed: _cachedInterestedCount == 0 ? null : () => _moveInterestedToCrm(context),
-                    ),
-                    CRMButton(
-                      label: 'Paste JSON',
-                      prefixIcon: Icons.code_rounded,
-                      variant: CRMButtonVariant.outline,
-                      height: 40,
-                      onPressed: () => _showPasteJsonDialog(context),
-                    ),
-                  ],
+                      CRMButton(
+                        label: _isSyncingSheet ? 'Syncing...' : 'Sync Google Sheet',
+                        prefixIcon: Icons.sync_rounded,
+                        variant: CRMButtonVariant.outline,
+                        height: 38,
+                        isLoading: _isSyncingSheet,
+                        onPressed: _isSyncingSheet ? null : () => _syncGoogleSheet(context),
+                      ),
+                      CRMButton(
+                        label: 'Export Excel',
+                        prefixIcon: Icons.table_view_rounded,
+                        variant: CRMButtonVariant.outline,
+                        height: 38,
+                        onPressed: () => _exportCurrentSpreadsheetToExcel(context),
+                      ),
+                      PopupMenuButton<String>(
+                        tooltip: 'More actions',
+                        offset: const Offset(0, 44),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        onSelected: (val) {
+                          if (val == 'import_csv') _importCsvFile(context);
+                          if (val == 'clean_duplicates') _cleanDuplicatesDialog(context);
+                          if (val == 'paste_json') _showPasteJsonDialog(context);
+                        },
+                        itemBuilder: (ctx) => [
+                          const PopupMenuItem(
+                            value: 'import_csv',
+                            child: Row(
+                              children: [
+                                Icon(Icons.upload_file_rounded, size: 18),
+                                SizedBox(width: 10),
+                                Text('Import CSV', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'clean_duplicates',
+                            child: Row(
+                              children: [
+                                Icon(Icons.cleaning_services_rounded, size: 18),
+                                SizedBox(width: 10),
+                                Text('Clean Duplicates', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'paste_json',
+                            child: Row(
+                              children: [
+                                Icon(Icons.code_rounded, size: 18),
+                                SizedBox(width: 10),
+                                Text('Paste Raw JSON', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                          ),
+                        ],
+                        child: Container(
+                          height: 38,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: CRMColors.surfaceElevatedOf(context),
+                            borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                            border: Border.all(color: CRMColors.borderOf(context)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.more_horiz_rounded, size: 18, color: CRMColors.textOf(context)),
+                              const SizedBox(width: 6),
+                              Text(
+                                'More',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: CRMColors.textOf(context),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(Icons.arrow_drop_down_rounded, size: 18, color: CRMColors.textSecondaryOf(context)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
 
               const SizedBox(height: CRMSpacing.m),
 
@@ -1116,17 +1136,17 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ],
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: badgeBg,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(color: badgeBorder),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 14, color: textColor),
-            const SizedBox(width: 6),
+            const SizedBox(width: 5),
             Text(
               label,
               style: TextStyle(
@@ -1135,43 +1155,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 color: textColor,
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 3),
             Icon(Icons.arrow_drop_down_rounded, size: 16, color: textColor),
           ],
         ),
       ),
     );
 
-    if (lead.freshnessBadge.isEmpty) {
-      return popup;
-    }
-
-    final isFreshToday = lead.freshnessBadge.contains('Today');
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        popup,
-        const SizedBox(height: 3),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-          decoration: BoxDecoration(
-            color: isFreshToday
-                ? const Color(0xFF10B981).withValues(alpha: 0.12)
-                : Colors.grey.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            lead.freshnessBadge,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: isFreshToday ? const Color(0xFF047857) : Colors.grey.shade700,
-            ),
-          ),
-        ),
-      ],
-    );
+    return popup;
   }
 
   Future<void> _showScheduleFollowupDialog(BuildContext context, IntegrationLeadModel lead) async {
@@ -3451,8 +3442,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       headingRowColor: WidgetStateProperty.all(
                         CRMColors.surfaceElevatedOf(context),
                       ),
-                      dataRowMinHeight: 48,
-                      dataRowMaxHeight: 64,
+                      dataRowMinHeight: 44,
+                      dataRowMaxHeight: 52,
                       horizontalMargin: 12,
                       columnSpacing: 18,
                       columns: [
@@ -3517,22 +3508,22 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: lead.source == 'Meta Ads'
+                                      color: (lead.source.isEmpty || lead.source == 'Meta Ads')
                                           ? CRMColors.terracotta.withValues(alpha: 0.15)
                                           : CRMColors.sage.withValues(alpha: 0.15),
                                       borderRadius: BorderRadius.circular(6),
                                       border: Border.all(
-                                        color: lead.source == 'Meta Ads'
+                                        color: (lead.source.isEmpty || lead.source == 'Meta Ads')
                                             ? CRMColors.terracotta.withValues(alpha: 0.4)
                                             : CRMColors.sage.withValues(alpha: 0.4),
                                       ),
                                     ),
                                     child: Text(
-                                      lead.source,
+                                      lead.source.isEmpty ? 'Meta Ads' : lead.source,
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.bold,
-                                        color: lead.source == 'Meta Ads' ? CRMColors.terracotta : CRMColors.sage,
+                                        color: (lead.source.isEmpty || lead.source == 'Meta Ads') ? CRMColors.terracotta : CRMColors.sage,
                                       ),
                                     ),
                                   ),
