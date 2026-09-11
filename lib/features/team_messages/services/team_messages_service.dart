@@ -8,12 +8,15 @@ class TeamMessagesService {
 
   Future<List<TeamChatUserModel>> getTeamUsers() async {
     try {
-      final response = await _apiClient.get('/team-messages/users');
+      final response = await _apiClient.get(
+        '/team-messages/users',
+        queryParameters: {'_t': DateTime.now().millisecondsSinceEpoch},
+      );
       if (response.data is Map<String, dynamic> && response.data['success'] == true) {
         final List usersList = response.data['data']?['users'] ?? [];
         return usersList.map((u) => TeamChatUserModel.fromJson(u as Map<String, dynamic>)).toList();
       }
-      throw ApiException(message: "Failed to fetch team users.");
+      return [];
     } on DioException catch (e) {
       throw ApiException.fromDioException(e);
     } catch (e) {
@@ -23,9 +26,12 @@ class TeamMessagesService {
 
   Future<List<TeamMessageModel>> getConversation(String otherUserId, {String? withAdminId}) async {
     try {
-      final queryParams = withAdminId != null && withAdminId.isNotEmpty
-          ? {'with_admin_id': withAdminId}
-          : null;
+      final queryParams = <String, dynamic>{
+        '_t': DateTime.now().millisecondsSinceEpoch,
+      };
+      if (withAdminId != null && withAdminId.isNotEmpty) {
+        queryParams['with_admin_id'] = withAdminId;
+      }
       final response = await _apiClient.get(
         '/team-messages/conversation/$otherUserId',
         queryParameters: queryParams,
@@ -34,7 +40,7 @@ class TeamMessagesService {
         final List msgList = response.data['data']?['messages'] ?? [];
         return msgList.map((m) => TeamMessageModel.fromJson(m as Map<String, dynamic>)).toList();
       }
-      throw ApiException(message: "Failed to fetch conversation.");
+      return [];
     } on DioException catch (e) {
       throw ApiException.fromDioException(e);
     } catch (e) {
