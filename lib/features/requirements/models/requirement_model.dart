@@ -211,11 +211,50 @@ class RequirementModel {
 
     List<String> aNames = [];
     if (json['areaNames'] != null) {
-      aNames = List<String>.from(json['areaNames']);
+      aNames = List<String>.from(json['areaNames']).where((s) => s.trim().isNotEmpty).toList();
     } else if (json['area_names'] != null) {
-      aNames = List<String>.from(json['area_names']);
+      aNames = List<String>.from(json['area_names']).where((s) => s.trim().isNotEmpty).toList();
     } else if (json['area'] != null && json['area'] is Map) {
-      aNames = [json['area']['area_name']?.toString() ?? ''];
+      final aName = json['area']['area_name']?.toString().trim();
+      if (aName != null && aName.isNotEmpty) {
+        aNames = [aName];
+      }
+    }
+
+    // Fallback: If areaNames is still empty, extract from meta_custom_fields
+    if (aNames.isEmpty) {
+      final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
+      if (meta is Map) {
+        for (final key in [
+          'which_area_are_you_looking_for?',
+          'where_is_your_property_located?',
+          'preferred_area',
+          'Preferred Area',
+          'Preferred Location',
+          'preferred_location',
+          'location',
+          'Location',
+          'area',
+          'Area'
+        ]) {
+          final val = meta[key]?.toString().trim();
+          if (val != null && val.isNotEmpty) {
+            final lower = val.toLowerCase();
+            if (!lower.contains('any_suitable') && !lower.contains('any suitable') && lower != 'any' && lower != 'all' && lower != 'anywhere') {
+              final formatted = val
+                  .replaceAll('_', ' ')
+                  .split(' ')
+                  .map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '')
+                  .join(' ')
+                  .trim();
+              if (formatted.isNotEmpty) {
+                aNames = [formatted];
+                break;
+              }
+            }
+          }
+        }
+      }
     }
 
     // Extract lead source and referral name

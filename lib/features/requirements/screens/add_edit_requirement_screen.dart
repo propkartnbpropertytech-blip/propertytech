@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/requirements_bloc.dart';
 import '../models/requirement_model.dart';
 import '../../properties/repository/properties_repository.dart';
+import '../../properties/services/properties_service.dart';
 import '../../properties/models/property_model.dart';
 import '../../../core/design_system/crm_design_system.dart';
 import '../../../core/storage/crm_draft_repository.dart';
@@ -14,8 +15,8 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
 import '../../settings/screens/location_config_screen.dart';
-import '../../properties/services/properties_service.dart';
 import 'package:dio/dio.dart';
+import '../../integration/services/integration_service.dart';
 
 class AddEditRequirementScreen extends StatefulWidget {
   final RequirementModel? requirement;
@@ -155,8 +156,12 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           final req = widget.requirement!;
           _nameController.text = req.clientName;
           _mobileController.text = req.clientMobile;
-          final double avgBudget = req.minBudget == req.maxBudget ? req.minBudget : (req.minBudget + req.maxBudget) / 2;
-          _budgetController.text = CRMCurrencyFormatter.format(avgBudget);
+          if (req.minBudget > 0 && req.maxBudget > 0 && req.minBudget != req.maxBudget) {
+            _budgetController.text = '${CRMCurrencyFormatter.format(req.minBudget)} - ${CRMCurrencyFormatter.format(req.maxBudget)}';
+          } else {
+            final double avgBudget = req.minBudget == req.maxBudget ? req.minBudget : (req.minBudget + req.maxBudget) / 2;
+            _budgetController.text = avgBudget > 0 ? CRMCurrencyFormatter.format(avgBudget) : '';
+          }
           _minAreaController.text = req.minArea?.toStringAsFixed(0) ?? '';
           _maxAreaController.text = req.maxArea?.toStringAsFixed(0) ?? '';
           _remarksController.text = req.remarks ?? '';
@@ -604,9 +609,17 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       currentUser = authState.user;
     }
 
-    final budgetVal = CRMCurrencyFormatter.parse(_budgetController.text);
-    final minBudget = budgetVal * 0.8;
-    final maxBudget = budgetVal * 1.2;
+    final parsedRange = IntegrationService.parseBudgetRange(_budgetController.text);
+    double minBudget = 0.0;
+    double maxBudget = 0.0;
+    if (parsedRange.minBudget > 0 || parsedRange.maxBudget > 0) {
+      minBudget = parsedRange.minBudget;
+      maxBudget = parsedRange.maxBudget;
+    } else {
+      final budgetVal = CRMCurrencyFormatter.parse(_budgetController.text);
+      minBudget = budgetVal * 0.8;
+      maxBudget = budgetVal * 1.2;
+    }
 
     final userRole = (currentUser?.role ?? '').toLowerCase();
     final bool isAdminOrTelecaller = userRole == 'admin' || userRole == 'super admin' || userRole == 'telecaller';
