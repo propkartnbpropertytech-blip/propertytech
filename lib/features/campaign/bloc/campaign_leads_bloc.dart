@@ -111,7 +111,7 @@ class CampaignLeadsState extends Equatable {
   const CampaignLeadsState({
     this.status = CampaignLeadsStatus.initial,
     this.leads = const [],
-    this.dateFilter = CampaignDateFilter.today, // TODAY IS DEFAULT
+    this.dateFilter = CampaignDateFilter.allTime, // ALL TIME IS DEFAULT
     this.customStartDate,
     this.customEndDate,
     this.isPinging = false,

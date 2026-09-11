@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:dio/dio.dart';
-import 'package:propkart/core/api/api_constants.dart';
 import 'package:propkart/core/api/api_client.dart';
 import 'package:propkart/core/storage/isar_service.dart';
 import 'package:propkart/core/storage/repository_coordinator.dart';
@@ -26,6 +25,7 @@ import 'package:propkart/features/clients/models/client_model.dart';
 import 'package:propkart/features/clients/services/clients_service.dart';
 import 'package:propkart/features/dashboard/services/dashboard_service.dart';
 import 'package:propkart/features/properties/repository/properties_repository.dart';
+import 'package:propkart/features/integration/services/integration_service.dart';
 import '../utils/app_logger.dart';
 
 enum SyncState {
@@ -96,7 +96,16 @@ class SyncManager {
         AppLogger.sync("Lookup tables up to date (version: $clientVersion). Skipping lookup sync.");
       }
       
-      await pingDatabase();
+      await triggerDeltaSync();
+
+      // Prewarm campaign leads so they are ready before navigating to Campaign tab
+      try {
+        await IntegrationService().ensureLoaded();
+        unawaited(IntegrationService().fetchServerLeads(silent: true));
+        unawaited(IntegrationService().fetchHealthAlerts());
+      } catch (e) {
+        AppLogger.w("Campaign leads startup prefetch error: $e");
+      }
       isSyncCompleted = true;
     } finally {
       isSyncing.value = false;
@@ -145,6 +154,8 @@ class SyncManager {
       'notifications',
       'followups',
       'site_visits',
+      'integration_leads',
+      'campaign_lead_followups',
     ];
     _sendJson({
       "topic": "realtime:propkart",
@@ -249,6 +260,14 @@ class SyncManager {
       final oldRecord = item['old_record'] as Map<String, dynamic>?;
 
       tablesToRefresh.add(table);
+
+      if (table == "integration_leads") {
+        IntegrationService().handleRealtimeEvent(type, record, oldRecord);
+        continue;
+      } else if (table == "campaign_lead_followups") {
+        IntegrationService().handleFollowupRealtimeEvent(type, record, oldRecord);
+        continue;
+      }
 
       if (type == "DELETE" && oldRecord != null) {
         final id = oldRecord['id'] as String?;
