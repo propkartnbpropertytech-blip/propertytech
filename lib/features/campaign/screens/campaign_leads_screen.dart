@@ -16,8 +16,10 @@ import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_permission_denied.dart';
+import 'package:flutter/services.dart';
 import '../../integration/services/integration_service.dart';
 import '../../integration/models/integration_lead_model.dart';
+import '../../integration/services/lead_understanding_engine.dart';
 import '../models/campaign_followup_model.dart';
 import '../bloc/campaign_leads_bloc.dart';
 import 'campaign_subshell_header.dart';
@@ -33,15 +35,22 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   final IntegrationService _service = IntegrationService();
   final TextEditingController _searchController = TextEditingController();
 
-  String _viewMode = 'active'; // 'active', 'followups', 'not_interested'
+  // Active view mode: 'active' (default pipeline), 'followups' (scheduled callbacks), 'not_interested' (archived)
+  String _viewMode = 'active';
   String _followupFilter = 'all'; // 'all', 'today', 'future', 'missed'
   List<CampaignFollowupModel> _followupsList = [];
   bool _isLoadingFollowups = false;
 
-  String _selectedSection = 'Property Listing'; // 'Property Listing' (Owners) or 'Requirement' (Tenants)
-  String _selectedSourceFilter = 'All';
-  String _selectedDuplicateFilter = 'All';
-  CampaignDateFilter _selectedDateFilter = CampaignDateFilter.today; // TODAY IS DEFAULT
+  // Persisted view settings across tab navigation
+  static String _persistedSection = 'Property Listing';
+  static CampaignDateFilter _persistedDateFilter = CampaignDateFilter.allTime;
+  static String _persistedSourceFilter = 'All';
+  static String _persistedDuplicateFilter = 'All';
+
+  late String _selectedSection = _persistedSection;
+  late String _selectedSourceFilter = _persistedSourceFilter;
+  late String _selectedDuplicateFilter = _persistedDuplicateFilter;
+  late CampaignDateFilter _selectedDateFilter = _persistedDateFilter;
   DateTime? _customStartDate;
   DateTime? _customEndDate;
   final Set<String> _selectedLeadIds = {};
@@ -58,6 +67,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     super.initState();
     _service.addListener(_onServiceUpdate);
     _service.watchCampaignUi();
+    // Warm up leads immediately from storage and sync in background
+    _service.ensureLoaded();
+    unawaited(_service.fetchServerLeads(silent: true));
+    unawaited(_service.fetchHealthAlerts());
   }
 
   @override
@@ -134,6 +147,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     }
     if (lower == 'phone_number' || lower == 'phone' || lower == 'mobile' || lower == 'number') {
       return 'Phone Number';
+    }
+    if (lower == 'received on' || lower == 'received_on' || lower == 'receivedon' || lower == 'created_at' || lower == 'arrival time' || lower == 'date') {
+      return 'Received On';
     }
     if (lower == 'email' || lower == 'email id') {
       return 'Email ID';
@@ -352,6 +368,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         } else if (_sortColumn == '#MainCrmStatus') {
           valA = a.crmMatch?.inCrm == true ? 'In CRM' : 'Not in CRM';
           valB = b.crmMatch?.inCrm == true ? 'In CRM' : 'Not in CRM';
+        } else if (_sortColumn == 'Received On' || _sortColumn == 'received_at' || _sortColumn == 'date') {
+          final cmp = a.receivedAt.compareTo(b.receivedAt);
+          return _sortAscending ? cmp : -cmp;
         } else {
           valA = a.getStringValue(_sortColumn!).trim();
           valB = b.getStringValue(_sortColumn!).trim();
@@ -441,8 +460,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _cachedNotInterestedTodayCount = notInterestedTodayCount;
     _cachedTotalActiveCount = totalActiveCount;
 
-    _cachedAllDetectedHeaders = _service.getDetectedHeaders(leadsSubset: list);
-    _cachedVisibleHeaders = _service.getActiveVisibleHeaders(leadsSubset: list);
+    _cachedAllDetectedHeaders = _service.getDetectedHeaders(leadsSubset: list, section: _selectedSection);
+    _cachedVisibleHeaders = _service.getActiveVisibleHeaders(leadsSubset: list, section: _selectedSection);
   }
 
   List<IntegrationLeadModel> get _filteredLeads {
@@ -555,6 +574,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     alignment: WrapAlignment.end,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      _buildMetaLiveDiagnosticBadge(context),
                       _buildAutoSyncLiveBadge(context),
                       CRMButton(
                         label: _service.isFetchingServerLeads ? 'Refreshing...' : 'Refresh Leads',
@@ -977,7 +997,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       label = 'Follow up (${DateFormat('d MMM, h:mm a').format(lead.followupScheduledAt!)})';
     }
 
-    return PopupMenuButton<String>(
+    final popup = PopupMenuButton<String>(
       tooltip: 'Change Status (Follow up, Interested, Not interested)',
       constraints: const BoxConstraints(minWidth: 260, maxWidth: 300),
       onSelected: (newStatus) async {
@@ -1120,6 +1140,37 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ],
         ),
       ),
+    );
+
+    if (lead.freshnessBadge.isEmpty) {
+      return popup;
+    }
+
+    final isFreshToday = lead.freshnessBadge.contains('Today');
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        popup,
+        const SizedBox(height: 3),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+          decoration: BoxDecoration(
+            color: isFreshToday
+                ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                : Colors.grey.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            lead.freshnessBadge,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: isFreshToday ? const Color(0xFF047857) : Colors.grey.shade700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -2109,6 +2160,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         if (_selectedSection != 'Property Listing') {
           setState(() {
             _selectedSection = 'Property Listing';
+            _persistedSection = 'Property Listing';
             _selectedLeadIds.clear();
             _currentPage = 1;
             _cachedFilteredLeads = null;
@@ -2129,6 +2181,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         if (_selectedSection != 'Requirement') {
           setState(() {
             _selectedSection = 'Requirement';
+            _persistedSection = 'Requirement';
             _selectedLeadIds.clear();
             _currentPage = 1;
             _cachedFilteredLeads = null;
@@ -2453,6 +2506,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       } else {
                         setState(() {
                           _selectedDateFilter = filter;
+                          _persistedDateFilter = filter;
                           _cachedFilteredLeads = null;
                           _currentPage = 1;
                         });
@@ -2578,6 +2632,130 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   Widget _buildTodayNoticeBanner(BuildContext context, int totalLeads, int allTimeCount) {
     if (_selectedDateFilter != CampaignDateFilter.today) return const SizedBox.shrink();
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMetaBlocked = _service.metaStatus == 'BLOCKED' ||
+        _service.activeHealthAlerts.any((a) => a['code'] == 'META_ACCESS_BLOCKED');
+
+    if (totalLeads == 0) {
+      return Container(
+        margin: const EdgeInsets.only(top: CRMSpacing.s),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isMetaBlocked
+              ? (isDark ? const Color(0xFF3B1D1D) : const Color(0xFFFEF2F2))
+              : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF0F9FF)),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isMetaBlocked
+                ? const Color(0xFFEF4444).withValues(alpha: 0.5)
+                : const Color(0xFF0284C7).withValues(alpha: 0.3),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isMetaBlocked ? Icons.warning_amber_rounded : Icons.info_outline_rounded,
+                  color: isMetaBlocked ? const Color(0xFFDC2626) : const Color(0xFF0284C7),
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isMetaBlocked
+                        ? "0 leads received today • Meta Graph API Token is blocked (OAuthException Code 200)"
+                        : "0 leads received today so far.",
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: isMetaBlocked
+                          ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C))
+                          : (isDark ? const Color(0xFF93C5FD) : const Color(0xFF0369A1)),
+                    ),
+                  ),
+                ),
+                if (isMetaBlocked)
+                  InkWell(
+                    onTap: () => _showMetaDiagnosticDialog(context),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.build_circle_outlined, size: 14, color: Color(0xFFDC2626)),
+                          SizedBox(width: 4),
+                          Text('Diagnose', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              isMetaBlocked
+                  ? "Meta has restricted App ID 1632855004850842. Google Sheets & direct webhooks are operational. You have ${_cachedCountYesterday} leads from Yesterday and $allTimeCount Total leads."
+                  : "New leads will appear here automatically. You have ${_cachedCountYesterday} leads from Yesterday and $allTimeCount Total leads.",
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                if (_cachedCountYesterday > 0)
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _selectedDateFilter = CampaignDateFilter.yesterday;
+                        _persistedDateFilter = CampaignDateFilter.yesterday;
+                        _cachedFilteredLeads = null;
+                        _currentPage = 1;
+                      });
+                      context.read<CampaignLeadsBloc>().add(
+                        const SetCampaignDateFilterEvent(filter: CampaignDateFilter.yesterday),
+                      );
+                    },
+                    icon: const Icon(Icons.history_rounded, size: 14),
+                    label: Text('View Yesterday (${_cachedCountYesterday})'),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                if (allTimeCount > 0)
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _selectedDateFilter = CampaignDateFilter.allTime;
+                        _persistedDateFilter = CampaignDateFilter.allTime;
+                        _cachedFilteredLeads = null;
+                        _currentPage = 1;
+                      });
+                      context.read<CampaignLeadsBloc>().add(
+                        const SetCampaignDateFilterEvent(filter: CampaignDateFilter.allTime),
+                      );
+                    },
+                    icon: const Icon(Icons.table_rows_rounded, size: 14),
+                    label: Text('View All Time ($allTimeCount)'),
+                    style: ElevatedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       margin: const EdgeInsets.only(top: CRMSpacing.s),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -2610,6 +2788,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             onTap: () {
               setState(() {
                 _selectedDateFilter = CampaignDateFilter.allTime;
+                _persistedDateFilter = CampaignDateFilter.allTime;
                 _cachedFilteredLeads = null;
                 _currentPage = 1;
               });
@@ -3388,6 +3567,24 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
                             // Dynamic Visible Cells mapped to JSON keys
                             ...visibleHeaders.map((header) {
+                              if (header == 'Received On') {
+                                return DataCell(
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        lead.formattedReceivedAt,
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                      ),
+                                      Text(
+                                        lead.relativeTimeAgo,
+                                        style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(context)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
                               final val = lead.getStringValue(header);
                               return DataCell(
                                 Text(
@@ -3398,11 +3595,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               );
                             }),
 
-                            // Actions (Inspect JSON & Delete with Warning Dialog)
+                            // Actions (Lead Intelligence Engine, Inspect JSON & Delete)
                             DataCell(
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.auto_awesome_rounded, size: 18, color: Color(0xFF6366F1)),
+                                    tooltip: '⚡ Lead Intelligence Engine (1-Click WhatsApp & CRM)',
+                                    onPressed: () => _showUnderstandLeadDialog(context, lead),
+                                  ),
                                   IconButton(
                                     icon: const Icon(Icons.data_object_rounded, size: 18),
                                     tooltip: 'Inspect JSON Payload',
@@ -3614,6 +3816,176 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               fontSize: 11,
               color: CRMColors.textSecondaryOf(context),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Live Meta Diagnostics Badge
+  Widget _buildMetaLiveDiagnosticBadge(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isBlocked = _service.metaStatus == 'BLOCKED' ||
+        _service.activeHealthAlerts.any((a) => a['code'] == 'META_ACCESS_BLOCKED');
+
+    return InkWell(
+      onTap: () => _showMetaDiagnosticDialog(context),
+      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: isBlocked
+              ? (isDark ? const Color(0xFF451A1A) : const Color(0xFFFEF2F2))
+              : CRMColors.success.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+          border: Border.all(
+            color: isBlocked
+                ? const Color(0xFFEF4444).withValues(alpha: 0.6)
+                : CRMColors.success.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isBlocked ? const Color(0xFFEF4444) : CRMColors.success,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              isBlocked ? 'Meta: Token Blocked' : 'Meta: Connected',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: isBlocked ? const Color(0xFFDC2626) : CRMColors.success,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              isBlocked ? Icons.warning_amber_rounded : Icons.check_circle_outline_rounded,
+              size: 13,
+              color: isBlocked ? const Color(0xFFDC2626) : CRMColors.success,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMetaDiagnosticDialog(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final alert = _service.activeHealthAlerts.firstWhere(
+      (a) => a['code'] == 'META_ACCESS_BLOCKED',
+      orElse: () => {
+        'title': 'Meta Integration Diagnostic',
+        'diagnosticSummary': 'Meta Graph API token or webhook connection status.',
+        'rootCause': 'Token permissions or Meta App Review requirement.',
+        'impact': 'Automated polling from Meta Lead Ads paused. Sheets and Direct Webhooks remain active.',
+        'resolutionSteps': [
+          'Review Meta App Dashboard alerts.',
+          'Generate fresh Page/System User Access Token with leads_retrieval permission.',
+          'Update META_DEFAULT_PAGE_TOKEN on VPS backend.'
+        ]
+      },
+    );
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+        actionsPadding: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.hub_rounded, color: Color(0xFFDC2626), size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                alert['title']?.toString() ?? 'Meta Graph API Diagnostic',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 540,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('DIAGNOSTIC SUMMARY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.6, color: Color(0xFF64748B))),
+                      const SizedBox(height: 4),
+                      Text(
+                        alert['diagnosticSummary']?.toString() ?? 'Meta has restricted API access on App ID 1632855004850842.',
+                        style: const TextStyle(fontSize: 13, height: 1.4),
+                      ),
+                      if (alert['rootCause'] != null) ...[
+                        const SizedBox(height: 8),
+                        const Text('ROOT CAUSE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.6, color: Color(0xFF64748B))),
+                        const SizedBox(height: 4),
+                        Text(
+                          alert['rootCause']?.toString() ?? '',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('ACTIONABLE RESOLUTION STEPS:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                const SizedBox(height: 6),
+                ...?((alert['resolutionSteps'] as List?)?.map((step) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.check_circle_outline_rounded, size: 15, color: Color(0xFF10B981)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(step.toString(), style: const TextStyle(fontSize: 12))),
+                    ],
+                  ),
+                ))),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              launchUrl(Uri.parse('https://api-propkart.nbpropertytech.com/api/v1/health'));
+            },
+            icon: const Icon(Icons.open_in_new_rounded, size: 14),
+            label: const Text('Open Health Portal'),
           ),
         ],
       ),
@@ -4147,7 +4519,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          final allHeaders = sectionHeaders ?? _cachedAllDetectedHeaders ?? _service.getDetectedHeaders(leadsSubset: targetLeads);
+          final allHeaders = sectionHeaders ?? _cachedAllDetectedHeaders ?? _service.getDetectedHeaders(leadsSubset: targetLeads, section: _selectedSection);
 
           return AlertDialog(
             title: Row(
@@ -4186,11 +4558,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         label: const Text('Reset to Sheet Order'),
                         onPressed: () async {
                           final messenger = ScaffoldMessenger.of(context);
-                          await _service.resetHeaderOrderToSheet(leadsSubset: targetLeads);
+                          await _service.resetHeaderOrderToSheet(leadsSubset: targetLeads, section: _selectedSection);
                           setModalState(() {});
                           setState(() {});
                           messenger.showSnackBar(
-                            const SnackBar(content: Text('Reset column order to original Google Sheet sequence.')),
+                            SnackBar(content: Text('Reset $_selectedSection column order to standard sequence.')),
                           );
                         },
                       ),
@@ -4201,13 +4573,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     child: ReorderableListView.builder(
                       itemCount: allHeaders.length,
                       onReorder: (oldIndex, newIndex) async {
-                        await _service.reorderHeaders(oldIndex, newIndex, leadsSubset: targetLeads);
+                        await _service.reorderHeaders(oldIndex, newIndex, leadsSubset: targetLeads, section: _selectedSection);
                         setModalState(() {});
                         setState(() {});
                       },
                       itemBuilder: (ctx, i) {
                         final h = allHeaders[i];
-                        final isVisible = _service.isHeaderVisible(h);
+                        final isVisible = _service.isHeaderVisible(h, section: _selectedSection);
                         final crmTarget = _service.columnMappings[h];
 
                         return ListTile(
@@ -4254,7 +4626,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 tooltip: 'Move Up',
                                 onPressed: i > 0
                                     ? () async {
-                                        await _service.moveHeader(h, -1, leadsSubset: targetLeads);
+                                        await _service.moveHeader(h, -1, leadsSubset: targetLeads, section: _selectedSection);
                                         setModalState(() {});
                                         setState(() {});
                                       }
@@ -4265,7 +4637,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 tooltip: 'Move Down',
                                 onPressed: i < allHeaders.length - 1
                                     ? () async {
-                                        await _service.moveHeader(h, 1, leadsSubset: targetLeads);
+                                        await _service.moveHeader(h, 1, leadsSubset: targetLeads, section: _selectedSection);
                                         setModalState(() {});
                                         setState(() {});
                                       }
@@ -4275,7 +4647,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 value: isVisible,
                                 activeThumbColor: CRMColors.primaryOf(context),
                                 onChanged: (val) {
-                                  _service.setHeaderVisibility(h, val);
+                                  _service.setHeaderVisibility(h, val, section: _selectedSection);
                                   setModalState(() {});
                                   setState(() {});
                                 },
@@ -4312,7 +4684,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       return;
     }
 
-    final visibleHeaders = _service.getActiveVisibleHeaders();
+    final visibleHeaders = _service.getActiveVisibleHeaders(leadsSubset: leadsToExport, section: _selectedSection);
     final excel = xl.Excel.createExcel();
     final sheet = excel['Campaign Leads'];
 
@@ -4573,8 +4945,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final currentAllHeaders = _service.getDetectedHeaders();
-            final visibleCount = _service.getActiveVisibleHeaders().length;
+            final currentAllHeaders = _service.getDetectedHeaders(leadsSubset: _filteredLeads, section: _selectedSection);
+            final visibleCount = _service.getActiveVisibleHeaders(leadsSubset: _filteredLeads, section: _selectedSection).length;
             final totalCount = currentAllHeaders.length;
 
             return AlertDialog(
@@ -4604,7 +4976,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             icon: const Icon(Icons.check_box_rounded, size: 16),
                             label: const Text('Select All'),
                             onPressed: () {
-                              _service.setAllHeadersVisibility(true);
+                              _service.setAllHeadersVisibility(true, section: _selectedSection);
                               setModalState(() {});
                               setState(() {});
                             },
@@ -4613,7 +4985,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             icon: const Icon(Icons.check_box_outline_blank_rounded, size: 16),
                             label: const Text('Deselect All'),
                             onPressed: () {
-                              _service.setAllHeadersVisibility(false);
+                              _service.setAllHeadersVisibility(false, section: _selectedSection);
                               setModalState(() {});
                               setState(() {});
                             },
@@ -4627,7 +4999,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           itemCount: currentAllHeaders.length,
                           itemBuilder: (context, i) {
                             final h = currentAllHeaders[i];
-                            final isChecked = _service.isHeaderVisible(h);
+                            final isChecked = _service.isHeaderVisible(h, section: _selectedSection);
                             final crmTarget = _service.columnMappings[h];
 
                             return CheckboxListTile(
@@ -4651,7 +5023,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               ),
                               value: isChecked,
                               onChanged: (val) {
-                                _service.setHeaderVisibility(h, val ?? false);
+                                _service.setHeaderVisibility(h, val ?? false, section: _selectedSection);
                                 setModalState(() {});
                                 setState(() {});
                               },
@@ -4753,10 +5125,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               onPressed: () {
                 final name = textController.text.trim();
                 if (name.isNotEmpty) {
-                  _service.addCustomHeader(name, crmField: selectedCrmTarget);
+                  _service.addCustomHeader(name, crmField: selectedCrmTarget, section: _selectedSection);
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Added header: "$name"')),
+                    SnackBar(content: Text('Added header "$name" to $_selectedSection')),
                   );
                 }
               },
@@ -4841,7 +5213,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       dense: true,
                       onTap: () async {
                         Navigator.pop(ctx);
-                        await _service.moveHeader(header, -1);
+                        await _service.moveHeader(header, -1, leadsSubset: _filteredLeads, section: _selectedSection);
                         if (mounted) setState(() {});
                       },
                     ),
@@ -4852,7 +5224,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       dense: true,
                       onTap: () async {
                         Navigator.pop(ctx);
-                        await _service.moveHeader(header, 1);
+                        await _service.moveHeader(header, 1, leadsSubset: _filteredLeads, section: _selectedSection);
                         if (mounted) setState(() {});
                       },
                     ),
@@ -4883,24 +5255,24 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       contentPadding: EdgeInsets.zero,
                       dense: true,
                       onTap: () {
-                        _service.setHeaderVisibility(header, false);
+                        _service.setHeaderVisibility(header, false, section: _selectedSection);
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Column "$header" hidden from table view.')),
+                          SnackBar(content: Text('Column "$header" hidden from $_selectedSection table view.')),
                         );
                       },
                     ),
-                    if (_service.customHeaders.contains(header))
+                    if (_service.customHeadersFor(_selectedSection).contains(header) || _service.customHeaders.contains(header))
                       ListTile(
                         leading: const Icon(Icons.delete_forever_rounded, color: CRMColors.danger),
                         title: const Text('Delete Custom Header', style: TextStyle(color: CRMColors.danger)),
                         contentPadding: EdgeInsets.zero,
                         dense: true,
                         onTap: () {
-                          _service.removeCustomHeader(header);
+                          _service.removeCustomHeader(header, section: _selectedSection);
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Custom column "$header" removed.')),
+                            SnackBar(content: Text('Custom column "$header" removed from $_selectedSection.')),
                           );
                         },
                       ),
@@ -5228,6 +5600,345 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
+  void _showUnderstandLeadDialog(BuildContext context, IntegrationLeadModel lead) {
+    final understanding = LeadUnderstandingEngine.analyze(lead);
+    final isOwner = understanding.persona == LeadPersona.ownerListing;
+    final isImported = lead.importStatus == 'Imported';
+    final targetCrmPage = isOwner ? 'Properties Inventory' : 'Leads (Requirements)';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+        contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Lead Intelligence Engine',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    'Persona diagnosis, urgency & 1-click workflows',
+                    style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 20),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 580, maxHeight: 600),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Persona & Quality Badges
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    // Persona Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isOwner
+                            ? const Color(0xFF6366F1).withValues(alpha: 0.12)
+                            : const Color(0xFF10B981).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isOwner
+                              ? const Color(0xFF6366F1).withValues(alpha: 0.4)
+                              : const Color(0xFF10B981).withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isOwner ? Icons.home_work_rounded : Icons.person_search_rounded,
+                            size: 15,
+                            color: isOwner ? const Color(0xFF6366F1) : const Color(0xFF10B981),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            isOwner ? 'Owner Listing' : 'Tenant Requirement',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: isOwner ? const Color(0xFF4F46E5) : const Color(0xFF059669),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Freshness Badge
+                    if (lead.freshnessBadge.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: lead.freshnessBadge.contains('Today')
+                              ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                              : Colors.grey.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: lead.freshnessBadge.contains('Today')
+                                ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                                : Colors.grey.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text(
+                          lead.freshnessBadge,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: lead.freshnessBadge.contains('Today')
+                                ? const Color(0xFF047857)
+                                : Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                    // Arrival Time
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: CRMColors.surfaceElevatedOf(context),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: CRMColors.borderOf(context)),
+                      ),
+                      child: Text(
+                        '🕒 ${lead.formattedReceivedAt} (${lead.relativeTimeAgo})',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                // Executive One-Line Summary Card
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.tips_and_updates_rounded, color: Color(0xFF6366F1), size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          understanding.oneLineSummary,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // Key Extracted Details Card
+                const Text('Key Lead Attributes:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: CRMColors.cardBgOf(context),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: CRMColors.borderOf(context)),
+                  ),
+                  child: Text(
+                    understanding.keyDetails,
+                    style: const TextStyle(fontSize: 12.5, height: 1.5),
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // Recommended Action Box
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.lightbulb_rounded, color: Color(0xFFD97706), size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Next Action: ${understanding.recommendedAction}',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF92400E),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // Pre-drafted WhatsApp Message Preview
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('1-Click Personalized WhatsApp:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    TextButton.icon(
+                      icon: const Icon(Icons.copy_rounded, size: 14),
+                      label: const Text('Copy Text', style: TextStyle(fontSize: 12)),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: understanding.personalizedWhatsAppMessage));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('WhatsApp message copied to clipboard!')),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF25D366).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF25D366).withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    understanding.personalizedWhatsAppMessage,
+                    style: const TextStyle(fontSize: 12, height: 1.4, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          // 1-Click WhatsApp Button
+          if (understanding.whatsAppUrl != null)
+            ElevatedButton.icon(
+              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+              label: const Text('Open WhatsApp'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              ),
+              onPressed: () async {
+                final uri = Uri.parse(understanding.whatsAppUrl!);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+
+          // 1-Click Call Button
+          if (understanding.dialerUrl != null)
+            OutlinedButton.icon(
+              icon: const Icon(Icons.phone_in_talk_rounded, size: 16),
+              label: const Text('Call Lead'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              ),
+              onPressed: () async {
+                final uri = Uri.parse(understanding.dialerUrl!);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri);
+                }
+              },
+            ),
+
+          // 1-Click Move to CRM Button
+          if (!isImported)
+            ElevatedButton.icon(
+              icon: Icon(isOwner ? Icons.home_work_rounded : Icons.drive_file_move_rounded, size: 16),
+              label: Text(isOwner ? 'Move to Properties' : 'Move to Leads'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: CRMColors.primaryOf(context),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              ),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final messenger = ScaffoldMessenger.of(context);
+                setState(() => _isImporting = true);
+                if (isOwner) {
+                  await _service.importLeadsToProperties([lead.id]);
+                } else {
+                  await _service.importLeadsToCrm([lead.id]);
+                }
+                if (mounted) {
+                  setState(() {
+                    _isImporting = false;
+                    _cachedFilteredLeads = null;
+                  });
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Lead moved to $targetCrmPage successfully!'),
+                      backgroundColor: const Color(0xFF10B981),
+                    ),
+                  );
+                }
+              },
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF10B981)),
+                  SizedBox(width: 6),
+                  Text('In CRM', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF10B981))),
+                ],
+              ),
+            ),
         ],
       ),
     );

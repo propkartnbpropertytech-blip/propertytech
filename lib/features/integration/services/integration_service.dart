@@ -67,15 +67,51 @@ class IntegrationService extends ChangeNotifier {
   final Set<String> _customHeaders = {};
   Set<String> get customHeaders => Set.unmodifiable(_customHeaders);
 
+  // Section-specific custom headers
+  final Set<String> _propertyListingCustomHeaders = {};
+  final Set<String> _requirementCustomHeaders = {};
+  static const String _propCustomHeadersPrefsKey = 'campaign_prop_custom_headers_v1';
+  static const String _reqCustomHeadersPrefsKey = 'campaign_req_custom_headers_v1';
+
   // Set of headers hidden by user preference
   final Set<String> _hiddenHeaders = {};
   Set<String> get hiddenHeaders => Set.unmodifiable(_hiddenHeaders);
   Set<String> get visibleHeaders => Set.from(getActiveVisibleHeaders());
 
+  // Section-specific hidden headers
+  final Set<String> _propertyListingHiddenHeaders = {};
+  final Set<String> _requirementHiddenHeaders = {};
+  static const String _propHiddenHeadersPrefsKey = 'campaign_prop_hidden_headers_v1';
+  static const String _reqHiddenHeadersPrefsKey = 'campaign_req_hidden_headers_v1';
+
   // Column header ordering (preserves exact Google Sheet order or custom drag-and-drop order)
   List<String> _headerOrder = [];
   List<String> get headerOrder => List.unmodifiable(_headerOrder);
   static const String _headerOrderPrefsKey = 'campaign_header_order_v1';
+
+  // Section-specific header orders
+  List<String> _propertyListingHeaderOrder = [];
+  List<String> _requirementHeaderOrder = [];
+  static const String _propHeaderOrderPrefsKey = 'campaign_prop_header_order_v1';
+  static const String _reqHeaderOrderPrefsKey = 'campaign_req_header_order_v1';
+
+  Set<String> customHeadersFor(String? section) {
+    if (section == 'Property Listing') return Set.unmodifiable(_propertyListingCustomHeaders);
+    if (section == 'Requirement') return Set.unmodifiable(_requirementCustomHeaders);
+    return customHeaders;
+  }
+
+  Set<String> hiddenHeadersFor(String? section) {
+    if (section == 'Property Listing') return Set.unmodifiable(_propertyListingHiddenHeaders);
+    if (section == 'Requirement') return Set.unmodifiable(_requirementHiddenHeaders);
+    return hiddenHeaders;
+  }
+
+  List<String> headerOrderFor(String? section) {
+    if (section == 'Property Listing') return List.unmodifiable(_propertyListingHeaderOrder);
+    if (section == 'Requirement') return List.unmodifiable(_requirementHeaderOrder);
+    return headerOrder;
+  }
 
   // Live Auto-Sync Status
   DateTime? _lastSyncAt;
@@ -83,40 +119,65 @@ class IntegrationService extends ChangeNotifier {
   DateTime? get lastSyncAt => _lastSyncAt;
   int get lastSyncCount => _lastSyncCount;
 
+  // Live Diagnostic & Health Status
+  List<Map<String, dynamic>> _activeHealthAlerts = [];
+  List<Map<String, dynamic>> get activeHealthAlerts => List.unmodifiable(_activeHealthAlerts);
+  String? _metaStatus;
+  String? get metaStatus => _metaStatus;
+  Map<String, dynamic>? _leadsPipelineInfo;
+  Map<String, dynamic>? get leadsPipelineInfo => _leadsPipelineInfo;
+
   // Column header to CRM field mappings
   final Map<String, String> _columnToCrmFieldMap = {
+    'Client / Owner Name': 'name',
+    'Owner Name': 'name',
     'Full Name': 'name',
     'full_name': 'name',
     'Name': 'name',
     'Client Name': 'name',
     'Customer Name': 'name',
     'Buyer Name': 'name',
+    'Phone Number': 'mobile',
+    'phone_number': 'mobile',
+    'Phone': 'mobile',
+    'Mobile': 'mobile',
+    'Contact': 'mobile',
+    'Number': 'mobile',
+    'Received On': 'received_at',
+    'Arrival Time': 'received_at',
+    'Received Date': 'received_at',
+    'Date': 'received_at',
+    'Property Type': 'configuration',
+    'Configuration': 'configuration',
+    'configuration': 'configuration',
+    'BHK': 'configuration',
+    'Expected Rent': 'budget',
+    'Monthly Budget': 'budget',
+    'budget': 'budget',
+    'Budget': 'budget',
+    'Target Budget': 'budget',
+    'Property Location': 'city',
+    'Preferred Area': 'city',
+    'city': 'city',
+    'City': 'city',
+    'Location': 'city',
+    'Email ID': 'email',
+    'email': 'email',
+    'Email': 'email',
+    'Campaign Name': 'campaign',
+    'campaign_name': 'campaign',
+    'Form Name': 'campaign',
+    'form_name': 'campaign',
+    'Ad Name': 'campaign',
+    'ad_name': 'campaign',
+    'Who Will Be Staying': 'remarks',
+    'remarks': 'remarks',
+    'Notes': 'remarks',
     'Property': 'property',
     'Property Name': 'property',
     'Project': 'property',
     'Project Name': 'property',
     'Inventory': 'property',
-    'phone_number': 'mobile',
-    'Phone': 'mobile',
-    'Mobile': 'mobile',
-    'Contact': 'mobile',
-    'Phone Number': 'mobile',
-    'email': 'email',
-    'Email': 'email',
-    'Email ID': 'email',
-    'city': 'city',
-    'City': 'city',
-    'Location': 'city',
-    'budget': 'budget',
-    'Budget': 'budget',
-    'Target Budget': 'budget',
-    'configuration': 'configuration',
-    'Configuration': 'configuration',
-    'BHK': 'configuration',
-    'campaign_name': 'campaign',
-    'Campaign Name': 'campaign',
-    'remarks': 'remarks',
-    'Notes': 'remarks',
   };
 
   Map<String, String> get columnMappings => Map.unmodifiable(_columnToCrmFieldMap);
@@ -133,19 +194,38 @@ class IntegrationService extends ChangeNotifier {
     'property': 'Property / Project (dropdown)',
     'campaign': 'Marketing Campaign Name',
     'remarks': 'Remarks & Requirement Notes',
+    'received_at': 'Arrival / Received Date',
     'source': 'Lead Source Tag',
   };
 
   /// Add a custom header dynamically
-  Future<void> addCustomHeader(String headerName, {String? crmField}) async {
+  Future<void> addCustomHeader(String headerName, {String? crmField, String? section}) async {
     final trimmed = headerName.trim();
     if (trimmed.isEmpty) return;
 
-    _customHeaders.add(trimmed);
-    _hiddenHeaders.remove(trimmed);
-    if (!_headerOrder.contains(trimmed)) {
-      _headerOrder.add(trimmed);
-      unawaited(_persistHeaderOrder());
+    if (section == 'Property Listing') {
+      _propertyListingCustomHeaders.add(trimmed);
+      _propertyListingHiddenHeaders.remove(trimmed);
+      if (!_propertyListingHeaderOrder.contains(trimmed)) {
+        _propertyListingHeaderOrder.add(trimmed);
+      }
+      unawaited(_persistSectionCustomHeaders('Property Listing'));
+      unawaited(_persistSectionHeaderOrder('Property Listing'));
+    } else if (section == 'Requirement') {
+      _requirementCustomHeaders.add(trimmed);
+      _requirementHiddenHeaders.remove(trimmed);
+      if (!_requirementHeaderOrder.contains(trimmed)) {
+        _requirementHeaderOrder.add(trimmed);
+      }
+      unawaited(_persistSectionCustomHeaders('Requirement'));
+      unawaited(_persistSectionHeaderOrder('Requirement'));
+    } else {
+      _customHeaders.add(trimmed);
+      _hiddenHeaders.remove(trimmed);
+      if (!_headerOrder.contains(trimmed)) {
+        _headerOrder.add(trimmed);
+        unawaited(_persistHeaderOrder());
+      }
     }
     _invalidateHeaderCache();
 
@@ -159,18 +239,37 @@ class IntegrationService extends ChangeNotifier {
   }
 
   /// Remove a custom header
-  Future<void> removeCustomHeader(String headerName) async {
-    _customHeaders.remove(headerName);
-    _hiddenHeaders.remove(headerName);
+  Future<void> removeCustomHeader(String headerName, {String? section}) async {
+    if (section == 'Property Listing') {
+      _propertyListingCustomHeaders.remove(headerName);
+      _propertyListingHiddenHeaders.remove(headerName);
+      _propertyListingHeaderOrder.remove(headerName);
+      unawaited(_persistSectionCustomHeaders('Property Listing'));
+      unawaited(_persistSectionHeaderOrder('Property Listing'));
+    } else if (section == 'Requirement') {
+      _requirementCustomHeaders.remove(headerName);
+      _requirementHiddenHeaders.remove(headerName);
+      _requirementHeaderOrder.remove(headerName);
+      unawaited(_persistSectionCustomHeaders('Requirement'));
+      unawaited(_persistSectionHeaderOrder('Requirement'));
+    } else {
+      _customHeaders.remove(headerName);
+      _hiddenHeaders.remove(headerName);
+      _headerOrder.remove(headerName);
+      unawaited(_persistHeaderOrder());
+    }
+
     _columnToCrmFieldMap.remove(headerName);
-    _headerOrder.remove(headerName);
-    unawaited(_persistHeaderOrder());
 
     final updated = <IntegrationLeadModel>[];
     for (final lead in _leads) {
-      final raw = Map<String, dynamic>.from(lead.rawJson);
-      raw.remove(headerName);
-      updated.add(lead.copyWith(rawJson: raw));
+      if (section == null || lead.leadType == section) {
+        final raw = Map<String, dynamic>.from(lead.rawJson);
+        raw.remove(headerName);
+        updated.add(lead.copyWith(rawJson: raw));
+      } else {
+        updated.add(lead);
+      }
     }
     _leads = updated;
     _invalidateHeaderCache();
@@ -178,30 +277,68 @@ class IntegrationService extends ChangeNotifier {
   }
 
   /// Toggle header visibility
-  Future<void> setHeaderVisibility(String header, bool isVisible) async {
-    if (isVisible) {
-      _hiddenHeaders.remove(header);
+  Future<void> setHeaderVisibility(String header, bool isVisible, {String? section}) async {
+    if (section == 'Property Listing') {
+      if (isVisible) {
+        _propertyListingHiddenHeaders.remove(header);
+      } else {
+        _propertyListingHiddenHeaders.add(header);
+      }
+      unawaited(_persistSectionHiddenHeaders('Property Listing'));
+    } else if (section == 'Requirement') {
+      if (isVisible) {
+        _requirementHiddenHeaders.remove(header);
+      } else {
+        _requirementHiddenHeaders.add(header);
+      }
+      unawaited(_persistSectionHiddenHeaders('Requirement'));
     } else {
-      _hiddenHeaders.add(header);
+      if (isVisible) {
+        _hiddenHeaders.remove(header);
+      } else {
+        _hiddenHeaders.add(header);
+      }
     }
     _invalidateHeaderCache();
     notifyListeners();
   }
 
   /// Select or Deselect all headers
-  void setAllHeadersVisibility(bool isVisible) {
-    final all = getDetectedHeaders();
-    if (isVisible) {
-      _hiddenHeaders.clear();
+  void setAllHeadersVisibility(bool isVisible, {String? section}) {
+    final all = getDetectedHeaders(section: section);
+    if (section == 'Property Listing') {
+      if (isVisible) {
+        _propertyListingHiddenHeaders.clear();
+      } else {
+        _propertyListingHiddenHeaders.addAll(all);
+      }
+      unawaited(_persistSectionHiddenHeaders('Property Listing'));
+    } else if (section == 'Requirement') {
+      if (isVisible) {
+        _requirementHiddenHeaders.clear();
+      } else {
+        _requirementHiddenHeaders.addAll(all);
+      }
+      unawaited(_persistSectionHiddenHeaders('Requirement'));
     } else {
-      _hiddenHeaders.addAll(all);
+      if (isVisible) {
+        _hiddenHeaders.clear();
+      } else {
+        _hiddenHeaders.addAll(all);
+      }
     }
     _invalidateHeaderCache();
     notifyListeners();
   }
 
   /// Check if a header is visible
-  bool isHeaderVisible(String header) {
+  bool isHeaderVisible(String header, {String? section}) {
+    if (section == 'Property Listing') {
+      return !_propertyListingHiddenHeaders.contains(header);
+    }
+    if (section == 'Requirement') {
+      return !_requirementHiddenHeaders.contains(header);
+    }
     return !_hiddenHeaders.contains(header);
   }
 
@@ -213,18 +350,81 @@ class IntegrationService extends ChangeNotifier {
     _cachedVisibleHeaders = null;
   }
 
-  /// Get all detected headers in exact Google Sheet order or custom drag-and-drop order
-  List<String> getDetectedHeaders({List<IntegrationLeadModel>? leadsSubset}) {
-    if (leadsSubset == null && _cachedDetectedHeaders != null) return _cachedDetectedHeaders!;
+  /// Get all detected headers in business-prioritized order:
+  /// When section is provided (e.g. 'Property Listing' or 'Requirement'), standard columns
+  /// for that section are strictly isolated and returned, followed by any section-specific custom fields.
+  /// When section is null, preserves exact Google Sheet insertion order or custom user dragged order.
+  List<String> getDetectedHeaders({List<IntegrationLeadModel>? leadsSubset, String? section}) {
+    if (leadsSubset == null && section == null && _cachedDetectedHeaders != null) return _cachedDetectedHeaders!;
 
     final targetLeads = leadsSubset ?? _leads;
 
+    // If section is provided (e.g. in Campaign Leads screen), strictly isolate to that section's headers
+    if (section != null) {
+      final isProp = section == 'Property Listing';
+
+      final List<String> standardOrder = isProp
+          ? [
+              'Client / Owner Name',
+              'Phone Number',
+              'Received On',
+              'Property Type',
+              'Expected Rent',
+              'Property Location',
+              'City',
+              'Email ID',
+              'Campaign Name',
+              'Form Name',
+            ]
+          : [
+              'Client Name',
+              'Phone Number',
+              'Received On',
+              'Configuration',
+              'Monthly Budget',
+              'Preferred Area',
+              'City',
+              'Who Will Be Staying',
+              'Email ID',
+              'Campaign Name',
+              'Form Name',
+            ];
+
+      final sectionCustom = isProp ? _propertyListingCustomHeaders : _requirementCustomHeaders;
+      final sectionSavedOrder = isProp ? _propertyListingHeaderOrder : _requirementHeaderOrder;
+      final availableHeaders = {...standardOrder, ...sectionCustom};
+
+      final result = <String>[];
+      if (sectionSavedOrder.isNotEmpty) {
+        for (final h in sectionSavedOrder) {
+          if (availableHeaders.contains(h) && !result.contains(h)) {
+            result.add(h);
+          }
+        }
+      }
+
+      for (final h in standardOrder) {
+        if (!result.contains(h)) {
+          result.add(h);
+        }
+      }
+
+      for (final h in sectionCustom) {
+        if (!result.contains(h)) {
+          result.add(h);
+        }
+      }
+
+      return result;
+    }
+
+    // When section is null (raw sheet connector or generic view):
     // 1. Gather all actual existing headers in leads + custom headers
     final existingHeaders = <String>{..._customHeaders};
     for (final lead in targetLeads) {
       for (final k in lead.rawJson.keys) {
         final clean = k.trim();
-        if (clean.isNotEmpty && !clean.startsWith('_engine_') && clean.toLowerCase() != 'source') {
+        if (clean.isNotEmpty && !clean.startsWith('_') && clean.toLowerCase() != 'source') {
           existingHeaders.add(clean);
         }
       }
@@ -246,7 +446,6 @@ class IntegrationService extends ChangeNotifier {
         }
       }
 
-      // Only append genuine custom headers that were added after _headerOrder was initialized
       for (final h in _customHeaders) {
         if (!result.contains(h)) {
           result.add(h);
@@ -272,7 +471,7 @@ class IntegrationService extends ChangeNotifier {
     for (final row in rows) {
       for (final k in row.keys) {
         final clean = k.trim();
-        if (clean.isNotEmpty && clean.toLowerCase() != 'source' && !clean.startsWith('_engine_')) {
+        if (clean.isNotEmpty && clean.toLowerCase() != 'source' && !clean.startsWith('_')) {
           if (!incomingKeys.contains(clean)) {
             incomingKeys.add(clean);
           }
@@ -299,8 +498,8 @@ class IntegrationService extends ChangeNotifier {
   }
 
   /// Reorder headers via drag and place
-  Future<void> reorderHeaders(int oldIndex, int newIndex, {List<IntegrationLeadModel>? leadsSubset}) async {
-    final current = List<String>.from(getDetectedHeaders(leadsSubset: leadsSubset));
+  Future<void> reorderHeaders(int oldIndex, int newIndex, {List<IntegrationLeadModel>? leadsSubset, String? section}) async {
+    final current = List<String>.from(getDetectedHeaders(leadsSubset: leadsSubset, section: section));
     if (oldIndex < 0 || oldIndex >= current.length) return;
     if (newIndex < 0 || newIndex > current.length) return;
 
@@ -310,7 +509,13 @@ class IntegrationService extends ChangeNotifier {
     final item = current.removeAt(oldIndex);
     current.insert(newIndex, item);
 
-    if (leadsSubset != null) {
+    if (section == 'Property Listing') {
+      _propertyListingHeaderOrder = current;
+      unawaited(_persistSectionHeaderOrder('Property Listing'));
+    } else if (section == 'Requirement') {
+      _requirementHeaderOrder = current;
+      unawaited(_persistSectionHeaderOrder('Requirement'));
+    } else if (leadsSubset != null) {
       final fullHeaders = List<String>.from(getDetectedHeaders());
       final sectionIndices = <int>[];
       for (int i = 0; i < fullHeaders.length; i++) {
@@ -322,18 +527,19 @@ class IntegrationService extends ChangeNotifier {
         fullHeaders[sectionIndices[i]] = current[i];
       }
       _headerOrder = fullHeaders;
+      unawaited(_persistHeaderOrder());
     } else {
       _headerOrder = current;
+      unawaited(_persistHeaderOrder());
     }
 
     _invalidateHeaderCache();
-    await _persistHeaderOrder();
     notifyListeners();
   }
 
   /// Move a single header left (-1) or right (+1)
-  Future<void> moveHeader(String header, int direction, {List<IntegrationLeadModel>? leadsSubset}) async {
-    final current = List<String>.from(getDetectedHeaders(leadsSubset: leadsSubset));
+  Future<void> moveHeader(String header, int direction, {List<IntegrationLeadModel>? leadsSubset, String? section}) async {
+    final current = List<String>.from(getDetectedHeaders(leadsSubset: leadsSubset, section: section));
     final idx = current.indexOf(header);
     if (idx == -1) return;
     final newIdx = idx + direction;
@@ -342,7 +548,13 @@ class IntegrationService extends ChangeNotifier {
     final item = current.removeAt(idx);
     current.insert(newIdx, item);
 
-    if (leadsSubset != null) {
+    if (section == 'Property Listing') {
+      _propertyListingHeaderOrder = current;
+      unawaited(_persistSectionHeaderOrder('Property Listing'));
+    } else if (section == 'Requirement') {
+      _requirementHeaderOrder = current;
+      unawaited(_persistSectionHeaderOrder('Requirement'));
+    } else if (leadsSubset != null) {
       final fullHeaders = List<String>.from(getDetectedHeaders());
       final sectionIndices = <int>[];
       for (int i = 0; i < fullHeaders.length; i++) {
@@ -354,25 +566,32 @@ class IntegrationService extends ChangeNotifier {
         fullHeaders[sectionIndices[i]] = current[i];
       }
       _headerOrder = fullHeaders;
+      unawaited(_persistHeaderOrder());
     } else {
       _headerOrder = current;
+      unawaited(_persistHeaderOrder());
     }
 
     _invalidateHeaderCache();
-    await _persistHeaderOrder();
     notifyListeners();
   }
 
   /// Reset header order back to original sheet insertion order
-  Future<void> resetHeaderOrderToSheet({List<IntegrationLeadModel>? leadsSubset}) async {
-    if (leadsSubset != null) {
+  Future<void> resetHeaderOrderToSheet({List<IntegrationLeadModel>? leadsSubset, String? section}) async {
+    if (section == 'Property Listing') {
+      _propertyListingHeaderOrder.clear();
+      unawaited(_persistSectionHeaderOrder('Property Listing'));
+    } else if (section == 'Requirement') {
+      _requirementHeaderOrder.clear();
+      unawaited(_persistSectionHeaderOrder('Requirement'));
+    } else if (leadsSubset != null) {
       final sectionHeaders = getDetectedHeaders(leadsSubset: leadsSubset);
       final extracted = <String>[];
       for (final lead in leadsSubset) {
         for (final k in lead.rawJson.keys) {
           final clean = k.trim();
           if (clean.isNotEmpty &&
-              !clean.startsWith('_engine_') &&
+              !clean.startsWith('_') &&
               clean.toLowerCase() != 'source') {
             if (!extracted.contains(clean)) extracted.add(clean);
           }
@@ -389,6 +608,7 @@ class IntegrationService extends ChangeNotifier {
         fullHeaders[sectionIndices[i]] = extracted[i];
       }
       _headerOrder = fullHeaders;
+      unawaited(_persistHeaderOrder());
     } else {
       _headerOrder.clear();
       final extracted = <String>[];
@@ -396,7 +616,7 @@ class IntegrationService extends ChangeNotifier {
         for (final k in lead.rawJson.keys) {
           final clean = k.trim();
           if (clean.isNotEmpty &&
-              !clean.startsWith('_engine_') &&
+              !clean.startsWith('_') &&
               clean.toLowerCase() != 'source' &&
               clean != 'Client Name' &&
               clean != 'Phone' &&
@@ -406,9 +626,9 @@ class IntegrationService extends ChangeNotifier {
         }
       }
       _headerOrder = extracted;
+      unawaited(_persistHeaderOrder());
     }
     _invalidateHeaderCache();
-    await _persistHeaderOrder();
     notifyListeners();
   }
 
@@ -419,12 +639,46 @@ class IntegrationService extends ChangeNotifier {
     } catch (_) {}
   }
 
+  Future<void> _persistSectionHeaderOrder(String section) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (section == 'Property Listing') {
+        await prefs.setString(_propHeaderOrderPrefsKey, jsonEncode(_propertyListingHeaderOrder));
+      } else if (section == 'Requirement') {
+        await prefs.setString(_reqHeaderOrderPrefsKey, jsonEncode(_requirementHeaderOrder));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistSectionCustomHeaders(String section) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (section == 'Property Listing') {
+        await prefs.setString(_propCustomHeadersPrefsKey, jsonEncode(_propertyListingCustomHeaders.toList()));
+      } else if (section == 'Requirement') {
+        await prefs.setString(_reqCustomHeadersPrefsKey, jsonEncode(_requirementCustomHeaders.toList()));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistSectionHiddenHeaders(String section) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (section == 'Property Listing') {
+        await prefs.setString(_propHiddenHeadersPrefsKey, jsonEncode(_propertyListingHiddenHeaders.toList()));
+      } else if (section == 'Requirement') {
+        await prefs.setString(_reqHiddenHeadersPrefsKey, jsonEncode(_requirementHiddenHeaders.toList()));
+      }
+    } catch (_) {}
+  }
+
   /// Get currently visible headers for the table
-  List<String> getActiveVisibleHeaders({List<IntegrationLeadModel>? leadsSubset}) {
-    if (leadsSubset == null && _cachedVisibleHeaders != null) return _cachedVisibleHeaders!;
-    final all = getDetectedHeaders(leadsSubset: leadsSubset);
-    final visible = all.where((h) => !_hiddenHeaders.contains(h)).toList();
-    if (leadsSubset == null) _cachedVisibleHeaders = visible;
+  List<String> getActiveVisibleHeaders({List<IntegrationLeadModel>? leadsSubset, String? section}) {
+    if (leadsSubset == null && section == null && _cachedVisibleHeaders != null) return _cachedVisibleHeaders!;
+    final all = getDetectedHeaders(leadsSubset: leadsSubset, section: section);
+    final hidden = hiddenHeadersFor(section);
+    final visible = all.where((h) => !hidden.contains(h)).toList();
+    if (leadsSubset == null && section == null) _cachedVisibleHeaders = visible;
     return visible;
   }
 
@@ -447,6 +701,18 @@ class IntegrationService extends ChangeNotifier {
             }
           } catch (_) {}
 
+          final explicitLeadType = raw['_lead_type']?.toString();
+          final campaignStatus = raw['_campaign_status']?.toString() ?? 'New';
+          final enquiryCount = int.tryParse(raw['_enquiry_count']?.toString() ?? '1') ?? 1;
+          final followupScheduledAt = raw['_followup_scheduled_at'] != null
+              ? DateTime.tryParse(raw['_followup_scheduled_at'].toString())
+              : null;
+          final followupRemarks = raw['_followup_remarks']?.toString();
+          final followupStatus = raw['_followup_status']?.toString();
+          final crmMatch = raw['_crm_match'] is Map<String, dynamic>
+              ? CrmMatchInfo.fromJson(Map<String, dynamic>.from(raw['_crm_match']))
+              : null;
+
           parsed.add(
             IntegrationLeadModel(
               id: item.id,
@@ -461,6 +727,13 @@ class IntegrationService extends ChangeNotifier {
               importedClientId: item.importedClientId,
               metaFeedbackEventId: item.metaFeedbackEventId,
               metaFeedbackSentAt: item.metaFeedbackSentAt,
+              leadType: IntegrationLeadModel.resolveLeadType(explicitLeadType, raw),
+              campaignStatus: campaignStatus,
+              enquiryCount: enquiryCount,
+              followupScheduledAt: followupScheduledAt,
+              followupRemarks: followupRemarks,
+              followupStatus: followupStatus,
+              crmMatch: crmMatch,
             ),
           );
         }
@@ -496,6 +769,52 @@ class IntegrationService extends ChangeNotifier {
           final decoded = jsonDecode(savedHeaderOrder) as List<dynamic>;
           _headerOrder = decoded.map((e) => e.toString()).toList();
           _invalidateHeaderCache();
+        } catch (_) {}
+      }
+
+      // 4. Load section-specific preferences
+      final propOrder = prefs.getString(_propHeaderOrderPrefsKey);
+      if (propOrder != null && propOrder.isNotEmpty) {
+        try {
+          final dec = jsonDecode(propOrder) as List<dynamic>;
+          _propertyListingHeaderOrder = dec.map((e) => e.toString()).toList();
+        } catch (_) {}
+      }
+      final reqOrder = prefs.getString(_reqHeaderOrderPrefsKey);
+      if (reqOrder != null && reqOrder.isNotEmpty) {
+        try {
+          final dec = jsonDecode(reqOrder) as List<dynamic>;
+          _requirementHeaderOrder = dec.map((e) => e.toString()).toList();
+        } catch (_) {}
+      }
+
+      final propCustom = prefs.getString(_propCustomHeadersPrefsKey);
+      if (propCustom != null && propCustom.isNotEmpty) {
+        try {
+          final dec = jsonDecode(propCustom) as List<dynamic>;
+          _propertyListingCustomHeaders.addAll(dec.map((e) => e.toString()));
+        } catch (_) {}
+      }
+      final reqCustom = prefs.getString(_reqCustomHeadersPrefsKey);
+      if (reqCustom != null && reqCustom.isNotEmpty) {
+        try {
+          final dec = jsonDecode(reqCustom) as List<dynamic>;
+          _requirementCustomHeaders.addAll(dec.map((e) => e.toString()));
+        } catch (_) {}
+      }
+
+      final propHidden = prefs.getString(_propHiddenHeadersPrefsKey);
+      if (propHidden != null && propHidden.isNotEmpty) {
+        try {
+          final dec = jsonDecode(propHidden) as List<dynamic>;
+          _propertyListingHiddenHeaders.addAll(dec.map((e) => e.toString()));
+        } catch (_) {}
+      }
+      final reqHidden = prefs.getString(_reqHiddenHeadersPrefsKey);
+      if (reqHidden != null && reqHidden.isNotEmpty) {
+        try {
+          final dec = jsonDecode(reqHidden) as List<dynamic>;
+          _requirementHiddenHeaders.addAll(dec.map((e) => e.toString()));
         } catch (_) {}
       }
 
@@ -583,10 +902,107 @@ class IntegrationService extends ChangeNotifier {
     try {
       final response = await _apiClient.post('/integrations/leads/sync-meta', {});
       await fetchServerLeads(resetWithServer: true);
-      return response.data is Map<String, dynamic> ? response.data as Map<String, dynamic> : {'success': true};
+      await fetchHealthAlerts();
+      final data = response.data is Map<String, dynamic> ? response.data as Map<String, dynamic> : {'success': true};
+      if (data['metaAlert'] != null && data['metaAlert'] is Map) {
+        final alert = Map<String, dynamic>.from(data['metaAlert'] as Map);
+        _activeHealthAlerts = [alert, ..._activeHealthAlerts.where((a) => a['code'] != alert['code'])];
+        _metaStatus = 'BLOCKED';
+        notifyListeners();
+      }
+      return data;
     } catch (e) {
       debugPrint('Error syncing Meta leads: $e');
+      await fetchHealthAlerts();
       return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Fetch diagnostic alerts and Meta status from backend health engine
+  Future<void> fetchHealthAlerts() async {
+    try {
+      final response = await _apiClient.get('/health', queryParameters: {'deep': 'true', 'format': 'json'});
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        final alerts = data['activeAlerts'];
+        if (alerts is List) {
+          _activeHealthAlerts = alerts
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList();
+        }
+        _metaStatus = data['metaStatus']?.toString();
+        if (data['leadsPipeline'] is Map) {
+          _leadsPipelineInfo = Map<String, dynamic>.from(data['leadsPipeline']);
+        }
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[IntegrationService] fetchHealthAlerts error: $e');
+    }
+  }
+
+  /// Real-time event handler for incoming leads from Supabase Realtime
+  void handleRealtimeEvent(String eventType, Map<String, dynamic>? record, Map<String, dynamic>? oldRecord) {
+    if (eventType == 'DELETE' && oldRecord != null) {
+      final id = oldRecord['id']?.toString();
+      if (id != null) {
+        final before = _leads.length;
+        _leads.removeWhere((l) => l.id == id);
+        if (_leads.length != before) {
+          _invalidateHeaderCache();
+          notifyListeners();
+          unawaited(_persistLeads());
+        }
+      }
+    } else if (record != null) {
+      try {
+        final incomingLead = IntegrationLeadModel.fromJson(record);
+        final index = _leads.indexWhere((l) => l.id == incomingLead.id);
+        if (index != -1) {
+          _leads[index] = incomingLead;
+        } else {
+          // Prepend new live lead at the top of the list
+          _leads.insert(0, incomingLead);
+          _updateDetectedHeadersFromRows([incomingLead.rawJson]);
+          for (final k in incomingLead.rawJson.keys) {
+            _autoSuggestMappingForHeader(k);
+          }
+        }
+        _invalidateHeaderCache();
+        notifyListeners();
+        unawaited(_persistLeads());
+      } catch (e) {
+        debugPrint('[IntegrationService] handleRealtimeEvent error: $e');
+      }
+    }
+  }
+
+  /// Real-time event handler for campaign lead followups from Supabase Realtime
+  void handleFollowupRealtimeEvent(String eventType, Map<String, dynamic>? record, Map<String, dynamic>? oldRecord) {
+    if (record != null) {
+      try {
+        final leadId = record['lead_id']?.toString();
+        if (leadId != null) {
+          final index = _leads.indexWhere((l) => l.id == leadId);
+          if (index != -1) {
+            final lead = _leads[index];
+            final scheduledAt = record['scheduled_at'] != null ? DateTime.tryParse(record['scheduled_at'].toString()) : lead.followupScheduledAt;
+            final remarks = record['remarks']?.toString() ?? lead.followupRemarks;
+            final status = record['status']?.toString() ?? lead.followupStatus;
+            _leads[index] = lead.copyWith(
+              campaignStatus: 'Follow up',
+              followupScheduledAt: scheduledAt,
+              followupRemarks: remarks,
+              followupStatus: status,
+            );
+            notifyListeners();
+            unawaited(_persistLeads());
+          }
+        }
+      } catch (e) {
+        debugPrint('[IntegrationService] handleFollowupRealtimeEvent error: $e');
+      }
     }
   }
 
@@ -864,27 +1280,66 @@ class IntegrationService extends ChangeNotifier {
   }
 
   void _autoSuggestMappingForHeader(String header) {
-    if (header.startsWith('_engine_')) return;
+    if (header.startsWith('_engine_') || header.trim().isEmpty) return;
     if (_columnToCrmFieldMap.containsKey(header)) return;
     final lower = header.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-    if (lower.contains('property') || lower.contains('project') || lower.contains('inventory')) {
-      _columnToCrmFieldMap[header] = 'property';
-    } else if (lower.contains('client') || lower.contains('customer') || lower.contains('buyer') || lower == 'fullname' || lower == 'name') {
-      _columnToCrmFieldMap[header] = 'name';
-    } else if (lower.contains('name')) {
-      _columnToCrmFieldMap[header] = 'name';
-    } else if (lower.contains('phone') || lower.contains('mobile') || lower.contains('contact')) {
-      _columnToCrmFieldMap[header] = 'mobile';
-    } else if (lower.contains('email') || lower.contains('mail')) {
-      _columnToCrmFieldMap[header] = 'email';
-    } else if (lower.contains('city') || lower.contains('location') || lower.contains('area')) {
-      _columnToCrmFieldMap[header] = 'city';
-    } else if (lower.contains('budget') || lower.contains('price')) {
-      _columnToCrmFieldMap[header] = 'budget';
-    } else if (lower.contains('bhk') || lower.contains('config')) {
-      _columnToCrmFieldMap[header] = 'configuration';
-    } else if (lower.contains('campaign')) {
+
+    // 1. Marketing / Campaign / Ad / Form fields (check BEFORE 'name' so 'ad name' or 'form name' doesn't map to client name)
+    if (lower.contains('campaign') ||
+        lower.contains('adname') ||
+        lower.contains('formname') ||
+        lower == 'ad' ||
+        lower == 'form' ||
+        lower.contains('utm')) {
       _columnToCrmFieldMap[header] = 'campaign';
+    }
+    // 2. Client / Owner / Person Name
+    else if (lower.contains('client') ||
+        lower.contains('customer') ||
+        lower.contains('buyer') ||
+        lower.contains('owner') ||
+        lower == 'fullname' ||
+        lower == 'name' ||
+        lower == 'nameofclient') {
+      _columnToCrmFieldMap[header] = 'name';
+    }
+    // 3. Phone / Mobile Number
+    else if (lower.contains('phone') ||
+        lower.contains('mobile') ||
+        lower.contains('contact') ||
+        lower.contains('number')) {
+      _columnToCrmFieldMap[header] = 'mobile';
+    }
+    // 4. Email
+    else if (lower.contains('email') || lower.contains('mail')) {
+      _columnToCrmFieldMap[header] = 'email';
+    }
+    // 5. Rent / Budget / Price
+    else if (lower.contains('rent') || lower.contains('budget') || lower.contains('price')) {
+      _columnToCrmFieldMap[header] = 'budget';
+    }
+    // 6. Configuration / BHK / Property Type
+    else if (lower.contains('bhk') ||
+        lower.contains('config') ||
+        lower.contains('propertytype') ||
+        lower.contains('hometype')) {
+      _columnToCrmFieldMap[header] = 'configuration';
+    }
+    // 7. Property / Project
+    else if (lower.contains('project') || lower.contains('inventory') || lower == 'property') {
+      _columnToCrmFieldMap[header] = 'property';
+    }
+    // 8. Location / Area / City
+    else if (lower.contains('city') ||
+        lower.contains('location') ||
+        lower.contains('area') ||
+        lower.contains('locality') ||
+        lower.contains('located')) {
+      _columnToCrmFieldMap[header] = 'city';
+    }
+    // 9. Remarks
+    else if (lower.contains('remark') || lower.contains('note') || lower.contains('staying')) {
+      _columnToCrmFieldMap[header] = 'remarks';
     }
   }
 
@@ -1123,7 +1578,7 @@ class IntegrationService extends ChangeNotifier {
               : (lead.getStringValue('Email').isNotEmpty ? lead.getStringValue('Email') : _extractEmail(lead.rawJson)));
       final emailNote = email.isNotEmpty ? ' Email: $email.' : '';
       final summaryRemarks =
-          'Imported from ${lead.source}. Campaign: $campaign.$propertyNotes$emailNote${extraRemarks.isNotEmpty ? ' $extraRemarks' : ''}';
+          '[Enquired: ${lead.formattedReceivedAt} via ${lead.source}] Campaign: $campaign.$propertyNotes$emailNote${extraRemarks.isNotEmpty ? ' $extraRemarks' : ''}';
 
       final userRole = (user?.role ?? '').toLowerCase();
       final bool isAdminOrTelecaller =
@@ -1142,6 +1597,8 @@ class IntegrationService extends ChangeNotifier {
         if (['client name', 'full name', 'name', 'phone number', 'phone', 'mobile', 'property', 'property name'].contains(k)) continue;
         metaCustomFields[entry.key] = entry.value;
       }
+      metaCustomFields['received_at'] = lead.receivedAt.toIso8601String();
+      metaCustomFields['received_on'] = lead.formattedReceivedAt;
       if (email.isNotEmpty && !metaCustomFields.containsKey('Email ID') && !metaCustomFields.containsKey('Email')) {
         metaCustomFields['Email ID'] = email;
       }
@@ -1443,7 +1900,7 @@ class IntegrationService extends ChangeNotifier {
           'listing_type_id': rentListing?.id ?? '',
           'property_status_id': defaultStatus?.id ?? '',
           'city_id': matchedCity?.id ?? '',
-          'remarks': 'Imported from Campaign Leads (Source: ${lead.source}, Campaign: ${lead.getStringValue('Campaign Name')}). Email: $email',
+          'remarks': '[Enquired: ${lead.formattedReceivedAt} via ${lead.source}] Campaign: ${lead.getStringValue('Campaign Name')}. Email: $email',
           'created_by': user?.id,
         };
 
@@ -1837,7 +2294,23 @@ function onFormSubmit(e) {
             local.id = l.id;
             local.source = l.source;
             local.receivedAt = l.receivedAt;
-            local.rawJsonString = jsonEncode(l.rawJson);
+            final rawToStore = Map<String, dynamic>.from(l.rawJson);
+            rawToStore['_lead_type'] = l.leadType;
+            rawToStore['_campaign_status'] = l.campaignStatus;
+            rawToStore['_enquiry_count'] = l.enquiryCount;
+            if (l.followupScheduledAt != null) {
+              rawToStore['_followup_scheduled_at'] = l.followupScheduledAt!.toIso8601String();
+            }
+            if (l.followupRemarks != null) {
+              rawToStore['_followup_remarks'] = l.followupRemarks;
+            }
+            if (l.followupStatus != null) {
+              rawToStore['_followup_status'] = l.followupStatus;
+            }
+            if (l.crmMatch != null) {
+              rawToStore['_crm_match'] = l.crmMatch!.toJson();
+            }
+            local.rawJsonString = jsonEncode(rawToStore);
             local.externalLeadId = l.externalLeadId;
             local.isDuplicate = l.isDuplicate;
             local.duplicateReason = l.duplicateReason;

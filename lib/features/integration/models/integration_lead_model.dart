@@ -36,35 +36,482 @@ class IntegrationLeadModel {
     this.metaFeedbackEventId,
     this.metaFeedbackSentAt,
     this.enquiryCount = 1,
-    this.leadType = 'Requirement',
+    String? leadType,
     this.campaignStatus = 'New',
     this.followupScheduledAt,
     this.followupRemarks,
     this.followupStatus,
     this.crmMatch,
-  });
+  }) : leadType = resolveLeadType(leadType, rawJson);
 
-  /// Extract cell value by dynamic key
+  /// Resolves lead type between 'Property Listing' and 'Requirement'
+  static String resolveLeadType(String? explicitType, Map<String, dynamic> rawJson) {
+    if (explicitType != null && explicitType.trim().isNotEmpty) {
+      final t = explicitType.toLowerCase().trim();
+      if (t.contains('property') || t.contains('listing') || t.contains('owner')) {
+        return 'Property Listing';
+      }
+      if (t.contains('requirement') || t.contains('tenant') || t.contains('buyer')) {
+        return 'Requirement';
+      }
+      return explicitType;
+    }
+    return classifyLeadTypeFromRaw(rawJson);
+  }
+
+  /// Classifies lead type from raw payload keys and values
+  static String classifyLeadTypeFromRaw(Map<String, dynamic> rawJson) {
+    final rawStr = jsonEncode(rawJson).toLowerCase();
+
+    // 1. Explicit owner keywords
+    if (rawStr.contains('rent out') ||
+        rawStr.contains('rent_out') ||
+        rawStr.contains('property located') ||
+        rawStr.contains('where_is_your_property_located') ||
+        rawStr.contains('expected monthly rent') ||
+        rawStr.contains('expected_monthly_rent') ||
+        rawStr.contains('rental property') ||
+        rawStr.contains('complete_address_of_your_property') ||
+        rawStr.contains('what_type_of_property_are_you_looking_to_rent_out') ||
+        rawStr.contains('what_type_of_property_are_you_looking_to_sell')) {
+      return 'Property Listing';
+    }
+
+    // 2. Explicit tenant keywords
+    if (rawStr.contains('monthly_rental_budget') ||
+        rawStr.contains('monthly rental budget') ||
+        rawStr.contains('type_of_home') ||
+        rawStr.contains('what_type_of_home') ||
+        rawStr.contains('who_will_be_staying') ||
+        rawStr.contains('which_area_are_you_looking') ||
+        rawStr.contains('which_location_are_you_looking')) {
+      return 'Requirement';
+    }
+
+    // 3. Fallback: check campaign or form name if present
+    final campaign = (rawJson['campaign_name'] ?? rawJson['Campaign Name'] ?? '').toString().toLowerCase();
+    final form = (rawJson['form_name'] ?? rawJson['Form Name'] ?? '').toString().toLowerCase();
+    if (campaign.contains('listing') || campaign.contains('owner') || form.contains('listing') || form.contains('owner') || form.contains('rent out')) {
+      return 'Property Listing';
+    }
+
+    return 'Requirement';
+  }
+
+  /// Extract cell value by dynamic key with intelligent alias resolution
   dynamic getValue(String key) {
     if (rawJson.containsKey(key)) {
-      return rawJson[key];
+      final val = rawJson[key];
+      if (val != null && val.toString().trim().isNotEmpty) return val;
     }
     // Case-insensitive fallback
     for (final entry in rawJson.entries) {
       if (entry.key.toLowerCase().trim() == key.toLowerCase().trim()) {
+        final val = entry.value;
+        if (val != null && val.toString().trim().isNotEmpty) return val;
+      }
+    }
+
+    final normKey = key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+    // 1. Client / Owner Name
+    if (normKey == 'clientownername' ||
+        normKey == 'fullname' ||
+        normKey == 'name' ||
+        normKey == 'clientname' ||
+        normKey == 'customername' ||
+        normKey == 'buyername' ||
+        normKey == 'ownername' ||
+        normKey == 'nameofclient') {
+      const candidates = [
+        'full_name',
+        'name',
+        'Name',
+        'Client Name',
+        'Customer Name',
+        'Owner Name',
+        'buyer_name',
+        'Name of client',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 2. Phone / Mobile Number
+    if (normKey == 'phonenumber' ||
+        normKey == 'phone' ||
+        normKey == 'mobile' ||
+        normKey == 'mobilenumber' ||
+        normKey == 'contact' ||
+        normKey == 'contactnumber' ||
+        normKey == 'number' ||
+        normKey == 'ownermobile') {
+      const candidates = [
+        'phone_number',
+        'phone',
+        'Phone',
+        'Phone Number',
+        'mobile',
+        'Mobile',
+        'Number',
+        'contact',
+        'Contact',
+        'contact_number',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 3. Property Type (Owner Listing: what type of property looking to rent out / sell)
+    if (normKey == 'propertytype' || normKey == 'typeofproperty') {
+      const candidates = [
+        'what_type_of_property_are_you_looking_to_rent_out?',
+        'what_type_of_property_are_you_looking_to_sell?',
+        'property_type',
+        'Property Type',
+        'type',
+        'Type',
+        'configuration',
+        'Configuration',
+        'bhk',
+        'BHK',
+        '',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 4. Configuration (Tenant Requirement: what type of home looking for / BHK)
+    if (normKey == 'configuration' ||
+        normKey == 'bhk' ||
+        normKey == 'typeofhome' ||
+        normKey == 'hometype') {
+      const candidates = [
+        'what_type_of_home_are_you_looking_for?',
+        'configuration',
+        'Configuration',
+        'bhk',
+        'BHK',
+        'type_of_home',
+        'home_type',
+        'type',
+        'property_type',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 5. Expected Rent (Owner Listing: expected monthly rent)
+    if (normKey == 'expectedrent' ||
+        normKey == 'expectedmonthlyrent' ||
+        normKey == 'rent' ||
+        normKey == 'monthlyrent') {
+      const candidates = [
+        'what_is_your_expected_monthly_rent?',
+        'expected_monthly_rent',
+        'expected_rent',
+        'Expected Rent',
+        'monthly_rent',
+        'rent',
+        'Rent',
+        'what_is_the_complete_address_of_your_property?',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 6. Monthly Budget (Tenant Requirement: rental budget)
+    if (normKey == 'monthlybudget' ||
+        normKey == 'monthlyrentalbudget' ||
+        normKey == 'budget' ||
+        normKey == 'rentalbudget' ||
+        normKey == 'price') {
+      const candidates = [
+        'what_is_your_monthly_rental_budget?',
+        'monthly_rental_budget',
+        'Monthly Budget',
+        'budget',
+        'Budget',
+        'price',
+        'Price',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 7. Property Location (Owner Listing: where property is located / address)
+    if (normKey == 'propertylocation' ||
+        normKey == 'whereisyourpropertylocated' ||
+        normKey == 'propertyaddress' ||
+        normKey == 'completeaddress' ||
+        normKey == 'whatisthecompleteaddressofyourproperty') {
+      const candidates = [
+        'where_is_your_property_located?',
+        'what_is_the_complete_address_of_your_property?',
+        'property_location',
+        'Property Location',
+        'location',
+        'Location',
+        'area',
+        'Area',
+        'locality',
+        'address',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 8. Preferred Area (Tenant Requirement: which area / location looking for)
+    if (normKey == 'preferredarea' ||
+        normKey == 'whichareaareyoulookingfor' ||
+        normKey == 'whichlocationareyoulookingfor' ||
+        normKey == 'lookingarea' ||
+        normKey == 'lookinglocation' ||
+        normKey == 'area' ||
+        normKey == 'location') {
+      const candidates = [
+        'which_area_are_you_looking_for?',
+        'which_location_are_you_looking_for?',
+        'preferred_area',
+        'Preferred Area',
+        'location',
+        'Location',
+        'area',
+        'Area',
+        'locality',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 9. City
+    if (normKey == 'city' || normKey == 'targetcity') {
+      const candidates = ['city', 'City', 'target_city'];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 10. Email
+    if (normKey == 'email' || normKey == 'emailid' || normKey == 'emailaddress') {
+      const candidates = ['email', 'Email', 'Email ID', 'email_id', 'email_address'];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 11. Campaign Name
+    if (normKey == 'campaignname' || normKey == 'campaign') {
+      const candidates = ['Campaign Name', 'campaign_name', 'campaign', 'utm_campaign'];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 12. Form Name
+    if (normKey == 'formname' || normKey == 'form') {
+      const candidates = ['form_name', 'Form Name', 'form'];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 13. Ad Name
+    if (normKey == 'adname' || normKey == 'ad') {
+      const candidates = ['Ad Name', 'ad_name', 'ad'];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 14. Who will be staying (Tenant Requirement)
+    if (normKey == 'whowillbestaying' ||
+        normKey == 'whowillstay' ||
+        normKey == 'occupants' ||
+        normKey == 'tenanttype' ||
+        normKey == 'stayingwith') {
+      const candidates = [
+        'who_will_be_staying_in_the_property?',
+        'occupants',
+        'staying_with',
+        'tenant_type',
+        'who_will_stay',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 15. Lead Arrival Date / Timestamp
+    if (normKey == 'receivedon' ||
+        normKey == 'date' ||
+        normKey == 'receiveddate' ||
+        normKey == 'arrivaltime' ||
+        normKey == 'createdat' ||
+        normKey == 'leadtime') {
+      return formattedReceivedAt;
+    }
+
+    // Fuzzy normalized search across all rawJson keys
+    for (final entry in rawJson.entries) {
+      final k = entry.key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (k.isNotEmpty && k == normKey) {
         return entry.value;
       }
     }
+
     return null;
   }
 
-  /// Helper to get formatted string value
+  /// Formatted local arrival date and time (e.g. "11 Sep 2026, 09:09 AM" or "Today, 09:09 AM")
+  String get formattedReceivedAt {
+    final local = receivedAt.toLocal();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final hour = local.hour == 0 ? 12 : (local.hour > 12 ? local.hour - 12 : local.hour);
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    final minuteStr = local.minute.toString().padLeft(2, '0');
+    final now = DateTime.now();
+
+    if (local.year == now.year && local.month == now.month && local.day == now.day) {
+      return 'Today, $hour:$minuteStr $period';
+    }
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (local.year == yesterday.year && local.month == yesterday.month && local.day == yesterday.day) {
+      return 'Yesterday, $hour:$minuteStr $period';
+    }
+    return '${local.day} ${months[local.month - 1]} ${local.year}, $hour:$minuteStr $period';
+  }
+
+  /// Relative elapsed time (e.g. "5m ago", "2h ago", "1d ago")
+  String get relativeTimeAgo {
+    final diff = DateTime.now().difference(receivedAt.toLocal());
+    if (diff.inSeconds < 60) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays == 1) return '1d ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w ago';
+    return '${(diff.inDays / 30).floor()}mo ago';
+  }
+
+  /// Freshness level badge
+  String get freshnessBadge {
+    final diff = DateTime.now().difference(receivedAt.toLocal());
+    if (diff.inHours < 24) return '⚡ Fresh Today';
+    if (diff.inHours < 48) return '🔥 Recent';
+    return '📅 Standard';
+  }
+
+  /// Concise 1-sentence executive summary for real estate agents
+  String get leadSummary {
+    final isProp = leadType == 'Property Listing';
+    final name = getStringValue(isProp ? 'Client / Owner Name' : 'Client Name');
+    final config = getStringValue(isProp ? 'Property Type' : 'Configuration');
+    final budget = getStringValue(isProp ? 'Expected Rent' : 'Monthly Budget');
+    final loc = getStringValue(isProp ? 'Property Location' : 'Preferred Area');
+    final city = getStringValue('City');
+
+    final locationStr = [loc, city].where((s) => s.isNotEmpty).join(', ');
+
+    if (leadType == 'Property Listing') {
+      final parts = <String>[];
+      if (name.isNotEmpty) parts.add(name);
+      parts.add('wants to rent out');
+      if (config.isNotEmpty) parts.add(config);
+      if (locationStr.isNotEmpty) parts.add('in $locationStr');
+      if (budget.isNotEmpty) parts.add('• Expected Rent: $budget');
+      parts.add('• Arrived: $formattedReceivedAt');
+      return parts.join(' ');
+    } else {
+      final staying = getStringValue('Who Will Be Staying');
+      final parts = <String>[];
+      if (name.isNotEmpty) parts.add(name);
+      parts.add('seeking');
+      if (config.isNotEmpty) parts.add(config);
+      if (locationStr.isNotEmpty) parts.add('in $locationStr');
+      if (budget.isNotEmpty) parts.add('• Budget: $budget');
+      if (staying.isNotEmpty) parts.add('• For: $staying');
+      parts.add('• Arrived: $formattedReceivedAt');
+      return parts.join(' ');
+    }
+  }
+
+  /// Helper to get formatted, human-friendly string value
   String getStringValue(String key) {
     final val = getValue(key);
     if (val == null) return '';
     if (val is List) return val.join(', ');
     if (val is Map) return jsonEncode(val);
-    return val.toString();
+    String str = val.toString().trim();
+    if (str.isEmpty) return '';
+
+    // Smart formatting for common enum-like raw values
+    final lower = str.toLowerCase();
+
+    // 1. BHK formatting
+    if (lower == '1_bhk' || lower == '1bhk') return '1 BHK';
+    if (lower == '2_bhk' || lower == '2bhk') return '2 BHK';
+    if (lower == '3_bhk' || lower == '3bhk') return '3 BHK';
+    if (lower == '4_bhk' || lower == '4bhk') return '4 BHK';
+    if (lower == '4_bhk_/_premium' || lower == '4_bhk_/_penthouse') return '4 BHK / Premium';
+
+    // 2. Location formatting
+    if (lower == 'other_area') return 'Other Area';
+    if (lower == 'sg_highway_/_thaltej') return 'SG Highway / Thaltej';
+    if (lower == 'bopal_/_south-west_ahmedabad') return 'Bopal / South-West Ahmedabad';
+    if (lower == 'west_ahmedabad') return 'West Ahmedabad';
+    if (lower == 'any_suitable_location') return 'Any Suitable Location';
+
+    // 3. Occupants formatting
+    if (lower == 'family') return 'Family';
+    if (lower == 'working_professionals') return 'Working Professionals';
+    if (lower == 'students') return 'Students';
+
+    // Clean up underscores if it looks like an internal slug
+    if (str.contains('_') && !str.contains(' ') && !str.contains('@')) {
+      return str
+          .split('_')
+          .map((word) => word.isNotEmpty ? '${word[0].toUpperCase()}${word.substring(1)}' : '')
+          .join(' ');
+    }
+
+    return str;
   }
 
   /// Create a copy with modified fields
@@ -137,20 +584,19 @@ class IntegrationLeadModel {
   }
 
   factory IntegrationLeadModel.fromJson(Map<String, dynamic> json) {
-    String type = json['lead_type']?.toString() ?? '';
-    if (type.isEmpty) {
-      final raw = json['raw_json'];
-      final rawStr = raw is Map ? jsonEncode(raw).toLowerCase() : (raw?.toString().toLowerCase() ?? '');
-      if (rawStr.contains('rent out') ||
-          rawStr.contains('property located') ||
-          rawStr.contains('expected monthly rent') ||
-          rawStr.contains('expected_monthly_rent') ||
-          rawStr.contains('rental property')) {
-        type = 'Property Listing';
-      } else {
-        type = 'Requirement';
-      }
+    Map<String, dynamic> raw = {};
+    if (json['raw_json'] is Map<String, dynamic>) {
+      raw = Map<String, dynamic>.from(json['raw_json']);
+    } else if (json['raw_json'] is Map) {
+      raw = Map<String, dynamic>.from(json['raw_json'] as Map);
+    } else if (json['raw_json'] is String && (json['raw_json'] as String).isNotEmpty) {
+      try {
+        raw = Map<String, dynamic>.from(jsonDecode(json['raw_json'] as String));
+      } catch (_) {}
     }
+
+    final explicitType = json['lead_type']?.toString();
+    final type = resolveLeadType(explicitType, raw);
 
     final latestFu = json['latest_followup'] is Map<String, dynamic>
         ? json['latest_followup'] as Map<String, dynamic>
@@ -162,11 +608,7 @@ class IntegrationLeadModel {
       receivedAt: json['received_at'] != null
           ? DateTime.tryParse(json['received_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
-      rawJson: json['raw_json'] is Map<String, dynamic>
-          ? Map<String, dynamic>.from(json['raw_json'])
-          : (json['raw_json'] is String
-              ? Map<String, dynamic>.from(jsonDecode(json['raw_json']))
-              : {}),
+      rawJson: raw,
       externalLeadId: json['external_lead_id']?.toString(),
       isDuplicate: json['is_duplicate'] == true,
       duplicateReason: json['duplicate_reason']?.toString(),
