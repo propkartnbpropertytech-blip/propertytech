@@ -136,6 +136,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String _activeMainTab = "Leads"; // "Leads", "Requirements", or "Follow-ups"
   DateTime? _reqFollowupDateFilter = DateTime.now();
   String _selectedFollowupSubTab = "Today"; // "Today", "Due", "Future"
+  String _selectedMainFollowupSection = "Follow ups"; // "Follow ups" or "Site Visit Scheduled"
   int _currentPage = 1;
   int _requirementsPerPage = 10;
   int _currentFollowupPage = 1;
@@ -4438,7 +4439,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  void _showFollowupMessageDialog(BuildContext context, String clientName, String message) {
+  void _showFollowupMessageDialog(BuildContext context, String clientName, String message, {DashboardFollowup? followup}) {
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -4481,6 +4482,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ),
           ),
           actions: [
+            if (followup != null)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+                label: const Text("Edit Follow-up"),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: CRMColors.primary,
+                  side: BorderSide(color: CRMColors.primary.withValues(alpha: 0.5)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _showEditFollowupDialog(context, followup);
+                },
+              ),
             CRMButton(
               label: "Close",
               variant: CRMButtonVariant.primary,
@@ -4492,7 +4507,299 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  void _openFollowupStepper(RequirementModel req, String status, {int initialStep = 1}) {
+  void _showEditFollowupDialog(BuildContext context, DashboardFollowup followup) {
+    final DateTime initialDateTime = DateTime.tryParse(followup.followupDate)?.toLocal() ?? DateTime.now();
+    DateTime selectedDate = DateTime(initialDateTime.year, initialDateTime.month, initialDateTime.day);
+    TimeOfDay selectedTime = TimeOfDay.fromDateTime(initialDateTime);
+    final notesController = TextEditingController(text: followup.notes ?? '');
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final dateDisplay = DateFormat('dd/MM/yyyy').format(selectedDate);
+            final timeDisplay = selectedTime.format(context);
+
+            return AlertDialog(
+              backgroundColor: CRMColors.cardBgOf(context),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+              title: Row(
+                children: [
+                  Icon(Icons.edit_calendar_rounded, color: CRMColors.primary, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "Edit Follow-up (${followup.clientName})",
+                      style: CRMTypography.sectionTitle.copyWith(
+                        color: CRMColors.textOf(context),
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 450,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Date & Time",
+                        style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: isSaving
+                                  ? null
+                                  : () async {
+                                      final pickedDate = await showDatePicker(
+                                        context: context,
+                                        initialDate: selectedDate,
+                                        firstDate: DateTime(2020),
+                                        lastDate: DateTime(2035),
+                                      );
+                                      if (pickedDate != null) {
+                                        setDialogState(() {
+                                          selectedDate = pickedDate;
+                                        });
+                                      }
+                                    },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.backgroundOf(context),
+                                  borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                                  border: Border.all(color: CRMColors.borderOf(context)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.calendar_today_rounded, size: 16, color: CRMColors.primary),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      dateDisplay,
+                                      style: TextStyle(
+                                        color: CRMColors.textOf(context),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: InkWell(
+                              onTap: isSaving
+                                  ? null
+                                  : () async {
+                                      final pickedTime = await showTimePicker(
+                                        context: context,
+                                        initialTime: selectedTime,
+                                      );
+                                      if (pickedTime != null) {
+                                        setDialogState(() {
+                                          selectedTime = pickedTime;
+                                        });
+                                      }
+                                    },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.backgroundOf(context),
+                                  borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                                  border: Border.all(color: CRMColors.borderOf(context)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.access_time_rounded, size: 16, color: CRMColors.primary),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      timeDisplay,
+                                      style: TextStyle(
+                                        color: CRMColors.textOf(context),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        "Remarks / Agenda",
+                        style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: notesController,
+                        enabled: !isSaving,
+                        maxLines: 4,
+                        style: TextStyle(color: CRMColors.textOf(context), fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: "Enter follow-up agenda or notes...",
+                          hintStyle: TextStyle(color: CRMColors.textMutedOf(context)),
+                          filled: true,
+                          fillColor: CRMColors.backgroundOf(context),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                            borderSide: BorderSide(color: CRMColors.primary),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+                  child: Text("Cancel", style: TextStyle(color: CRMColors.textMutedOf(context))),
+                ),
+                CRMButton(
+                  label: isSaving ? "Saving..." : "Save Changes",
+                  prefixIcon: isSaving ? null : Icons.check_rounded,
+                  variant: CRMButtonVariant.primary,
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            isSaving = true;
+                          });
+
+                          try {
+                            final combined = DateTime(
+                              selectedDate.year,
+                              selectedDate.month,
+                              selectedDate.day,
+                              selectedTime.hour,
+                              selectedTime.minute,
+                            );
+                            final isoUtcString = combined.toUtc().toIso8601String();
+
+                            final newNotes = notesController.text.trim();
+
+                            // Try remote patch if valid server ID (non-local)
+                            if (!followup.id.startsWith('local_') && !followup.id.startsWith('sv_') && followup.id.isNotEmpty) {
+                              try {
+                                await DioClient.dio.patch(
+                                  '/followups/${followup.id}',
+                                  data: {
+                                    'followup_date': isoUtcString,
+                                    'notes': newNotes,
+                                  },
+                                );
+                              } catch (e) {
+                                debugPrint('⚠️ Remote update patch error (falling back to local): $e');
+                              }
+                            }
+
+                            // Update local memory cache & persistent database
+                            try {
+                              for (final fl in FollowupLocalRepository.inMemory.values) {
+                                if ((followup.requirementId != null && followup.requirementId!.isNotEmpty && fl.requirementId == followup.requirementId) ||
+                                    (fl.clientName.isNotEmpty && fl.clientName.trim().toLowerCase() == followup.clientName.trim().toLowerCase()) ||
+                                    fl.id == followup.id) {
+                                  fl.followupDate = combined;
+                                  fl.notes = newNotes;
+                                }
+                              }
+
+                              final localItem = FollowupLocalRepository.inMemory[followup.id];
+                              if (localItem != null) {
+                                localItem.followupDate = combined;
+                                localItem.notes = newNotes;
+                                await RepositoryCoordinator().followupLocal.saveFollowups([localItem]);
+                              } else {
+                                final authState = context.read<AuthBloc>().state;
+                                final currentUser = authState is Authenticated ? authState.user : null;
+
+                                final newLocal = FollowupLocal()
+                                  ..id = followup.id.isNotEmpty ? followup.id : 'local_${DateTime.now().millisecondsSinceEpoch}'
+                                  ..requirementId = followup.requirementId ?? ''
+                                  ..clientName = followup.clientName
+                                  ..mobile = followup.mobile
+                                  ..followupDate = combined
+                                  ..notes = newNotes
+                                  ..status = followup.status.isNotEmpty ? followup.status : (_selectedMainFollowupSection == 'Site Visit Scheduled' ? 'Site Visit Scheduled' : 'Pending')
+                                  ..createdBy = followup.creatorName ?? currentUser?.fullName ?? 'Propkart Admin'
+                                  ..createdAt = DateTime.now();
+
+                                await RepositoryCoordinator().followupLocal.saveFollowups([newLocal]);
+                              }
+
+                              // Update requirement local nextFollowupDate
+                              final reqId = (followup.requirementId != null && followup.requirementId!.isNotEmpty) ? followup.requirementId! : followup.id;
+                              if (reqId.isNotEmpty) {
+                                try {
+                                  final reqLocal = await RepositoryCoordinator().requirementLocal.getRequirementById(reqId);
+                                  if (reqLocal != null) {
+                                    reqLocal.nextFollowupDate = isoUtcString;
+                                    await RepositoryCoordinator().requirementLocal.saveRequirements([reqLocal]);
+                                  }
+                                } catch (_) {}
+                              }
+                            } catch (e) {
+                              debugPrint('⚠️ Local storage save error: $e');
+                            }
+
+                            if (mounted) {
+                              Navigator.pop(dialogContext);
+                              setState(() {
+                                _refreshFollowupsFuture();
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(_selectedMainFollowupSection == 'Site Visit Scheduled' ? 'Site Visit updated successfully' : 'Follow-up updated successfully'),
+                                  backgroundColor: CRMColors.success,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              setDialogState(() {
+                                isSaving = false;
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error updating follow-up: $e'),
+                                  backgroundColor: CRMColors.danger,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _openFollowupStepper(RequirementModel req, String status, {int initialStep = 1, bool? isSiteVisit}) {
+    final bool isSiteVisitMode = isSiteVisit ?? (status == 'Site Visit Scheduled' || _selectedMainFollowupSection == 'Site Visit Scheduled');
     final bool isReFollowup = status == 'Re-Followup' ||
         req.status == 'Follow-up' ||
         req.status == 'Re-Followup' ||
@@ -4501,13 +4808,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
-      barrierLabel: 'Re-Followup',
+      barrierLabel: isSiteVisitMode ? 'Site Visit Scheduled' : 'Re-Followup',
       barrierColor: Colors.black.withValues(alpha: 0.12),
       transitionDuration: const Duration(milliseconds: 250),
       pageBuilder: (dialogContext, anim1, anim2) {
         return RequirementStepperDialog(
           requirement: req,
           initialStep: initialStep,
+          isSiteVisit: isSiteVisitMode,
           onSavedWithDate: (scheduledDate) {
             final now = DateTime.now();
             final todayDate = DateTime(now.year, now.month, now.day);
@@ -4519,15 +4827,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             } else {
               _selectedFollowupSubTab = 'Today';
             }
-            _reqFollowupDateFilter = scheduledDate;
             _currentFollowupPage = 1;
           },
           onSaved: () {
             if (isReFollowup) {
               NotificationCenter.addNotification(
-                title: 'Re-Followup Scheduled',
-                message: 'Re-Followup scheduled for ${req.clientName}. Notification reminder active.',
-                type: 'refollowup',
+                title: isSiteVisitMode ? 'Site Visit Scheduled' : 'Re-Followup Scheduled',
+                message: isSiteVisitMode
+                    ? 'Site Visit scheduled for ${req.clientName}. Notification reminder active.'
+                    : 'Re-Followup scheduled for ${req.clientName}. Notification reminder active.',
+                type: isSiteVisitMode ? 'sitevisit' : 'refollowup',
               );
             }
             _triggerFetch();
@@ -4563,7 +4872,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       areaIds: const [],
       areaNames: const [],
       status: f.status.isNotEmpty ? f.status : 'Re-Followup',
-      remarks: f.notes,
+      remarks: null,
       createdAt: DateTime.now(),
     );
 
@@ -4586,8 +4895,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return _FollowupActionButton(
       followup: f,
       reqModel: targetReq,
+      isSiteVisit: _selectedMainFollowupSection == 'Site Visit Scheduled',
       onSelect: (req, status) {
-        _openFollowupStepper(req, status);
+        if (status == 'Edit Followup' || status == 'Edit Site Visit') {
+          _showEditFollowupDialog(context, f);
+        } else if (status == 'Re-scheduled') {
+          _openFollowupStepper(req, 'Site Visit Scheduled');
+        } else {
+          _openFollowupStepper(req, status);
+        }
       },
     );
   }
@@ -4649,10 +4965,24 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: CRMColors.textSecondaryOf(context),
-                    size: 20,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+                        color: CRMColors.primary,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        tooltip: 'Edit Follow-up',
+                        onPressed: () => _showEditFollowupDialog(context, f),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: CRMColors.textSecondaryOf(context),
+                        size: 20,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -4689,27 +5019,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ),
                     ],
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.access_time_rounded, size: 14, color: CRMColors.primary),
-                      const SizedBox(width: 4),
-                      Text(
-                        displayDate,
-                        style: CRMTypography.bodyMedium.copyWith(
-                          color: CRMColors.primary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
+                  InkWell(
+                    onTap: () => _showEditFollowupDialog(context, f),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.access_time_rounded, size: 14, color: CRMColors.primary),
+                          const SizedBox(width: 4),
+                          Text(
+                            displayDate,
+                            style: CRMTypography.bodyMedium.copyWith(
+                              color: CRMColors.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.edit_outlined, size: 12, color: CRMColors.primary),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
               if (f.notes != null && f.notes!.trim().isNotEmpty) ...[
                 const SizedBox(height: CRMSpacing.s),
                 GestureDetector(
-                  onTap: () => _showFollowupMessageDialog(context, f.clientName, f.notes!),
+                  onTap: () => _showFollowupMessageDialog(context, f.clientName, f.notes!, followup: f),
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(CRMSpacing.s),
@@ -4788,7 +5127,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
 
     return CRMCard(
-      title: 'Follow-ups Management',
+      title: _selectedMainFollowupSection == 'Site Visit Scheduled'
+          ? 'Site Visit Management'
+          : 'Follow-ups Management',
       subtitle: 'Scheduled client communications and appointments',
       headerAction: isMobile ? null : dateFilterWidget,
       child: Column(
@@ -4801,6 +5142,109 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ),
             const SizedBox(height: CRMSpacing.m),
           ],
+          // Mode Toggle Buttons: "Follow ups" & "Site Visit Scheduled"
+          Container(
+            margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: CRMColors.backgroundOf(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedMainFollowupSection = 'Follow ups';
+                        _currentFollowupPage = 1;
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _selectedMainFollowupSection == 'Follow ups'
+                            ? CRMColors.primary
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.phone_in_talk_rounded,
+                              size: 16,
+                              color: _selectedMainFollowupSection == 'Follow ups'
+                                  ? Colors.white
+                                  : CRMColors.textSecondaryOf(context),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Follow ups',
+                              style: CRMTypography.bodyMedium.copyWith(
+                                color: _selectedMainFollowupSection == 'Follow ups'
+                                    ? Colors.white
+                                    : CRMColors.textSecondaryOf(context),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedMainFollowupSection = 'Site Visit Scheduled';
+                        _currentFollowupPage = 1;
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _selectedMainFollowupSection == 'Site Visit Scheduled'
+                            ? const Color(0xFF6C5CE7)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.location_on_rounded,
+                              size: 16,
+                              color: _selectedMainFollowupSection == 'Site Visit Scheduled'
+                                  ? Colors.white
+                                  : CRMColors.textSecondaryOf(context),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Site Visit Scheduled',
+                              style: CRMTypography.bodyMedium.copyWith(
+                                color: _selectedMainFollowupSection == 'Site Visit Scheduled'
+                                    ? Colors.white
+                                    : CRMColors.textSecondaryOf(context),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           FutureBuilder<List<dynamic>>(
             future: _followupsFuture,
             builder: (context, snapshot) {
@@ -4837,37 +5281,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 return s1 == s2;
               }
 
-              // Deduplicate followups by requirementId keeping only the active pending entry per lead
-              final Map<String, DashboardFollowup> latestReqFollowupsMap = {};
-              for (final f in followups) {
-                final req = reqsList.firstWhereOrNull((r) =>
-                    (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
-                    (f.mobile.isNotEmpty && r.clientMobile.isNotEmpty && isSameMobile(r.clientMobile, f.mobile)) ||
-                    (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+              bool isSiteVisitStatus(String statusStr) {
+                final s = statusStr.trim().toLowerCase();
+                if (s.contains('done')) return false;
+                return s.contains('site visit') || s.contains('sitevisit') || s == 'sv' || s.startsWith('site visit');
+              }
 
-                if (req == null) continue;
-
-                final reqStatus = req.status;
-                if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') continue;
-
-                final key = req.id;
-                final existing = latestReqFollowupsMap[key];
-                if (existing == null) {
-                  latestReqFollowupsMap[key] = f;
-                } else {
-                  final bool fIsPending = f.status == 'Pending' || f.status == 'Follow-up' || f.status == 'Re-Followup';
-                  final bool existingIsPending = existing.status == 'Pending' || existing.status == 'Follow-up' || existing.status == 'Re-Followup';
-
-                  if (f.id.startsWith('local_') && !existing.id.startsWith('local_')) {
-                    latestReqFollowupsMap[key] = f;
-                  } else if (!f.id.startsWith('local_') && existing.id.startsWith('local_')) {
-                    // Keep existing local entry
-                  } else if (fIsPending && !existingIsPending) {
-                    latestReqFollowupsMap[key] = f;
-                  } else {
-                    latestReqFollowupsMap[key] = f;
-                  }
-                }
+              bool isFollowupStatus(String statusStr) {
+                final s = statusStr.trim().toLowerCase();
+                return s == 'follow-up' || s == 'followup' || s == 're-followup' || s == 'refollowup' || s == 'pending';
               }
 
               final List<DashboardFollowup> todayFollowups = [];
@@ -4875,47 +5297,185 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final List<DashboardFollowup> futureFollowups = [];
               final List<DashboardFollowup> allClientsFollowups = [];
 
-              for (final f in latestReqFollowupsMap.values) {
-                final req = reqsList.firstWhereOrNull((r) =>
-                    (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
-                    (f.mobile.isNotEmpty && r.clientMobile.isNotEmpty && isSameMobile(r.clientMobile, f.mobile)) ||
-                    (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+              if (_selectedMainFollowupSection == 'Site Visit Scheduled') {
+                final Map<String, DashboardFollowup> siteVisitsMap = {};
 
-                if (req == null) {
-                  // Followup does NOT belong to any active lead in current leads page -> skip completely
-                  continue;
+                // 1. Check reqsList for Site Visit status
+                for (final req in reqsList) {
+                  final reqStatus = req.status;
+                  if (!isSiteVisitStatus(reqStatus)) continue;
+                  if (getListingTypeLabel(req) != _activeListingTab) continue;
+
+                  if (isSiteVisitStatus(reqStatus)) {
+                    final matchingFollowups = followups.where((f) =>
+                        (f.requirementId != null && f.requirementId!.isNotEmpty && req.id == f.requirementId) ||
+                        (f.mobile.isNotEmpty && req.clientMobile.isNotEmpty && isSameMobile(req.clientMobile, f.mobile)) ||
+                        (f.clientName.isNotEmpty && req.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase())
+                    ).toList();
+
+                    matchingFollowups.sort((a, b) {
+                      final isASV = isSiteVisitStatus(a.status) ? 1 : 0;
+                      final isBSV = isSiteVisitStatus(b.status) ? 1 : 0;
+                      final svComp = isBSV.compareTo(isASV);
+                      if (svComp != 0) return svComp;
+
+                      final dtA = _parseFollowupDateTime(a.followupDate) ?? DateTime(1970);
+                      final dtB = _parseFollowupDateTime(b.followupDate) ?? DateTime(1970);
+                      final comp = dtB.compareTo(dtA);
+                      if (comp != 0) return comp;
+
+                      final isALocal = a.id.startsWith('local_') ? 1 : 0;
+                      final isBLocal = b.id.startsWith('local_') ? 1 : 0;
+                      return isBLocal.compareTo(isALocal);
+                    });
+
+                    final matchingF = matchingFollowups.firstOrNull;
+
+                    final matchingSv = (dashboardData?.siteVisits ?? []).firstWhereOrNull((sv) =>
+                        (sv.requirementId != null && sv.requirementId!.isNotEmpty && req.id == sv.requirementId) ||
+                        (sv.requirementCustomerName != null && req.clientName.trim().toLowerCase() == sv.requirementCustomerName!.trim().toLowerCase())
+                    );
+
+                    final dateStr = (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty)
+                        ? req.nextFollowupDate!
+                        : (matchingF?.followupDate ?? matchingSv?.visitDate ?? req.createdAt.toIso8601String());
+                    final notesStr = (matchingF?.notes != null && matchingF!.notes!.trim().isNotEmpty)
+                        ? matchingF.notes!
+                        : ((matchingSv?.remarks != null && matchingSv!.remarks!.trim().isNotEmpty)
+                            ? matchingSv.remarks!
+                            : 'Site visit scheduled');
+
+                    siteVisitsMap[req.id] = DashboardFollowup(
+                      id: matchingF?.id ?? matchingSv?.id ?? 'sv_${req.id}',
+                      clientName: req.clientName,
+                      mobile: req.clientMobile,
+                      followupDate: dateStr,
+                      notes: notesStr,
+                      status: reqStatus,
+                      propertyTitle: matchingF?.propertyTitle ?? matchingSv?.propertyTitle,
+                      requirementCustomerName: req.clientName,
+                      requirementId: req.id,
+                    );
+                  }
                 }
 
-                final reqStatus = req.status;
-                if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') continue;
+                // 2. Check dashboard siteVisits
+                final siteVisitsList = dashboardData?.siteVisits ?? [];
+                for (final sv in siteVisitsList) {
+                  final req = reqsList.firstWhereOrNull((r) =>
+                      (sv.requirementId != null && sv.requirementId!.isNotEmpty && r.id == sv.requirementId) ||
+                      (sv.requirementCustomerName != null && r.clientName.trim().toLowerCase() == sv.requirementCustomerName!.trim().toLowerCase()));
+                  if (req != null) {
+                    final reqStatus = req.status;
+                    if (!isSiteVisitStatus(reqStatus)) continue;
+                    if (getListingTypeLabel(req) != _activeListingTab) continue;
+                  } else {
+                    if (!isSiteVisitStatus(sv.status)) continue;
+                  }
+                  final key = sv.requirementId ?? sv.id;
+                  if (!siteVisitsMap.containsKey(key)) {
+                    siteVisitsMap[key] = DashboardFollowup(
+                      id: sv.id,
+                      clientName: sv.requirementCustomerName ?? 'Client Site Visit',
+                      mobile: '',
+                      followupDate: sv.visitDate,
+                      notes: sv.remarks,
+                      status: sv.status,
+                      propertyTitle: sv.propertyTitle,
+                      requirementCustomerName: sv.requirementCustomerName,
+                      requirementId: sv.requirementId,
+                    );
+                  }
+                }
 
-                if (getListingTypeLabel(req) != _activeListingTab) continue;
+                for (final f in siteVisitsMap.values) {
+                  allClientsFollowups.add(f);
+                  DateTime? parsed = _parseFollowupDateTime(f.followupDate);
+                  if (parsed == null) continue;
+                  final fDate = DateTime(parsed.year, parsed.month, parsed.day);
+                  if (fDate.isBefore(todayDate)) {
+                    dueFollowups.add(f);
+                  } else if (fDate.isAfter(todayDate)) {
+                    futureFollowups.add(f);
+                  } else {
+                    todayFollowups.add(f);
+                  }
+                }
+              } else {
+                // Deduplicate followups by requirementId keeping only active pending entry per lead
+                final Map<String, DashboardFollowup> latestReqFollowupsMap = {};
+                for (final f in followups) {
+                  final req = reqsList.firstWhereOrNull((r) =>
+                      (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+                      (f.mobile.isNotEmpty && r.clientMobile.isNotEmpty && isSameMobile(r.clientMobile, f.mobile)) ||
+                      (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
 
-                allClientsFollowups.add(f);
+                  if (req == null) continue;
 
-                DateTime? parsed = _parseFollowupDateTime(f.followupDate);
-                if (parsed == null && f.followupDate.isNotEmpty) {
-                  try {
-                    final parts = f.followupDate.split(RegExp(r'[/\\-]'));
-                    if (parts.length >= 3) {
-                      final d = int.tryParse(parts[0]);
-                      final m = int.tryParse(parts[1]);
-                      final y = int.tryParse(parts[2]);
-                      if (d != null && m != null && y != null) {
-                        parsed = DateTime(y, m, d);
-                      }
+                  final reqStatus = req.status;
+                  // ONLY ALLOW FOLLOW-UP OR RE-FOLLOWUP STATUS
+                  if (!isFollowupStatus(reqStatus)) continue;
+
+                  final key = req.id;
+                  final existing = latestReqFollowupsMap[key];
+                  if (existing == null) {
+                    latestReqFollowupsMap[key] = f;
+                  } else {
+                    final bool fIsPending = f.status == 'Pending' || f.status == 'Follow-up' || f.status == 'Re-Followup';
+                    final bool existingIsPending = existing.status == 'Pending' || existing.status == 'Follow-up' || existing.status == 'Re-Followup';
+
+                    if (f.id.startsWith('local_') && !existing.id.startsWith('local_')) {
+                      latestReqFollowupsMap[key] = f;
+                    } else if (!f.id.startsWith('local_') && existing.id.startsWith('local_')) {
+                      // Keep existing local entry
+                    } else if (fIsPending && !existingIsPending) {
+                      latestReqFollowupsMap[key] = f;
+                    } else {
+                      latestReqFollowupsMap[key] = f;
                     }
-                  } catch (_) {}
+                  }
                 }
-                if (parsed == null) continue;
-                final fDate = DateTime(parsed.year, parsed.month, parsed.day);
 
-                if (fDate.isBefore(todayDate)) {
-                  dueFollowups.add(f);
-                } else if (fDate.isAfter(todayDate)) {
-                  futureFollowups.add(f);
-                } else {
-                  todayFollowups.add(f);
+                for (final f in latestReqFollowupsMap.values) {
+                  final req = reqsList.firstWhereOrNull((r) =>
+                      (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+                      (f.mobile.isNotEmpty && r.clientMobile.isNotEmpty && isSameMobile(r.clientMobile, f.mobile)) ||
+                      (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+
+                  if (req == null) continue;
+
+                  final reqStatus = req.status;
+                  // ONLY ALLOW FOLLOW-UP OR RE-FOLLOWUP STATUS
+                  if (!isFollowupStatus(reqStatus)) continue;
+
+                  if (getListingTypeLabel(req) != _activeListingTab) continue;
+
+                  allClientsFollowups.add(f);
+
+                  DateTime? parsed = _parseFollowupDateTime(f.followupDate);
+                  if (parsed == null && f.followupDate.isNotEmpty) {
+                    try {
+                      final parts = f.followupDate.split(RegExp(r'[/\\-]'));
+                      if (parts.length >= 3) {
+                        final d = int.tryParse(parts[0]);
+                        final m = int.tryParse(parts[1]);
+                        final y = int.tryParse(parts[2]);
+                        if (d != null && m != null && y != null) {
+                          parsed = DateTime(y, m, d);
+                        }
+                      }
+                    } catch (_) {}
+                  }
+                  if (parsed == null) continue;
+                  final fDate = DateTime(parsed.year, parsed.month, parsed.day);
+
+                  if (fDate.isBefore(todayDate)) {
+                    dueFollowups.add(f);
+                  } else if (fDate.isAfter(todayDate)) {
+                    futureFollowups.add(f);
+                  } else {
+                    todayFollowups.add(f);
+                  }
                 }
               }
 
@@ -5056,6 +5616,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 );
               }
 
+              final bool isSiteVisitTab = _selectedMainFollowupSection == 'Site Visit Scheduled';
+              final todayLabel = isSiteVisitTab ? "Today's Site Visit Scheduled" : "Today's Follow-ups";
+              final dueLabel = isSiteVisitTab ? "Due Site Visit Scheduled" : "Due Follow-ups";
+              final futureLabel = isSiteVisitTab ? "Future Site Visit Scheduled" : "Future Follow-ups";
+              final allLabel = isSiteVisitTab ? "All Site Visit Scheduled" : "All clients follow ups";
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -5063,13 +5629,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        buildSubTabPill("Today's Follow-ups", "Today", todayFollowups.length, Icons.today_rounded),
+                        buildSubTabPill(todayLabel, "Today", todayFollowups.length, Icons.today_rounded),
                         const SizedBox(width: CRMSpacing.s),
-                        buildSubTabPill("Due Follow-ups", "Due", dueFollowups.length, Icons.warning_amber_rounded),
+                        buildSubTabPill(dueLabel, "Due", dueFollowups.length, Icons.warning_amber_rounded),
                         const SizedBox(width: CRMSpacing.s),
-                        buildSubTabPill("Future Follow-ups", "Future", futureFollowups.length, Icons.next_plan_rounded),
+                        buildSubTabPill(futureLabel, "Future", futureFollowups.length, Icons.next_plan_rounded),
                         const SizedBox(width: CRMSpacing.s),
-                        buildSubTabPill("All clients follow ups", "AllClients", allClientsFollowups.length, Icons.people_alt_rounded),
+                        buildSubTabPill(allLabel, "AllClients", allClientsFollowups.length, Icons.people_alt_rounded),
                       ],
                     ),
                   ),
@@ -5089,7 +5655,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           const SizedBox(width: CRMSpacing.s),
                           Expanded(
                             child: Text(
-                              '⚠️ Overdue Follow-up Reminder: You have ${dueFollowups.length} overdue follow-up(s)! Please contact these clients immediately to take action.',
+                              isSiteVisitTab
+                                  ? '⚠️ Overdue Site Visit Reminder: You have ${dueFollowups.length} overdue site visit(s)! Please follow up immediately.'
+                                  : '⚠️ Overdue Follow-up Reminder: You have ${dueFollowups.length} overdue follow-up(s)! Please contact these clients immediately to take action.',
                               style: CRMTypography.captionBold.copyWith(color: CRMColors.danger, fontSize: 12),
                             ),
                           ),
@@ -5105,10 +5673,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       child: Center(
                         child: Text(
                           _selectedFollowupSubTab == 'Due'
-                              ? 'No overdue follow-ups found.'
+                              ? (isSiteVisitTab ? 'No overdue site visits found.' : 'No overdue follow-ups found.')
                               : (_selectedFollowupSubTab == 'Future'
-                                  ? 'No future follow-ups scheduled.'
-                                  : (_reqFollowupDateFilter != null ? 'No follow-ups for $dateStr.' : 'No follow-ups for today.')),
+                                  ? (isSiteVisitTab ? 'No future site visits scheduled.' : 'No future follow-ups scheduled.')
+                                  : (_reqFollowupDateFilter != null
+                                      ? (isSiteVisitTab ? 'No site visits for $dateStr.' : 'No follow-ups for $dateStr.')
+                                      : (isSiteVisitTab ? 'No site visits for today.' : 'No follow-ups for today.'))),
                           style: TextStyle(color: CRMColors.textSecondaryOf(context)),
                         ),
                       ),
@@ -5317,27 +5887,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             // 3. Scheduled Date
                             if (_selectedFollowupSubTab != 'AllClients')
                               DataCell(
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: CRMColors.primary.withValues(alpha: 0.08),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: CRMColors.primary.withValues(alpha: 0.2)),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.access_time_rounded, size: 13, color: CRMColors.primary),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        displayDate,
-                                        style: TextStyle(
-                                          color: CRMColors.primary,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
-                                        ),
+                                InkWell(
+                                  onTap: () => _showEditFollowupDialog(context, f),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Tooltip(
+                                    message: 'Click to edit date & time',
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: CRMColors.primary.withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: CRMColors.primary.withValues(alpha: 0.2)),
                                       ),
-                                    ],
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.access_time_rounded, size: 13, color: CRMColors.primary),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            displayDate,
+                                            style: TextStyle(
+                                              color: CRMColors.primary,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Icon(Icons.edit_outlined, size: 12, color: CRMColors.primary.withValues(alpha: 0.7)),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -5347,9 +5926,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 SizedBox(
                                   width: 300,
                                   child: GestureDetector(
-                                    onTap: f.notes != null && f.notes!.trim().isNotEmpty
-                                        ? () => _showFollowupMessageDialog(context, f.clientName, f.notes!)
-                                        : null,
+                                    onTap: () => _showFollowupMessageDialog(context, f.clientName, f.notes ?? 'No notes noted', followup: f),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                       decoration: BoxDecoration(
@@ -5365,7 +5942,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                           const SizedBox(width: 6),
                                           Expanded(
                                             child: Text(
-                                              f.notes != null && f.notes!.trim().isNotEmpty ? f.notes! : 'No remarks noted',
+                                              f.notes != null && f.notes!.trim().isNotEmpty ? f.notes! : 'No notes noted',
                                               style: TextStyle(
                                                 color: f.notes != null && f.notes!.trim().isNotEmpty
                                                     ? CRMColors.textOf(context)
@@ -5376,8 +5953,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                          if (f.notes != null && f.notes!.trim().isNotEmpty)
-                                            Icon(Icons.open_in_full_rounded, size: 12, color: CRMColors.textMutedOf(context)),
+                                          const SizedBox(width: 4),
+                                          Icon(Icons.edit_calendar_rounded, size: 13, color: CRMColors.primary.withValues(alpha: 0.7)),
                                         ],
                                       ),
                                     ),
@@ -6244,18 +6821,70 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
       final isoDateStr = scheduledDateTime.toUtc().toIso8601String();
 
       if (widget.isSiteVisit) {
-        await DioClient.dio.post('/site-visits', data: {
-          'requirement_id': widget.requirement.id,
-          'visit_date': isoDateStr,
-          'remarks': remarks,
-        });
-
-        if (widget.updateStatusOnSave) {
-          final RequirementsRepository requirementsRepository = RequirementsRepository();
-          await requirementsRepository.updateRequirement(
-            widget.requirement.copyWith(status: 'Site Visit'),
-          );
+        try {
+          await DioClient.dio.post('/site-visits', data: {
+            'requirement_id': widget.requirement.id,
+            'visit_date': isoDateStr,
+            'remarks': remarks,
+          });
+        } catch (e) {
+          debugPrint('⚠️ Site visit API error: $e');
         }
+
+        try {
+          await DioClient.dio.post('/followups', data: {
+            'client_name': widget.requirement.clientName,
+            'mobile': widget.requirement.clientMobile,
+            'notes': remarks,
+            'followup_date': isoDateStr,
+            'requirement_id': widget.requirement.id,
+            'status': 'Site Visit Scheduled',
+          });
+        } catch (e) {
+          debugPrint('⚠️ Site visit followup API error: $e');
+        }
+
+        try {
+          final authState = context.read<AuthBloc>().state;
+          final currentUser = authState is Authenticated ? authState.user : null;
+
+          final newFollowupLocal = FollowupLocal()
+            ..id = 'local_sv_${DateTime.now().millisecondsSinceEpoch}'
+            ..requirementId = widget.requirement.id
+            ..clientName = widget.requirement.clientName
+            ..mobile = widget.requirement.clientMobile
+            ..followupDate = scheduledDateTime
+            ..notes = remarks
+            ..status = 'Site Visit Scheduled'
+            ..createdBy = currentUser?.fullName ?? 'Propkart Admin'
+            ..createdAt = DateTime.now();
+
+          await RepositoryCoordinator().followupLocal.saveFollowups([newFollowupLocal]);
+        } catch (e) {
+          debugPrint('⚠️ Local site visit followup save error: $e');
+        }
+
+        final RequirementsRepository requirementsRepository = RequirementsRepository();
+        final updatedReq = widget.requirement.copyWith(
+          status: 'Site Visit',
+          nextFollowupDate: isoDateStr,
+          remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) ? widget.requirement.remarks : remarks,
+        );
+        final saved = await requirementsRepository.updateRequirement(updatedReq);
+        final finalReq = saved.copyWith(
+          nextFollowupDate: (saved.nextFollowupDate != null && saved.nextFollowupDate!.isNotEmpty) ? saved.nextFollowupDate : isoDateStr,
+          remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty)
+              ? widget.requirement.remarks
+              : ((saved.remarks != null && saved.remarks!.isNotEmpty) ? saved.remarks : null),
+          createdBy: (saved.createdBy != null && saved.createdBy!.isNotEmpty) ? saved.createdBy : widget.requirement.createdBy,
+          creatorName: (saved.creatorName != null && saved.creatorName!.isNotEmpty) ? saved.creatorName : widget.requirement.creatorName,
+          assignedTo: (saved.assignedTo != null && saved.assignedTo!.isNotEmpty) ? saved.assignedTo : widget.requirement.assignedTo,
+          assigneeName: (saved.assigneeName != null && saved.assigneeName!.isNotEmpty) ? saved.assigneeName : widget.requirement.assigneeName,
+        );
+        await RepositoryCoordinator().requirementLocal.saveRequirements([finalReq.toLocal()]);
+
+        RepositoryCoordinator().refreshDashboard();
+        RepositoryCoordinator().refreshRequirements();
       } else {
         await DioClient.dio.post('/followups', data: {
           'client_name': widget.requirement.clientName,
@@ -6305,12 +6934,14 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         final updatedReq = widget.requirement.copyWith(
           status: targetStatus,
           nextFollowupDate: isoDateStr,
-          remarks: remarks,
+          remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) ? widget.requirement.remarks : remarks,
         );
         final saved = await requirementsRepository.updateRequirement(updatedReq);
         final finalReq = saved.copyWith(
           nextFollowupDate: (saved.nextFollowupDate != null && saved.nextFollowupDate!.isNotEmpty) ? saved.nextFollowupDate : isoDateStr,
-          remarks: (saved.remarks != null && saved.remarks!.isNotEmpty) ? saved.remarks : widget.requirement.remarks,
+          remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty)
+              ? widget.requirement.remarks
+              : ((saved.remarks != null && saved.remarks!.isNotEmpty) ? saved.remarks : null),
           createdBy: (saved.createdBy != null && saved.createdBy!.isNotEmpty) ? saved.createdBy : widget.requirement.createdBy,
           creatorName: (saved.creatorName != null && saved.creatorName!.isNotEmpty) ? saved.creatorName : widget.requirement.creatorName,
           assignedTo: (saved.assignedTo != null && saved.assignedTo!.isNotEmpty) ? saved.assignedTo : widget.requirement.assignedTo,
@@ -6350,41 +6981,137 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
 
   Future<List<Map<String, dynamic>>> _fetchClientPastFollowups() async {
     final List<Map<String, dynamic>> result = [];
-    try {
-      final response = await DioClient.dio.get('/followups', queryParameters: {
-        'requirement_id': widget.requirement.id,
-        'mobile': widget.requirement.clientMobile,
-      });
 
-      if (response.statusCode == 200 && response.data != null) {
-        final followupsData = response.data['data']?['followups'] as List?;
-        if (followupsData != null) {
-          for (final item in followupsData) {
-            result.add(Map<String, dynamic>.from(item as Map));
+    bool isSiteVisitStatus(String statusStr) {
+      final s = statusStr.trim().toLowerCase();
+      return s.contains('site visit') || s.contains('sitevisit') || s == 'sv' || s.startsWith('site visit');
+    }
+
+    if (widget.isSiteVisit) {
+      // 1. Fetch site visits API
+      try {
+        final response = await DioClient.dio.get('/site-visits', queryParameters: {
+          'requirement_id': widget.requirement.id,
+        });
+
+        if (response.statusCode == 200 && response.data != null) {
+          final svList = response.data['data']?['site_visits'] as List? ?? response.data['data'] as List?;
+          if (svList != null) {
+            for (final item in svList) {
+              final mapItem = Map<String, dynamic>.from(item as Map);
+              mapItem['status'] = mapItem['status'] ?? 'Site Visit Scheduled';
+              mapItem['followup_date'] = mapItem['visit_date'] ?? mapItem['followup_date'] ?? mapItem['created_at'];
+              mapItem['notes'] = mapItem['remarks'] ?? mapItem['notes'] ?? 'Site Visit';
+              result.add(mapItem);
+            }
           }
         }
+      } catch (e) {
+        debugPrint('⚠️ Error fetching site-visits API: $e');
       }
-    } catch (e) {
-      debugPrint('⚠️ Error fetching past followups API: $e');
-    }
 
-    // Include local added followups if not already present
-    for (final loc in _localAddedFollowups) {
-      final exists = result.any((r) => r['notes'] == loc['notes'] && r['followup_date'] == loc['followup_date']);
-      if (!exists) {
-        result.add(loc);
+      // 2. Fetch followups API filtered to Site Visit status
+      try {
+        final response = await DioClient.dio.get('/followups', queryParameters: {
+          'requirement_id': widget.requirement.id,
+          'mobile': widget.requirement.clientMobile,
+        });
+
+        if (response.statusCode == 200 && response.data != null) {
+          final followupsData = response.data['data']?['followups'] as List?;
+          if (followupsData != null) {
+            for (final item in followupsData) {
+              final mapItem = Map<String, dynamic>.from(item as Map);
+              final st = (mapItem['status'] ?? '').toString();
+              if (isSiteVisitStatus(st)) {
+                final exists = result.any((r) => r['notes'] == mapItem['notes'] && r['followup_date'] == mapItem['followup_date']);
+                if (!exists) result.add(mapItem);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error fetching past followups API: $e');
       }
-    }
 
-    // Combine with local requirement remarks if fallback is needed
-    if (result.isEmpty && widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) {
-      result.add({
-        'id': 'fallback_${widget.requirement.id}',
-        'followup_date': widget.requirement.nextFollowupDate ?? DateTime.now().toIso8601String(),
-        'notes': widget.requirement.remarks,
-        'status': widget.requirement.status,
-        'creator_name': 'Sales Executive',
-      });
+      // 3. Include local added site visit followups
+      final localFollowups = FollowupLocalRepository.inMemory.values
+          .where((fl) => fl.requirementId == widget.requirement.id && isSiteVisitStatus(fl.status))
+          .map((fl) => {
+                'id': fl.id,
+                'requirement_id': fl.requirementId,
+                'client_name': fl.clientName,
+                'mobile': fl.mobile,
+                'followup_date': fl.followupDate.toIso8601String(),
+                'notes': fl.notes,
+                'status': fl.status,
+                'creator_name': fl.createdBy,
+              });
+      for (final loc in localFollowups) {
+        final exists = result.any((r) => r['notes'] == loc['notes'] && r['followup_date'] == loc['followup_date']);
+        if (!exists) result.add(loc);
+      }
+    } else {
+      // Regular Follow-ups mode
+      try {
+        final response = await DioClient.dio.get('/followups', queryParameters: {
+          'requirement_id': widget.requirement.id,
+          'mobile': widget.requirement.clientMobile,
+        });
+
+        if (response.statusCode == 200 && response.data != null) {
+          final followupsData = response.data['data']?['followups'] as List?;
+          if (followupsData != null) {
+            for (final item in followupsData) {
+              final mapItem = Map<String, dynamic>.from(item as Map);
+              final st = (mapItem['status'] ?? '').toString();
+              // EXCLUDE Site Visit status in regular follow-ups history
+              if (!isSiteVisitStatus(st)) {
+                result.add(mapItem);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error fetching past followups API: $e');
+      }
+
+      // Include local added followups excluding site visits
+      for (final loc in _localAddedFollowups) {
+        final st = (loc['status'] ?? '').toString();
+        if (!isSiteVisitStatus(st)) {
+          final exists = result.any((r) => r['notes'] == loc['notes'] && r['followup_date'] == loc['followup_date']);
+          if (!exists) result.add(loc);
+        }
+      }
+
+      final localFollowups = FollowupLocalRepository.inMemory.values
+          .where((fl) => fl.requirementId == widget.requirement.id && !isSiteVisitStatus(fl.status))
+          .map((fl) => {
+                'id': fl.id,
+                'requirement_id': fl.requirementId,
+                'client_name': fl.clientName,
+                'mobile': fl.mobile,
+                'followup_date': fl.followupDate.toIso8601String(),
+                'notes': fl.notes,
+                'status': fl.status,
+                'creator_name': fl.createdBy,
+              });
+      for (final loc in localFollowups) {
+        final exists = result.any((r) => r['notes'] == loc['notes'] && r['followup_date'] == loc['followup_date']);
+        if (!exists) result.add(loc);
+      }
+
+      // Combine with local requirement remarks if fallback is needed
+      if (result.isEmpty && widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty && !isSiteVisitStatus(widget.requirement.status)) {
+        result.add({
+          'id': 'fallback_${widget.requirement.id}',
+          'followup_date': widget.requirement.nextFollowupDate ?? DateTime.now().toIso8601String(),
+          'notes': widget.requirement.remarks,
+          'status': widget.requirement.status,
+          'creator_name': 'Sales Executive',
+        });
+      }
     }
 
     // Sort newest first
@@ -8607,12 +9334,14 @@ class PropertyDealClientStore {
 class _FollowupActionButton extends StatelessWidget {
   final DashboardFollowup followup;
   final RequirementModel reqModel;
+  final bool isSiteVisit;
   final Function(RequirementModel, String) onSelect;
 
   const _FollowupActionButton({
     super.key,
     required this.followup,
     required this.reqModel,
+    this.isSiteVisit = false,
     required this.onSelect,
   });
 
@@ -8621,7 +9350,7 @@ class _FollowupActionButton extends StatelessWidget {
     if (overlay == null) return;
 
     final RelativeRect position = RelativeRect.fromRect(
-      Rect.fromLTWH(globalPos.dx - 60, globalPos.dy - 46, 130, 40),
+      Rect.fromLTWH(globalPos.dx - 60, globalPos.dy - 46, 140, 40),
       Offset.zero & overlay.size,
     );
 
@@ -8630,31 +9359,103 @@ class _FollowupActionButton extends StatelessWidget {
       position: position,
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      items: [
-        PopupMenuItem<String>(
-          value: 'Re-Followup',
-          height: 38,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.update_rounded,
-                size: 16,
-                color: CRMColors.warning,
+      items: isSiteVisit
+          ? [
+              PopupMenuItem<String>(
+                value: 'Edit Site Visit',
+                height: 38,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.edit_calendar_rounded,
+                      size: 16,
+                      color: CRMColors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Edit Site Visit',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: CRMColors.textOf(context),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                'Re-Followup',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: CRMColors.textOf(context),
-                  fontSize: 13,
+              PopupMenuItem<String>(
+                value: 'Re-scheduled',
+                height: 38,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.update_rounded,
+                      size: 16,
+                      color: CRMColors.warning,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Re-scheduled',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: CRMColors.textOf(context),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ]
+          : [
+              PopupMenuItem<String>(
+                value: 'Edit Followup',
+                height: 38,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.edit_calendar_rounded,
+                      size: 16,
+                      color: CRMColors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Edit Followup',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: CRMColors.textOf(context),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'Re-Followup',
+                height: 38,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.update_rounded,
+                      size: 16,
+                      color: CRMColors.warning,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Re-Followup',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: CRMColors.textOf(context),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
-          ),
-        ),
-      ],
     ).then((val) {
       if (val != null) {
         onSelect(reqModel, val);
@@ -8664,12 +9465,20 @@ class _FollowupActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String statusStr = (reqModel.status == 'Re-Followup') ? 'Re-Followup' : 'Follow-up';
-    final bool isRe = statusStr == 'Re-Followup';
+    final String statusStr = isSiteVisit
+        ? 'Site Visit Scheduled'
+        : ((reqModel.status == 'Re-Followup') ? 'Re-Followup' : 'Follow-up');
+    final bool isRe = !isSiteVisit && statusStr == 'Re-Followup';
 
-    final Color badgeBg = isRe ? CRMColors.warning.withValues(alpha: 0.15) : CRMColors.info.withValues(alpha: 0.15);
-    final Color badgeColor = isRe ? CRMColors.warning : CRMColors.info;
-    final Color borderColor = isRe ? CRMColors.warning.withValues(alpha: 0.4) : CRMColors.info.withValues(alpha: 0.4);
+    final Color badgeBg = isSiteVisit
+        ? CRMColors.primary.withValues(alpha: 0.15)
+        : (isRe ? CRMColors.warning.withValues(alpha: 0.15) : CRMColors.info.withValues(alpha: 0.15));
+    final Color badgeColor = isSiteVisit
+        ? CRMColors.primary
+        : (isRe ? CRMColors.warning : CRMColors.info);
+    final Color borderColor = isSiteVisit
+        ? CRMColors.primary.withValues(alpha: 0.4)
+        : (isRe ? CRMColors.warning.withValues(alpha: 0.4) : CRMColors.info.withValues(alpha: 0.4));
 
     if (isRe) {
       return GestureDetector(

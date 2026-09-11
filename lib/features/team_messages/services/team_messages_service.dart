@@ -88,4 +88,15 @@ class TeamMessagesService {
       return 0;
     }
   }
+
+  Future<bool> deleteMessage(String messageId) async {
+    try {
+      final response = await _apiClient.delete('/team-messages/$messageId');
+      return response.data is Map<String, dynamic> && response.data['success'] == true;
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
 }

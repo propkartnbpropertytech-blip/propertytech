@@ -834,7 +834,62 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
     );
   }
 
+  Future<void> _deleteMessage(String messageId) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Message'),
+        content: const Text('Are you sure you want to delete this message?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final success = await _service.deleteMessage(messageId);
+      if (success && mounted) {
+        setState(() {
+          _messages.removeWhere((m) => m.id == messageId);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Message deleted successfully'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        _loadUsers(silent: true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete message: ${e.toString()}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildMessageBubble(TeamMessageModel msg, bool isMe, bool isDark, Color primaryColor) {
+    final authState = context.watch<AuthBloc>().state;
+    final currentRole = authState is Authenticated ? authState.user.role.toLowerCase() : '';
+    final canDelete = isMe || currentRole.contains('admin');
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -893,6 +948,26 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
                     color: msg.isRead
                         ? const Color(0xFF60A5FA)
                         : Colors.white.withValues(alpha: 0.8),
+                  ),
+                ],
+                if (canDelete) ...[
+                  const SizedBox(width: 6),
+                  InkWell(
+                    onTap: () => _deleteMessage(msg.id),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Tooltip(
+                      message: 'Delete message',
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: Icon(
+                          Icons.delete_outline_rounded,
+                          size: 13,
+                          color: isMe
+                              ? Colors.white.withValues(alpha: 0.8)
+                              : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ],

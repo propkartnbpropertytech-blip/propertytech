@@ -1,7 +1,7 @@
 name: propkart
 description: "PropKart — The Future of Property Management."
 publish_to: 'none'
-version: 2.1.0+10
+version: 2.1.1+11
 
 environment:
   sdk: ^3.11.1

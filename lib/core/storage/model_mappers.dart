@@ -290,6 +290,8 @@ extension FollowupLocalExtensions on FollowupLocal {
       propertyCode: propertyCode,
       propertyTitle: propertyTitle,
       requirementCustomerName: requirementCustomerName,
+      requirementId: requirementId,
+      creatorName: createdBy,
     );
   }
 }

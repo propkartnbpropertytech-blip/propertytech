@@ -343,6 +343,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                               final followupsWidget = FollowupsCard(
                                 followups: data.followups,
+                                siteVisits: data.siteVisits,
                                 onFollowupTap: (f) => _showEditFollowupDialog(f),
                                 onAddFollowup: () => _showCreateFollowupDialog(),
                                 onViewAll: () =>
