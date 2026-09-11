@@ -9,6 +9,7 @@ class ModernTopBar extends StatefulWidget {
   final VoidCallback onToggleSidebar;
   final VoidCallback? onQuickAdd;
   final VoidCallback? onNotificationsTap;
+  final VoidCallback? onMessagesTap;
   final VoidCallback? onLogout;
   final int unreadNotifications;
   final int unreadMessages;
@@ -23,6 +24,7 @@ class ModernTopBar extends StatefulWidget {
     required this.onToggleSidebar,
     this.onQuickAdd,
     this.onNotificationsTap,
+    this.onMessagesTap,
     this.onLogout,
     this.unreadNotifications = 0,
     this.unreadMessages = 0,
@@ -759,43 +761,42 @@ class _ModernTopBarState extends State<ModernTopBar> {
                 ],
               ),
 
-              if (!isMobile) ...[
-                // Messages with Badge
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    IconButton(
-                      onPressed: () {
-                        context.go('/requirements');
-                      },
-                      icon: Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                        size: 20,
-                      ),
-                      tooltip: 'Messages',
-                      splashRadius: 20,
+              // Messages with Badge
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  IconButton(
+                    onPressed: widget.onMessagesTap ??
+                        () {
+                          context.go('/messages');
+                        },
+                    icon: Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                      size: 20,
                     ),
-                    if (widget.unreadMessages > 0)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF3B82F6),
-                            shape: BoxShape.circle,
-                          ),
-                          constraints: const BoxConstraints(
-                            minWidth: 8,
-                            minHeight: 8,
-                          ),
+                    tooltip: 'Messages',
+                    splashRadius: 20,
+                  ),
+                  if (widget.unreadMessages > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF3B82F6),
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 8,
+                          minHeight: 8,
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(width: 8),
-              ],
+                    ),
+                ],
+              ),
+              const SizedBox(width: 8),
 
               // Divider before Profile
               if (!isMobile)

@@ -190,6 +190,16 @@ class PermissionMatrixService extends ChangeNotifier {
       defaultTelecaller: true,
       defaultSales: true,
     ),
+    PermissionItem(
+      key: 'page.messages',
+      title: 'Team Messages Page',
+      description: 'Access direct real-time team messaging and conversations (/messages).',
+      category: PermissionCategory.pages,
+      relatedRoute: '/messages',
+      defaultAdmin: true,
+      defaultTelecaller: true,
+      defaultSales: true,
+    ),
 
     // ── Properties Inventory Permissions ───────────────
     PermissionItem(
@@ -645,6 +655,8 @@ class PermissionMatrixService extends ChangeNotifier {
       permKey = 'page.clients';
     } else if (r.startsWith('/owners')) {
       permKey = 'page.owners';
+    } else if (r.startsWith('/messages')) {
+      permKey = 'page.messages';
     } else if (r.startsWith('/builders')) {
       permKey = 'page.builders';
     }

@@ -23,6 +23,7 @@ import '../../../features/properties/models/property_model.dart';
 import '../../navigation/mobile_system_back_handler.dart';
 import '../../../../features/shell/widgets/sidebar.dart';
 import '../../../../features/shell/widgets/top_bar.dart';
+import '../../../../features/team_messages/services/team_messages_service.dart';
 
 class CRMAppShell extends StatefulWidget {
   final Widget child;
@@ -126,6 +127,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   Timer? _searchDebounce;
   List<dynamic> _notifications = [];
   int _unreadNotificationsCount = 0;
+  int _unreadTeamMessagesCount = 0;
   bool _isLoadingNotifications = false;
   int _notificationsPage = 1;
   int _totalNotificationPages = 1;
@@ -319,6 +321,11 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
     }
 
+    int unreadMsgCount = 0;
+    try {
+      unreadMsgCount = await TeamMessagesService().getUnreadCount();
+    } catch (_) {}
+
     if (mounted) {
       setState(() {
         _notifications = uniqueNotifs;
@@ -326,6 +333,7 @@ class _CRMAppShellState extends State<CRMAppShell>
         _unreadNotificationsCount = _notifications
             .where((n) => n['is_read'] == false)
             .length;
+        _unreadTeamMessagesCount = unreadMsgCount;
         _isLoadingNotifications = false;
       });
     }
@@ -1038,6 +1046,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                               unreadNotifications: _unreadNotificationsCount > 0
                                   ? _unreadNotificationsCount
                                   : 3,
+                              unreadMessages: _unreadTeamMessagesCount,
                               onNotificationsTap: () {
                                 setState(() {
                                   _notificationsPanelOpen =

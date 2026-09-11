@@ -231,10 +231,7 @@ class RequirementModel {
     }
 
     String? parsedRemarks;
-    if (json['remarks'] != null && json['remarks'].toString().trim().isNotEmpty) {
-      parsedRemarks = json['remarks'].toString().trim();
-    }
-    if ((parsedRemarks == null || parsedRemarks.isEmpty) && json['internal_crm_remarks'] != null) {
+    if (json['internal_crm_remarks'] != null) {
       if (json['internal_crm_remarks'] is List && (json['internal_crm_remarks'] as List).isNotEmpty) {
         final remarksList = List.from(json['internal_crm_remarks']);
         remarksList.sort((a, b) {
@@ -258,6 +255,10 @@ class RequirementModel {
       } else if (json['internal_crm_remarks'] is String) {
         parsedRemarks = json['internal_crm_remarks'];
       }
+    }
+
+    if ((parsedRemarks == null || parsedRemarks.trim().isEmpty) && json['remarks'] != null && json['remarks'].toString().trim().isNotEmpty) {
+      parsedRemarks = json['remarks'].toString().trim();
     }
 
     return RequirementModel(

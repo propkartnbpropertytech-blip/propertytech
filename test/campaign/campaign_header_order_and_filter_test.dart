@@ -108,6 +108,46 @@ void main() {
       await service.resetHeaderOrderToSheet();
       expect(service.getDetectedHeaders(), equals(['First', 'Second', 'Third']));
     });
+
+    test('Section-scoped header reordering isolates headers for Property Listing vs Requirement leads', () async {
+      final service = IntegrationService();
+      await service.ensureLoaded();
+
+      await service.ingestRows([
+        {
+          'lead_type': 'Property Listing',
+          'full_name': 'Owner 1',
+          'Phone Number': '9876543210',
+          'where is your property located?': 'Gota',
+          'what is your expected monthly rent?': '₹25,000',
+        },
+        {
+          'lead_type': 'Requirement',
+          'Client Name': 'Tenant 1',
+          'Phone Number': '9876543211',
+          'Which Area Are You Looking For?': 'Thaltej',
+          'What Is Your Monthly Rental Budget?': '₹30,000',
+        },
+      ]);
+
+      final propLeads = service.leads.where((l) => l.leadType == 'Property Listing').toList();
+      final reqLeads = service.leads.where((l) => l.leadType == 'Requirement').toList();
+
+      final propHeaders = service.getDetectedHeaders(leadsSubset: propLeads);
+      final reqHeaders = service.getDetectedHeaders(leadsSubset: reqLeads);
+
+      expect(propHeaders, containsAll(['full_name', 'where is your property located?', 'what is your expected monthly rent?']));
+      expect(reqHeaders, containsAll(['Client Name', 'Which Area Are You Looking For?', 'What Is Your Monthly Rental Budget?']));
+
+      // Reorder Property Listing headers only
+      final secondHeader = propHeaders[1];
+      await service.moveHeader(secondHeader, -1, leadsSubset: propLeads);
+      final reorderedProp = service.getDetectedHeaders(leadsSubset: propLeads);
+      expect(reorderedProp.first, equals(secondHeader));
+
+      // Requirement headers remain unchanged
+      expect(service.getDetectedHeaders(leadsSubset: reqLeads), equals(reqHeaders));
+    });
   });
 
   group('Campaign Leads Persistence Tests', () {

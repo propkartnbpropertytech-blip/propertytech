@@ -2831,7 +2831,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         ),
-        onPressed: () => _showReorderColumnsDialog(context),
+        onPressed: () => _showReorderColumnsDialog(context, allDetectedHeaders, leads),
       ),
     );
 
@@ -2875,7 +2875,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       tooltip: 'More Tools',
       onSelected: (action) {
         if (action == 'reorder') {
-          _showReorderColumnsDialog(context);
+          _showReorderColumnsDialog(context, allDetectedHeaders, leads);
         } else if (action == 'export') {
           _exportCurrentSpreadsheetToExcel(context);
         } else if (action == 'clear_filters') {
@@ -4141,21 +4141,22 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   /// Drag-and-Drop Column Reordering Dialog
-  void _showReorderColumnsDialog(BuildContext context) {
+  void _showReorderColumnsDialog(BuildContext context, [List<String>? sectionHeaders, List<IntegrationLeadModel>? sectionLeads]) {
+    final targetLeads = sectionLeads ?? _filteredLeads;
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          final allHeaders = _service.getDetectedHeaders();
+          final allHeaders = sectionHeaders ?? _cachedAllDetectedHeaders ?? _service.getDetectedHeaders(leadsSubset: targetLeads);
 
           return AlertDialog(
             title: Row(
               children: [
                 Icon(Icons.swap_horiz_rounded, color: CRMColors.primaryOf(context)),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Reorder Spreadsheet Columns',
+                    'Reorder ${_selectedSection} Columns',
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -4168,16 +4169,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Drag and drop columns using the handles (⠿) to change their display order. The layout is saved automatically and matches the Google Sheet sequence by default.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  Text(
+                    'Drag and drop ${_selectedSection} columns using the handles (⠿) to change their display order. Layout is saved for ${_selectedSection} tab.',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '${allHeaders.length} Columns',
+                        '${allHeaders.length} ${_selectedSection} Columns',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                       TextButton.icon(
@@ -4185,7 +4186,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         label: const Text('Reset to Sheet Order'),
                         onPressed: () async {
                           final messenger = ScaffoldMessenger.of(context);
-                          await _service.resetHeaderOrderToSheet();
+                          await _service.resetHeaderOrderToSheet(leadsSubset: targetLeads);
                           setModalState(() {});
                           setState(() {});
                           messenger.showSnackBar(
@@ -4200,7 +4201,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     child: ReorderableListView.builder(
                       itemCount: allHeaders.length,
                       onReorder: (oldIndex, newIndex) async {
-                        await _service.reorderHeaders(oldIndex, newIndex);
+                        await _service.reorderHeaders(oldIndex, newIndex, leadsSubset: targetLeads);
                         setModalState(() {});
                         setState(() {});
                       },
@@ -4253,7 +4254,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 tooltip: 'Move Up',
                                 onPressed: i > 0
                                     ? () async {
-                                        await _service.moveHeader(h, -1);
+                                        await _service.moveHeader(h, -1, leadsSubset: targetLeads);
                                         setModalState(() {});
                                         setState(() {});
                                       }
@@ -4264,7 +4265,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 tooltip: 'Move Down',
                                 onPressed: i < allHeaders.length - 1
                                     ? () async {
-                                        await _service.moveHeader(h, 1);
+                                        await _service.moveHeader(h, 1, leadsSubset: targetLeads);
                                         setModalState(() {});
                                         setState(() {});
                                       }
@@ -4862,7 +4863,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       dense: true,
                       onTap: () {
                         Navigator.pop(ctx);
-                        _showReorderColumnsDialog(context);
+                        _showReorderColumnsDialog(context, _cachedAllDetectedHeaders, _filteredLeads);
                       },
                     ),
                     const Divider(height: 20),
