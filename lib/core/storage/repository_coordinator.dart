@@ -45,6 +45,7 @@ class RepositoryCoordinator {
   Timer? _lookupsTimer;
   int _bulkDepth = 0;
   bool _bulkNeedsRequirementsRefresh = false;
+  bool _bulkNeedsPropertiesRefresh = false;
 
   void beginBulkMutation() {
     _bulkDepth++;
@@ -52,15 +53,24 @@ class RepositoryCoordinator {
 
   void endBulkMutation() {
     if (_bulkDepth > 0) _bulkDepth--;
-    if (_bulkDepth == 0 && _bulkNeedsRequirementsRefresh) {
-      _bulkNeedsRequirementsRefresh = false;
-      refreshRequirements();
+    if (_bulkDepth == 0) {
+      if (_bulkNeedsRequirementsRefresh) {
+        _bulkNeedsRequirementsRefresh = false;
+        refreshRequirements();
+      }
+      if (_bulkNeedsPropertiesRefresh) {
+        _bulkNeedsPropertiesRefresh = false;
+        refreshProperties();
+      }
     }
   }
 
   // Typed Debounced Broadcasters
   void refreshProperties() {
-    if (_bulkDepth > 0) return;
+    if (_bulkDepth > 0) {
+      _bulkNeedsPropertiesRefresh = true;
+      return;
+    }
     _propertiesTimer?.cancel();
     _propertiesTimer = Timer(const Duration(milliseconds: 400), () {
       _propertiesController.add(null);

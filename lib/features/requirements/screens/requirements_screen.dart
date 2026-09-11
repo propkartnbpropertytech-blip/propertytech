@@ -152,6 +152,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   StreamSubscription? _dashboardStreamSub;
   OverlayEntry? _notesOverlayEntry;
   final Set<String> _selectedRequirementIds = {};
+  final ScrollController _scrollController = ScrollController();
+  String? _highlightedRequirementId;
+  List<RequirementModel> _cachedRequirements = [];
 
   Future<void> _confirmBulkMoveToBin(List<RequirementModel> pageItems) async {
     final count = _selectedRequirementIds.length;
@@ -375,6 +378,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _dashboardStreamSub?.cancel();
     _searchController.dispose();
     _wonSearchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -774,6 +778,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  void _onRequirementEntered(RequirementModel req) {
+    if (!mounted) return;
+    setState(() {
+      _highlightedRequirementId = req.id;
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOut,
+      );
+    }
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          if (_highlightedRequirementId == req.id) {
+            _highlightedRequirementId = null;
+          }
+        });
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -791,7 +818,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 behavior: SnackBarBehavior.floating,
               ),
             );
-            _triggerFetch();
+            if (state.requirement != null) {
+              _onRequirementEntered(state.requirement!);
+            } else {
+              _triggerFetch();
+            }
+          } else if (state is RequirementsLoaded && state.newlyAdded != null) {
+            _onRequirementEntered(state.newlyAdded!);
           } else if (state is RequirementsError) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -803,6 +836,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           }
         },
         child: SingleChildScrollView(
+          controller: _scrollController,
           padding: const EdgeInsets.all(CRMSpacing.l),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3030,12 +3064,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           current is RequirementsInitial ||
           current is RequirementsError,
       builder: (context, state) {
-        final isLoading = state is RequirementsLoading || state is RequirementsInitial;
+        if (state is RequirementsLoaded) {
+          _cachedRequirements = state.requirements;
+        }
+        final rawLoadedList = state is RequirementsLoaded ? state.requirements : _cachedRequirements;
+        final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
         List<RequirementModel> requirements = [];
 
-        if (state is RequirementsLoaded) {
+        if (rawLoadedList.isNotEmpty) {
           final query = _searchController.text.trim().toLowerCase();
-          requirements = state.requirements.where((r) {
+          requirements = rawLoadedList.where((r) {
             if (currentUser != null && currentUser.role == 'Sales') {
               if (!_salesCanViewRequirement(r, currentUser)) {
                 return false;
@@ -3154,7 +3192,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             ? CRMColors.warning
                             : CRMColors.danger;
 
+                    final isHighlighted = req.id == _highlightedRequirementId;
+
                     return DataRow(
+                      color: isHighlighted
+                          ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
+                          : null,
                       cells: [
                         DataCell(
                           SizedBox(
@@ -3626,10 +3669,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           final String areasText = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : 'All Areas';
           final String listingType = getListingTypeLabel(req);
           final bool isSelected = _selectedRequirementIds.contains(req.id);
+          final bool isHighlighted = req.id == _highlightedRequirementId;
 
           return Padding(
             padding: const EdgeInsets.only(bottom: CRMSpacing.m),
             child: CRMCard(
+              borderColor: isHighlighted ? CRMColors.primaryOf(context) : null,
+              backgroundColor: isHighlighted ? CRMColors.primaryOf(context).withOpacity(0.08) : null,
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -5846,11 +5892,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           currentUser = authState.user;
         }
 
-        final isLoading = state is RequirementsLoading || state is RequirementsInitial;
+        if (state is RequirementsLoaded) {
+          _cachedRequirements = state.requirements;
+        }
+        final rawLoadedList = state is RequirementsLoaded ? state.requirements : _cachedRequirements;
+        final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
         List<RequirementModel> requirements = [];
 
-        if (state is RequirementsLoaded) {
-          requirements = state.requirements.where((r) {
+        if (rawLoadedList.isNotEmpty) {
+          requirements = rawLoadedList.where((r) {
             if (currentUser != null && currentUser.role == 'Sales') {
               if (!_salesCanViewRequirement(r, currentUser)) {
                 return false;
@@ -5879,7 +5929,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
               final remarks = (r.remarks ?? '').toLowerCase();
               final areas = r.areaNames.join(' ').toLowerCase();
-              
+
               bool matchesSalesman = false;
               if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
                 final creator = (r.creatorName ?? '').toLowerCase();
@@ -5946,7 +5996,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     const DataColumn(label: Text('Actions')),
                   ],
                   rows: pageItems.map((req) {
+                    final isHighlighted = req.id == _highlightedRequirementId;
                     return DataRow(
+                      color: isHighlighted
+                          ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
+                          : null,
                       cells: [
                         DataCell(
                           SizedBox(

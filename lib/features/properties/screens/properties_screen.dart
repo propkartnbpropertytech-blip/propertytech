@@ -67,6 +67,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   String? _selectedListingType;
   bool? _selectedVerification;
   PropertyMetadataModel? _cachedMetadata;
+  List<PropertyModel> _cachedProperties = [];
+  Set<String> _cachedBookmarkedIds = {};
   String? _selectedPriceSortOrRange;
   double? _minPrice;
   double? _maxPrice;
@@ -120,6 +122,29 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             activeTab: _activeTab,
           ),
         );
+  }
+
+  void _onPropertyEntered(PropertyModel property) {
+    if (!mounted) return;
+    setState(() {
+      _highlightedPropertyId = property.id;
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOut,
+      );
+    }
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          if (_highlightedPropertyId == property.id) {
+            _highlightedPropertyId = null;
+          }
+        });
+      }
+    });
   }
 
   Future<void> _launchWhatsApp(PropertyModel property) async {
@@ -2079,10 +2104,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         : "₹ $rawPriceFormatted";
     final hasImages = p.images.isNotEmpty;
     final formattedDateText = _formatPropertyDate(p.createdAt);
+    final bool isHighlighted = p.id == _highlightedPropertyId;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: CRMSpacing.m),
       child: CRMCard(
+        borderColor: isHighlighted ? CRMColors.primaryOf(context) : null,
+        backgroundColor: isHighlighted ? CRMColors.primaryOf(context).withOpacity(0.08) : null,
         padding: const EdgeInsets.all(16),
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -2829,10 +2857,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             current is PropertiesLoaded ||
             current is PropertiesLoading ||
             current is PropertiesInitial ||
-            current is PropertiesError ||
-            current is PropertyCreatedState,
+            current is PropertiesError,
         listenWhen: (previous, current) =>
-            current is PropertiesError || current is PropertyCreatedState,
+            current is PropertiesError ||
+            current is PropertyCreatedState ||
+            (current is PropertiesLoaded && current.newlyAdded != null),
         listener: (context, state) {
           if (state is PropertiesError) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -2843,33 +2872,30 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           } else if (state is PropertyCreatedState) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _openPropertyDetails(context, state.property);
-              if (_scrollController.hasClients) {
-                _scrollController.animateTo(0,
-                    duration: const Duration(milliseconds: 500),
-                    curve: Curves.easeOut);
-              }
-              setState(() {
-                _highlightedPropertyId = state.property.id;
-              });
-              Future.delayed(const Duration(seconds: 2), () {
-                if (mounted) {
-                  setState(() {
-                    _highlightedPropertyId = null;
-                  });
-                }
-              });
+              _onPropertyEntered(state.property);
+            });
+          } else if (state is PropertiesLoaded && state.newlyAdded != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _onPropertyEntered(state.newlyAdded!);
             });
           }
         },
         builder: (context, state) {
-          final isLoading =
-              state is PropertiesLoading || state is PropertiesInitial;
-          List<PropertyModel> properties = [];
-          PropertyMetadataModel? metadata;
-          Set<String> bookmarkedIds = {};
-
           if (state is PropertiesLoaded) {
-            properties = state.properties.where((p) {
+            _cachedProperties = state.properties;
+            if (state.metadata != null) _cachedMetadata = state.metadata;
+            _cachedBookmarkedIds = state.bookmarkedIds;
+          }
+
+          final rawLoadedList = state is PropertiesLoaded ? state.properties : _cachedProperties;
+          final isInitialLoad =
+              (state is PropertiesLoading || state is PropertiesInitial) && rawLoadedList.isEmpty;
+          List<PropertyModel> properties = [];
+          PropertyMetadataModel? metadata = state is PropertiesLoaded ? (state.metadata ?? _cachedMetadata) : _cachedMetadata;
+          Set<String> bookmarkedIds = state is PropertiesLoaded ? state.bookmarkedIds : _cachedBookmarkedIds;
+
+          if (rawLoadedList.isNotEmpty) {
+            properties = rawLoadedList.where((p) {
               final ltName = p.listingTypeName.toLowerCase();
               final matchesListing = _activeListingTab == 'Rent'
                   ? ltName.contains('rent')
@@ -3041,10 +3067,6 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               properties.sort((a, b) => b.price.compareTo(a.price));
             }
 
-            metadata = state.metadata;
-            _cachedMetadata = state.metadata;
-            bookmarkedIds = state.bookmarkedIds;
-
             final bhkParam = GoRouterState.of(context).uri.queryParameters['bhk'];
             if (bhkParam != null && bhkParam.isNotEmpty) {
               if (bhkParam == '1' || bhkParam == '2' || bhkParam == '3' || bhkParam == '4') {
@@ -3081,10 +3103,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 GoRouterState.of(context).uri.queryParameters['action'];
             if (action == 'add' &&
                 !_hasAutoOpenedAdd &&
-                state.metadata != null) {
+                metadata != null) {
               _hasAutoOpenedAdd = true;
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                _showAddEditPropertyDialog(context, state.metadata!);
+                _showAddEditPropertyDialog(context, metadata!);
               });
             }
 
@@ -3186,7 +3208,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
                 // 6. Property Cards View / Table View & 7. Pagination
                 if (!_isTableView) ...[
-                  if (isLoading)
+                  if (isInitialLoad)
                     const Center(
                         child: Padding(
                             padding: EdgeInsets.all(32),
@@ -3233,7 +3255,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   ],
                 ] else ...[
                   CRMDataTable(
-                    isLoading: isLoading,
+                    isLoading: isInitialLoad,
                     emptyTitle: 'No Properties Found',
                     emptyDescription:
                         'No records match your active search terms.',
