@@ -182,4 +182,98 @@ void main() {
       expect(emptyInitialLoad, isTrue);
     });
   });
+
+  group('Sales Lead Filtration and Telecaller Status Tests', () {
+    final salesUser = {
+      'id': 'sales_user_1',
+      'full_name': 'Sales Rep',
+      'role': 'Sales',
+    };
+
+    final leadCreatedBySales = RequirementModel.fromJson({
+      'id': 'req_added_1',
+      'customer_name': 'Added Lead Client',
+      'mobile': '9999900001',
+      'created_by': 'sales_user_1',
+      'creator_name': 'Sales Rep',
+      'assigned_to': 'sales_user_1',
+      'status': 'Interested',
+      'created_at': DateTime.now().toIso8601String(),
+    });
+
+    final leadAssignedByTelecaller = RequirementModel.fromJson({
+      'id': 'req_assigned_1',
+      'customer_name': 'Assigned Lead Client',
+      'mobile': '9999900002',
+      'created_by': 'telecaller_1',
+      'creator_name': 'Telecaller Alice',
+      'assigned_to': 'sales_user_1',
+      'assignee_name': 'Sales Rep',
+      'status': 'Interested',
+      'created_at': DateTime.now().toIso8601String(),
+    });
+
+    test('RequirementsSuccess inherits from RequirementsLoaded and preserves requirement list', () {
+      final success = RequirementsSuccess(
+        'Lead updated successfully',
+        requirement: leadAssignedByTelecaller,
+        requirements: [leadAssignedByTelecaller, leadCreatedBySales],
+      );
+
+      expect(success, isA<RequirementsLoaded>());
+      expect(success.requirements.length, equals(2));
+      expect(success.message, equals('Lead updated successfully'));
+    });
+
+    test('Sales user groups leads into Added vs Assigned correctly', () {
+      final allLeads = [leadCreatedBySales, leadAssignedByTelecaller];
+
+      bool isCreator(RequirementModel r) => r.createdBy == salesUser['id'];
+      bool isAssignee(RequirementModel r) => r.assignedTo == salesUser['id'];
+
+      final addedByMe = allLeads.where((r) => isCreator(r)).toList();
+      final assignedToMe = allLeads.where((r) => isAssignee(r) && !isCreator(r)).toList();
+
+      expect(addedByMe.length, equals(1));
+      expect(addedByMe.first.id, equals('req_added_1'));
+
+      expect(assignedToMe.length, equals(1));
+      expect(assignedToMe.first.id, equals('req_assigned_1'));
+    });
+
+    test('Unhandled assigned lead displays status Not Started and preserves telecaller label', () {
+      bool isUnhandled(RequirementModel r) {
+        final isAssigned = r.assignedTo == salesUser['id'];
+        final isCreator = r.createdBy == salesUser['id'];
+        if (!isAssigned || isCreator) return false;
+        final meta = r.metaCustomFields;
+        if (meta != null && (meta['handled_by_sales'] == true || meta['handled_by_sales'] == 'true')) {
+          return false;
+        }
+        return true;
+      }
+
+      String getDisplayStatus(RequirementModel r) {
+        if (isUnhandled(r)) return 'Not Started';
+        return r.status;
+      }
+
+      expect(isUnhandled(leadAssignedByTelecaller), isTrue);
+      expect(getDisplayStatus(leadAssignedByTelecaller), equals('Not Started'));
+
+      // Once handled by sales user:
+      final handledLead = leadAssignedByTelecaller.copyWith(
+        status: 'Call Attempted',
+        metaCustomFields: {
+          'handled_by_sales': true,
+          'telecaller_status': 'Interested',
+          'sales_handled_at': DateTime.now().toIso8601String(),
+        },
+      );
+
+      expect(isUnhandled(handledLead), isFalse);
+      expect(getDisplayStatus(handledLead), equals('Call Attempted'));
+      expect(handledLead.metaCustomFields?['telecaller_status'], equals('Interested'));
+    });
+  });
 }

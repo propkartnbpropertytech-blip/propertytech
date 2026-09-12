@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show File;
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -3744,40 +3746,50 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   // --- EXCEL FEATURES, FILTERING, SORTING & DRAG-AND-PLACE REORDERING ---
 
-  /// Live Auto-Sync Status Badge (1-minute engine indicator)
+  /// Live Auto-Sync Status Badge (reflects Meta Lead Ads, VPS backend, and Google Sheets)
   Widget _buildAutoSyncLiveBadge(BuildContext context) {
     final hasSheet = _service.googleSheetUrl.isNotEmpty;
-    final lastSync = _service.lastSyncAt;
+    final lastSheetSync = _service.lastSyncAt;
+    final isFetching = _service.isFetchingServerLeads || _isSyncingSheet;
+
+    final blocState = context.watch<CampaignLeadsBloc>().state;
+    final lastServerPing = blocState.lastPingAt;
+    final isServerPinging = blocState.isPinging;
+
+    final bool isSyncingNow = isFetching || isServerPinging;
 
     String syncTimeText;
-    if (!hasSheet) {
-      syncTimeText = 'Sheet not connected';
-    } else if (_isSyncingSheet) {
+    if (isSyncingNow) {
       syncTimeText = 'Syncing now...';
-    } else if (lastSync == null) {
-      syncTimeText = 'Engine active (1 min)';
     } else {
-      final diff = DateTime.now().difference(lastSync);
-      if (diff.inSeconds < 60) {
-        syncTimeText = 'Synced just now';
-      } else if (diff.inMinutes < 60) {
-        syncTimeText = 'Synced ${diff.inMinutes}m ago';
+      DateTime? mostRecent = lastSheetSync;
+      if (mostRecent == null || (lastServerPing != null && lastServerPing.isAfter(mostRecent))) {
+        mostRecent = lastServerPing;
+      }
+
+      if (mostRecent == null) {
+        syncTimeText = hasSheet ? 'Live (Sheet + Meta)' : 'Live • Meta & Server';
       } else {
-        syncTimeText = 'Synced at ${DateFormat('HH:mm').format(lastSync.toLocal())}';
+        final diff = DateTime.now().difference(mostRecent);
+        if (diff.inSeconds < 45) {
+          syncTimeText = 'Synced just now';
+        } else if (diff.inMinutes < 60) {
+          syncTimeText = 'Synced ${diff.inMinutes}m ago';
+        } else {
+          syncTimeText = 'Synced at ${DateFormat('HH:mm').format(mostRecent.toLocal())}';
+        }
       }
     }
+
+    final String titleText = hasSheet ? 'Live Sync (Sheet + Meta)' : 'Live Leads: Active';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: hasSheet
-            ? CRMColors.success.withValues(alpha: 0.1)
-            : CRMColors.cardBgOf(context),
+        color: CRMColors.success.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(CRMBorderRadius.input),
         border: Border.all(
-          color: hasSheet
-              ? CRMColors.success.withValues(alpha: 0.35)
-              : CRMColors.borderOf(context),
+          color: CRMColors.success.withValues(alpha: 0.35),
         ),
       ),
       child: Row(
@@ -3786,18 +3798,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              color: hasSheet ? CRMColors.success : Colors.grey,
+              color: CRMColors.success,
             ),
           ),
           const SizedBox(width: 6),
           Text(
-            hasSheet ? 'Auto-sync: 1 min' : 'Auto-sync: Idle',
-            style: TextStyle(
+            titleText,
+            style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
-              color: hasSheet ? CRMColors.success : CRMColors.textSecondaryOf(context),
+              color: CRMColors.success,
             ),
           ),
           const SizedBox(width: 4),
@@ -5977,14 +5989,22 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     );
     if (result == null || result.files.isEmpty) return;
     final file = result.files.single;
-    if (file.bytes == null) {
+    List<int>? fileBytes = file.bytes;
+    if (fileBytes == null && file.path != null && !kIsWeb) {
+      try {
+        fileBytes = await File(file.path!).readAsBytes();
+      } catch (e) {
+        debugPrint('Failed to read CSV file from path: $e');
+      }
+    }
+    if (fileBytes == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not read that file. Try exporting the sheet as CSV again.')),
       );
       return;
     }
-    final csv = utf8.decode(file.bytes!);
+    final csv = utf8.decode(fileBytes, allowMalformed: true);
     setState(() => _isSyncingSheet = true);
     try {
       final count = await _service.ingestCsv(csv);

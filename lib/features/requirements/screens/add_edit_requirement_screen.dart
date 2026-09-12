@@ -673,9 +673,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       context.read<RequirementsBloc>().add(UpdateRequirementEvent(req));
     }
 
-    if (widget.isInline) {
-      widget.onSaved();
-    }
+    widget.onSaved();
     Navigator.pop(context);
   }
 

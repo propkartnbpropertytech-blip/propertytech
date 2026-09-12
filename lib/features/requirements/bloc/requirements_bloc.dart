@@ -67,10 +67,19 @@ class RequirementsError extends RequirementsState {
   RequirementsError(this.message);
 }
 
-class RequirementsSuccess extends RequirementsState {
+class RequirementsSuccess extends RequirementsLoaded {
   final String message;
   final RequirementModel? requirement;
-  RequirementsSuccess(this.message, {this.requirement});
+
+  RequirementsSuccess(
+    this.message, {
+    this.requirement,
+    List<RequirementModel>? requirements,
+    super.newlyAdded,
+    super.isSilentRefreshing,
+  }) : super(
+          requirements: requirements ?? (requirement != null ? [requirement] : const []),
+        );
 }
 
 // --- BLoC ---
@@ -89,6 +98,8 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     _requirementsSubscription = RepositoryCoordinator().requirementsStream.listen((_) {
       if (_lastFetchEvent != null) {
         add(_lastFetchEvent!);
+      } else {
+        add(FetchRequirementsEvent());
       }
     });
   }
@@ -132,20 +143,23 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
   ) async {
     try {
       final saved = await requirementsRepository.createRequirement(event.requirement);
+      final List<RequirementModel> next;
       if (state is RequirementsLoaded) {
         final current = state as RequirementsLoaded;
-        final next = [saved, ...current.requirements.where((r) => r.id != saved.id)];
-        emit(RequirementsLoaded(
-          requirements: next,
-          newlyAdded: saved,
-        ));
+        next = [saved, ...current.requirements.where((r) => r.id != saved.id)];
       } else {
-        emit(RequirementsLoaded(
-          requirements: [saved],
-          newlyAdded: saved,
-        ));
+        next = [saved];
       }
-      emit(RequirementsSuccess("Requirement created successfully.", requirement: saved));
+      emit(RequirementsLoaded(
+        requirements: next,
+        newlyAdded: saved,
+      ));
+      emit(RequirementsSuccess(
+        "Requirement created successfully.",
+        requirement: saved,
+        requirements: next,
+        newlyAdded: saved,
+      ));
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }
@@ -159,18 +173,24 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
       final updated = await requirementsRepository.updateRequirement(event.requirement);
 
       // Optimistically patch the in-memory list so My Won status UI updates immediately.
+      List<RequirementModel> next = [updated];
       if (state is RequirementsLoaded) {
         final current = state as RequirementsLoaded;
-        final next = current.requirements.map((r) {
+        final patched = current.requirements.map((r) {
           return r.id == updated.id ? updated : r;
         }).toList();
         final exists = current.requirements.any((r) => r.id == updated.id);
+        next = exists ? patched : [...current.requirements, updated];
         emit(RequirementsLoaded(
-          requirements: exists ? next : [...current.requirements, updated],
+          requirements: next,
         ));
       }
 
-      emit(RequirementsSuccess("Requirement updated successfully.", requirement: updated));
+      emit(RequirementsSuccess(
+        "Requirement updated successfully.",
+        requirement: updated,
+        requirements: next,
+      ));
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }
@@ -182,13 +202,15 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
   ) async {
     try {
       await requirementsRepository.deleteRequirement(event.id);
+      List<RequirementModel> next = [];
       if (state is RequirementsLoaded) {
         final current = state as RequirementsLoaded;
+        next = current.requirements.where((r) => r.id != event.id).toList();
         emit(RequirementsLoaded(
-          requirements: current.requirements.where((r) => r.id != event.id).toList(),
+          requirements: next,
         ));
       }
-      emit(RequirementsSuccess("Requirement deleted successfully."));
+      emit(RequirementsSuccess("Requirement deleted successfully.", requirements: next));
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }

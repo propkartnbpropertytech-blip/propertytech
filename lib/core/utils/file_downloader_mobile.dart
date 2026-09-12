@@ -9,8 +9,8 @@ Future<void> downloadFile(List<int> bytes, String filename) async {
     final file = File('${downloadsDir.path}/$filename');
     await file.writeAsBytes(bytes);
     try {
-      final xFile = XFile(file.path);
-      await Share.shareXFiles([xFile], text: filename);
+      // Cleanly reveal and select the downloaded file in Windows File Explorer
+      await Process.run('explorer.exe', ['/select,', file.path]);
     } catch (_) {}
     return;
   }

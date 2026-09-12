@@ -7,7 +7,6 @@ import 'package:propkart/core/storage/model_mappers.dart';
 import 'package:propkart/core/storage/performance_logger.dart';
 import 'package:propkart/core/security/role_guard.dart';
 import 'package:propkart/core/storage/local_repositories.dart';
-import 'package:collection/collection.dart';
 
 class RequirementsRepository {
   final RequirementsService _requirementsService = RequirementsService();
@@ -148,6 +147,7 @@ class RequirementsRepository {
         return local;
       }).toList();
       await _coordinator.requirementLocal.saveRequirements(localEntities);
+      _coordinator.refreshRequirements();
       final isarWriteMs = DateTime.now().difference(writeStart).inMilliseconds;
 
       final totalMs = DateTime.now().difference(start).inMilliseconds;
@@ -269,6 +269,9 @@ class RequirementsRepository {
         if (data.containsKey('notes')) {
           localItem.notes = data['notes'] as String?;
         }
+        if (data.containsKey('assigned_to')) {
+          localItem.assignedTo = data['assigned_to'] as String?;
+        }
         await _coordinator.requirementLocal.saveRequirements([localItem]);
       } else {
         final existingList = await _coordinator.requirementLocal.getRequirements();
@@ -277,6 +280,9 @@ class RequirementsRepository {
           final match = matches.first;
           if (data.containsKey('notes')) {
             match.notes = data['notes'];
+          }
+          if (data.containsKey('assigned_to')) {
+            match.assignedTo = data['assigned_to'] as String?;
           }
           await _coordinator.requirementLocal.saveRequirements([match]);
         }
@@ -290,6 +296,9 @@ class RequirementsRepository {
         final match = matches.first;
         if (data.containsKey('notes')) {
           match.notes = data['notes'];
+        }
+        if (data.containsKey('assigned_to')) {
+          match.assignedTo = data['assigned_to'] as String?;
         }
         await _coordinator.requirementLocal.saveRequirements([match]);
       }

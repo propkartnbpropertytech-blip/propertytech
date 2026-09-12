@@ -156,6 +156,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   final ScrollController _scrollController = ScrollController();
   String? _highlightedRequirementId;
   List<RequirementModel> _cachedRequirements = [];
+  String _salesLeadGroupFilter = 'assigned'; // 'assigned', 'added', 'all'
 
   Future<void> _confirmBulkMoveToBin(List<RequirementModel> pageItems) async {
     final count = _selectedRequirementIds.length;
@@ -246,6 +247,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         setState(() {
           _refreshFollowupsFuture();
         });
+        _triggerFetch();
       }
     });
     _dashboardStreamSub = RepositoryCoordinator().dashboardStream.listen((_) {
@@ -482,8 +484,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _triggerFetch();
   }
 
-  void _showAddEditDialog([RequirementModel? req]) {
-    showDialog(
+  void _showAddEditDialog([RequirementModel? req]) async {
+    await showDialog(
       context: context,
       builder: (dialogContext) => AddEditRequirementScreen(
         requirement: req,
@@ -492,6 +494,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         },
       ),
     );
+    if (mounted) {
+      _triggerFetch();
+    }
   }
 
   void _showDeleteConfirmDialog(RequirementModel req) {
@@ -587,7 +592,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
     if (_isLeadTransferredAway(req, currentUser)) return;
-    if (newStatus == req.status && newStatus != 'Re-Followup') return;
+
+    final bool isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
+    if (!isUnhandledAssigned && newStatus == req.status && newStatus != 'Re-Followup') return;
+
+    final Map<String, dynamic> nextCustomFields = Map<String, dynamic>.from(req.metaCustomFields ?? {});
+    if (isUnhandledAssigned) {
+      nextCustomFields['handled_by_sales'] = true;
+      nextCustomFields['telecaller_status'] = _getTelecallerStatusLabel(req);
+      nextCustomFields['sales_handled_at'] = DateTime.now().toIso8601String();
+    }
+    final RequirementModel baseReq = req.copyWith(metaCustomFields: nextCustomFields);
 
     if (req.status == 'Won' && newStatus != 'Won') {
       await _revertWonPropertiesToAvailable(req);
@@ -612,7 +627,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       showDialog(
         context: context,
         builder: (dialogContext) => RequirementStepperDialog(
-          requirement: req,
+          requirement: baseReq,
           initialStep: 1,
           onSavedWithDate: (scheduledDate) {
             final now = DateTime.now();
@@ -664,7 +679,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       showDialog(
         context: context,
         builder: (dialogContext) => RequirementStepperDialog(
-          requirement: req,
+          requirement: baseReq,
           initialStep: 1,
           updateStatusOnSave: true,
           isSiteVisit: true,
@@ -677,13 +692,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       showDialog(
         context: context,
         builder: (dialogContext) => RequirementWinPropertySelectionDialog(
-          requirement: req,
+          requirement: baseReq,
           onConfirmed: (List<PropertyModel> selectedProperties) async {
             context.read<RequirementsBloc>().add(
-              UpdateRequirementEvent(req.copyWith(status: 'Won')),
+              UpdateRequirementEvent(baseReq.copyWith(status: 'Won')),
             );
             await RequirementsRepository().updateRequirementFields(req.id, {
               'status': 'Won',
+              if (isUnhandledAssigned) 'meta_custom_fields': nextCustomFields,
             });
 
             final selectedIds = selectedProperties.map((p) => p.id).toList();
@@ -728,10 +744,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     } else {
       NotificationCenter.removeNotificationsForClient(req.clientName);
       context.read<RequirementsBloc>().add(
-        UpdateRequirementEvent(req.copyWith(status: newStatus)),
+        UpdateRequirementEvent(baseReq.copyWith(status: newStatus)),
       );
       RequirementsRepository().updateRequirementFields(req.id, {
         'status': newStatus,
+        if (isUnhandledAssigned) 'meta_custom_fields': nextCustomFields,
       });
     }
   }
@@ -804,10 +821,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authState = context.watch<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final reqBlocState = context.watch<RequirementsBloc>().state;
+    if (reqBlocState is RequirementsLoaded) {
+      _cachedRequirements = reqBlocState.requirements;
+    }
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: BlocListener<RequirementsBloc, RequirementsState>(
         listener: (context, state) {
+          if (state is RequirementsLoaded) {
+            _cachedRequirements = state.requirements;
+          }
           if (state is RequirementsSuccess) {
             final msg = _activeMainTab == 'My Won'
                 ? '${state.message} (My Won only shows Won items.)'
@@ -872,6 +899,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               const SizedBox(height: CRMSpacing.l),
 
               if (_activeMainTab == 'Leads') ...[
+                if (currentUser != null && currentUser.role == 'Sales') ...[
+                  _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
+                  const SizedBox(height: CRMSpacing.m),
+                ],
+
                 // Filters & Search Card
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -887,14 +919,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             child: _isMobileFiltersExpanded
                                 ? Padding(
                                     padding: const EdgeInsets.only(top: CRMSpacing.m),
-                                    child: _buildSearchAndFiltersCard(),
+                                    child: _buildSearchAndFiltersCard(_cachedRequirements),
                                   )
                                 : const SizedBox.shrink(),
                           ),
                         ],
                       );
                     } else {
-                      return _buildSearchAndFiltersCard();
+                      return _buildSearchAndFiltersCard(_cachedRequirements);
                     }
                   },
                 ),
@@ -1916,8 +1948,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 onChanged: (String? newSalesmanId) {
                   String? newSalesmanName;
                   if (newSalesmanId != null) {
-                    final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
-                    newSalesmanName = u.fullName;
+                    final u = salesmen.where((s) => s.id == newSalesmanId).firstOrNull;
+                    newSalesmanName = u?.fullName;
                   }
                   
                   context.read<RequirementsBloc>().add(
@@ -2169,6 +2201,236 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   bool _salesCanViewRequirement(RequirementModel r, UserModel currentUser) {
     return _isUserCreator(r, currentUser) || _isUserAssignee(r, currentUser);
+  }
+
+  bool _isUnhandledAssignedLead(RequirementModel req, UserModel? currentUser) {
+    if (currentUser == null || currentUser.role != 'Sales') return false;
+    if (_isLeadTransferredAway(req, currentUser)) return false;
+
+    // Lead must be assigned to this sales user and NOT created by them
+    final isAssigned = _isUserAssignee(req, currentUser);
+    final isCreator = _isUserCreator(req, currentUser);
+    if (!isAssigned || isCreator) return false;
+
+    // Check if sales user has already handled the lead
+    final meta = req.metaCustomFields;
+    if (meta != null) {
+      if (meta['handled_by_sales'] == true || meta['handled_by_sales'] == 'true') {
+        return false;
+      }
+      if (meta['sales_handled_at'] != null) {
+        return false;
+      }
+    }
+
+    // If terminal or closed state, it is not unhandled
+    if (req.status == 'Won' || req.status == 'Closed') return false;
+
+    return true;
+  }
+
+  String _getTelecallerStatusLabel(RequirementModel req) {
+    final meta = req.metaCustomFields;
+    if (meta != null && meta['telecaller_status'] != null) {
+      final s = meta['telecaller_status'].toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    final raw = req.status;
+    if (raw == 'Active' || raw == 'Live' || raw == 'Interested') return 'Interested';
+    if (raw == 'New' || raw.isEmpty) return 'Interested';
+    return displayStatusLabel(raw);
+  }
+
+  bool _shouldShowTelecallerStatusBadge(RequirementModel req, UserModel? currentUser) {
+    if (currentUser == null || currentUser.role != 'Sales') return false;
+    if (_isLeadTransferredAway(req, currentUser)) return false;
+
+    final isAssigned = _isUserAssignee(req, currentUser);
+    final isCreator = _isUserCreator(req, currentUser);
+    if (!isAssigned || isCreator) return false;
+
+    // Show if unhandled OR if handled with telecaller_status recorded
+    return _isUnhandledAssignedLead(req, currentUser) ||
+        (req.metaCustomFields != null && req.metaCustomFields!['telecaller_status'] != null);
+  }
+
+  Widget _buildTelecallerStatusBadge(RequirementModel req, {bool compact = false}) {
+    final statusLabel = _getTelecallerStatusLabel(req);
+    final creator = (req.creatorName != null && req.creatorName!.trim().isNotEmpty)
+        ? req.creatorName!.trim()
+        : 'telecaller';
+    final tooltipText = 'Marked as $statusLabel by $creator';
+
+    return Tooltip(
+      message: tooltipText,
+      child: Container(
+        margin: const EdgeInsets.only(top: 3),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 6 : 8,
+          vertical: compact ? 2 : 3,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE0F2FE),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+          border: Border.all(
+            color: const Color(0xFF38BDF8).withValues(alpha: 0.5),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.phone_in_talk_rounded,
+              size: 11,
+              color: Color(0xFF0284C7),
+            ),
+            const SizedBox(width: 4),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: compact ? 120 : 160),
+              child: Text(
+                '$statusLabel by telecaller',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: const Color(0xFF0369A1),
+                  fontWeight: FontWeight.w600,
+                  fontSize: compact ? 10 : 11,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSalesLeadGroupSelector(UserModel currentUser, List<RequirementModel> allLoadedReqs) {
+    final assignedCount = allLoadedReqs.where((r) =>
+        _salesCanViewRequirement(r, currentUser) &&
+        _isUserAssignee(r, currentUser) &&
+        !_isUserCreator(r, currentUser) &&
+        !_isLeadTransferredAway(r, currentUser) &&
+        r.status != 'Won' && r.status != 'Closed'
+    ).length;
+
+    final addedCount = allLoadedReqs.where((r) =>
+        _salesCanViewRequirement(r, currentUser) &&
+        _isUserCreator(r, currentUser) &&
+        !_isLeadTransferredAway(r, currentUser) &&
+        r.status != 'Won' && r.status != 'Closed'
+    ).length;
+
+    final allCount = allLoadedReqs.where((r) =>
+        _salesCanViewRequirement(r, currentUser) &&
+        !_isLeadTransferredAway(r, currentUser) &&
+        r.status != 'Won' && r.status != 'Closed'
+    ).length;
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+        border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildSalesGroupFilterButton(
+              label: 'Leads Assigned to Me',
+              icon: Icons.assignment_ind_rounded,
+              value: 'assigned',
+              count: assignedCount,
+            ),
+            const SizedBox(width: 6),
+            _buildSalesGroupFilterButton(
+              label: 'Leads Added by Me',
+              icon: Icons.person_add_alt_1_rounded,
+              value: 'added',
+              count: addedCount,
+            ),
+            const SizedBox(width: 6),
+            _buildSalesGroupFilterButton(
+              label: 'All My Leads',
+              icon: Icons.dashboard_customize_rounded,
+              value: 'all',
+              count: allCount,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSalesGroupFilterButton({
+    required String label,
+    required IconData icon,
+    required String value,
+    required int count,
+  }) {
+    final bool isSelected = _salesLeadGroupFilter == value;
+    final primaryColor = CRMColors.primaryOf(context);
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _salesLeadGroupFilter = value;
+          _currentPage = 1;
+        });
+      },
+      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+      child: AnimatedContainer(
+        duration: CRMMotion.fast,
+        curve: CRMMotion.easeInOut,
+        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? primaryColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? Colors.white : CRMColors.textSecondaryOf(context),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: CRMTypography.bodyMedium.copyWith(
+                color: isSelected ? Colors.white : CRMColors.textOf(context),
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white.withValues(alpha: 0.25) : CRMColors.backgroundOf(context),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected ? Colors.white.withValues(alpha: 0.3) : CRMColors.borderOf(context),
+                  width: 0.8,
+                ),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : CRMColors.textSecondaryOf(context),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildSalesAssignToLabel(RequirementModel req, UserModel? currentUser) {
@@ -2508,7 +2770,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       );
     }
 
-    final String currentStatus = getEffectiveStatus(req);
+    final bool isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
+    final String currentStatus = isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req);
     final statusColor = compact ? _getStatusColor(currentStatus) : CRMColors.primary;
     final bool hasPreviousFollowup = currentStatus == 'Follow-up' ||
         currentStatus == 'Re-Followup' ||
@@ -3021,12 +3284,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   Widget _buildStatusControlWithNotes(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
     final String? userNote = _getCleanNote(req);
     final bool hasNotes = userNote != null && userNote.isNotEmpty;
+    final bool showTelecallerBadge = _shouldShowTelecallerStatusBadge(req, currentUser);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _buildStatusControl(req, currentUser, compact: compact),
+        if (showTelecallerBadge)
+          _buildTelecallerStatusBadge(req, compact: compact),
         const SizedBox(height: 4),
         Builder(
           builder: (btnContext) {
@@ -3079,6 +3345,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               if (!_salesCanViewRequirement(r, currentUser)) {
                 return false;
               }
+              if (_salesLeadGroupFilter == 'assigned') {
+                if (!(_isUserAssignee(r, currentUser) && !_isUserCreator(r, currentUser))) {
+                  return false;
+                }
+              } else if (_salesLeadGroupFilter == 'added') {
+                if (!_isUserCreator(r, currentUser)) {
+                  return false;
+                }
+              }
             }
 
             final matchesListingType = getListingTypeLabel(r) == _activeListingTab;
@@ -3089,8 +3364,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 r.configurationIds.any((id) => _selectedConfigIds.contains(id)) ||
                 r.propertyTypeIds.any((id) => _selectedConfigIds.contains(id));
             
+            final bool isUnhandledAssigned = _isUnhandledAssignedLead(r, currentUser);
             // Map legacy status strings to new pipeline statuses for backward compatibility
-            String mappedStatus = getEffectiveStatus(r);
+            String mappedStatus = isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(r);
             if (mappedStatus == 'Active' || mappedStatus == 'Live') mappedStatus = 'Interested';
             if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
             if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
@@ -3101,9 +3377,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
             final matchesStatus = _selectedStatus == "All" ||
                 mappedStatus == _selectedStatus ||
-                r.status == _selectedStatus ||
-                (_selectedStatus == 'Rejected' && r.status.startsWith('Rejected')) ||
-                (_selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')));
+                (!isUnhandledAssigned && r.status == _selectedStatus) ||
+                (!isUnhandledAssigned && _selectedStatus == 'Rejected' && r.status.startsWith('Rejected')) ||
+                (!isUnhandledAssigned && _selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')));
 
             final matchesDate = _matchesLeadDateFilter(r);
 
@@ -6864,11 +7140,24 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           debugPrint('⚠️ Local site visit followup save error: $e');
         }
 
+        final authState = context.read<AuthBloc>().state;
+        final currentUser = authState is Authenticated ? authState.user : null;
+
+        final Map<String, dynamic> nextCustomFields = Map<String, dynamic>.from(widget.requirement.metaCustomFields ?? {});
+        if (currentUser?.role == 'Sales') {
+          nextCustomFields['handled_by_sales'] = true;
+          if (!nextCustomFields.containsKey('telecaller_status')) {
+            nextCustomFields['telecaller_status'] = widget.requirement.status;
+          }
+          nextCustomFields['sales_handled_at'] = DateTime.now().toIso8601String();
+        }
+
         final RequirementsRepository requirementsRepository = RequirementsRepository();
         final updatedReq = widget.requirement.copyWith(
           status: 'Site Visit',
           nextFollowupDate: isoDateStr,
           remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) ? widget.requirement.remarks : remarks,
+          metaCustomFields: nextCustomFields,
         );
         final saved = await requirementsRepository.updateRequirement(updatedReq);
         final finalReq = saved.copyWith(
@@ -6880,6 +7169,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           creatorName: (saved.creatorName != null && saved.creatorName!.isNotEmpty) ? saved.creatorName : widget.requirement.creatorName,
           assignedTo: (saved.assignedTo != null && saved.assignedTo!.isNotEmpty) ? saved.assignedTo : widget.requirement.assignedTo,
           assigneeName: (saved.assigneeName != null && saved.assigneeName!.isNotEmpty) ? saved.assigneeName : widget.requirement.assigneeName,
+          metaCustomFields: nextCustomFields,
         );
         await RepositoryCoordinator().requirementLocal.saveRequirements([finalReq.toLocal()]);
 
@@ -6925,6 +7215,18 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           debugPrint('⚠️ Local followup save error: $e');
         }
 
+        final authState = context.read<AuthBloc>().state;
+        final currentUser = authState is Authenticated ? authState.user : null;
+
+        final Map<String, dynamic> nextCustomFields = Map<String, dynamic>.from(widget.requirement.metaCustomFields ?? {});
+        if (currentUser?.role == 'Sales') {
+          nextCustomFields['handled_by_sales'] = true;
+          if (!nextCustomFields.containsKey('telecaller_status')) {
+            nextCustomFields['telecaller_status'] = widget.requirement.status;
+          }
+          nextCustomFields['sales_handled_at'] = DateTime.now().toIso8601String();
+        }
+
         final RequirementsRepository requirementsRepository = RequirementsRepository();
         final bool hasPreviousFollowup = widget.requirement.status == 'Follow-up' ||
             widget.requirement.status == 'Re-Followup' ||
@@ -6935,6 +7237,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           status: targetStatus,
           nextFollowupDate: isoDateStr,
           remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) ? widget.requirement.remarks : remarks,
+          metaCustomFields: nextCustomFields,
         );
         final saved = await requirementsRepository.updateRequirement(updatedReq);
         final finalReq = saved.copyWith(
@@ -6946,6 +7249,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           creatorName: (saved.creatorName != null && saved.creatorName!.isNotEmpty) ? saved.creatorName : widget.requirement.creatorName,
           assignedTo: (saved.assignedTo != null && saved.assignedTo!.isNotEmpty) ? saved.assignedTo : widget.requirement.assignedTo,
           assigneeName: (saved.assigneeName != null && saved.assigneeName!.isNotEmpty) ? saved.assigneeName : widget.requirement.assigneeName,
+          metaCustomFields: nextCustomFields,
         );
         await RepositoryCoordinator().requirementLocal.saveRequirements([finalReq.toLocal()]);
 

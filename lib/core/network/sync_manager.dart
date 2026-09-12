@@ -277,9 +277,14 @@ class SyncManager {
           else if (table == "followups") followupsToDelete.add(id);
           else if (table == "builders") buildersToDelete.add(id);
           else if (table == "owners") ownersToDelete.add(id);
+          else if (table == "integration_leads") {
+            unawaited(IntegrationService().fetchServerLeads(silent: true));
+          }
         }
       } else if (record != null) {
-        if (table == "properties") {
+        if (table == "integration_leads") {
+          unawaited(IntegrationService().fetchServerLeads(silent: true));
+        } else if (table == "properties") {
           try {
             final id = record['id'] as String;
             final response = await apiClient.get('/properties/$id');
@@ -560,7 +565,7 @@ class SyncManager {
       await processOutboxQueue();
 
       // 2. Fetch server data across all core entities in parallel
-      final results = await Future.wait([
+      final coreFutures = Future.wait<Map<String, dynamic>>([
         PropertiesService().getProperties().catchError((e) => <String, dynamic>{}),
         RequirementsService().getRequirements().catchError((e) => <String, dynamic>{}),
         BuildersService().getBuilders().catchError((e) => <String, dynamic>{}),
@@ -568,6 +573,10 @@ class SyncManager {
         ClientsService().getClients().catchError((e) => <String, dynamic>{}),
         DashboardService().getDashboardData().catchError((e) => <String, dynamic>{}),
       ]);
+      final campaignFuture = IntegrationService().fetchServerLeads(silent: true).catchError((e) => 0);
+
+      final results = await coreFutures;
+      final campaignCount = await campaignFuture;
 
       final propRes = results[0];
       final reqRes = results[1];
@@ -670,7 +679,7 @@ class SyncManager {
       if (cList.isNotEmpty) _coordinator.refreshClients();
       if (freshDashboard != null || fList.isNotEmpty) _coordinator.refreshDashboard();
 
-      final totalUpdated = pList.length + rList.length + bList.length + oList.length + cList.length;
+      final totalUpdated = pList.length + rList.length + bList.length + oList.length + cList.length + campaignCount;
       final elapsedMs = DateTime.now().difference(start).inMilliseconds;
       AppLogger.sync("SyncManager: 9s database ping completed in ${elapsedMs}ms ($totalUpdated records refreshed)");
 
