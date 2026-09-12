@@ -23,7 +23,6 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
   Timer? _searchDebounce;
 
   bool _isLoading = true;
-  bool _isLoadingHierarchy = true;
   String? _errorMessage;
 
   AuditLogsResponse? _logsResponse;
@@ -54,18 +53,14 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
   }
 
   Future<void> _loadHierarchy() async {
-    setState(() => _isLoadingHierarchy = true);
     try {
       final res = await _service.fetchUsersHierarchy();
       if (mounted) {
         setState(() {
           _hierarchy = res;
-          _isLoadingHierarchy = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _isLoadingHierarchy = false);
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadLogs() async {
@@ -461,15 +456,15 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
       ),
       isExpanded: true,
       items: [
-        DropdownMenuItem(value: 'All', child: Text('All ( members)')),
+        DropdownMenuItem(value: 'All', child: Text('All (${users.length} members)')),
         ...users.map((u) {
           final subtitle = u.adminName != null && u.adminName!.isNotEmpty && u.adminName != 'Unassigned'
-              ? ' • Under '
+              ? ' • Under ${u.adminName}'
               : '';
           return DropdownMenuItem(
             value: u.id,
             child: Text(
-              ' ()',
+              '${u.name} (${u.role}$subtitle)',
               overflow: TextOverflow.ellipsis,
             ),
           );
@@ -572,7 +567,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
           icon: Icon(Icons.date_range_outlined, size: 18, color: hasDateFilter ? primaryColor : null),
           label: Text(
             hasDateFilter
-                ? ' - '
+                ? '${dateFormat.format(_startDate!)} - ${dateFormat.format(_endDate!)}'
                 : 'Date Range',
             style: TextStyle(
               fontSize: 12.5,
@@ -672,7 +667,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: logs.length,
-      separatorBuilder: (_, __) => const SizedBox(height: CRMSpacing.s),
+      separatorBuilder: (_, index) => const SizedBox(height: CRMSpacing.s),
       itemBuilder: (context, index) => _buildLogCard(context, logs[index], isDark),
     );
   }
@@ -859,7 +854,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          'Page  of   •   total activities',
+          'Page ${res.page} of ${res.totalPages}  •  ${res.total} total activities',
           style: TextStyle(fontSize: 12.5, color: CRMColors.textSecondaryOf(context)),
         ),
         Row(
@@ -905,7 +900,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
           children: [
             const Icon(Icons.data_object_rounded, size: 20),
             const SizedBox(width: 8),
-            Text('Telemetry Payload: ', style: const TextStyle(fontSize: 16)),
+            Text('Telemetry Payload: ${log.action}', style: const TextStyle(fontSize: 16)),
           ],
         ),
         content: SizedBox(
@@ -916,9 +911,9 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildPayloadSection('Event Name', log.eventName ?? 'N/A'),
-                _buildPayloadSection('Record Type & ID', ' #'),
+                _buildPayloadSection('Record Type & ID', '${log.recordType ?? "General"} #${log.recordId ?? "N/A"}'),
                 if (log.dwellMs > 0)
-                  _buildPayloadSection('Dwell Duration', ' seconds ( ms)'),
+                  _buildPayloadSection('Dwell Duration', '${(log.dwellMs / 1000).toStringAsFixed(1)} seconds (${log.dwellMs} ms)'),
                 if (log.details != null)
                   _buildJsonBlock('Details Payload', log.details!),
                 if (log.oldData != null)
@@ -1040,9 +1035,9 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
     return Column(
       children: List.generate(
         5,
-        (index) => Padding(
-          padding: const EdgeInsets.only(bottom: CRMSpacing.m),
-          child: CRMSkeletonCard(height: 90),
+        (index) => const Padding(
+          padding: EdgeInsets.only(bottom: CRMSpacing.m),
+          child: CRMSkeleton(width: double.infinity, height: 90, borderRadius: 12),
         ),
       ),
     );

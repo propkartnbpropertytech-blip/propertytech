@@ -6342,8 +6342,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         'client_name': req.clientName,
         'client_mobile': req.clientMobile,
         'category': req.categoryName,
-        'city': req.cityName,
-        'budget': req.budget,
+        'areas': req.areaNames.join(', '),
+        'min_budget': req.minBudget,
+        'max_budget': req.maxBudget,
       },
     );
     showCRMRequirementDrawer(context, req);
@@ -8181,8 +8182,9 @@ void showCRMRequirementDrawer(BuildContext context, RequirementModel req) {
       'client_name': req.clientName,
       'client_mobile': req.clientMobile,
       'category': req.categoryName,
-      'city': req.cityName,
-      'budget': req.budget,
+      'areas': req.areaNames.join(', '),
+      'min_budget': req.minBudget,
+      'max_budget': req.maxBudget,
     },
   );
   showDialog(
