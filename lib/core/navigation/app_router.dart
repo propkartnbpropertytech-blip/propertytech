@@ -51,6 +51,7 @@ import '../../features/reports/bloc/reports_event.dart';
 import '../utils/seo_helper.dart';
 import 'mobile_system_back_handler.dart';
 import '../../features/team_messages/screens/team_messages_screen.dart';
+import 'audit_route_observer.dart';
 
 
 class GoRouterRefreshStream extends ChangeNotifier {
@@ -99,6 +100,9 @@ class AppRouter {
   late final router = GoRouter(
     initialLocation: _getWebInitialLocation(),
     refreshListenable: GoRouterRefreshStream(authBloc.stream),
+    observers: [
+      AuditRouteObserver(),
+    ],
     routes: [
       GoRoute(
         path: '/',
