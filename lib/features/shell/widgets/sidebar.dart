@@ -182,7 +182,15 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         title: 'Settings',
                         icon: Icons.settings_outlined,
                         route: '/settings',
-                        isActive: currentPath.startsWith('/settings'),
+                        isActive: currentPath == '/settings',
+                      ),
+                    if (RoleGuard.isSuperAdmin(widget.userRole))
+                      _buildNavItem(
+                        context,
+                        title: 'Audit Logs',
+                        icon: Icons.history_rounded,
+                        route: '/settings/audit-logs',
+                        isActive: currentPath.startsWith('/settings/audit-logs'),
                       ),
                     if (widget.userRole.isEmpty ||
                         RoleGuard.canViewPage(widget.userRole, '/bin'))

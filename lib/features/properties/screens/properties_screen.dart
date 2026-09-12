@@ -39,6 +39,8 @@ import '../../requirements/utils/property_share_pdf.dart';
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
 import '../../../core/theme/theme_manager.dart';
+import '../../../core/telemetry/audit_telemetry_service.dart';
+import '../../../core/telemetry/audit_dwell_tracker.dart';
 
 class PropertiesScreen extends StatefulWidget {
   final String? openPropertyId;
@@ -538,6 +540,16 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                     await FileDownloader.download(
                                         bytes, fileName);
 
+                                    AuditTelemetryService.instance.trackPropertyShare(
+                                      propertyId: p.id,
+                                      channel: 'PDF Download',
+                                      extra: {
+                                        'property_code': p.propertyCode,
+                                        'title': p.title,
+                                        'filename': fileName,
+                                      },
+                                    );
+
                                     if (context.mounted) {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
@@ -555,6 +567,16 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                     if (cleanPhone.length == 10) {
                                       formattedPhone = '91$cleanPhone';
                                     }
+
+                                    AuditTelemetryService.instance.trackPropertyShare(
+                                      propertyId: p.id,
+                                      channel: 'WhatsApp',
+                                      recipientInfo: formattedPhone.isNotEmpty ? formattedPhone : null,
+                                      extra: {
+                                        'property_code': p.propertyCode,
+                                        'title': p.title,
+                                      },
+                                    );
 
                                     final text = Uri.encodeComponent(
                                         "Hello, please find property details for ${p.title ?? 'Property'} (${p.propertyCode}).");
@@ -2106,9 +2128,21 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final formattedDateText = _formatPropertyDate(p.createdAt);
     final bool isHighlighted = p.id == _highlightedPropertyId;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: CRMSpacing.m),
-      child: CRMCard(
+    return AuditHoverDwell(
+      targetType: 'PropertyCard',
+      targetId: p.id,
+      page: '/properties',
+      metadata: {
+        'title': propertyTitle,
+        'property_code': p.propertyCode,
+        'category': p.categoryName,
+        'city': p.cityName,
+        'area': p.areaName,
+        'price': p.price,
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+        child: CRMCard(
         borderColor: isHighlighted ? CRMColors.primaryOf(context) : null,
         backgroundColor: isHighlighted ? CRMColors.primaryOf(context).withOpacity(0.08) : null,
         padding: const EdgeInsets.all(16),
@@ -2483,6 +2517,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           },
         ),
       ),
+    ),
     );
   }
 
@@ -2507,8 +2542,19 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       Set<String> bookmarkedIds, PropertyMetadataModel? metadata) {
     final isMine = _hasEditAccess(p, currentUser);
     final isHighlighted = p.id == _highlightedPropertyId;
-
-    return AnimatedContainer(
+    return AuditHoverDwell(
+      targetType: 'PropertyCard',
+      targetId: p.id,
+      page: '/properties',
+      metadata: {
+        'title': p.title ?? 'Property #${p.propertyCode}',
+        'property_code': p.propertyCode,
+        'category': p.categoryName,
+        'city': p.cityName,
+        'area': p.areaName,
+        'price': p.price,
+      },
+      child: AnimatedContainer(
       duration: CRMMotion.medium,
       curve: CRMMotion.easeOut,
       decoration: BoxDecoration(
@@ -2836,6 +2882,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -4104,12 +4151,26 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         borderRadius: BorderRadius.circular(CRMBorderRadius.s),
                         borderSide: BorderSide.none),
                   ),
-                  onChanged: (_) => _loadProperties(),
+                  onChanged: (val) {
+                    AuditTelemetryService.instance.trackSearch(
+                      query: val,
+                      module: 'Properties',
+                    );
+                    _loadProperties();
+                  },
                 );
 
                 final searchButton = CRMButton(
                   label: 'Search',
-                  onPressed: _loadProperties,
+                  onPressed: () {
+                    AuditTelemetryService.instance.trackButtonClick(
+                      buttonId: 'btn_search_properties',
+                      buttonLabel: 'Search Properties',
+                      page: '/properties',
+                      extra: {'query': _searchController.text.trim()},
+                    );
+                    _loadProperties();
+                  },
                 );
 
                 if (isCompactSearch) {
@@ -5489,6 +5550,18 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   void _openPropertyDetails(BuildContext context, PropertyModel p,
       {bool forceInAppDrawer = false}) {
+    AuditTelemetryService.instance.trackPropertyTouch(
+      propertyId: p.id,
+      propertyTitle: p.title ?? 'Property #${p.propertyCode}',
+      touchType: 'view_details',
+      extra: {
+        'property_code': p.propertyCode,
+        'category': p.categoryName,
+        'city': p.cityName,
+        'area': p.areaName,
+        'price': p.price,
+      },
+    );
     final bool isMobile = MediaQuery.of(context).size.width < 600;
     if (kIsWeb && !isMobile && !forceInAppDrawer) {
       final String url = '${Uri.base.origin}/properties/${p.id}';

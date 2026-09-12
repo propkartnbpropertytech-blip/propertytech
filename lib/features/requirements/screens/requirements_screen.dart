@@ -47,6 +47,8 @@ import 'package:propkart/core/storage/isar_collections.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../utils/property_share_pdf.dart';
 import '../../../core/api/cloudinary_uploader.dart';
+import '../../../core/telemetry/audit_telemetry_service.dart';
+import '../../../core/telemetry/audit_dwell_tracker.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color kWhatsAppGreen = Color(0xFF25D366);
@@ -1122,12 +1124,27 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     ),
                   ),
                   onChanged: (val) {
+                    AuditTelemetryService.instance.trackSearch(
+                      query: val,
+                      module: 'Leads',
+                    );
                     setState(() {});
                   },
                 ),
               ),
               const SizedBox(width: CRMSpacing.s),
-              CRMButton(label: "Search", onPressed: _triggerFetch),
+              CRMButton(
+                label: "Search",
+                onPressed: () {
+                  AuditTelemetryService.instance.trackButtonClick(
+                    buttonId: 'btn_search_leads',
+                    buttonLabel: 'Search Leads',
+                    page: '/requirements',
+                    extra: {'query': _searchController.text.trim()},
+                  );
+                  _triggerFetch();
+                },
+              ),
             ],
           ),
           const SizedBox(height: CRMSpacing.m),
@@ -6593,6 +6610,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _showRequirementDetailDrawer(RequirementModel req) {
+    AuditTelemetryService.instance.trackPropertyTouch(
+      propertyId: req.id,
+      propertyTitle: req.clientName,
+      touchType: 'lead_detail_view',
+      extra: {
+        'client_name': req.clientName,
+        'client_mobile': req.clientMobile,
+        'category': req.categoryName,
+        'areas': req.areaNames.join(', '),
+        'min_budget': req.minBudget,
+        'max_budget': req.maxBudget,
+      },
+    );
     showCRMRequirementDrawer(context, req);
   }
 
@@ -8447,6 +8477,20 @@ String getListingTypeLabel(RequirementModel r) {
 }
 
 void showCRMRequirementDrawer(BuildContext context, RequirementModel req) {
+  AuditTelemetryService.instance.trackButtonClick(
+    buttonId: 'lead_detail_drawer_open',
+    buttonLabel: 'View Lead Details',
+    page: '/requirements',
+    extra: {
+      'lead_id': req.id,
+      'client_name': req.clientName,
+      'client_mobile': req.clientMobile,
+      'category': req.categoryName,
+      'areas': req.areaNames.join(', '),
+      'min_budget': req.minBudget,
+      'max_budget': req.maxBudget,
+    },
+  );
   showDialog(
     context: context,
     barrierDismissible: true,

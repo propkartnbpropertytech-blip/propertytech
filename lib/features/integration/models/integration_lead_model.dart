@@ -59,41 +59,72 @@ class IntegrationLeadModel {
     return classifyLeadTypeFromRaw(rawJson);
   }
 
-  /// Classifies lead type from raw payload keys and values
+  /// Classifies lead type from raw payload keys, values, and campaign metadata
   static String classifyLeadTypeFromRaw(Map<String, dynamic> rawJson) {
-    final rawStr = jsonEncode(rawJson).toLowerCase();
+    final campaign = (rawJson['campaign_name'] ?? rawJson['Campaign Name'] ?? '').toString().toLowerCase();
+    final form = (rawJson['form_name'] ?? rawJson['Form Name'] ?? '').toString().toLowerCase();
+    final ad = (rawJson['ad_name'] ?? rawJson['Ad Name'] ?? '').toString().toLowerCase();
+    final metaStr = '$campaign $form $ad';
 
-    // 1. Explicit owner keywords
-    if (rawStr.contains('rent out') ||
-        rawStr.contains('rent_out') ||
-        rawStr.contains('property located') ||
-        rawStr.contains('where_is_your_property_located') ||
-        rawStr.contains('expected monthly rent') ||
-        rawStr.contains('expected_monthly_rent') ||
-        rawStr.contains('rental property') ||
-        rawStr.contains('complete_address_of_your_property') ||
-        rawStr.contains('what_type_of_property_are_you_looking_to_rent_out') ||
-        rawStr.contains('what_type_of_property_are_you_looking_to_sell')) {
-      return 'Property Listing';
-    }
-
-    // 2. Explicit tenant keywords
-    if (rawStr.contains('monthly_rental_budget') ||
-        rawStr.contains('monthly rental budget') ||
-        rawStr.contains('type_of_home') ||
-        rawStr.contains('what_type_of_home') ||
-        rawStr.contains('who_will_be_staying') ||
-        rawStr.contains('which_area_are_you_looking') ||
-        rawStr.contains('which_location_are_you_looking')) {
+    // 1. High-Priority Campaign / Form explicit matching:
+    // Survey Ad 3108, Survey Ad 0308, survey ads -> Requirement (Seeker)
+    if (metaStr.contains('survey ad 3108') ||
+        metaStr.contains('survey ad 0308') ||
+        metaStr.contains('survey ad') ||
+        metaStr.contains('3108') ||
+        metaStr.contains('0308') ||
+        metaStr.contains('tenant') ||
+        metaStr.contains('buyer') ||
+        metaStr.contains('looking for property') ||
+        metaStr.contains('looking for home')) {
       return 'Requirement';
     }
 
-    // 3. Fallback: check campaign or form name if present
-    final campaign = (rawJson['campaign_name'] ?? rawJson['Campaign Name'] ?? '').toString().toLowerCase();
-    final form = (rawJson['form_name'] ?? rawJson['Form Name'] ?? '').toString().toLowerCase();
-    if (campaign.contains('listing') || campaign.contains('owner') || form.contains('listing') || form.contains('owner') || form.contains('rent out')) {
+    // Rental Ad 0408, owner/listing ads -> Property Listing (Owner/Landlord)
+    if (metaStr.contains('rental ad 0408') ||
+        metaStr.contains('rental ad') ||
+        metaStr.contains('0408') ||
+        metaStr.contains('list property') ||
+        metaStr.contains('listing') ||
+        metaStr.contains('landlord') ||
+        metaStr.contains('seller') ||
+        metaStr.contains('sell property')) {
       return 'Property Listing';
     }
+
+    // 2. High-Precision Form Questions matching
+    final rawStr = jsonEncode(rawJson).toLowerCase();
+
+    final hasOwnerQuestions = rawStr.contains('where_is_your_property_located') ||
+        rawStr.contains('where is your property located') ||
+        rawStr.contains('what_type_of_property_are_you_looking_to_rent_out') ||
+        rawStr.contains('what type of property you are looking to rent out') ||
+        rawStr.contains('what type of property are you looking to rent out') ||
+        rawStr.contains('what_type_of_property_are_you_looking_to_sell') ||
+        rawStr.contains('looking to rent out') ||
+        rawStr.contains('looking_to_rent_out') ||
+        rawStr.contains('expected monthly rent') ||
+        rawStr.contains('expected_monthly_rent') ||
+        rawStr.contains('complete address of your property') ||
+        rawStr.contains('complete_address_of_your_property');
+
+    final hasTenantQuestions = rawStr.contains('which_area_are_you_looking_for') ||
+        rawStr.contains('which area are you looking for') ||
+        rawStr.contains('what_type_of_home_are_you_looking_for') ||
+        rawStr.contains('what type of home are you looking for') ||
+        rawStr.contains('what_is_your_monthly_rental_budget') ||
+        rawStr.contains('monthly rental budget') ||
+        rawStr.contains('who_will_be_staying_in_the_property') ||
+        rawStr.contains('who will be staying');
+
+    if (hasOwnerQuestions && !hasTenantQuestions) {
+      return 'Property Listing';
+    }
+    if (hasTenantQuestions && !hasOwnerQuestions) {
+      return 'Requirement';
+    }
+    if (hasOwnerQuestions) return 'Property Listing';
+    if (hasTenantQuestions) return 'Requirement';
 
     return 'Requirement';
   }
