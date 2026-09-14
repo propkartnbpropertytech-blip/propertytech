@@ -54,9 +54,12 @@ class NotificationCenter {
   }
 
   static Future<void> addNotification({
+    String? id,
     required String title,
     required String message,
     String type = 'followup',
+    String? route,
+    bool notifyToast = true,
   }) async {
     await init();
 
@@ -73,10 +76,12 @@ class NotificationCenter {
     }
 
     final notif = {
-      'id': 'local_${DateTime.now().microsecondsSinceEpoch}',
+      'id': id ?? 'local_${DateTime.now().microsecondsSinceEpoch}',
       'title': title,
       'message': message,
       'type': type,
+      'route': route,
+      'notifyToast': notifyToast,
       'is_read': false,
       'created_at': DateTime.now().toIso8601String(),
     };

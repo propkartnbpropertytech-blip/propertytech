@@ -15,6 +15,7 @@ import '../../../core/theme/theme_presets.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import 'sync_debug_screen.dart';
 import '../widgets/permission_matrix_card.dart';
+import '../../requirements/services/match_criteria_manager.dart';
 import '../../../core/storage/isar_service.dart';
 import '../../../core/constants/app_constants.dart';
 
@@ -29,15 +30,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final ConfigService _configService = ConfigService();
   bool _isLoading = false;
   String _activeSection = 'profile';
+  double _selectedMatchThreshold = MatchCriteriaManager().threshold.toDouble();
 
   @override
   void initState() {
     super.initState();
     ThemeManager().addListener(_onThemeChanged);
+    MatchCriteriaManager().addListener(_onCriteriaChanged);
   }
 
   void _onThemeChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _onCriteriaChanged() {
+    if (mounted) {
+      setState(() {
+        _selectedMatchThreshold = MatchCriteriaManager().threshold.toDouble();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    ThemeManager().removeListener(_onThemeChanged);
+    MatchCriteriaManager().removeListener(_onCriteriaChanged);
+    super.dispose();
   }
 
   Widget _buildProfileCard(String name, String email) {
@@ -188,6 +206,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
             ),
             if (isAdminOrSuperAdmin) ...[
+              const Divider(height: CRMSpacing.l),
+              ListTile(
+                title: Text(
+                  'Run Match Criteria',
+                  style: CRMTypography.bodyMedium.copyWith(
+                    color: CRMColors.textOf(context),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                subtitle: Text(
+                  'Threshold: ${MatchCriteriaManager().threshold}% (${MatchCriteriaManager().thresholdModeLabel})',
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                ),
+                leading: Icon(Icons.bolt_rounded, color: MatchCriteriaManager().thresholdColor),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: MatchCriteriaManager().thresholdColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${MatchCriteriaManager().threshold}%',
+                        style: TextStyle(
+                          color: MatchCriteriaManager().thresholdColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.arrow_forward_ios_rounded, size: 16, color: CRMColors.textSecondaryOf(context)),
+                  ],
+                ),
+                contentPadding: EdgeInsets.zero,
+                onTap: () {
+                  setState(() => _activeSection = 'match_criteria');
+                },
+              ),
               const Divider(height: CRMSpacing.l),
               ListTile(
                 title: Text(
@@ -728,6 +787,491 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildRunMatchCriteriaSection() {
+    final manager = MatchCriteriaManager();
+    final currentScore = _selectedMatchThreshold.toInt();
+    final thresholdColor = manager.thresholdColor;
+    final modeLabel = manager.thresholdModeLabel;
+    final desc = manager.thresholdDescription;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CRMCard(
+          elevated: true,
+          title: 'Run Match Criteria Engine',
+          subtitle: 'Configure minimum qualification score for property-to-requirement matching.',
+          headerAction: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: thresholdColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: thresholdColor.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.bolt_rounded, size: 16, color: thresholdColor),
+                const SizedBox(width: 4),
+                Text(
+                  '$currentScore% Minimum',
+                  style: TextStyle(
+                    color: thresholdColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: CRMSpacing.m),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(CRMSpacing.m),
+                  decoration: BoxDecoration(
+                    color: thresholdColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+                    border: Border.all(color: thresholdColor.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: thresholdColor.withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.tune_rounded, color: thresholdColor, size: 22),
+                      ),
+                      const SizedBox(width: CRMSpacing.m),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              modeLabel,
+                              style: CRMTypography.bodyMedium.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: thresholdColor,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              desc,
+                              style: CRMTypography.caption.copyWith(
+                                color: CRMColors.textSecondaryOf(context),
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: CRMSpacing.l),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Match Threshold Cutoff',
+                          style: CRMTypography.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: CRMColors.textOf(context),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Properties scoring below this percentage will not qualify as matched listings',
+                          style: CRMTypography.caption.copyWith(
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '$currentScore%',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        color: thresholdColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: CRMSpacing.s),
+
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: thresholdColor,
+                    inactiveTrackColor: thresholdColor.withValues(alpha: 0.15),
+                    thumbColor: thresholdColor,
+                    overlayColor: thresholdColor.withValues(alpha: 0.2),
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+                    trackHeight: 6,
+                    valueIndicatorColor: thresholdColor,
+                    valueIndicatorTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                  child: Slider(
+                    value: _selectedMatchThreshold.clamp(10.0, 100.0),
+                    min: 10.0,
+                    max: 100.0,
+                    divisions: 18,
+                    label: '$currentScore%',
+                    onChanged: (val) {
+                      setState(() {
+                        _selectedMatchThreshold = (val / 5).round() * 5.0;
+                      });
+                    },
+                    onChangeEnd: (val) {
+                      final v = ((val / 5).round() * 5).toInt();
+                      manager.setThreshold(v);
+                    },
+                  ),
+                ),
+
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('10% (Permissive)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                      Text('40% (Flexible)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                      Text('60% (Balanced)', style: CRMTypography.caption.copyWith(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primary)),
+                      Text('80% (Strict)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                      Text('100% (Exact)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: CRMSpacing.l),
+
+                Text(
+                  'Quick Preset Selection',
+                  style: CRMTypography.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: CRMColors.textOf(context),
+                  ),
+                ),
+                const SizedBox(height: CRMSpacing.s),
+                Wrap(
+                  spacing: CRMSpacing.s,
+                  runSpacing: CRMSpacing.s,
+                  children: [
+                    _buildPresetChip(
+                      percent: 20,
+                      label: '20% Loose',
+                      color: const Color(0xFFD97706),
+                      description: 'Any single criterion match',
+                      isSelected: currentScore == 20,
+                      onTap: () {
+                        setState(() => _selectedMatchThreshold = 20);
+                        manager.setThreshold(20);
+                      },
+                    ),
+                    _buildPresetChip(
+                      percent: 40,
+                      label: '40% Flexible',
+                      color: const Color(0xFF0288D1),
+                      description: 'Moderate partial matches',
+                      isSelected: currentScore == 40,
+                      onTap: () {
+                        setState(() => _selectedMatchThreshold = 40);
+                        manager.setThreshold(40);
+                      },
+                    ),
+                    _buildPresetChip(
+                      percent: 60,
+                      label: '60% Balanced (Default)',
+                      color: const Color(0xFF0F766E),
+                      description: '2+ criteria matched (e.g. Price + BHK)',
+                      isSelected: currentScore == 60,
+                      onTap: () {
+                        setState(() => _selectedMatchThreshold = 60);
+                        manager.setThreshold(60);
+                      },
+                    ),
+                    _buildPresetChip(
+                      percent: 80,
+                      label: '80% Strict',
+                      color: const Color(0xFF10B981),
+                      description: 'Price + BHK + Area exact match',
+                      isSelected: currentScore == 80,
+                      onTap: () {
+                        setState(() => _selectedMatchThreshold = 80);
+                        manager.setThreshold(80);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: CRMSpacing.l),
+                const Divider(),
+                const SizedBox(height: CRMSpacing.m),
+
+                Wrap(
+                  spacing: CRMSpacing.m,
+                  runSpacing: CRMSpacing.s,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        final v = _selectedMatchThreshold.toInt();
+                        manager.setThreshold(v);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Run Match Criteria set to $v%! Requirements will now match properties scoring $v% and above.',
+                            ),
+                            backgroundColor: thresholdColor,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.check_circle_rounded, size: 18),
+                      label: Text('Apply $currentScore% Threshold'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: thresholdColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        manager.resetToDefault();
+                        setState(() => _selectedMatchThreshold = MatchCriteriaManager.defaultThreshold.toDouble());
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Reset to default threshold (60% Balanced).'),
+                            backgroundColor: Color(0xFF0F766E),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                      label: const Text('Reset to Default (60%)'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: CRMSpacing.l),
+
+        CRMCard(
+          elevated: true,
+          title: 'Matching Engine Weight Breakdown',
+          subtitle: 'How scores are calculated for each property against a buyer/tenant requirement.',
+          child: Padding(
+            padding: const EdgeInsets.only(top: CRMSpacing.m),
+            child: Column(
+              children: [
+                _buildWeightRow(
+                  icon: Icons.currency_rupee_rounded,
+                  title: 'Budget & Price Range',
+                  weight: '30 Points',
+                  details: 'Exact budget: 30 pts • Within ±20%: 20 pts • Within ±35%: 10 pts',
+                  color: const Color(0xFF10B981),
+                ),
+                const Divider(height: CRMSpacing.m),
+                _buildWeightRow(
+                  icon: Icons.bedroom_parent_outlined,
+                  title: 'Configuration (BHK / RK)',
+                  weight: '25 Points',
+                  details: 'Exact BHK match: 25 pts • Adjacent BHK (±1): 12 pts',
+                  color: const Color(0xFF0288D1),
+                ),
+                const Divider(height: CRMSpacing.m),
+                _buildWeightRow(
+                  icon: Icons.location_on_outlined,
+                  title: 'Locality & Target Area',
+                  weight: '25 Points',
+                  details: 'Exact area or "All Areas": 25 pts • Same city match: 10 pts',
+                  color: const Color(0xFF8B5CF6),
+                ),
+                const Divider(height: CRMSpacing.m),
+                _buildWeightRow(
+                  icon: Icons.real_estate_agent_outlined,
+                  title: 'Listing Type (Rent vs Sale)',
+                  weight: '10 Points',
+                  details: 'Matching Rent or Resale/Sale: 10 pts',
+                  color: const Color(0xFFF59E0B),
+                ),
+                const Divider(height: CRMSpacing.m),
+                _buildWeightRow(
+                  icon: Icons.category_outlined,
+                  title: 'Property Type & Category',
+                  weight: '10 Points',
+                  details: 'Residential, Commercial, Apartment, Villa: 10 pts',
+                  color: const Color(0xFFEC4899),
+                ),
+                const SizedBox(height: CRMSpacing.m),
+                Container(
+                  padding: const EdgeInsets.all(CRMSpacing.m),
+                  decoration: BoxDecoration(
+                    color: CRMColors.surfaceElevatedOf(context),
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                    border: Border.all(color: CRMColors.borderOf(context)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.lightbulb_outline_rounded, color: Color(0xFF0F766E), size: 20),
+                      const SizedBox(width: CRMSpacing.s),
+                      Expanded(
+                        child: Text(
+                          'Simulation at $currentScore%: A property with Budget (30) + Configuration (25) + Locality (25) = 80% will ' +
+                              (currentScore <= 80 ? 'QUALIFY as a match.' : 'be excluded.'),
+                          style: CRMTypography.caption.copyWith(
+                            color: CRMColors.textOf(context),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPresetChip({
+    required int percent,
+    required String label,
+    required Color color,
+    required String description,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withValues(alpha: 0.15) : CRMColors.surfaceElevatedOf(context),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+          border: Border.all(
+            color: isSelected ? color : CRMColors.borderOf(context),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                    color: isSelected ? color : CRMColors.textOf(context),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              description,
+              style: TextStyle(
+                fontSize: 11,
+                color: CRMColors.textSecondaryOf(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeightRow({
+    required IconData icon,
+    required String title,
+    required String weight,
+    required String details,
+    required Color color,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 18, color: color),
+        ),
+        const SizedBox(width: CRMSpacing.m),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    title,
+                    style: CRMTypography.bodyMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: CRMColors.textOf(context),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      weight,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                details,
+                style: CRMTypography.caption.copyWith(
+                  color: CRMColors.textSecondaryOf(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
@@ -752,6 +1296,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const _SettingsNavItem(id: 'themes', label: 'Themes', icon: Icons.palette_outlined),
       const _SettingsNavItem(id: 'appearance', label: 'Appearance', icon: Icons.tune_rounded),
       const _SettingsNavItem(id: 'locations', label: 'Locations', icon: Icons.location_city_outlined),
+      if (isAdminOrSuperAdmin)
+        const _SettingsNavItem(id: 'match_criteria', label: 'Run Match Criteria', icon: Icons.bolt_rounded),
       if (isSuperAdmin)
         const _SettingsNavItem(id: 'permissions', label: 'Permission Matrix', icon: Icons.admin_panel_settings_rounded),
       if (isSuperAdmin)
@@ -773,6 +1319,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return _buildAppearanceCard(isAdminOrSuperAdmin);
         case 'locations':
           return _buildLocationConfigCard();
+        case 'match_criteria':
+          return _buildRunMatchCriteriaSection();
         case 'permissions':
           if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
           return const PermissionMatrixCard();
@@ -982,12 +1530,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    ThemeManager().removeListener(_onThemeChanged);
-    super.dispose();
   }
 }
 

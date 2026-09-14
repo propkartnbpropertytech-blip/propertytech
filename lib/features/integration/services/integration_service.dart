@@ -1058,6 +1058,87 @@ class IntegrationService extends ChangeNotifier {
     }
   }
 
+  /// Transfer and assign a campaign lead
+  /// Handles CNR (marking as interacted) and Picked Up (assigning to team member with remarks)
+  Future<Map<String, dynamic>> transferLead(
+    String leadId, {
+    required String status,
+    String? assignedTo,
+    String? assignedToName,
+    String? remarks,
+  }) async {
+    try {
+      final isCnr = status.trim().toUpperCase() == 'CNR';
+      final finalStatus = isCnr ? 'CNR' : 'Assigned';
+      final now = DateTime.now();
+
+      // 1. Optimistically update in memory
+      final idx = _leads.indexWhere((l) => l.id == leadId);
+      if (idx != -1) {
+        _leads[idx] = _leads[idx].copyWith(
+          campaignStatus: finalStatus,
+          assignedTo: isCnr ? _leads[idx].assignedTo : assignedTo,
+          assignedToName: isCnr ? _leads[idx].assignedToName : assignedToName,
+          transferRemarks: isCnr ? _leads[idx].transferRemarks : remarks,
+          interactedAt: now,
+          importStatus: isCnr ? _leads[idx].importStatus : 'Imported',
+        );
+        notifyListeners();
+        unawaited(_persistLeads());
+      }
+
+      // 2. Persist to backend
+      final res = await _apiClient.post('/integrations/leads/$leadId/transfer', {
+        'status': status,
+        'assignedTo': assignedTo,
+        'remarks': remarks,
+      });
+
+      if (res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300) {
+        final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
+        if (data['lead'] != null && data['lead'] is Map) {
+          try {
+            final updatedLead = IntegrationLeadModel.fromJson(Map<String, dynamic>.from(data['lead']));
+            final leadIdx = _leads.indexWhere((l) => l.id == leadId);
+            if (leadIdx != -1) {
+              _leads[leadIdx] = updatedLead;
+              notifyListeners();
+              unawaited(_persistLeads());
+            }
+          } catch (_) {}
+        }
+        return {'success': true, 'message': data['message'] ?? 'Lead transferred successfully'};
+      }
+
+      return {'success': false, 'message': res.data?['message'] ?? 'Failed to transfer lead'};
+    } catch (e) {
+      debugPrint('[IntegrationService] Error transferring lead $leadId: $e');
+      return {'success': false, 'message': e.toString().replaceAll('Exception: ', '')};
+    }
+  }
+
+  /// Reclassify a lead between 'Requirement' and 'Property Listing' ("Wrong Lead" action)
+  Future<bool> reclassifyLead(String leadId, String targetLeadType) async {
+    try {
+      final idx = _leads.indexWhere((l) => l.id == leadId);
+      if (idx != -1) {
+        _leads[idx] = _leads[idx].copyWith(leadType: targetLeadType);
+        notifyListeners();
+        unawaited(_persistLeads());
+      }
+
+      final res = await _apiClient.patch('/integrations/leads/$leadId/lead-type', {
+        'leadType': targetLeadType,
+        'targetLeadType': targetLeadType,
+      });
+
+      return res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+    } catch (e) {
+      debugPrint('[IntegrationService] Error reclassifying lead $leadId: $e');
+      return false;
+    }
+  }
+
   /// Fetch follow-ups from dedicated table (filter: today, future, all)
   Future<List<CampaignFollowupModel>> fetchFollowups({String filter = 'all', String? leadType}) async {
     try {

@@ -1,4 +1,6 @@
 import '../../../core/services/notification_center.dart';
+import '../../../core/services/app_notifier_service.dart';
+import '../../../core/services/platform_notifier/platform_notifier.dart';
 import '../../../features/dashboard/repository/dashboard_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -89,18 +91,38 @@ class _CRMAppShellState extends State<CRMAppShell>
               .where((n) => n['is_read'] == false)
               .length;
         });
+
+        if (newNotif['notifyToast'] == false) {
+          return;
+        }
+
+        final notifId = (newNotif['id'] ?? '').toString();
+        if (notifId.isNotEmpty && !_knownNotificationIds.contains(notifId)) {
+          _knownNotificationIds.add(notifId);
+          AppNotifierService.notify(
+            title: newNotif['title'] ?? 'Notification',
+            message: newNotif['message'] ?? '',
+            type: newNotif['type'] ?? 'general',
+            route: newNotif['route'],
+            data: newNotif,
+          );
+        }
       }
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      await AppNotifierService.init();
       await NotificationCenter.init();
-      _fetchNotifications();
+      await _fetchNotifications();
       _notificationsTimer?.cancel();
-      _notificationsTimer = Timer.periodic(const Duration(minutes: 5), (
+      _notificationsTimer = Timer.periodic(const Duration(seconds: 25), (
         _,
       ) async {
-        if (mounted) await _fetchNotifications();
+        if (mounted) {
+          await _fetchNotifications();
+          await AppNotifierService.checkAndTriggerWelcomeIfNewlyGranted();
+        }
       });
     });
   }
@@ -126,6 +148,8 @@ class _CRMAppShellState extends State<CRMAppShell>
   bool _isSearching = false;
   Timer? _searchDebounce;
   List<dynamic> _notifications = [];
+  final Set<String> _knownNotificationIds = {};
+  bool _isFirstNotifFetch = true;
   int _unreadNotificationsCount = 0;
   int _unreadTeamMessagesCount = 0;
   bool _isLoadingNotifications = false;
@@ -318,8 +342,23 @@ class _CRMAppShellState extends State<CRMAppShell>
           !NotificationCenter.deletedIds.contains(id)) {
         seenIds.add(id);
         uniqueNotifs.add(n);
+
+        // Detect new incoming unread notification
+        final isRead = n['is_read'] == true;
+        if (!_isFirstNotifFetch && !isRead && !_knownNotificationIds.contains(id)) {
+          AppNotifierService.notify(
+            title: n['title'] ?? 'Notification',
+            message: n['message'] ?? '',
+            type: n['type'] ?? 'general',
+            route: n['route'],
+            data: n,
+          );
+        }
       }
     }
+
+    _knownNotificationIds.addAll(seenIds);
+    _isFirstNotifFetch = false;
 
     int unreadMsgCount = 0;
     try {
@@ -1505,7 +1544,9 @@ class _CRMAppShellState extends State<CRMAppShell>
         } catch (_) {}
         if (req != null) {
           final status = req.status ?? '';
-          if (status != 'Follow-up' && status != 'Re-Followup') {
+          if (status != 'Follow-up' &&
+              status != 'Re-Followup' &&
+              status != 'Site Visit Scheduled') {
             await NotificationCenter.removeNotificationsForClient(f.clientName);
             continue;
           }
@@ -1547,14 +1588,17 @@ class _CRMAppShellState extends State<CRMAppShell>
           }
         }
 
-        if (fDate.isBefore(today)) {
+        final isSiteVisit = req != null && req.status == 'Site Visit Scheduled';
+        final isOverdue = fDate.isBefore(today);
+        final isToday = fDate.isAtSameMomentAs(today);
+
+        if (isOverdue || isToday) {
           activeDueCount++;
-          if (activeDueCount <= 4) {
+          if (activeDueCount <= 6) {
             final clientName = f.clientName;
 
-            // For Admin, Super Admin & Telecaller: send notification only ONCE PER DAY per client!
-            if (isHighRole &&
-                NotificationCenter.hasNotificationToday(clientName)) {
+            // Send notification only once per day per client
+            if (NotificationCenter.hasNotificationToday(clientName)) {
               continue;
             }
 
@@ -1571,14 +1615,43 @@ class _CRMAppShellState extends State<CRMAppShell>
             }
             if (salesPerson.isEmpty) salesPerson = 'Sales Team';
 
-            final message = isHighRole
-                ? 'Follow-up for $clientName (Sales Person: $salesPerson) is overdue! Please take action.'
-                : 'Follow-up for $clientName is overdue! Please take action immediately.';
+            String notifTitle;
+            String notifMsg;
+            String notifType;
+
+            if (isSiteVisit) {
+              notifType = 'site_visit';
+              if (isOverdue) {
+                notifTitle = 'Overdue Site Visit';
+                notifMsg = isHighRole
+                    ? 'Site visit for $clientName (Sales Person: $salesPerson) is overdue! Please take action.'
+                    : 'Site visit for $clientName is overdue! Please take action.';
+              } else {
+                notifTitle = "Today's Site Visit Scheduled";
+                notifMsg = isHighRole
+                    ? 'Site visit for $clientName (Sales Person: $salesPerson) is scheduled for today.'
+                    : 'Site visit for $clientName is scheduled for today.';
+              }
+            } else {
+              notifType = isOverdue ? 'due_followup' : 'followup';
+              if (isOverdue) {
+                notifTitle = 'Overdue Follow-up Alert';
+                notifMsg = isHighRole
+                    ? 'Follow-up for $clientName (Sales Person: $salesPerson) is overdue! Please take action.'
+                    : 'Follow-up for $clientName is overdue! Please take action immediately.';
+              } else {
+                notifTitle = "Today's Follow-up Alert";
+                notifMsg = isHighRole
+                    ? 'Follow-up for $clientName (Sales Person: $salesPerson) is scheduled for today.'
+                    : 'Follow-up for $clientName is scheduled for today.';
+              }
+            }
 
             NotificationCenter.addNotification(
-              title: 'Overdue Follow-up Alert',
-              message: message,
-              type: 'due_followup',
+              title: notifTitle,
+              message: notifMsg,
+              type: notifType,
+              route: '/requirements?tab=follow-ups&subTab=Today',
             );
           }
         }
@@ -1688,6 +1761,75 @@ class _CRMAppShellState extends State<CRMAppShell>
                           ),
                         ),
                         Divider(height: 1, color: CRMColors.borderOf(context)),
+                        FutureBuilder<bool>(
+                          future: PlatformNotifier.isPermissionGranted(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasData && snapshot.data == false) {
+                              return Container(
+                                margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.primaryOf(
+                                    context,
+                                  ).withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: CRMColors.primaryOf(
+                                      context,
+                                    ).withValues(alpha: 0.25),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.notifications_active_outlined,
+                                      size: 18,
+                                      color: CRMColors.primaryOf(context),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Enable browser notifications for live alerts',
+                                        style: CRMTypography.caption.copyWith(
+                                          color: CRMColors.textOf(context),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    InkWell(
+                                      onTap: () async {
+                                        await AppNotifierService.requestPermission(
+                                          forceWelcome: true,
+                                        );
+                                        if (mounted) setState(() {});
+                                      },
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        child: Text(
+                                          'Allow',
+                                          style: TextStyle(
+                                            color: CRMColors.primaryOf(context),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
                         Expanded(
                           child:
                               _isLoadingNotifications && _notifications.isEmpty
@@ -1782,8 +1924,31 @@ class _CRMAppShellState extends State<CRMAppShell>
     );
   }
 
+  Color _getCategoryColor(dynamic rawType) {
+    final type = (rawType ?? '').toString().toLowerCase();
+    if (type.contains('meta')) return const Color(0xFF10B981);
+    if (type.contains('assign')) return const Color(0xFF3B82F6);
+    if (type.contains('site_visit') || type.contains('visit')) return const Color(0xFF8B5CF6);
+    if (type.contains('followup')) return const Color(0xFFF59E0B);
+    if (type.contains('welcome')) return const Color(0xFF10B981);
+    return CRMColors.primaryOf(context);
+  }
+
+  String _formatCategoryLabel(dynamic rawType) {
+    final type = (rawType ?? '').toString().toLowerCase();
+    if (type.contains('meta')) return 'META LEAD';
+    if (type.contains('assign')) return 'LEAD ASSIGNED';
+    if (type.contains('site_visit') || type.contains('visit')) return 'SITE VISIT';
+    if (type.contains('followup')) return 'FOLLOW UP';
+    if (type.contains('welcome')) return 'WELCOME';
+    return type.toUpperCase();
+  }
+
   Widget _buildNotificationTile(dynamic n) {
     final isRead = n['is_read'] == true;
+    final type = (n['type'] ?? '').toString();
+    final badgeColor = _getCategoryColor(type);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -1798,21 +1963,70 @@ class _CRMAppShellState extends State<CRMAppShell>
         ),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        leading: Icon(
-          isRead
-              ? Icons.notifications_none_rounded
-              : Icons.notifications_active_rounded,
-          color: isRead
-              ? CRMColors.textMutedOf(context)
-              : CRMColors.primaryOf(context),
-        ),
-        title: Text(
-          n['title'] ?? '',
-          style: CRMTypography.captionBold.copyWith(
-            color: CRMColors.textOf(context),
-            fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        leading: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: CRMColors.borderOf(context).withValues(alpha: 0.8),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
+          padding: const EdgeInsets.all(3),
+          child: Image.asset(
+            'assets/logo.png',
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => Icon(
+              isRead
+                  ? Icons.notifications_none_rounded
+                  : Icons.notifications_active_rounded,
+              color: isRead
+                  ? CRMColors.textMutedOf(context)
+                  : CRMColors.primaryOf(context),
+            ),
+          ),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (type.isNotEmpty && type.toLowerCase() != 'general')
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: badgeColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    _formatCategoryLabel(type),
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: badgeColor,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+              ),
+            Text(
+              n['title'] ?? '',
+              style: CRMTypography.captionBold.copyWith(
+                color: CRMColors.textOf(context),
+                fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
+              ),
+            ),
+          ],
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1825,12 +2039,25 @@ class _CRMAppShellState extends State<CRMAppShell>
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              _getRelativeTime(n['created_at'] ?? ''),
-              style: CRMTypography.footnote.copyWith(
-                color: CRMColors.textMutedOf(context),
-                fontSize: 10,
-              ),
+            Row(
+              children: [
+                Text(
+                  _getRelativeTime(n['created_at'] ?? ''),
+                  style: CRMTypography.footnote.copyWith(
+                    color: CRMColors.textMutedOf(context),
+                    fontSize: 10,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  'Tap to view →',
+                  style: TextStyle(
+                    color: CRMColors.primaryOf(context),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1841,6 +2068,8 @@ class _CRMAppShellState extends State<CRMAppShell>
         ),
         onTap: () {
           if (!isRead) _markNotificationRead(n['id']);
+          setState(() => _notificationsPanelOpen = false);
+          AppNotifierService.handleNotificationTap(n);
         },
       ),
     );

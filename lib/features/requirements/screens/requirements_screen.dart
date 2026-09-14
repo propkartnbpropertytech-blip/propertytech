@@ -11,6 +11,7 @@ import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
 import '../bloc/requirements_bloc.dart';
 import '../models/requirement_model.dart';
+import '../services/match_criteria_manager.dart';
 import '../repository/requirements_repository.dart';
 import 'add_edit_requirement_screen.dart';
 import '../../properties/repository/properties_repository.dart';
@@ -95,14 +96,371 @@ DateTime? _parseFollowupDateTime(dynamic raw) {
   return null;
 }
 
+  String? getTelecallerRemarks(RequirementModel req) {
+  if (req.metaCustomFields != null && req.metaCustomFields!['telecaller_remarks'] != null) {
+    final tr = req.metaCustomFields!['telecaller_remarks'].toString().trim();
+    if (tr.isNotEmpty && tr.toLowerCase() != 'null' && tr.toLowerCase() != 'n/a') {
+      return tr;
+    }
+  }
+  if (req.notes != null) {
+    final text = req.notes!.trim();
+    if (text.isNotEmpty && text.toLowerCase() != 'null' && text.toLowerCase() != 'n/a') {
+      return text;
+    }
+  }
+  if (req.remarks != null && req.remarks!.trim().isNotEmpty) {
+    final text = req.remarks!.trim();
+    if (text.contains('[Telecaller Key Points]:')) {
+      final parts = text.split('[Telecaller Key Points]:');
+      if (parts.length > 1) {
+        final extracted = parts[1].split('\n').first.trim();
+        if (extracted.isNotEmpty) return extracted;
+      }
+    }
+    if (text.toLowerCase() != 'null' && text.toLowerCase() != 'n/a') {
+      return text;
+    }
+  }
+  return null;
+}
+
+Widget _buildNeedsMoreDetailsBadge(RequirementModel req, {bool compact = false}) {
+    if (req.matchingReadiness == 'Ready') return const SizedBox.shrink();
+
+    final missing = <String>[];
+    if (req.minBudget <= 0 && req.maxBudget <= 0) missing.add('Budget');
+    if (!req.isAllAreas && req.areaIds.isEmpty && req.areaNames.isEmpty) missing.add('Area');
+    final hasConfig = (req.configurationId != null && req.configurationId!.trim().isNotEmpty) || req.configurationIds.isNotEmpty || (req.configurationName != null && req.configurationName!.trim().isNotEmpty);
+    if (!hasConfig) missing.add('Config');
+    final hasCategory = req.categoryId.trim().isNotEmpty || req.categoryName.trim().isNotEmpty || req.propertyTypeName.trim().isNotEmpty;
+    if (!hasCategory) missing.add('Category');
+
+    final tooltipMsg = missing.isNotEmpty
+        ? 'Needs More Details: Missing ${missing.join(', ')}'
+        : 'Needs More Details for Property Matching';
+
+    return Tooltip(
+      message: tooltipMsg,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 5 : 7,
+          vertical: compact ? 1.5 : 2.5,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: const Color(0xFFF97316).withOpacity(0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.info_outline_rounded,
+              size: 11,
+              color: Color(0xFFEA580C),
+            ),
+            const SizedBox(width: 3),
+            Flexible(
+              child: Text(
+                'Needs More Details',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: const Color(0xFFC2410C),
+                  fontSize: compact ? 9.5 : 10.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+class PropertyMatchResult {
+  final PropertyModel property;
+  final int matchPercentage;
+  final List<String> matchedCriteria;
+  final bool isPriceMatched;
+  final bool isConfigMatched;
+  final bool isAreaMatched;
+  final bool isListingTypeMatched;
+  final bool isPropertyTypeMatched;
+
+  PropertyMatchResult({
+    required this.property,
+    required this.matchPercentage,
+    required this.matchedCriteria,
+    this.isPriceMatched = false,
+    this.isConfigMatched = false,
+    this.isAreaMatched = false,
+    this.isListingTypeMatched = false,
+    this.isPropertyTypeMatched = false,
+  });
+}
+
+class PropertyRequirementMatcher {
+  static Set<int> extractBhkNumbers(String? text, {int fallbackBedrooms = 0}) {
+    final Set<int> bhks = {};
+    if (fallbackBedrooms > 0 && fallbackBedrooms <= 10) {
+      bhks.add(fallbackBedrooms);
+    }
+    if (text == null || text.trim().isEmpty) return bhks;
+
+    final matches = RegExp(r'(\d+)\s*(?:bhk|bedroom|bed|rk)', caseSensitive: false).allMatches(text);
+    for (final m in matches) {
+      final numStr = m.group(1);
+      if (numStr != null) {
+        final n = int.tryParse(numStr);
+        if (n != null && n > 0 && n <= 10) bhks.add(n);
+      }
+    }
+    if (bhks.isEmpty && text.toLowerCase().contains('bhk')) {
+      final numMatches = RegExp(r'\b(\d+)\b').allMatches(text);
+      for (final m in numMatches) {
+        final n = int.tryParse(m.group(1)!);
+        if (n != null && n > 0 && n <= 10) bhks.add(n);
+      }
+    }
+    return bhks;
+  }
+
+  static bool isAllAreas(RequirementModel req) {
+    if (req.areaIds.isEmpty && req.areaNames.isEmpty) return true;
+    for (final a in req.areaNames) {
+      final l = a.trim().toLowerCase();
+      if (l.isEmpty ||
+          l == 'all areas' ||
+          l == 'all' ||
+          l == 'any area' ||
+          l == 'any' ||
+          l == 'anywhere' ||
+          l == 'entire city' ||
+          l == 'all localities') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static PropertyMatchResult match(PropertyModel p, RequirementModel req) {
+    final statusName = p.propertyStatusName.toLowerCase();
+    final isInactive = statusName.contains('rented') || statusName.contains('sold') || statusName.contains('closed');
+    final isWonReq = req.status.toLowerCase() == 'won' || req.status.toLowerCase() == 'closed';
+    if (isInactive && !isWonReq) {
+      return PropertyMatchResult(
+        property: p,
+        matchPercentage: 0,
+        matchedCriteria: [],
+      );
+    }
+
+    final List<String> matchedTags = [];
+    int totalScore = 0;
+
+    // 1. Listing Type Match (Weight: 10 pts)
+    bool isListingMatch = false;
+    final reqListing = (req.listingTypeName ?? '').toLowerCase();
+    final propListing = (p.listingTypeName).toLowerCase();
+    final isReqRent = reqListing.contains('rent') || reqListing.contains('lease');
+    final isPropRent = propListing.contains('rent') || propListing.contains('lease') || p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
+    final isReqSale = reqListing.contains('sale') || reqListing.contains('resale') || reqListing.contains('buy');
+    final isPropSale = !isPropRent && (propListing.contains('sale') || propListing.contains('resale') || propListing.isNotEmpty);
+
+    if (reqListing.isEmpty) {
+      totalScore += 10;
+      isListingMatch = true;
+    } else if (isReqRent && isPropRent) {
+      totalScore += 10;
+      isListingMatch = true;
+      matchedTags.add('✓ Rent');
+    } else if (isReqSale && isPropSale) {
+      totalScore += 10;
+      isListingMatch = true;
+      matchedTags.add('✓ Resale/Sale');
+    } else if (p.listingTypeId.isNotEmpty && req.listingTypeId != null && p.listingTypeId == req.listingTypeId) {
+      totalScore += 10;
+      isListingMatch = true;
+      matchedTags.add('✓ Listing Type');
+    }
+
+    // 2. Target Area Match (Weight: 25 pts)
+    bool isAreaMatch = false;
+    if (isAllAreas(req)) {
+      totalScore += 25;
+      isAreaMatch = true;
+      matchedTags.add('✓ All Areas');
+    } else {
+      if (req.areaIds.isNotEmpty && req.areaIds.contains(p.areaId)) {
+        totalScore += 25;
+        isAreaMatch = true;
+        matchedTags.add('✓ Area: ${p.areaName}');
+      } else if (req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
+        final pArea = p.areaName.trim().toLowerCase();
+        bool found = false;
+        for (final aName in req.areaNames) {
+          final subAreas = aName.split(RegExp(r'[,/|]'));
+          for (final sub in subAreas) {
+            final trimmed = sub.trim().toLowerCase();
+            if (trimmed.isNotEmpty && (trimmed == pArea || pArea.contains(trimmed) || trimmed.contains(pArea))) {
+              found = true;
+              break;
+            }
+          }
+          if (found) break;
+        }
+        if (found) {
+          totalScore += 25;
+          isAreaMatch = true;
+          matchedTags.add('✓ Area: ${p.areaName}');
+        } else if (p.cityName.isNotEmpty && (req.cityName.isNotEmpty ? p.cityName.toLowerCase() == req.cityName.toLowerCase() : req.areaNames.any((a) => a.toLowerCase().contains(p.cityName.toLowerCase()) || p.cityName.toLowerCase().contains(a.toLowerCase())))) {
+          totalScore += 10;
+          matchedTags.add('✓ City: ${p.cityName}');
+        }
+      }
+    }
+
+    // 3. Configuration / BHK Match (Weight: 25 pts)
+    bool isConfigMatch = false;
+    final reqBhks = extractBhkNumbers(req.configurationName);
+    final propBhks = extractBhkNumbers(p.configurationName, fallbackBedrooms: p.bedrooms);
+
+    final bool hasSameId = (p.configurationId != null && p.configurationId!.isNotEmpty && req.configurationIds.contains(p.configurationId)) ||
+        (p.configurationId != null && req.configurationId != null && p.configurationId == req.configurationId);
+
+    if (reqBhks.isNotEmpty && propBhks.isNotEmpty) {
+      final intersection = reqBhks.intersection(propBhks);
+      if (intersection.isNotEmpty) {
+        totalScore += 25;
+        isConfigMatch = true;
+        matchedTags.add('✓ ${intersection.join(", ")} BHK');
+      } else {
+        bool adjacent = false;
+        for (final rb in reqBhks) {
+          for (final pb in propBhks) {
+            if ((rb - pb).abs() == 1) {
+              adjacent = true;
+              break;
+            }
+          }
+          if (adjacent) break;
+        }
+        if (adjacent) {
+          totalScore += 12;
+          final pBhkStr = propBhks.isNotEmpty ? '${propBhks.first} BHK' : (p.bedrooms > 0 ? '${p.bedrooms} BHK' : '');
+          if (pBhkStr.isNotEmpty) matchedTags.add('~ Near BHK ($pBhkStr)');
+        }
+      }
+    } else if (hasSameId) {
+      totalScore += 25;
+      isConfigMatch = true;
+      matchedTags.add('✓ Config Match');
+    } else if (req.configurationName != null && req.configurationName!.isNotEmpty && p.configurationName != null && p.configurationName!.isNotEmpty) {
+      final rName = req.configurationName!.toLowerCase();
+      final pName = p.configurationName!.toLowerCase();
+      if (rName.contains(pName) || pName.contains(rName)) {
+        totalScore += 25;
+        isConfigMatch = true;
+        matchedTags.add('✓ ${p.configurationName}');
+      }
+    } else if (req.configurationIds.isEmpty && (req.configurationName == null || req.configurationName!.isEmpty)) {
+      totalScore += 15;
+      isConfigMatch = true;
+    }
+
+    // 4. Price / Budget Match (Weight: 30 pts)
+    bool isPriceMatch = false;
+    final minB = req.minBudget > 0 ? req.minBudget : 0.0;
+    final maxB = req.maxBudget > 0 ? req.maxBudget : 0.0;
+    final price = p.price;
+
+    if (maxB > 0) {
+      if (price >= minB && price <= maxB) {
+        totalScore += 30;
+        isPriceMatch = true;
+        matchedTags.add('✓ In Budget (₹${BudgetFormatter.format(price)})');
+      } else if (price >= minB * 0.8 && price <= maxB * 1.2) {
+        totalScore += 20;
+        matchedTags.add('~ Near Budget (₹${BudgetFormatter.format(price)})');
+      } else if (price >= minB * 0.65 && price <= maxB * 1.35) {
+        totalScore += 10;
+        matchedTags.add('~ Flex Budget (₹${BudgetFormatter.format(price)})');
+      }
+    } else {
+      totalScore += 20;
+      isPriceMatch = true;
+      matchedTags.add('✓ ₹${BudgetFormatter.format(price)}');
+    }
+
+    // 5. Property Type / Category Match (Weight: 10 pts)
+    bool isPropTypeMatch = false;
+    final reqPropType = req.propertyTypeName.toLowerCase();
+    final pPropType = p.propertyTypeName.toLowerCase();
+    final reqCat = req.categoryName.toLowerCase();
+    final pCat = p.categoryName.toLowerCase();
+
+    if (req.propertyTypeIds.contains(p.propertyTypeId) || (req.propertyTypeId.isNotEmpty && req.propertyTypeId == p.propertyTypeId)) {
+      totalScore += 10;
+      isPropTypeMatch = true;
+      matchedTags.add('✓ ${p.propertyTypeName}');
+    } else if (reqPropType.isNotEmpty && pPropType.isNotEmpty) {
+      final isApartment = (reqPropType.contains('apartment') || reqPropType.contains('flat')) &&
+          (pPropType.contains('apartment') || pPropType.contains('flat'));
+      final isVilla = (reqPropType.contains('villa') || reqPropType.contains('bungalow') || reqPropType.contains('house')) &&
+          (pPropType.contains('villa') || pPropType.contains('bungalow') || pPropType.contains('house'));
+      final isComm = (reqPropType.contains('office') || reqPropType.contains('commercial') || reqPropType.contains('shop')) &&
+          (pPropType.contains('office') || pPropType.contains('commercial') || pPropType.contains('shop'));
+
+      if (isApartment || isVilla || isComm || reqPropType.contains(pPropType) || pPropType.contains(reqPropType)) {
+        totalScore += 10;
+        isPropTypeMatch = true;
+        matchedTags.add('✓ ${p.propertyTypeName}');
+      }
+    } else if (reqCat.isNotEmpty && pCat.isNotEmpty && (reqCat.contains(pCat) || pCat.contains(reqCat))) {
+      totalScore += 10;
+      isPropTypeMatch = true;
+      matchedTags.add('✓ ${p.categoryName}');
+    } else if (reqPropType.isEmpty && req.propertyTypeId.isEmpty && reqCat.isEmpty) {
+      totalScore += 10;
+      isPropTypeMatch = true;
+    }
+
+    final finalPct = totalScore.clamp(0, 100);
+
+    return PropertyMatchResult(
+      property: p,
+      matchPercentage: finalPct,
+      matchedCriteria: matchedTags,
+      isPriceMatched: isPriceMatch,
+      isConfigMatched: isConfigMatch,
+      isAreaMatched: isAreaMatch,
+      isListingTypeMatched: isListingMatch,
+      isPropertyTypeMatched: isPropTypeMatch,
+    );
+  }
+
+  static int calculateMatchPercentage(PropertyModel p, RequirementModel req) {
+    return match(p, req).matchPercentage;
+  }
+
+  static bool isMatch(PropertyModel p, RequirementModel req, {int? threshold}) {
+    final t = threshold ?? MatchCriteriaManager().threshold;
+    return match(p, req).matchPercentage >= t;
+  }
+}
+
 class RequirementsScreen extends StatefulWidget {
   final String? initialTab;
   final String? initialSubTab;
+  final String? initialGroup;
 
   const RequirementsScreen({
     super.key,
     this.initialTab,
     this.initialSubTab,
+    this.initialGroup,
   });
 
   @override
@@ -243,6 +601,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (widget.initialSubTab != null && widget.initialSubTab!.isNotEmpty) {
       _selectedFollowupSubTab = widget.initialSubTab!;
     }
+    if (widget.initialGroup != null && widget.initialGroup!.isNotEmpty) {
+      _salesLeadGroupFilter = widget.initialGroup!;
+    }
     _refreshFollowupsFuture();
     _requirementsStreamSub = RepositoryCoordinator().requirementsStream.listen((_) {
       if (mounted) {
@@ -336,6 +697,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         widget.initialSubTab!.isNotEmpty) {
       setState(() {
         _selectedFollowupSubTab = widget.initialSubTab!;
+      });
+    }
+    if (widget.initialGroup != oldWidget.initialGroup &&
+        widget.initialGroup != null &&
+        widget.initialGroup!.isNotEmpty) {
+      setState(() {
+        _salesLeadGroupFilter = widget.initialGroup!;
       });
     }
   }
@@ -1185,6 +1553,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       items: const [
                         DropdownMenuItem(value: "All", child: Text("All")),
                         DropdownMenuItem(value: "New", child: Text("New")),
+                        DropdownMenuItem(value: "Assigned", child: Text("Assigned")),
                         DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
                         DropdownMenuItem(value: "Call Attempted", child: Text("Call Attempted")),
                         DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
@@ -1248,6 +1617,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       items: const [
                         DropdownMenuItem(value: "All", child: Text("All")),
                         DropdownMenuItem(value: "New", child: Text("New")),
+                        DropdownMenuItem(value: "Assigned", child: Text("Assigned")),
                         DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
                         DropdownMenuItem(value: "Call Attempted", child: Text("Call Attempted")),
                         DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
@@ -1735,95 +2105,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+
   static bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
-    // 1. Status Match
-    final statusName = p.propertyStatusName.toLowerCase();
-    final statusActive = statusName == 'available' || statusName.contains('available') || statusName.isEmpty;
-    if (!statusActive) return false;
-
-    // 2. Listing Type Match (Rent vs Re-Sale)
-    final reqListing = (req.listingTypeName ?? '').toLowerCase();
-    final propListing = (p.listingTypeName).toLowerCase();
-    bool listingTypeMatch = true;
-    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
-      final isReqRent = reqListing.contains('rent');
-      final isPropRent = propListing.contains('rent');
-      listingTypeMatch = (isReqRent == isPropRent);
-    } else if (req.listingTypeId != null && req.listingTypeId!.isNotEmpty && p.listingTypeId.isNotEmpty) {
-      listingTypeMatch = (p.listingTypeId == req.listingTypeId);
-    }
-    if (!listingTypeMatch) return false;
-
-    // 3. Category Match
-    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
-      if (p.categoryId != req.categoryId) return false;
-    }
-
-    // 4. Property Type Match (Supports multiple selected property types)
-    if (req.propertyTypeIds.isNotEmpty) {
-      bool typeMatch = req.propertyTypeIds.contains(p.propertyTypeId);
-      if (!typeMatch && req.propertyTypeName.isNotEmpty && p.propertyTypeName.isNotEmpty) {
-        final pTypeName = p.propertyTypeName.toLowerCase();
-        typeMatch = req.propertyTypeName.toLowerCase().split(',').any((t) {
-          final trimmed = t.trim();
-          return trimmed.isNotEmpty && (pTypeName.contains(trimmed) || trimmed.contains(pTypeName));
-        });
-      }
-      if (!typeMatch) return false;
-    } else if (req.propertyTypeId.isNotEmpty && p.propertyTypeId.isNotEmpty) {
-      if (p.propertyTypeId != req.propertyTypeId) {
-        final pTypeName = p.propertyTypeName.toLowerCase();
-        final reqTypeName = req.propertyTypeName.toLowerCase();
-        if (!reqTypeName.contains(pTypeName) && !pTypeName.contains(reqTypeName)) return false;
-      }
-    }
-
-    // 5. Configuration Match (Supports multiple selected configurations e.g. 2 BHK, 3 BHK, 4 BHK)
-    if (req.configurationIds.isNotEmpty) {
-      bool configMatch = p.configurationId != null && req.configurationIds.contains(p.configurationId);
-      if (!configMatch && req.configurationName != null && req.configurationName!.isNotEmpty && p.configurationName != null && p.configurationName!.isNotEmpty) {
-        final pConfigName = p.configurationName!.toLowerCase();
-        configMatch = req.configurationName!.toLowerCase().split(',').any((c) {
-          final trimmed = c.trim();
-          return trimmed.isNotEmpty && (pConfigName.contains(trimmed) || trimmed.contains(pConfigName));
-        });
-      }
-      if (!configMatch) return false;
-    } else if (req.configurationId != null && req.configurationId!.isNotEmpty) {
-      if (p.configurationId != null && p.configurationId!.isNotEmpty && p.configurationId != req.configurationId) {
-        final pConfigName = (p.configurationName ?? '').toLowerCase();
-        final reqConfigName = (req.configurationName ?? '').toLowerCase();
-        if (pConfigName.isNotEmpty && reqConfigName.isNotEmpty) {
-          if (!reqConfigName.contains(pConfigName) && !pConfigName.contains(reqConfigName)) {
-            return false;
-          }
-        }
-      }
-    }
-
-    // 6. Target Area Match (Matches if property is in ANY ONE of the target areas)
-    if (req.areaIds.isNotEmpty) {
-      bool areaMatch = req.areaIds.contains(p.areaId);
-      if (!areaMatch && req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
-        final pArea = p.areaName.trim().toLowerCase();
-        areaMatch = req.areaNames.any((aName) {
-          final trimmed = aName.trim().toLowerCase();
-          return trimmed.isNotEmpty && (trimmed == pArea || pArea.contains(trimmed) || trimmed.contains(pArea));
-        });
-      }
-      if (!areaMatch) return false;
-    }
-
-    // 7. Budget Range Match
-    if (req.maxBudget > 0) {
-      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
-      final maxB = req.maxBudget;
-      if (p.price < minB || p.price > maxB) {
-        return false;
-      }
-    }
-
-    return true;
+    final result = PropertyRequirementMatcher.match(p, req);
+    return result.matchPercentage >= MatchCriteriaManager().threshold;
   }
 
   static Future<bool> _isRequirementPropertyMatchAsync(PropertyModel p, RequirementModel req) async {
@@ -2511,6 +2796,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   String displayStatusLabel(String status) {
+    if (status == 'Assigned') return 'Assigned';
     if (status == 'New') return 'New';
     if (status == 'Not Started') return 'Not Started';
     if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) return 'Call Attempted';
@@ -2528,6 +2814,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     Color? color,
   }) {
     final bool isSelected = currentStatus == value ||
+        (value == 'Assigned' && currentStatus == 'Assigned') ||
         (value == 'New' && currentStatus == 'New') ||
         (value == 'Not Started' && currentStatus == 'Not Started') ||
         (value == 'Not Interested' && (currentStatus == 'Not Interested' || currentStatus == 'Dead' || currentStatus == 'Suspended')) ||
@@ -2788,7 +3075,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
 
     final bool isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
-    final String currentStatus = isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req);
+    final String currentStatus = (req.status == 'Assigned') ? 'Assigned' : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req));
     final statusColor = compact ? _getStatusColor(currentStatus) : CRMColors.primary;
     final bool hasPreviousFollowup = currentStatus == 'Follow-up' ||
         currentStatus == 'Re-Followup' ||
@@ -2835,6 +3122,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         itemBuilder: (BuildContext context) {
           return [
             _buildStatusMenuItem('New', 'New', currentStatus),
+            _buildStatusMenuItem('Assigned', 'Assigned', currentStatus, color: const Color(0xFF0F766E)),
             _buildStatusMenuItem('Not Started', 'Not Started', currentStatus),
             PopupMenuItem<String>(
               value: 'Call Attempted',
@@ -2995,12 +3283,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   String? _getCleanNote(RequirementModel req) {
-    if (req.notes == null) return null;
-    final text = req.notes!.trim();
-    if (text.isEmpty || text.toLowerCase() == 'null' || text.toLowerCase() == 'n/a') {
-      return null;
-    }
-    return text;
+    return getTelecallerRemarks(req);
   }
 
   void _removeNotesPopover() {
@@ -3383,7 +3666,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             
             final bool isUnhandledAssigned = _isUnhandledAssignedLead(r, currentUser);
             // Map legacy status strings to new pipeline statuses for backward compatibility
-            String mappedStatus = isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(r);
+            String mappedStatus = (r.status == 'Assigned') ? 'Assigned' : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(r));
             if (mappedStatus == 'Active' || mappedStatus == 'Live') mappedStatus = 'Interested';
             if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
             if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
@@ -3423,7 +3706,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   matchesSalesman;
             }
 
-            return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch && matchesDate;
+            final matchesReadiness = _selectedReadiness == "All" ||
+                (_selectedReadiness == "Needs Details" ? r.matchingReadiness != 'Ready' : r.matchingReadiness == _selectedReadiness);
+
+            return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch && matchesDate && matchesReadiness;
           }).toList();
           
           // Sort by recently updated/created (descending)
@@ -3557,6 +3843,51 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                     ),
                                   ),
                                 ],
+                                if (req.matchingReadiness != 'Ready') ...[
+                                  const SizedBox(height: 3),
+                                  _buildNeedsMoreDetailsBadge(req, compact: true),
+                                ],
+                                Builder(
+                                  builder: (context) {
+                                    final telecallerKeyPoints = getTelecallerRemarks(req);
+                                    if (telecallerKeyPoints == null || telecallerKeyPoints.isEmpty) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 3),
+                                      child: Tooltip(
+                                        message: 'Telecaller Key Points:\n$telecallerKeyPoints',
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF0F766E).withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.35)),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.speaker_notes_rounded, size: 10, color: Color(0xFF0F766E)),
+                                              const SizedBox(width: 3),
+                                              Flexible(
+                                                child: Text(
+                                                  'Key Points: $telecallerKeyPoints',
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    color: Color(0xFF0F766E),
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
                                 if (req.nextFollowupDate != null) ...[
                                   const SizedBox(height: 2),
                                   Row(
@@ -4036,6 +4367,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                       ),
                                     ),
                                   ),
+                                  if (req.matchingReadiness != 'Ready')
+                                    _buildNeedsMoreDetailsBadge(req, compact: true),
                                 ],
                               ),
                             ),
@@ -4649,6 +4982,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (status.startsWith('Rejected')) return CRMColors.danger;
     if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) return const Color(0xFF0288D1);
     switch (status) {
+      case 'Assigned':
+        return const Color(0xFF0F766E);
       case 'Won':
         return CRMColors.success;
       case 'Follow-up':
@@ -6297,6 +6632,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   }
                 }
 
+                matches.sort((a, b) =>
+                  PropertyRequirementMatcher.calculateMatchPercentage(b, req)
+                    .compareTo(PropertyRequirementMatcher.calculateMatchPercentage(a, req)));
                 setDialogState(() {
                   matchedProps = matches;
                   isInitLoading = false;
@@ -7891,7 +8229,20 @@ class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> 
   @override
   void initState() {
     super.initState();
+    MatchCriteriaManager().addListener(_onCriteriaChanged);
     _computeCount();
+  }
+
+  void _onCriteriaChanged() {
+    if (mounted) {
+      _computeCount();
+    }
+  }
+
+  @override
+  void dispose() {
+    MatchCriteriaManager().removeListener(_onCriteriaChanged);
+    super.dispose();
   }
 
   @override
@@ -8010,7 +8361,15 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
   final PropertiesRepository _propertiesRepository = PropertiesRepository();
   bool _isLoading = true;
   List<PropertyModel> _matchedProperties = [];
+  Map<String, PropertyMatchResult> _matchResults = {};
   bool _includePhotos = true;
+
+  Color _getMatchScoreColor(int pct) {
+    if (pct >= 80) return const Color(0xFF10B981);
+    if (pct >= 60) return const Color(0xFF0F766E);
+    if (pct >= 40) return const Color(0xFF0288D1);
+    return const Color(0xFFD97706);
+  }
 
   Future<void> _shareProperty(PropertyModel p) async {
     final BHK = p.configurationName ?? "${p.bedrooms} BHK";
@@ -8106,15 +8465,43 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
       final properties = await _propertiesRepository.getProperties();
       final req = widget.requirement;
 
-      final List<PropertyModel> matches = [];
+      final isWonReq = req.status.toLowerCase() == 'won' || req.status.toLowerCase() == 'closed';
+      List<String> wonIds = [];
+      String? wonClientName;
+      if (isWonReq) {
+        wonIds = await PropertyDealClientStore.getWonPropertyIds(req.id);
+        wonClientName = await PropertyDealClientStore.getClientName(req.id);
+      }
+
+      final List<PropertyMatchResult> results = [];
       for (final p in properties) {
-        if (await _isRequirementPropertyMatchAsync(p, req)) {
-          matches.add(p);
+        if (isWonReq) {
+          final isWon = wonIds.contains(p.id) || (wonClientName != null && wonClientName.trim().toLowerCase() == req.clientName.trim().toLowerCase());
+          if (isWon) {
+            results.add(PropertyMatchResult(
+              property: p,
+              matchPercentage: 100,
+              matchedCriteria: ['✓ Finalized Deal Property'],
+            ));
+          }
+          continue;
+        }
+
+        final res = PropertyRequirementMatcher.match(p, req);
+        if (res.matchPercentage >= MatchCriteriaManager().threshold) {
+          results.add(res);
         }
       }
 
+      results.sort((a, b) {
+        final cmp = b.matchPercentage.compareTo(a.matchPercentage);
+        if (cmp != 0) return cmp;
+        return a.property.price.compareTo(b.property.price);
+      });
+
       setState(() {
-        _matchedProperties = matches;
+        _matchedProperties = results.map((r) => r.property).toList();
+        _matchResults = { for (var r in results) r.property.id: r };
         _isLoading = false;
       });
     } catch (e) {
@@ -8160,11 +8547,33 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
           Text(
             isWonReq
                 ? "Property selected and finalized for client deal: ${widget.requirement.clientName}"
-                : "Showing properties that match criteria: ${widget.requirement.configurationName ?? '-'} ${widget.requirement.propertyTypeName} in ${widget.requirement.areaNames.isNotEmpty ? widget.requirement.areaNames.join(', ') : 'Any Area'}",
+                : "Showing ${_matchedProperties.length} matching properties for ${widget.requirement.clientName} (≥${MatchCriteriaManager().threshold}% match criteria)",
             style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
+          if (!isWonReq && PropertyRequirementMatcher.isAllAreas(widget.requirement))
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F766E).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.location_on_outlined, size: 15, color: Color(0xFF0F766E)),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Client is interested in All Areas. All matching configurations and price ranges across the city are included.',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF0F766E)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: CRMSpacing.s),
           if (isWonReq)
             Container(
@@ -8249,37 +8658,51 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                               spacing: 8,
                               children: [
                                 Text(p.title, style: CRMTypography.bodyMedium),
-                                if (isWonReq) ...[
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                Builder(builder: (context) {
+                                  final matchRes = _matchResults[p.id];
+                                  final matchPct = matchRes?.matchPercentage ?? 0;
+                                  if (isWonReq) {
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: CRMColors.success.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: CRMColors.success.withValues(alpha: 0.4)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.check_circle_rounded, size: 12, color: CRMColors.success),
+                                          const SizedBox(width: 4),
+                                          Text('Won Deal Property', style: CRMTypography.caption.copyWith(color: CRMColors.success, fontWeight: FontWeight.bold, fontSize: 10)),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                                     decoration: BoxDecoration(
-                                      color: CRMColors.success.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: CRMColors.success.withValues(alpha: 0.4)),
+                                      color: _getMatchScoreColor(matchPct).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: _getMatchScoreColor(matchPct).withValues(alpha: 0.45)),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.check_circle_rounded, size: 12, color: CRMColors.success),
+                                        Icon(Icons.auto_awesome_rounded, size: 12, color: _getMatchScoreColor(matchPct)),
                                         const SizedBox(width: 4),
-                                        Text('Won Deal Property', style: CRMTypography.caption.copyWith(color: CRMColors.success, fontWeight: FontWeight.bold, fontSize: 10)),
+                                        Text(
+                                          '$matchPct% Match',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: _getMatchScoreColor(matchPct),
+                                          ),
+                                        ),
                                       ],
                                     ),
-                                  ),
-                                  if (!isWonReq && p.propertyStatusName.toLowerCase() == 'available')
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: CRMColors.info.withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: CRMColors.info.withValues(alpha: 0.4)),
-                                      ),
-                                      child: Text(
-                                        'Available',
-                                        style: CRMTypography.caption.copyWith(color: CRMColors.info, fontWeight: FontWeight.bold, fontSize: 10),
-                                      ),
-                                    ),
-                                ],
+                                  );
+                                }),
                               ],
                             ),
                           ),
@@ -8292,6 +8715,31 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Builder(builder: (context) {
+                            final matchRes = _matchResults[p.id];
+                            if (matchRes == null || matchRes.matchedCriteria.isEmpty || isWonReq) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 5, bottom: 4),
+                              child: Wrap(
+                                spacing: 5,
+                                runSpacing: 4,
+                                children: matchRes.matchedCriteria.map((tag) => Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.surfaceElevatedOf(context),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
+                                  ),
+                                  child: Text(
+                                    tag,
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)),
+                                  ),
+                                )).toList(),
+                              ),
+                            );
+                          }),
                           if (!isWonReq && p.propertyStatusName.toLowerCase() == 'available')
                             Padding(
                               padding: const EdgeInsets.only(top: 4, bottom: 4),
@@ -8455,6 +8903,7 @@ String getEffectiveStatus(RequirementModel req) {
 }
 
 String displayStatusLabel(String status) {
+  if (status == 'Assigned') return 'Assigned';
   if (status == 'New') return 'New';
   if (status == 'Not Started') return 'Not Started';
   if (status == 'Not Interested') return 'Not Interested';
@@ -8841,6 +9290,10 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                             color: CRMColors.textSecondaryOf(context),
                                           ),
                                         ),
+                                        if (req.matchingReadiness != 'Ready') ...[
+                                          const SizedBox(height: CRMSpacing.xs),
+                                          _buildNeedsMoreDetailsBadge(req),
+                                        ],
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
                                         _buildDetailRow("Date", DateFormat('dd/MM/yyyy').format(req.createdAt), Icons.calendar_today_rounded),
@@ -8861,6 +9314,55 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                           _buildDetailRow("Furnishing", furnishingName, Icons.chair_rounded),
                                         if (facingName.isNotEmpty)
                                           _buildDetailRow("Facing", facingName, Icons.explore_rounded),
+                                        Builder(
+                                          builder: (context) {
+                                            final telecallerRemarks = getTelecallerRemarks(req);
+                                            if (telecallerRemarks == null || telecallerRemarks.isEmpty) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final isDark = Theme.of(context).brightness == Brightness.dark;
+                                            return Padding(
+                                              padding: const EdgeInsets.only(top: 12),
+                                              child: Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.all(12),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF0F766E).withValues(alpha: 0.08),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.25)),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Row(
+                                                      children: [
+                                                        Icon(Icons.speaker_notes_rounded, size: 15, color: Color(0xFF0F766E)),
+                                                        SizedBox(width: 6),
+                                                        Text(
+                                                          'Telecaller Key Points / Remarks',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Color(0xFF0F766E),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    SelectableText(
+                                                      telecallerRemarks,
+                                                      style: TextStyle(
+                                                        fontSize: 12.5,
+                                                        color: isDark ? Colors.grey.shade200 : const Color(0xFF1E293B),
+                                                        height: 1.4,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -8926,6 +9428,10 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                             color: CRMColors.textSecondaryOf(context),
                                           ),
                                         ),
+                                        if (req.matchingReadiness != 'Ready') ...[
+                                          const SizedBox(height: CRMSpacing.xs),
+                                          _buildNeedsMoreDetailsBadge(req),
+                                        ],
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
                                         _buildDetailRow("Date", DateFormat('dd/MM/yyyy').format(req.createdAt), Icons.calendar_today_rounded),
@@ -8946,6 +9452,55 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                           _buildDetailRow("Furnishing", furnishingName, Icons.chair_rounded),
                                         if (facingName.isNotEmpty)
                                           _buildDetailRow("Facing", facingName, Icons.explore_rounded),
+                                        Builder(
+                                          builder: (context) {
+                                            final telecallerRemarks = getTelecallerRemarks(req);
+                                            if (telecallerRemarks == null || telecallerRemarks.isEmpty) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final isDark = Theme.of(context).brightness == Brightness.dark;
+                                            return Padding(
+                                              padding: const EdgeInsets.only(top: 12),
+                                              child: Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.all(12),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF0F766E).withValues(alpha: 0.08),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.25)),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Row(
+                                                      children: [
+                                                        Icon(Icons.speaker_notes_rounded, size: 15, color: Color(0xFF0F766E)),
+                                                        SizedBox(width: 6),
+                                                        Text(
+                                                          'Telecaller Key Points / Remarks',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Color(0xFF0F766E),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    SelectableText(
+                                                      telecallerRemarks,
+                                                      style: TextStyle(
+                                                        fontSize: 12.5,
+                                                        color: isDark ? Colors.grey.shade200 : const Color(0xFF1E293B),
+                                                        height: 1.4,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -9262,87 +9817,7 @@ class _RequirementWinPropertySelectionDialogState
   }
 
   bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
-    final statusName = p.propertyStatusName.toLowerCase();
-    final statusActive = statusName == 'available' || statusName.contains('available') || statusName.isEmpty;
-    if (!statusActive) return false;
-
-    final reqListing = (req.listingTypeName ?? '').toLowerCase();
-    final propListing = (p.listingTypeName).toLowerCase();
-    bool listingTypeMatch = true;
-    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
-      final isReqRent = reqListing.contains('rent');
-      final isPropRent = propListing.contains('rent');
-      listingTypeMatch = (isReqRent == isPropRent);
-    } else if (req.listingTypeId != null && req.listingTypeId!.isNotEmpty && p.listingTypeId.isNotEmpty) {
-      listingTypeMatch = (p.listingTypeId == req.listingTypeId);
-    }
-    if (!listingTypeMatch) return false;
-
-    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
-      if (p.categoryId != req.categoryId) return false;
-    }
-
-    if (req.propertyTypeIds.isNotEmpty) {
-      bool typeMatch = req.propertyTypeIds.contains(p.propertyTypeId);
-      if (!typeMatch && req.propertyTypeName.isNotEmpty && p.propertyTypeName.isNotEmpty) {
-        final pTypeName = p.propertyTypeName.toLowerCase();
-        typeMatch = req.propertyTypeName.toLowerCase().split(',').any((t) {
-          final trimmed = t.trim();
-          return trimmed.isNotEmpty && (pTypeName.contains(trimmed) || trimmed.contains(pTypeName));
-        });
-      }
-      if (!typeMatch) return false;
-    } else if (req.propertyTypeId.isNotEmpty && p.propertyTypeId.isNotEmpty) {
-      if (p.propertyTypeId != req.propertyTypeId) {
-        final pTypeName = p.propertyTypeName.toLowerCase();
-        final reqTypeName = req.propertyTypeName.toLowerCase();
-        if (!reqTypeName.contains(pTypeName) && !pTypeName.contains(reqTypeName)) return false;
-      }
-    }
-
-    if (req.configurationIds.isNotEmpty) {
-      bool configMatch = p.configurationId != null && req.configurationIds.contains(p.configurationId);
-      if (!configMatch && req.configurationName != null && req.configurationName!.isNotEmpty && p.configurationName != null && p.configurationName!.isNotEmpty) {
-        final pConfigName = p.configurationName!.toLowerCase();
-        configMatch = req.configurationName!.toLowerCase().split(',').any((c) {
-          final trimmed = c.trim();
-          return trimmed.isNotEmpty && (pConfigName.contains(trimmed) || trimmed.contains(pConfigName));
-        });
-      }
-      if (!configMatch) return false;
-    } else if (req.configurationId != null && req.configurationId!.isNotEmpty) {
-      if (p.configurationId != null && p.configurationId!.isNotEmpty && p.configurationId != req.configurationId) {
-        final pConfigName = (p.configurationName ?? '').toLowerCase();
-        final reqConfigName = (req.configurationName ?? '').toLowerCase();
-        if (pConfigName.isNotEmpty && reqConfigName.isNotEmpty) {
-          if (!reqConfigName.contains(pConfigName) && !pConfigName.contains(reqConfigName)) {
-            return false;
-          }
-        }
-      }
-    }
-
-    if (req.areaIds.isNotEmpty) {
-      bool areaMatch = req.areaIds.contains(p.areaId);
-      if (!areaMatch && req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
-        final pArea = p.areaName.trim().toLowerCase();
-        areaMatch = req.areaNames.any((aName) {
-          final trimmed = aName.trim().toLowerCase();
-          return trimmed.isNotEmpty && (trimmed == pArea || pArea.contains(trimmed) || trimmed.contains(pArea));
-        });
-      }
-      if (!areaMatch) return false;
-    }
-
-    if (req.maxBudget > 0) {
-      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
-      final maxB = req.maxBudget;
-      if (p.price < minB || p.price > maxB) {
-        return false;
-      }
-    }
-
-    return true;
+    return PropertyRequirementMatcher.calculateMatchPercentage(p, req) >= MatchCriteriaManager().threshold;
   }
 
   Future<void> _loadProperties() async {
@@ -9351,6 +9826,9 @@ class _RequirementWinPropertySelectionDialogState
       final req = widget.requirement;
 
       final matches = properties.where((p) => _isRequirementPropertyMatch(p, req)).toList();
+      matches.sort((a, b) =>
+        PropertyRequirementMatcher.calculateMatchPercentage(b, req)
+          .compareTo(PropertyRequirementMatcher.calculateMatchPercentage(a, req)));
 
       setState(() {
         _allProperties = matches;

@@ -21,6 +21,17 @@ class IntegrationLeadModel {
   final String? followupRemarks;
   final String? followupStatus;
   final CrmMatchInfo? crmMatch;
+  final String? assignedTo;
+  final String? assignedToName;
+  final String? transferRemarks;
+  final DateTime? interactedAt;
+  final String? interactedBy;
+
+  bool get isInteracted =>
+      campaignStatus == 'CNR' ||
+      campaignStatus == 'Picked Up' ||
+      campaignStatus == 'Assigned' ||
+      interactedAt != null;
 
   IntegrationLeadModel({
     required this.id,
@@ -42,6 +53,11 @@ class IntegrationLeadModel {
     this.followupRemarks,
     this.followupStatus,
     this.crmMatch,
+    this.assignedTo,
+    this.assignedToName,
+    this.transferRemarks,
+    this.interactedAt,
+    this.interactedBy,
   }) : leadType = resolveLeadType(leadType, rawJson);
 
   /// Resolves lead type between 'Property Listing' and 'Requirement'
@@ -566,6 +582,11 @@ class IntegrationLeadModel {
     String? followupRemarks,
     String? followupStatus,
     CrmMatchInfo? crmMatch,
+    String? assignedTo,
+    String? assignedToName,
+    String? transferRemarks,
+    DateTime? interactedAt,
+    String? interactedBy,
   }) {
     return IntegrationLeadModel(
       id: id ?? this.id,
@@ -587,6 +608,11 @@ class IntegrationLeadModel {
       followupRemarks: followupRemarks ?? this.followupRemarks,
       followupStatus: followupStatus ?? this.followupStatus,
       crmMatch: crmMatch ?? this.crmMatch,
+      assignedTo: assignedTo ?? this.assignedTo,
+      assignedToName: assignedToName ?? this.assignedToName,
+      transferRemarks: transferRemarks ?? this.transferRemarks,
+      interactedAt: interactedAt ?? this.interactedAt,
+      interactedBy: interactedBy ?? this.interactedBy,
     );
   }
 
@@ -611,6 +637,11 @@ class IntegrationLeadModel {
       'followup_remarks': followupRemarks,
       'followup_status': followupStatus,
       'crm_match': crmMatch?.toJson(),
+      'assigned_to': assignedTo,
+      'assigned_to_name': assignedToName,
+      'transfer_remarks': transferRemarks,
+      'interacted_at': interactedAt?.toIso8601String(),
+      'interacted_by': interactedBy,
     };
   }
 
@@ -632,6 +663,16 @@ class IntegrationLeadModel {
     final latestFu = json['latest_followup'] is Map<String, dynamic>
         ? json['latest_followup'] as Map<String, dynamic>
         : null;
+
+    final transferObj = raw['_transfer'] is Map ? raw['_transfer'] as Map : null;
+    final assignedToVal = json['assigned_to']?.toString() ?? transferObj?['assigned_to']?.toString();
+    final assignedNameVal = json['assigned_to_name']?.toString() ??
+        json['assigned_user']?['full_name']?.toString() ??
+        transferObj?['assigned_to_name']?.toString();
+    final transferRemarksVal = json['transfer_remarks']?.toString() ?? transferObj?['remarks']?.toString();
+    final interactedAtRaw = json['interacted_at'] ?? transferObj?['interacted_at'];
+    final interactedAtVal = interactedAtRaw != null ? DateTime.tryParse(interactedAtRaw.toString()) : null;
+    final interactedByVal = json['interacted_by']?.toString() ?? transferObj?['interacted_by']?.toString();
 
     return IntegrationLeadModel(
       id: json['id']?.toString() ?? '',
@@ -663,6 +704,11 @@ class IntegrationLeadModel {
       crmMatch: json['crm_match'] is Map<String, dynamic>
           ? CrmMatchInfo.fromJson(Map<String, dynamic>.from(json['crm_match']))
           : null,
+      assignedTo: assignedToVal,
+      assignedToName: assignedNameVal,
+      transferRemarks: transferRemarksVal,
+      interactedAt: interactedAtVal,
+      interactedBy: interactedByVal,
     );
   }
 }

@@ -1,12 +1,11 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../core/api/dio_client.dart';
 
 class LegalService {
   Future<Map<String, dynamic>> checkUserAcceptance(String userId) async {
     try {
-      if (Platform.environment.containsKey('FLUTTER_TEST')) {
+      if (!kIsWeb && Platform.environment.containsKey('FLUTTER_TEST')) {
         return {
           'accepted': true,
           'latest_terms_version': 1,

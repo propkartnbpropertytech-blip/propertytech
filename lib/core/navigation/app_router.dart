@@ -72,6 +72,9 @@ class GoRouterRefreshStream extends ChangeNotifier {
 }
 
 class AppRouter {
+  static final GlobalKey<NavigatorState> rootNavigatorKey =
+      GlobalKey<NavigatorState>();
+
   final AuthBloc authBloc;
 
   AppRouter(this.authBloc);
@@ -98,6 +101,7 @@ class AppRouter {
   }
 
   late final router = GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: _getWebInitialLocation(),
     refreshListenable: GoRouterRefreshStream(authBloc.stream),
     observers: [
@@ -223,15 +227,21 @@ class AppRouter {
             redirect: (context, state) => '/campaign/leads',
           ),
           GoRoute(
+            path: '/campaign-leads',
+            redirect: (context, state) => '/campaign/leads',
+          ),
+          GoRoute(
             path: '/requirements',
             pageBuilder: (context, state) {
               final tab = state.uri.queryParameters['tab'];
               final subTab = state.uri.queryParameters['subTab'];
+              final group = state.uri.queryParameters['group'];
               return crmFadeSlidePage(
                 key: state.pageKey,
                 child: RequirementsScreen(
                   initialTab: tab,
                   initialSubTab: subTab,
+                  initialGroup: group,
                 ),
               );
             },

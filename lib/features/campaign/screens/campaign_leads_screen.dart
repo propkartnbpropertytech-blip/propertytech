@@ -25,6 +25,8 @@ import '../../integration/services/lead_understanding_engine.dart';
 import '../models/campaign_followup_model.dart';
 import '../bloc/campaign_leads_bloc.dart';
 import 'campaign_subshell_header.dart';
+import '../../users/repository/users_repository.dart';
+import '../../users/models/user_model.dart' as users_model;
 
 class CampaignLeadsScreen extends StatefulWidget {
   const CampaignLeadsScreen({super.key});
@@ -35,7 +37,9 @@ class CampaignLeadsScreen extends StatefulWidget {
 
 class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   final IntegrationService _service = IntegrationService();
+  final UsersRepository _usersRepository = UsersRepository();
   final TextEditingController _searchController = TextEditingController();
+  List<users_model.UserModel>? _cachedUsers;
 
   // Active view mode: 'active' (default pipeline), 'followups' (scheduled callbacks), 'not_interested' (archived)
   String _viewMode = 'active';
@@ -94,6 +98,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   int _cachedNotInterestedCount = 0;
   int _cachedNotInterestedTodayCount = 0;
   int _cachedTotalActiveCount = 0;
+  int _cachedListedCount = 0;
+  int _cachedArchivedReqCount = 0;
   List<String> _cachedAllDetectedHeaders = [];
   List<String> _cachedVisibleHeaders = [];
   int _cachedPropertyListingCount = 0;
@@ -136,6 +142,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   String _getDisplayNameForColumn(String columnKey) {
     if (columnKey == '#Source') return 'Source';
     if (columnKey == '#CampaignStatus') return 'Status';
+    if (columnKey == '#TransferLeads') return 'Transfer Leads';
     if (columnKey == '#MetaQuality') return 'Meta Rating';
     if (columnKey == '#CrmStatus') return 'Import Status';
     if (columnKey == '#MainCrmStatus') return 'Main CRM Status';
@@ -255,10 +262,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     // Filter by Section and View Mode:
     // In 'not_interested' mode, show leads where campaignStatus == 'Not interested'.
-    // In 'active' mode (default), filter out 'Not interested' leads to keep active pipeline clean.
+    // In 'archive_listed' (or legacy 'listed') mode, show leads where leadType == 'Property Listing' and campaignStatus is listed/archived.
+    // In 'archive_requirements' mode, show leads where leadType == 'Requirement' and campaignStatus is archived/closed/won.
+    // In 'active' mode (default), filter out 'Not interested', 'Property Listed' / 'Listed', and 'Archived' leads.
     var list = _viewMode == 'not_interested'
         ? currentLeads.where((l) => l.leadType == _selectedSection && l.campaignStatus == 'Not interested').toList()
-        : currentLeads.where((l) => l.leadType == _selectedSection && l.campaignStatus != 'Not interested').toList();
+        : (_viewMode == 'archive_listed' || _viewMode == 'listed'
+            ? currentLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList()
+            : (_viewMode == 'archive_requirements'
+                ? currentLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won')).toList()
+                : currentLeads.where((l) => l.leadType == _selectedSection && l.campaignStatus != 'Not interested' && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived').toList()));
 
     // Filter by Date (Today is default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
     if (_selectedDateFilter != CampaignDateFilter.allTime) {
@@ -325,6 +338,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             cellVal = lead.source;
           } else if (colKey == '#CampaignStatus') {
             cellVal = lead.campaignStatus;
+          } else if (colKey == '#TransferLeads') {
+            cellVal = lead.assignedToName?.isNotEmpty == true
+                ? 'Assigned: ${lead.assignedToName}'
+                : (lead.campaignStatus == 'CNR' ? 'CNR (Interacted)' : 'Not Assigned');
           } else if (colKey == '#MetaQuality') {
             cellVal = lead.qualityStatus;
           } else if (colKey == '#CrmStatus') {
@@ -361,6 +378,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         } else if (_sortColumn == '#CampaignStatus') {
           valA = a.campaignStatus;
           valB = b.campaignStatus;
+        } else if (_sortColumn == '#TransferLeads') {
+          valA = a.assignedToName ?? (a.campaignStatus == 'CNR' ? 'CNR' : '');
+          valB = b.assignedToName ?? (b.campaignStatus == 'CNR' ? 'CNR' : '');
         } else if (_sortColumn == '#MetaQuality') {
           valA = a.qualityStatus;
           valB = b.qualityStatus;
@@ -405,23 +425,32 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     int notInterestedCount = 0;
     int notInterestedTodayCount = 0;
     int totalActiveCount = 0;
+    int listedCount = 0;
+    int archivedReqCount = 0;
 
     for (final l in currentLeads) {
       final isProp = l.leadType == 'Property Listing';
       final isReq = l.leadType == 'Requirement';
       final isSelectedSec = l.leadType == _selectedSection;
       final isNotInterested = l.campaignStatus == 'Not interested';
+      final isListed = isProp && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived');
+      final isArchivedReq = isReq && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won');
+      final isArchived = isListed || isArchivedReq;
 
       if (isNotInterested) {
         notInterestedCount++;
         if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.today)) {
           notInterestedTodayCount++;
         }
+      } else if (isListed) {
+        listedCount++;
+      } else if (isArchivedReq) {
+        archivedReqCount++;
       } else {
         totalActiveCount++;
       }
 
-      if (isSelectedSec && !isNotInterested) {
+      if (isSelectedSec && !isNotInterested && !isArchived) {
         if (l.campaignStatus == 'Interested' && l.importStatus != 'Imported') {
           interestedCount++;
         }
@@ -436,12 +465,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.thisMonth)) countThisMonth++;
       }
 
-      if (isProp && !isNotInterested &&
+      if (isProp && !isNotInterested && !isArchived &&
           CampaignLeadsState.matchesDateFilter(l.receivedAt, _selectedDateFilter,
               customStart: _customStartDate, customEnd: _customEndDate)) {
         propListingCount++;
       }
-      if (isReq && !isNotInterested &&
+      if (isReq && !isNotInterested && !isArchived &&
           CampaignLeadsState.matchesDateFilter(l.receivedAt, _selectedDateFilter,
               customStart: _customStartDate, customEnd: _customEndDate)) {
         reqCount++;
@@ -461,6 +490,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _cachedNotInterestedCount = notInterestedCount;
     _cachedNotInterestedTodayCount = notInterestedTodayCount;
     _cachedTotalActiveCount = totalActiveCount;
+    _cachedListedCount = listedCount;
+    _cachedArchivedReqCount = archivedReqCount;
 
     _cachedAllDetectedHeaders = _service.getDetectedHeaders(leadsSubset: list, section: _selectedSection);
     _cachedVisibleHeaders = _service.getActiveVisibleHeaders(leadsSubset: list, section: _selectedSection);
@@ -702,6 +733,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ] else if (_viewMode == 'not_interested') ...[
                 _buildNotInterestedView(context),
               ] else ...[
+                if (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed') ...[
+                  _buildArchiveNoticeBanner(context),
+                ],
                 // Dual-Section Segmented Tab Switcher (Property Listing Leads vs Requirement Leads)
                 _buildLeadTypeSegmentedControl(context, propertyListingCount, requirementCount),
 
@@ -1002,6 +1036,26 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       badgeBorder = const Color(0xFFF59E0B).withValues(alpha: 0.45);
       textColor = const Color(0xFFF59E0B);
       icon = Icons.schedule_rounded;
+    } else if (status == 'CNR') {
+      badgeBg = const Color(0xFFF59E0B).withValues(alpha: 0.15);
+      badgeBorder = const Color(0xFFF59E0B).withValues(alpha: 0.45);
+      textColor = const Color(0xFFD97706);
+      icon = Icons.phone_missed_rounded;
+    } else if (status == 'Picked Up' || status == 'Assigned') {
+      badgeBg = const Color(0xFF10B981).withValues(alpha: 0.15);
+      badgeBorder = const Color(0xFF10B981).withValues(alpha: 0.45);
+      textColor = const Color(0xFF10B981);
+      icon = Icons.assignment_ind_rounded;
+    } else if (status == 'Property Listed' || status == 'Listed') {
+      badgeBg = const Color(0xFF10B981).withValues(alpha: 0.15);
+      badgeBorder = const Color(0xFF10B981).withValues(alpha: 0.45);
+      textColor = const Color(0xFF10B981);
+      icon = Icons.verified_rounded;
+    } else if (status == 'Archived') {
+      badgeBg = const Color(0xFF6366F1).withValues(alpha: 0.15);
+      badgeBorder = const Color(0xFF6366F1).withValues(alpha: 0.45);
+      textColor = const Color(0xFF6366F1);
+      icon = Icons.archive_rounded;
     } else if (status == 'Not interested') {
       badgeBg = const Color(0xFFEF4444).withValues(alpha: 0.15);
       badgeBorder = const Color(0xFFEF4444).withValues(alpha: 0.45);
@@ -1017,14 +1071,130 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     String label = status.isEmpty ? 'New' : status;
     if ((status == 'Follow up' || status == 'Follow-up') && lead.followupScheduledAt != null) {
       label = 'Follow up (${DateFormat('d MMM, h:mm a').format(lead.followupScheduledAt!)})';
+    } else if (status == 'CNR') {
+      label = 'CNR';
+    } else if (status == 'Assigned' && lead.assignedToName?.isNotEmpty == true) {
+      label = 'Assigned (${lead.assignedToName})';
     }
 
     final popup = PopupMenuButton<String>(
-      tooltip: 'Change Status (Follow up, Interested, Not interested)',
+      tooltip: 'Change Status (Follow up, Interested, CNR, Transfer, Not interested)',
       constraints: const BoxConstraints(minWidth: 260, maxWidth: 300),
       onSelected: (newStatus) async {
         if (newStatus == 'Follow up') {
           _showScheduleFollowupDialog(context, lead);
+        } else if (newStatus == 'Transfer') {
+          _showTransferDialog(context, lead);
+        } else if (newStatus == 'CNR') {
+          await _service.transferLead(lead.id, status: 'CNR');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Lead marked as CNR and highlighted as interacted.'),
+                backgroundColor: Color(0xFFD97706),
+              ),
+            );
+          }
+        } else if (newStatus == 'Property Listed') {
+          await _service.updateLeadCampaignStatus(lead.id, 'Property Listed');
+          if (mounted) {
+            setState(() {
+              _cachedFilteredLeads = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Property listing marked as Listed and saved in Archive.'),
+                backgroundColor: const Color(0xFF10B981),
+                action: SnackBarAction(
+                  label: 'View Archive',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    setState(() {
+                      _viewMode = 'archive_listed';
+                      _selectedSection = 'Property Listing';
+                      _cachedFilteredLeads = null;
+                      _currentPage = 1;
+                    });
+                  },
+                ),
+              ),
+            );
+          }
+        } else if (newStatus == 'Archive Requirement') {
+          await _service.updateLeadCampaignStatus(lead.id, 'Archived');
+          if (mounted) {
+            setState(() {
+              _cachedFilteredLeads = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Requirement lead archived and saved in Archive.'),
+                backgroundColor: const Color(0xFF6366F1),
+                action: SnackBarAction(
+                  label: 'View Archive',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    setState(() {
+                      _viewMode = 'archive_requirements';
+                      _selectedSection = 'Requirement';
+                      _cachedFilteredLeads = null;
+                      _currentPage = 1;
+                    });
+                  },
+                ),
+              ),
+            );
+          }
+        } else if (newStatus == 'Wrong Lead Property Listing') {
+          final ok = await _service.reclassifyLead(lead.id, 'Property Listing');
+          if (mounted) {
+            setState(() {
+              _cachedFilteredLeads = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Lead moved to Property Listing table.'),
+                backgroundColor: const Color(0xFF0284C7),
+                action: SnackBarAction(
+                  label: 'View',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    setState(() {
+                      _selectedSection = 'Property Listing';
+                      _persistedSection = 'Property Listing';
+                      _cachedFilteredLeads = null;
+                      _currentPage = 1;
+                    });
+                  },
+                ),
+              ),
+            );
+          }
+        } else if (newStatus == 'Wrong Lead Requirement') {
+          final ok = await _service.reclassifyLead(lead.id, 'Requirement');
+          if (mounted) {
+            setState(() {
+              _cachedFilteredLeads = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Lead moved to Requirement table.'),
+                backgroundColor: const Color(0xFF8B5CF6),
+                action: SnackBarAction(
+                  label: 'View',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    setState(() {
+                      _selectedSection = 'Requirement';
+                      _persistedSection = 'Requirement';
+                      _cachedFilteredLeads = null;
+                      _currentPage = 1;
+                    });
+                  },
+                ),
+              ),
+            );
+          }
         } else if (newStatus == 'Interested') {
           await _service.updateLeadCampaignStatus(lead.id, 'Interested');
           if (mounted) {
@@ -1083,6 +1253,165 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ],
           ),
         ),
+        PopupMenuItem(
+          value: 'CNR',
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.phone_missed_rounded, size: 16, color: Color(0xFFD97706)),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('CNR (Call Not Received)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFFD97706)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('Mark lead as interacted', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'Transfer',
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: CRMColors.primaryOf(context).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.swap_horiz_rounded, size: 16, color: CRMColors.primaryOf(context)),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Transfer Lead...', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('CNR or Picked Up & Assign', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (lead.leadType == 'Property Listing') ...[
+          PopupMenuItem(
+            value: 'Property Listed',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF10B981)),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Property Listed', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF10B981)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('Mark as Listed (Saved to Archive in More Tools)', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'Wrong Lead Requirement',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.swap_horiz_rounded, size: 16, color: Color(0xFF8B5CF6)),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Wrong Lead (move to requirement table)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: Color(0xFF8B5CF6)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('Customer wants a property', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else ...[
+          PopupMenuItem(
+            value: 'Archive Requirement',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.archive_rounded, size: 16, color: Color(0xFF6366F1)),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Archive Requirement', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6366F1)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('Move to Archived Requirements in More Tools', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'Wrong Lead Property Listing',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.home_work_rounded, size: 16, color: Color(0xFF0284C7)),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Wrong Lead (move to property listing table)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: Color(0xFF0284C7)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('Customer wants to list property', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         PopupMenuItem(
           value: 'Interested',
           child: Row(
@@ -1374,6 +1703,629 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     _loadFollowups();
                   }
                 },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTransferLeadCell(BuildContext context, IntegrationLeadModel lead) {
+    final isCnr = lead.campaignStatus == 'CNR';
+    final isAssigned = lead.campaignStatus == 'Assigned' || (lead.assignedTo != null && lead.assignedTo!.isNotEmpty);
+    final assignedName = lead.assignedToName;
+    final remarks = lead.transferRemarks;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isAssigned) ...[
+          Tooltip(
+            message: remarks?.isNotEmpty == true
+                ? 'Assigned to ${assignedName ?? "Agent"}\nRemarks: $remarks'
+                : 'Assigned to ${assignedName ?? "Agent"}',
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.assignment_ind_rounded, size: 14, color: Color(0xFF10B981)),
+                  const SizedBox(width: 4),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 110),
+                    child: Text(
+                      assignedName?.isNotEmpty == true ? assignedName! : 'Assigned',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF10B981),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (remarks?.isNotEmpty == true) ...[
+            const SizedBox(width: 4),
+            Tooltip(
+              message: 'Telecaller Key Points:\n$remarks',
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F766E).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.speaker_notes_rounded, size: 12, color: Color(0xFF0F766E)),
+                    const SizedBox(width: 4),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 90),
+                      child: Text(
+                        remarks!,
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF0F766E)),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(width: 6),
+        ] else if (isCnr) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.45)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.phone_missed_rounded, size: 13, color: Color(0xFFD97706)),
+                SizedBox(width: 4),
+                Text(
+                  'CNR (Interacted)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFD97706),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+
+        // Transfer Button
+        ElevatedButton.icon(
+          onPressed: () => _showTransferDialog(context, lead),
+          icon: Icon(
+            isAssigned ? Icons.edit_note_rounded : Icons.swap_horiz_rounded,
+            size: 14,
+            color: Colors.white,
+          ),
+          label: Text(
+            isAssigned ? 'Re-transfer' : 'Transfer',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: isAssigned
+                ? const Color(0xFF0F766E)
+                : (isCnr ? const Color(0xFFD97706) : CRMColors.primaryOf(context)),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            elevation: 0.5,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showTransferDialog(BuildContext context, IntegrationLeadModel lead) async {
+    List<users_model.UserModel> activeUsers = _cachedUsers ?? [];
+    if (activeUsers.isEmpty) {
+      try {
+        final allUsers = await _usersRepository.getUsers();
+        activeUsers = allUsers.where((u) => u.isActive).toList();
+        _cachedUsers = activeUsers;
+      } catch (e) {
+        debugPrint('[TransferDialog] Error fetching users: $e');
+      }
+    }
+
+    if (!context.mounted) return;
+
+    final clientName = lead.getStringValue('full_name').isNotEmpty
+        ? lead.getStringValue('full_name')
+        : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Lead');
+    final phone = lead.getStringValue('phone_number').isNotEmpty
+        ? lead.getStringValue('phone_number')
+        : lead.getStringValue('phone');
+
+    final salesUsers = activeUsers.where((u) {
+      final r = u.roleName.toLowerCase();
+      return r.contains('sales') || r.contains('agent') || r.contains('advisor');
+    }).toList();
+    final assignableUsers = salesUsers.isNotEmpty ? salesUsers : activeUsers;
+
+    String selectedStatus = lead.campaignStatus == 'CNR' ? 'CNR' : 'Picked Up';
+    String? selectedUserId = (lead.assignedTo?.isNotEmpty == true && assignableUsers.any((u) => u.id == lead.assignedTo))
+        ? lead.assignedTo
+        : (assignableUsers.isNotEmpty ? assignableUsers.first.id : null);
+    final remarksController = TextEditingController(text: lead.transferRemarks ?? '');
+    String? remarksError;
+    bool isSubmitting = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: !isSubmitting,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+            actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: CRMColors.primaryOf(ctx).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.swap_horiz_rounded, color: CRMColors.primaryOf(ctx), size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Transfer Lead',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$clientName ${phone.isNotEmpty ? '($phone)' : ''}',
+                        style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 1. Two Choice Question Cards: Call picked up ? or CNR
+                      Text(
+                        'Call Outcome *',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          // Choice 1: Call picked up ?
+                          Expanded(
+                            child: InkWell(
+                              onTap: isSubmitting ? null : () => setDialogState(() => selectedStatus = 'Picked Up'),
+                              borderRadius: BorderRadius.circular(10),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: selectedStatus == 'Picked Up'
+                                      ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                                      : CRMColors.surfaceElevatedOf(ctx),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: selectedStatus == 'Picked Up'
+                                        ? const Color(0xFF10B981)
+                                        : CRMColors.borderOf(ctx),
+                                    width: selectedStatus == 'Picked Up' ? 1.8 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.phone_in_talk_rounded,
+                                      size: 20,
+                                      color: selectedStatus == 'Picked Up' ? const Color(0xFF10B981) : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Call picked up ?',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: selectedStatus == 'Picked Up' ? const Color(0xFF10B981) : null,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Answered & discuss',
+                                            style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(ctx)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          // Choice 2: CNR
+                          Expanded(
+                            child: InkWell(
+                              onTap: isSubmitting ? null : () => setDialogState(() => selectedStatus = 'CNR'),
+                              borderRadius: BorderRadius.circular(10),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: selectedStatus == 'CNR'
+                                      ? const Color(0xFFD97706).withValues(alpha: 0.12)
+                                      : CRMColors.surfaceElevatedOf(ctx),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: selectedStatus == 'CNR'
+                                        ? const Color(0xFFD97706)
+                                        : CRMColors.borderOf(ctx),
+                                    width: selectedStatus == 'CNR' ? 1.8 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.phone_missed_rounded,
+                                      size: 20,
+                                      color: selectedStatus == 'CNR' ? const Color(0xFFD97706) : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'CNR',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: selectedStatus == 'CNR' ? const Color(0xFFD97706) : null,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Call not received',
+                                            style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(ctx)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // On CNR: Explanation & interaction highlight notice
+                      if (selectedStatus == 'CNR') ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFFD97706)),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Mark as Interacted (CNR)',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFFD97706)),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Lead status will be updated to CNR and highlighted in warm amber in the table to indicate that this lead has already been interacted with. No sales assignment will be performed.',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark ? Colors.grey.shade300 : const Color(0xFF78350F),
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      // On Picked Up: Show "Type property key points here" and "Lead Assign Dropdown"
+                      if (selectedStatus == 'Picked Up') ...[
+                        // 1. "Type property key points here *" (Mandatory)
+                        RichText(
+                          text: TextSpan(
+                            text: 'Type property key points here ',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
+                            children: const [
+                              TextSpan(text: '*', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: remarksController,
+                          maxLines: 3,
+                          enabled: !isSubmitting,
+                          onChanged: (val) {
+                            if (remarksError != null) {
+                              setDialogState(() => remarksError = null);
+                            }
+                          },
+                          decoration: InputDecoration(
+                            errorText: remarksError,
+                            errorStyle: const TextStyle(fontSize: 11, color: Color(0xFFEF4444)),
+                            hintText: 'Type property key points (e.g. 3 BHK in Shela/Bopal, budget ₹35k, client preferences, visit timing)...',
+                            hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                            filled: true,
+                            fillColor: CRMColors.surfaceElevatedOf(ctx),
+                            contentPadding: const EdgeInsets.all(12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: CRMColors.primaryOf(ctx), width: 1.5),
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // 2. Lead Assign Dropdown
+                        Text(
+                          'Lead Assign Dropdown (Sales Users) *',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: CRMColors.surfaceElevatedOf(ctx),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: CRMColors.borderOf(ctx)),
+                          ),
+                          child: assignableUsers.isEmpty
+                              ? const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 12),
+                                  child: Text('Loading sales users...', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                                )
+                              : DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: assignableUsers.any((u) => u.id == selectedUserId) ? selectedUserId : null,
+                                    isExpanded: true,
+                                    hint: const Text('Select Sales User to Assign', style: TextStyle(fontSize: 13)),
+                                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                                    items: assignableUsers.map((u) {
+                                      return DropdownMenuItem<String>(
+                                        value: u.id,
+                                        child: Row(
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 12,
+                                              backgroundColor: CRMColors.primaryOf(ctx).withValues(alpha: 0.15),
+                                              child: Text(
+                                                u.fullName.isNotEmpty ? u.fullName[0].toUpperCase() : 'U',
+                                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primaryOf(ctx)),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                '${u.fullName} (${u.roleName})',
+                                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: isSubmitting
+                                        ? null
+                                        : (val) {
+                                            setDialogState(() => selectedUserId = val);
+                                          },
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.notifications_active_rounded, size: 16, color: Color(0xFF10B981)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Status will become Assigned automatically, and the sales user will receive a push notification.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark ? Colors.grey.shade300 : const Color(0xFF065F46),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSubmitting ? null : () => Navigator.pop(dialogCtx),
+                child: Text('Cancel', style: TextStyle(color: CRMColors.textSecondaryOf(ctx))),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: selectedStatus == 'CNR' ? const Color(0xFFD97706) : CRMColors.primaryOf(ctx),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                ),
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        if (selectedStatus == 'Picked Up') {
+                          if (remarksController.text.trim().isEmpty) {
+                            setDialogState(() {
+                              remarksError = 'Property key points (remarks) are mandatory when assigning a lead.';
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please enter property key points. Remarks are mandatory when assigning a lead.'),
+                                backgroundColor: Color(0xFFEF4444),
+                              ),
+                            );
+                            return;
+                          }
+                          if (selectedUserId == null || selectedUserId!.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please select a sales user to assign the lead to.'),
+                                backgroundColor: Color(0xFFEF4444),
+                              ),
+                            );
+                            return;
+                          }
+                        }
+
+                        setDialogState(() => isSubmitting = true);
+
+                        final targetUserName = assignableUsers
+                            .firstWhere(
+                              (u) => u.id == selectedUserId,
+                              orElse: () => const users_model.UserModel(
+                                id: '',
+                                roleId: '',
+                                roleName: '',
+                                fullName: '',
+                                email: '',
+                                isActive: false,
+                              ),
+                            )
+                            .fullName;
+
+                        try {
+                          final res = await _service.transferLead(
+                            lead.id,
+                            status: selectedStatus,
+                            assignedTo: selectedStatus == 'Picked Up' ? selectedUserId : null,
+                            assignedToName: selectedStatus == 'Picked Up' ? targetUserName : null,
+                            remarks: remarksController.text.trim(),
+                          );
+
+                          if (context.mounted) {
+                            Navigator.pop(dialogCtx);
+                            setState(() {
+                              _cachedFilteredLeads = null;
+                            });
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  selectedStatus == 'CNR'
+                                      ? 'Lead status changed to CNR and highlighted as interacted.'
+                                      : 'Lead transferred & assigned to $targetUserName! Status automatically set to Assigned.',
+                                ),
+                                backgroundColor: selectedStatus == 'CNR'
+                                    ? const Color(0xFFD97706)
+                                    : const Color(0xFF10B981),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          setDialogState(() => isSubmitting = false);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to transfer lead: $e'),
+                                backgroundColor: const Color(0xFFEF4444),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                child: isSubmitting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(
+                        selectedStatus == 'CNR' ? 'Confirm CNR' : 'Assign & Transfer Lead',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
               ),
             ],
           );
@@ -2135,6 +3087,76 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  Widget _buildArchiveNoticeBanner(BuildContext context) {
+    final isListed = _viewMode == 'archive_listed' || _viewMode == 'listed';
+    final themeColor = isListed ? const Color(0xFF10B981) : const Color(0xFF6366F1);
+    final count = isListed ? _cachedListedCount : _cachedArchivedReqCount;
+    final title = isListed
+        ? 'Archive: Listed Properties ($count)'
+        : 'Archive: Requirements ($count)';
+    final desc = isListed
+        ? 'Showing closed and listed property leads saved in the archive. You can search, filter, export, or change status to restore them to active leads.'
+        : 'Showing archived requirement leads saved in the archive. You can search, filter, export, or change status to restore them to active leads.';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: themeColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: themeColor.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: themeColor.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isListed ? Icons.inventory_2_rounded : Icons.archive_rounded,
+              size: 18,
+              color: themeColor,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: themeColor),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  desc,
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          CRMButton(
+            label: 'Exit Archive',
+            prefixIcon: Icons.arrow_back_rounded,
+            height: 32,
+            variant: CRMButtonVariant.secondary,
+            onPressed: () {
+              setState(() {
+                _viewMode = 'active';
+                _cachedFilteredLeads = null;
+                _currentPage = 1;
+              });
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildLeadTypeSegmentedControl(BuildContext context, int propCount, int reqCount) {
@@ -3046,7 +4068,21 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final moreToolsButton = PopupMenuButton<String>(
       tooltip: 'More Tools',
       onSelected: (action) {
-        if (action == 'reorder') {
+        if (action == 'archive_listed') {
+          setState(() {
+            _viewMode = 'archive_listed';
+            _selectedSection = 'Property Listing';
+            _cachedFilteredLeads = null;
+            _currentPage = 1;
+          });
+        } else if (action == 'archive_requirements') {
+          setState(() {
+            _viewMode = 'archive_requirements';
+            _selectedSection = 'Requirement';
+            _cachedFilteredLeads = null;
+            _currentPage = 1;
+          });
+        } else if (action == 'reorder') {
           _showReorderColumnsDialog(context, allDetectedHeaders, leads);
         } else if (action == 'export') {
           _exportCurrentSpreadsheetToExcel(context);
@@ -3081,6 +4117,91 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         }
       },
       itemBuilder: (ctx) => [
+        PopupMenuItem(
+          value: 'archive_listed',
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.inventory_2_rounded, size: 16, color: Color(0xFF10B981)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Text('Archive: Listed Properties', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$_cachedListedCount',
+                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Text('View closed & listed properties archive', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'archive_requirements',
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.archive_rounded, size: 16, color: Color(0xFF6366F1)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Text('Archive: Requirements', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$_cachedArchivedReqCount',
+                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Text('View archived requirements archive', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
         const PopupMenuItem(
           value: 'reorder',
           child: Row(
@@ -3452,6 +4573,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         const DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
                         _buildExcelDataColumn(context, title: 'Source', columnKey: '#Source', isStandard: true),
                         _buildExcelDataColumn(context, title: 'Status', columnKey: '#CampaignStatus', isStandard: true),
+                        _buildExcelDataColumn(context, title: 'Transfer Leads', columnKey: '#TransferLeads', isStandard: true),
 
                         // Dynamic Column Headers (Only Visible Ones, strictly preserving Google Sheet / user drag-and-place order)
                         ...visibleHeaders.map((header) {
@@ -3484,6 +4606,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             });
                           },
                           color: WidgetStateProperty.resolveWith<Color?>((states) {
+                            if (lead.campaignStatus == 'CNR') {
+                              return const Color(0xFFF59E0B).withValues(alpha: 0.12);
+                            }
+                            if (lead.campaignStatus == 'Picked Up' || lead.campaignStatus == 'Assigned') {
+                              return const Color(0xFF10B981).withValues(alpha: 0.10);
+                            }
                             if (lead.campaignStatus == 'Interested') {
                               return const Color(0xFF10B981).withValues(alpha: 0.14);
                             }
@@ -3557,6 +4685,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
                             // Status Dropdown Cell (Follow up, Interested, Not interested)
                             DataCell(_buildStatusDropdownCell(context, lead)),
+
+                            // Transfer Leads Cell
+                            DataCell(_buildTransferLeadCell(context, lead)),
 
                             // Dynamic Visible Cells mapped to JSON keys
                             ...visibleHeaders.map((header) {
@@ -4200,6 +5331,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         val = lead.source;
       } else if (columnKey == '#CampaignStatus') {
         val = lead.campaignStatus;
+      } else if (columnKey == '#TransferLeads') {
+        val = lead.assignedToName?.isNotEmpty == true
+            ? 'Assigned: ${lead.assignedToName}'
+            : (lead.campaignStatus == 'CNR' ? 'CNR (Interacted)' : 'Not Assigned');
       } else if (columnKey == '#MetaQuality') {
         val = lead.qualityStatus;
       } else if (columnKey == '#CrmStatus') {

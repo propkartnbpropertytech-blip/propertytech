@@ -248,7 +248,12 @@ class RequirementModel {
                   .join(' ')
                   .trim();
               if (formatted.isNotEmpty) {
-                aNames = [formatted];
+                final splitAreas = formatted
+                    .split(RegExp(r'[,/]'))
+                    .map((s) => s.trim())
+                    .where((s) => s.isNotEmpty)
+                    .toList();
+                aNames = splitAreas.isNotEmpty ? splitAreas : [formatted];
                 break;
               }
             }
@@ -566,11 +571,36 @@ class RequirementModel {
     }
   }
 
+  String get cityName {
+    if (metaCustomFields != null) {
+      final c = metaCustomFields!['city'] ?? metaCustomFields!['cityName'] ?? metaCustomFields!['city_name'];
+      if (c != null && c.toString().trim().isNotEmpty) {
+        return c.toString().trim();
+      }
+    }
+    return '';
+  }
+
+  bool get isAllAreas {
+    if (areaIds.isEmpty && areaNames.isEmpty) return true;
+    return areaNames.any((a) {
+      final l = a.trim().toLowerCase();
+      return l.isEmpty ||
+          l == 'all areas' ||
+          l == 'all' ||
+          l == 'any area' ||
+          l == 'any' ||
+          l == 'anywhere' ||
+          l == 'entire city' ||
+          l == 'all localities';
+    });
+  }
+
   String get matchingReadiness {
-    final hasCategory = categoryId.trim().isNotEmpty;
-    final hasConfig = configurationId != null && configurationId!.trim().isNotEmpty;
+    final hasCategory = categoryId.trim().isNotEmpty || categoryName.trim().isNotEmpty || propertyTypeName.trim().isNotEmpty;
+    final hasConfig = (configurationId != null && configurationId!.trim().isNotEmpty) || configurationIds.isNotEmpty || (configurationName != null && configurationName!.trim().isNotEmpty);
     final hasBudget = minBudget > 0 || maxBudget > 0;
-    final hasArea = areaIds.isNotEmpty;
+    final hasArea = isAllAreas || areaIds.isNotEmpty || areaNames.isNotEmpty;
 
     if (hasCategory && hasConfig && hasBudget && hasArea) {
       return 'Ready';
