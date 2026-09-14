@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
-import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../properties/models/property_model.dart';
@@ -29,6 +27,8 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   // Data lists
   List<LookupItem> _cities = [];
   List<AreaLookup> _areas = [];
+  List<dynamic> _zones = [];
+  List<dynamic> _aliases = [];
 
   // Form State / Editing State
   bool _isCityFormOpen = false;
@@ -60,7 +60,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadData();
     _areaPincodeController.addListener(_onPincodeChanged);
   }
@@ -86,6 +86,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
         _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
         _isLoading = false;
       });
+      _loadZonesAndAliases();
     } catch (_) {
       try {
         final response = await _propertiesService.getPropertyMetadata();
@@ -96,10 +97,26 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
           _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
           _isLoading = false;
         });
+        _loadZonesAndAliases();
       } catch (e) {
         setState(() => _isLoading = false);
         _showSnackBar('Failed to load configuration data: $e', isError: true);
       }
+    }
+  }
+
+  Future<void> _loadZonesAndAliases() async {
+    try {
+      final zones = await _propertiesService.getZones();
+      final aliases = await _propertiesService.getAliases();
+      if (mounted) {
+        setState(() {
+          _zones = zones;
+          _aliases = aliases;
+        });
+      }
+    } catch (e) {
+      debugPrint("⚠️ [LocationConfig] Error fetching zones/aliases: $e");
     }
   }
 
@@ -1538,6 +1555,287 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
     );
   }
 
+  void _showAddZoneDialog() {
+    final nameController = TextEditingController();
+    final descController = TextEditingController();
+    String? selectedCityId = _cities.isNotEmpty ? _cities.first.id : null;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.card)),
+        backgroundColor: CRMColors.surfaceElevatedOf(context),
+        title: Text('Add Regional Zone', style: CRMTypography.sectionTitle),
+        content: StatefulBuilder(
+          builder: (context, setDlgState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DropdownButtonFormField<String>(
+                value: selectedCityId,
+                dropdownColor: CRMColors.cardBgOf(context),
+                decoration: const InputDecoration(labelText: 'City *', border: OutlineInputBorder()),
+                items: _cities.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                onChanged: (v) => setDlgState(() => selectedCityId = v),
+              ),
+              const SizedBox(height: CRMSpacing.m),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Zone Name * (e.g. West Ahmedabad)', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: CRMSpacing.m),
+              TextField(
+                controller: descController,
+                decoration: const InputDecoration(labelText: 'Description (Optional)', border: OutlineInputBorder()),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.trim().isEmpty || selectedCityId == null) return;
+              Navigator.pop(ctx);
+              try {
+                await _propertiesService.createZone(selectedCityId!, nameController.text.trim(), description: descController.text.trim());
+                await _loadZonesAndAliases();
+                _showSnackBar('Zone created successfully!');
+              } catch (e) {
+                _showSnackBar('Failed to create zone: $e', isError: true);
+              }
+            },
+            child: const Text('Create Zone'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddAliasDialog() {
+    final aliasController = TextEditingController();
+    String? selectedAreaId = _areas.isNotEmpty ? _areas.first.id : null;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.card)),
+        backgroundColor: CRMColors.surfaceElevatedOf(context),
+        title: Text('Add Verified Locality Alias', style: CRMTypography.sectionTitle),
+        content: StatefulBuilder(
+          builder: (context, setDlgState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DropdownButtonFormField<String>(
+                value: selectedAreaId,
+                dropdownColor: CRMColors.cardBgOf(context),
+                decoration: const InputDecoration(labelText: 'Canonical Area *', border: OutlineInputBorder()),
+                items: _areas.map((a) => DropdownMenuItem(value: a.id, child: Text(a.name))).toList(),
+                onChanged: (v) => setDlgState(() => selectedAreaId = v),
+              ),
+              const SizedBox(height: CRMSpacing.m),
+              TextField(
+                controller: aliasController,
+                decoration: const InputDecoration(labelText: 'Alias / Variation * (e.g. Bodak Dev)', border: OutlineInputBorder()),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              if (aliasController.text.trim().isEmpty || selectedAreaId == null) return;
+              Navigator.pop(ctx);
+              try {
+                await _propertiesService.createAreaAlias(selectedAreaId!, aliasController.text.trim());
+                await _loadZonesAndAliases();
+                _showSnackBar('Alias registered and verified successfully!');
+              } catch (e) {
+                _showSnackBar('Failed to create alias: $e', isError: true);
+              }
+            },
+            child: const Text('Add Alias'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildZoneSection() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Section 1: Regional Zones
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Regional Zones & Hierarchies', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                  const SizedBox(height: 2),
+                  Text('Group localities into dynamic regional zones (e.g., West Ahmedabad)', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                ],
+              ),
+              CRMButton(
+                label: 'Add New Zone',
+                prefixIcon: Icons.add_rounded,
+                onPressed: _showAddZoneDialog,
+              ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.m),
+          if (_zones.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(CRMSpacing.xl),
+              decoration: BoxDecoration(
+                color: CRMColors.cardBgOf(context),
+                borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                border: Border.all(color: CRMColors.borderOf(context)),
+              ),
+              child: Center(
+                child: Text('No zones configured. Click "Add New Zone" to create one.', style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context))),
+              ),
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _zones.length,
+              itemBuilder: (context, index) {
+                final z = _zones[index] as Map<String, dynamic>;
+                final name = z['name']?.toString() ?? '';
+                final cityName = z['cityName']?.toString() ?? 'Ahmedabad';
+                final areaCount = z['areaCount'] ?? 0;
+                final isActive = z['is_active'] != false;
+
+                return Card(
+                  color: CRMColors.cardBgOf(context),
+                  elevation: 0,
+                  margin: const EdgeInsets.only(bottom: CRMSpacing.s),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                    side: BorderSide(color: CRMColors.borderOf(context)),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
+                    leading: CircleAvatar(
+                      backgroundColor: CRMColors.primary.withValues(alpha: 0.1),
+                      child: Icon(Icons.hub_outlined, color: CRMColors.primary, size: 20),
+                    ),
+                    title: Row(
+                      children: [
+                        Text(name, style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context))),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: (isActive ? CRMColors.success : CRMColors.danger).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            isActive ? 'Active' : 'Inactive',
+                            style: CRMTypography.captionBold.copyWith(
+                              color: isActive ? CRMColors.success : CRMColors.danger,
+                              fontSize: 9,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    subtitle: Text('$cityName • $areaCount localities assigned', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                    trailing: Text('${z['slug'] ?? ''}', style: CRMTypography.caption.copyWith(color: CRMColors.textMutedOf(context))),
+                  ),
+                );
+              },
+            ),
+
+          const SizedBox(height: CRMSpacing.xl),
+
+          // Section 2: Verified Localities & Aliases
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Verified Locality Aliases', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                  const SizedBox(height: 2),
+                  Text('Normalize spelling variations (e.g. Bodak Dev → Bodakdev, West Amdavad → West Ahmedabad)', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                ],
+              ),
+              CRMButton(
+                label: 'Add Alias',
+                prefixIcon: Icons.add_link_rounded,
+                onPressed: _showAddAliasDialog,
+              ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.m),
+          if (_aliases.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(CRMSpacing.xl),
+              decoration: BoxDecoration(
+                color: CRMColors.cardBgOf(context),
+                borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                border: Border.all(color: CRMColors.borderOf(context)),
+              ),
+              child: Center(
+                child: Text('No verified aliases registered.', style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context))),
+              ),
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _aliases.length,
+              itemBuilder: (context, index) {
+                final a = _aliases[index] as Map<String, dynamic>;
+                final alias = a['alias']?.toString() ?? '';
+                final areaName = a['area_name']?.toString() ?? 'Canonical Area';
+
+                return Card(
+                  color: CRMColors.cardBgOf(context),
+                  elevation: 0,
+                  margin: const EdgeInsets.only(bottom: CRMSpacing.xs),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                    side: BorderSide(color: CRMColors.borderOf(context)),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 2),
+                    leading: Icon(Icons.spellcheck_rounded, size: 18, color: CRMColors.primary),
+                    title: Row(
+                      children: [
+                        Text(alias, style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context))),
+                        const SizedBox(width: 8),
+                        Icon(Icons.arrow_forward_rounded, size: 14, color: CRMColors.textSecondaryOf(context)),
+                        const SizedBox(width: 8),
+                        Text(areaName, style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: CRMColors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: CRMColors.success.withValues(alpha: 0.3)),
+                      ),
+                      child: Text('Verified', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: CRMColors.success)),
+                    ),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1567,6 +1865,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
           tabs: const [
             Tab(icon: Icon(Icons.location_city_rounded), text: 'Cities'),
             Tab(icon: Icon(Icons.map_outlined), text: 'Areas / Micro-markets'),
+            Tab(icon: Icon(Icons.hub_outlined), text: 'Zones & Aliases'),
           ],
         ),
       ),
@@ -1579,6 +1878,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                 children: [
                   _buildCitySection(),
                   _buildAreaSection(),
+                  _buildZoneSection(),
                 ],
               ),
             ),

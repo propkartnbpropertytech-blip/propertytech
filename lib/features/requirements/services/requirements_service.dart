@@ -161,4 +161,40 @@ class RequirementsService {
       throw ApiException(message: e.toString());
     }
   }
+
+  Future<Map<String, dynamic>> getRequirementMatches(
+    String requirementId, {
+    int page = 1,
+    int limit = 20,
+    String? mode,
+    int? minScore,
+    bool includeNearby = false,
+  }) async {
+    try {
+      final Map<String, dynamic> queryParams = {
+        'page': page,
+        'limit': limit,
+        'include_nearby': includeNearby,
+      };
+      if (mode != null && mode.isNotEmpty) {
+        queryParams['mode'] = mode;
+      }
+      if (minScore != null) {
+        queryParams['min_score'] = minScore;
+      }
+
+      final response = await _apiClient.get(
+        '/requirements/$requirementId/matches',
+        queryParameters: queryParams,
+      );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
 }

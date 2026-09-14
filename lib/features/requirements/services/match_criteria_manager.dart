@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/api/api_client.dart';
+import '../../../core/utils/app_logger.dart';
+
 class MatchCriteriaManager extends ChangeNotifier {
   static final MatchCriteriaManager _instance = MatchCriteriaManager._internal();
   factory MatchCriteriaManager() => _instance;
@@ -10,6 +13,7 @@ class MatchCriteriaManager extends ChangeNotifier {
 
   int _threshold = defaultThreshold;
   bool _isLoaded = false;
+  bool _isSyncing = false;
 
   MatchCriteriaManager._internal() {
     _loadPersisted();
@@ -17,31 +21,87 @@ class MatchCriteriaManager extends ChangeNotifier {
 
   int get threshold => _threshold;
   bool get isLoaded => _isLoaded;
+  bool get isSyncing => _isSyncing;
 
   Future<void> _loadPersisted() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _threshold = prefs.getInt(prefsKey) ?? defaultThreshold;
+      final cached = prefs.getInt(prefsKey);
+      if (cached != null) {
+        _threshold = cached.clamp(10, 100);
+      }
       _isLoaded = true;
       notifyListeners();
     } catch (_) {
       _isLoaded = true;
     }
+
+    // Always fetch latest authoritative team threshold from backend database
+    await fetchFromBackend(silent: true);
   }
 
-  Future<void> setThreshold(int percent) async {
+  /// Fetches the Admin's configured match criteria from PostgreSQL database
+  Future<void> fetchFromBackend({bool silent = false}) async {
+    if (_isSyncing) return;
+    _isSyncing = true;
+    try {
+      final response = await ApiClient().get('/config/match-criteria');
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data['data'];
+        final serverThreshold = (data?['threshold'] as num?)?.toInt();
+        if (serverThreshold != null) {
+          final clamped = serverThreshold.clamp(10, 100);
+          if (clamped != _threshold) {
+            _threshold = clamped;
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt(prefsKey, _threshold);
+            notifyListeners();
+            AppLogger.d("MatchCriteriaManager: Updated team threshold to $_threshold% from database");
+          }
+        }
+      }
+      _isLoaded = true;
+    } catch (e) {
+      if (!silent) {
+        AppLogger.w("MatchCriteriaManager: Failed to fetch criteria from backend: $e");
+      }
+    } finally {
+      _isSyncing = false;
+    }
+  }
+
+  /// Sets threshold, saves to database so it stays at this preference permanently for the whole team
+  Future<bool> setThreshold(int percent, {bool syncBackend = true}) async {
     final clamped = percent.clamp(10, 100);
-    if (_threshold == clamped) return;
+    final changed = (_threshold != clamped);
+
     _threshold = clamped;
     notifyListeners();
+
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(prefsKey, _threshold);
     } catch (_) {}
+
+    if (syncBackend) {
+      try {
+        final response = await ApiClient().put('/config/match-criteria', {
+          'threshold': clamped,
+        });
+        if (response.statusCode == 200) {
+          AppLogger.d("MatchCriteriaManager: Persisted threshold $clamped% to database for team");
+          return true;
+        }
+      } catch (e) {
+        AppLogger.e("MatchCriteriaManager: Failed to persist threshold to database: $e");
+        return false;
+      }
+    }
+    return changed;
   }
 
   Future<void> resetToDefault() async {
-    await setThreshold(defaultThreshold);
+    await setThreshold(defaultThreshold, syncBackend: true);
   }
 
   /// Color corresponding to the current threshold

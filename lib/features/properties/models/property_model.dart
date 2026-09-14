@@ -562,7 +562,8 @@ class LookupItem {
   final String? categoryId;
   final String? state;
   final String? country;
-  LookupItem({required this.id, required this.name, this.categoryId, this.state, this.country});
+  final String? description;
+  LookupItem({required this.id, required this.name, this.categoryId, this.state, this.country, this.description});
   factory LookupItem.fromJson(Map<String, dynamic> json) {
     return LookupItem(
       id: (json['id'] ?? '').toString(),
@@ -570,6 +571,7 @@ class LookupItem {
       categoryId: json['category_id']?.toString(),
       state: json['state']?.toString(),
       country: json['country']?.toString(),
+      description: json['description']?.toString(),
     );
   }
 }
@@ -577,14 +579,26 @@ class LookupItem {
 class AreaLookup extends LookupItem {
   final String cityId;
   final String pincode;
-  AreaLookup({required String id, required String name, required this.cityId, required this.pincode})
-      : super(id: id, name: name);
+  final String? zoneId;
+  final String? zoneName;
+
+  AreaLookup({
+    required String id,
+    required String name,
+    required this.cityId,
+    required this.pincode,
+    this.zoneId,
+    this.zoneName,
+  }) : super(id: id, name: name);
+
   factory AreaLookup.fromJson(Map<String, dynamic> json) {
     return AreaLookup(
       id: (json['id'] ?? '').toString(),
       name: (json['area_name'] ?? json['name'] ?? '').toString(),
       cityId: (json['city_id'] ?? '').toString(),
       pincode: (json['pincode'] ?? '').toString(),
+      zoneId: json['zone_id']?.toString(),
+      zoneName: json['zone_name']?.toString() ?? (json['zones'] is Map ? json['zones']['name']?.toString() : null),
     );
   }
 }
@@ -592,6 +606,7 @@ class AreaLookup extends LookupItem {
 class PropertyMetadataModel {
   final List<LookupItem> cities;
   final List<AreaLookup> areas;
+  final List<LookupItem> zones;
   final List<LookupItem> categories;
   final List<LookupItem> types;
   final List<LookupItem> configurations;
@@ -606,6 +621,7 @@ class PropertyMetadataModel {
   PropertyMetadataModel({
     required this.cities,
     required this.areas,
+    this.zones = const [],
     required this.categories,
     required this.types,
     required this.configurations,
@@ -639,9 +655,19 @@ class PropertyMetadataModel {
     final areasList = parseList(meta['areas'], AreaLookup.fromJson)
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
+    final zonesList = parseList<LookupItem>(
+      meta['zones'],
+      (j) => LookupItem(
+        id: (j['id'] ?? '').toString(),
+        name: (j['name'] ?? '').toString(),
+        description: j['description']?.toString(),
+      ),
+    )..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
     return PropertyMetadataModel(
       cities: citiesList,
       areas: areasList,
+      zones: zonesList,
       categories: parseList(meta['categories'], LookupItem.fromJson),
       types: parseList(meta['types'], LookupItem.fromJson),
       configurations: parseList(meta['configurations'], LookupItem.fromJson),

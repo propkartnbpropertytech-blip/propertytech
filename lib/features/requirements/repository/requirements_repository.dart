@@ -330,4 +330,22 @@ class RequirementsRepository {
       _coordinator.refreshRequirements();
     }
   }
+
+  Future<Map<String, dynamic>> getRequirementMatches(
+    String requirementId, {
+    int page = 1,
+    int limit = 20,
+    String? mode,
+    int? minScore,
+    bool includeNearby = false,
+  }) async {
+    return _requirementsService.getRequirementMatches(
+      requirementId,
+      page: page,
+      limit: limit,
+      mode: mode,
+      minScore: minScore,
+      includeNearby: includeNearby,
+    );
+  }
 }

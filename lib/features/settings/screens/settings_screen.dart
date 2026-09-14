@@ -800,7 +800,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         CRMCard(
           elevated: true,
           title: 'Run Match Criteria Engine',
-          subtitle: 'Configure minimum qualification score for property-to-requirement matching.',
+          subtitle: 'Configure minimum qualification score for property-to-requirement matching. Saved in database and active across your entire team.',
           headerAction: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
@@ -811,10 +811,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.bolt_rounded, size: 16, color: thresholdColor),
+                Icon(Icons.cloud_done_rounded, size: 14, color: thresholdColor),
                 const SizedBox(width: 4),
                 Text(
-                  '$currentScore% Minimum',
+                  '$currentScore% Minimum (Team)',
                   style: TextStyle(
                     color: thresholdColor,
                     fontWeight: FontWeight.bold,
@@ -863,7 +863,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               desc,
                               style: CRMTypography.caption.copyWith(
                                 color: CRMColors.textSecondaryOf(context),
-                                height: 1.35,
                               ),
                             ),
                           ],
@@ -931,9 +930,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _selectedMatchThreshold = (val / 5).round() * 5.0;
                       });
                     },
-                    onChangeEnd: (val) {
+                    onChangeEnd: (val) async {
                       final v = ((val / 5).round() * 5).toInt();
-                      manager.setThreshold(v);
+                      await manager.setThreshold(v);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Run Match Criteria saved to database ($v%)! Successfully applied to your entire team.',
+                            ),
+                            backgroundColor: manager.thresholdColor,
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
                     },
                   ),
                 ),
@@ -971,9 +982,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: const Color(0xFFD97706),
                       description: 'Any single criterion match',
                       isSelected: currentScore == 20,
-                      onTap: () {
+                      onTap: () async {
                         setState(() => _selectedMatchThreshold = 20);
-                        manager.setThreshold(20);
+                        await manager.setThreshold(20);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Match Criteria set to 20% (Loose) and saved in database for the team.'),
+                              backgroundColor: Color(0xFFD97706),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
                       },
                     ),
                     _buildPresetChip(
@@ -982,9 +1003,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: const Color(0xFF0288D1),
                       description: 'Moderate partial matches',
                       isSelected: currentScore == 40,
-                      onTap: () {
+                      onTap: () async {
                         setState(() => _selectedMatchThreshold = 40);
-                        manager.setThreshold(40);
+                        await manager.setThreshold(40);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Match Criteria set to 40% (Flexible) and saved in database for the team.'),
+                              backgroundColor: Color(0xFF0288D1),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
                       },
                     ),
                     _buildPresetChip(
@@ -993,9 +1024,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: const Color(0xFF0F766E),
                       description: '2+ criteria matched (e.g. Price + BHK)',
                       isSelected: currentScore == 60,
-                      onTap: () {
+                      onTap: () async {
                         setState(() => _selectedMatchThreshold = 60);
-                        manager.setThreshold(60);
+                        await manager.setThreshold(60);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Match Criteria set to 60% (Balanced) and saved in database for the team.'),
+                              backgroundColor: Color(0xFF0F766E),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
                       },
                     ),
                     _buildPresetChip(
@@ -1004,9 +1045,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: const Color(0xFF10B981),
                       description: 'Price + BHK + Area exact match',
                       isSelected: currentScore == 80,
-                      onTap: () {
+                      onTap: () async {
                         setState(() => _selectedMatchThreshold = 80);
-                        manager.setThreshold(80);
+                        await manager.setThreshold(80);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Match Criteria set to 80% (Strict) and saved in database for the team.'),
+                              backgroundColor: Color(0xFF10B981),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
                       },
                     ),
                   ],
@@ -1020,21 +1071,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   runSpacing: CRMSpacing.s,
                   children: [
                     ElevatedButton.icon(
-                      onPressed: () {
+                      onPressed: () async {
                         final v = _selectedMatchThreshold.toInt();
-                        manager.setThreshold(v);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Run Match Criteria set to $v%! Requirements will now match properties scoring $v% and above.',
+                        await manager.setThreshold(v);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Run Match Criteria set to $v%! Saved to database and applied across your entire team.',
+                              ),
+                              backgroundColor: thresholdColor,
+                              behavior: SnackBarBehavior.floating,
                             ),
-                            backgroundColor: thresholdColor,
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
+                          );
+                        }
                       },
                       icon: const Icon(Icons.check_circle_rounded, size: 18),
-                      label: Text('Apply $currentScore% Threshold'),
+                      label: Text('Apply $currentScore% Threshold to Team'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: thresholdColor,
                         foregroundColor: Colors.white,
@@ -1043,16 +1096,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     OutlinedButton.icon(
-                      onPressed: () {
-                        manager.resetToDefault();
-                        setState(() => _selectedMatchThreshold = MatchCriteriaManager.defaultThreshold.toDouble());
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Reset to default threshold (60% Balanced).'),
-                            backgroundColor: Color(0xFF0F766E),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
+                      onPressed: () async {
+                        await manager.resetToDefault();
+                        if (mounted) {
+                          setState(() => _selectedMatchThreshold = MatchCriteriaManager.defaultThreshold.toDouble());
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Reset to default threshold (60% Balanced) for entire team.'),
+                              backgroundColor: Color(0xFF0F766E),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
                       },
                       icon: const Icon(Icons.restart_alt_rounded, size: 18),
                       label: const Text('Reset to Default (60%)'),

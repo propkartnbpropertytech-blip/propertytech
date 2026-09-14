@@ -188,6 +188,9 @@ class PropertyMatchResult {
   final bool isAreaMatched;
   final bool isListingTypeMatched;
   final bool isPropertyTypeMatched;
+  final List<String> unmatchedPreferences;
+  final Map<String, dynamic>? locationMatchDetail;
+  final Map<String, dynamic>? breakdown;
 
   PropertyMatchResult({
     required this.property,
@@ -198,7 +201,31 @@ class PropertyMatchResult {
     this.isAreaMatched = false,
     this.isListingTypeMatched = false,
     this.isPropertyTypeMatched = false,
+    this.unmatchedPreferences = const [],
+    this.locationMatchDetail,
+    this.breakdown,
   });
+
+  factory PropertyMatchResult.fromServerJson(Map<String, dynamic> json, PropertyModel property) {
+    final bd = json['breakdown'] as Map<String, dynamic>?;
+    final matchedReasons = (json['matched_reasons'] as List?)?.map((e) => e.toString()).toList() ?? [];
+    final unmatched = (json['unmatched_preferences'] as List?)?.map((e) => e.toString()).toList() ?? [];
+    final score = (json['overall_match_score'] as num?)?.toInt() ?? 0;
+
+    return PropertyMatchResult(
+      property: property,
+      matchPercentage: score,
+      matchedCriteria: matchedReasons,
+      unmatchedPreferences: unmatched,
+      isPriceMatched: (bd?['budget_score'] as num? ?? 0) > 0,
+      isConfigMatched: (bd?['configuration_score'] as num? ?? 0) > 0,
+      isAreaMatched: (bd?['location_score'] as num? ?? 0) > 0,
+      isListingTypeMatched: (bd?['listing_type_score'] as num? ?? 0) > 0,
+      isPropertyTypeMatched: (bd?['property_type_score'] as num? ?? 0) > 0,
+      locationMatchDetail: json['location_match_detail'] as Map<String, dynamic>?,
+      breakdown: bd,
+    );
+  }
 }
 
 class PropertyRequirementMatcher {
@@ -245,15 +272,23 @@ class PropertyRequirementMatcher {
     return false;
   }
 
+  static const Set<String> _westAhmedabadLocalities = {
+    'bodakdev', 'satellite', 'vastrapur', 'thaltej', 'prahladnagar',
+    'bopal', 'southbopal', 'shela', 'shilaj', 'ambli', 'makarba', 'vejalpur',
+    'jodhpur', 'jodhpurcharrasta', 'anandnagar', 'memnagar', 'sciencecity',
+    'sindhubhavan', 'sola', 'shyamal', 'azadsociety', 'bhadaj'
+  };
+
   static PropertyMatchResult match(PropertyModel p, RequirementModel req) {
     final statusName = p.propertyStatusName.toLowerCase();
-    final isInactive = statusName.contains('rented') || statusName.contains('sold') || statusName.contains('closed');
+    final isInactive = statusName.contains('rented') || statusName.contains('sold') || statusName.contains('closed') || statusName.contains('inactive');
     final isWonReq = req.status.toLowerCase() == 'won' || req.status.toLowerCase() == 'closed';
     if (isInactive && !isWonReq) {
       return PropertyMatchResult(
         property: p,
         matchPercentage: 0,
         matchedCriteria: [],
+        unmatchedPreferences: ['Property is not available ($statusName)'],
       );
     }
 
@@ -268,6 +303,16 @@ class PropertyRequirementMatcher {
     final isPropRent = propListing.contains('rent') || propListing.contains('lease') || p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
     final isReqSale = reqListing.contains('sale') || reqListing.contains('resale') || reqListing.contains('buy');
     final isPropSale = !isPropRent && (propListing.contains('sale') || propListing.contains('resale') || propListing.isNotEmpty);
+
+    // Hard Filter: Rent vs Resale conflict
+    if ((isReqRent && isPropSale) || (isReqSale && isPropRent)) {
+      return PropertyMatchResult(
+        property: p,
+        matchPercentage: 0,
+        matchedCriteria: [],
+        unmatchedPreferences: ['Listing type conflict: Requirement is ${isReqRent ? "Rent" : "Resale"}, Property is ${isPropRent ? "Rent" : "Resale"}'],
+      );
+    }
 
     if (reqListing.isEmpty) {
       totalScore += 10;
@@ -299,22 +344,33 @@ class PropertyRequirementMatcher {
         matchedTags.add('✓ Area: ${p.areaName}');
       } else if (req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
         final pArea = p.areaName.trim().toLowerCase();
+        final pAreaClean = pArea.replaceAll(RegExp(r'[^a-z0-9]'), '');
         bool found = false;
+        bool isZoneMatch = false;
+
         for (final aName in req.areaNames) {
           final subAreas = aName.split(RegExp(r'[,/|]'));
           for (final sub in subAreas) {
             final trimmed = sub.trim().toLowerCase();
-            if (trimmed.isNotEmpty && (trimmed == pArea || pArea.contains(trimmed) || trimmed.contains(pArea))) {
-              found = true;
-              break;
+            final trimmedClean = trimmed.replaceAll(RegExp(r'[^a-z0-9]'), '');
+            if (trimmed.isNotEmpty) {
+              if (trimmed == pArea || trimmedClean == pAreaClean || pArea.contains(trimmed) || trimmed.contains(pArea)) {
+                found = true;
+                break;
+              }
+              if ((trimmedClean.contains('westahmedabad') || trimmedClean.contains('westamdavad')) && _westAhmedabadLocalities.contains(pAreaClean)) {
+                isZoneMatch = true;
+                found = true;
+                break;
+              }
             }
           }
           if (found) break;
         }
         if (found) {
-          totalScore += 25;
+          totalScore += isZoneMatch ? 22 : 25;
           isAreaMatch = true;
-          matchedTags.add('✓ Area: ${p.areaName}');
+          matchedTags.add(isZoneMatch ? '✓ Zone: West Ahmedabad (covers ${p.areaName})' : '✓ Area: ${p.areaName}');
         } else if (p.cityName.isNotEmpty && (req.cityName.isNotEmpty ? p.cityName.toLowerCase() == req.cityName.toLowerCase() : req.areaNames.any((a) => a.toLowerCase().contains(p.cityName.toLowerCase()) || p.cityName.toLowerCase().contains(a.toLowerCase())))) {
           totalScore += 10;
           matchedTags.add('✓ City: ${p.cityName}');
@@ -621,6 +677,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         });
       }
     });
+    // Listen for real-time team match criteria threshold changes
+    MatchCriteriaManager().addListener(_onCriteriaChanged);
     // Metadata load triggers the first fetch once listing types are available.
     // Avoid a duplicate empty fetch before metadata arrives.
     _loadMetadata();
@@ -747,6 +805,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   @override
   void dispose() {
+    MatchCriteriaManager().removeListener(_onCriteriaChanged);
     _removeNotesPopover();
     _requirementsStreamSub?.cancel();
     _dashboardStreamSub?.cancel();
@@ -754,6 +813,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _wonSearchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onCriteriaChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _loadPropertiesForMatches() async {
@@ -2555,6 +2620,25 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return true;
   }
 
+  bool _isLeadClosedOrTerminal(RequirementModel req) {
+    final status = req.status.trim().toLowerCase();
+    if (status == 'won' || status == 'closed') return true;
+    if (status.startsWith('rejected')) return true;
+    if (status == 'lost' ||
+        status == 'bin' ||
+        status == 'dead' ||
+        status == 'not interested' ||
+        status == 'junk') {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isLeadWon(RequirementModel req) {
+    final status = req.status.trim().toLowerCase();
+    return status == 'won' || status == 'closed';
+  }
+
   String _getTelecallerStatusLabel(RequirementModel req) {
     final meta = req.metaCustomFields;
     if (meta != null && meta['telecaller_status'] != null) {
@@ -3606,6 +3690,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildStatusControlWithNotes(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
+    final bool isClosed = _isLeadClosedOrTerminal(req);
     final String? userNote = _getCleanNote(req);
     final bool hasNotes = userNote != null && userNote.isNotEmpty;
     final bool showTelecallerBadge = _shouldShowTelecallerStatusBadge(req, currentUser);
@@ -3617,26 +3702,28 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         _buildStatusControl(req, currentUser, compact: compact),
         if (showTelecallerBadge)
           _buildTelecallerStatusBadge(req, compact: compact),
-        const SizedBox(height: 4),
-        Builder(
-          builder: (btnContext) {
-            return InkWell(
-              onTap: () => _showNotesPopover(btnContext, req),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text(
-                  '+Add Notes',
-                  style: TextStyle(
-                    fontSize: compact ? 11 : 12,
-                    fontWeight: FontWeight.bold,
-                    decoration: TextDecoration.underline,
-                    color: CRMColors.textOf(context),
+        if (!isClosed) ...[
+          const SizedBox(height: 4),
+          Builder(
+            builder: (btnContext) {
+              return InkWell(
+                onTap: () => _showNotesPopover(btnContext, req),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Text(
+                    '+Add Notes',
+                    style: TextStyle(
+                      fontSize: compact ? 11 : 12,
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.underline,
+                      color: CRMColors.textOf(context),
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
-        ),
+              );
+            },
+          ),
+        ],
       ],
     );
   }
@@ -3696,8 +3783,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
             if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
 
-            // Exclude Won requirements from the active Requirements view
-            if (mappedStatus == 'Won') return false;
+            // Exclude Won requirements from the active Requirements view unless user explicitly selected "Won"
+            if (_selectedStatus != 'Won' && mappedStatus == 'Won') return false;
 
             final matchesStatus = _selectedStatus == "All" ||
                 mappedStatus == _selectedStatus ||
@@ -3797,11 +3884,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             : CRMColors.danger;
 
                     final isHighlighted = req.id == _highlightedRequirementId;
+                    final bool isClosed = _isLeadClosedOrTerminal(req);
+                    final bool isWon = _isLeadWon(req);
 
                     return DataRow(
                       color: isHighlighted
                           ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
-                          : null,
+                          : (isClosed ? WidgetStateProperty.all(CRMColors.sidebarBgOf(context).withValues(alpha: 0.6)) : null),
                       cells: [
                         DataCell(
                           SizedBox(
@@ -3938,15 +4027,23 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             ),
                           ),
                         DataCell(
-                          currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')
-                              ? _buildAssignToDropdown(req)
-                              : _buildSalesAssignToLabel(req, currentUser),
+                          isClosed
+                              ? Text(
+                                  _getSalesmanName(req, currentUser),
+                                  style: CRMTypography.caption.copyWith(
+                                    color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )
+                              : (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')
+                                  ? _buildAssignToDropdown(req)
+                                  : _buildSalesAssignToLabel(req, currentUser)),
                         ),
                         DataCell(_buildSpecsConfigCell(req)),
                         DataCell(
                           Text(
                             '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}',
-                            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary),
+                            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primaryOf(context)),
                           ),
                         ),
                         DataCell(_buildTargetAreasCell(req)),
@@ -3955,11 +4052,45 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         ),
 
                         DataCell(
-                          _RunMatchesButtonWithBadge(
-                            requirement: req,
-                            onPressed: () => _showMatchesDrawer(req),
-                            properties: _propertiesForMatches,
-                          ),
+                          isClosed
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: isWon
+                                        ? CRMColors.success.withValues(alpha: 0.12)
+                                        : CRMColors.danger.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: isWon
+                                          ? CRMColors.success.withValues(alpha: 0.3)
+                                          : CRMColors.danger.withValues(alpha: 0.25),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isWon ? Icons.verified_rounded : Icons.block_rounded,
+                                        size: 13,
+                                        color: isWon ? CRMColors.success : CRMColors.danger,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        isWon ? 'Deal Won' : 'Lead Closed',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: isWon ? CRMColors.success : CRMColors.danger,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : _RunMatchesButtonWithBadge(
+                                  requirement: req,
+                                  onPressed: () => _showMatchesDrawer(req),
+                                  properties: _propertiesForMatches,
+                                ),
                         ),
                         DataCell(
                           PopupMenuButton<String>(
@@ -3976,6 +4107,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 _showAddEditDialog(req);
                               } else if (action == 'delete') {
                                 _showDeleteConfirmDialog(req);
+                              } else if (action == 'upload_doc') {
+                                final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
+                                context.go(
+                                  isRent ? '/rental-library' : '/resale-library',
+                                  extra: {
+                                    'autoOpenUpload': true,
+                                    'clientName': req.clientName,
+                                  },
+                                );
                               }
                             },
                             itemBuilder: (context) => [
@@ -3989,28 +4129,40 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   ],
                                 ),
                               ),
-                              if (!_isLeadTransferredAway(req, currentUser))
-                              const PopupMenuItem(
-                                value: 'add_another',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.add_circle_outline_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('Add Another'),
-                                  ],
+                              if (!isClosed && !_isLeadTransferredAway(req, currentUser))
+                                const PopupMenuItem(
+                                  value: 'add_another',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.add_circle_outline_rounded, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Add Another'),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'share',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.share_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('Share Properties'),
-                                  ],
+                              if (!isClosed)
+                                const PopupMenuItem(
+                                  value: 'share',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.share_rounded, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Share Properties'),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              if (_hasEditAccess(req, currentUser)) ...[
+                              if (isWon)
+                                const PopupMenuItem(
+                                  value: 'upload_doc',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.upload_file_rounded, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Upload Document'),
+                                    ],
+                                  ),
+                                ),
+                              if (!isClosed && _hasEditAccess(req, currentUser)) ...[
                                 const PopupMenuItem(
                                   value: 'edit',
                                   child: Row(
@@ -4021,6 +4173,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                     ],
                                   ),
                                 ),
+                              ],
+                              if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
                                 const PopupMenuItem(
                                   value: 'delete',
                                   child: Row(
@@ -4319,16 +4473,60 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           final String listingType = getListingTypeLabel(req);
           final bool isSelected = _selectedRequirementIds.contains(req.id);
           final bool isHighlighted = req.id == _highlightedRequirementId;
+          final bool isClosed = _isLeadClosedOrTerminal(req);
+          final bool isWon = _isLeadWon(req);
 
           return Padding(
             padding: const EdgeInsets.only(bottom: CRMSpacing.m),
             child: CRMCard(
-              borderColor: isHighlighted ? CRMColors.primaryOf(context) : null,
-              backgroundColor: isHighlighted ? CRMColors.primaryOf(context).withOpacity(0.08) : null,
+              borderColor: isHighlighted
+                  ? CRMColors.primaryOf(context)
+                  : (isClosed ? CRMColors.borderOf(context).withValues(alpha: 0.5) : null),
+              backgroundColor: isHighlighted
+                  ? CRMColors.primaryOf(context).withOpacity(0.08)
+                  : (isClosed ? CRMColors.sidebarBgOf(context).withValues(alpha: 0.6) : null),
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (isClosed)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isWon
+                            ? CRMColors.success.withValues(alpha: 0.12)
+                            : CRMColors.danger.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isWon
+                              ? CRMColors.success.withValues(alpha: 0.3)
+                              : CRMColors.danger.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isWon ? Icons.emoji_events_rounded : Icons.block_rounded,
+                            size: 14,
+                            color: isWon ? CRMColors.success : CRMColors.danger,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              isWon
+                                  ? 'Deal Won (Closed) • Lead is locked. Change status to reopen.'
+                                  : 'Lead Closed (${req.status}) • Locked. Toggle status to reopen.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isWon ? CRMColors.success : CRMColors.danger,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   // Top Row: Checkbox, Client Name, User badge, Share button, Status dropdown
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -4345,15 +4543,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(4),
                                 ),
-                                onChanged: (_) {
-                                  setState(() {
-                                    if (isSelected) {
-                                      _selectedRequirementIds.remove(req.id);
-                                    } else {
-                                      _selectedRequirementIds.add(req.id);
-                                    }
-                                  });
-                                },
+                                onChanged: isClosed
+                                    ? null
+                                    : (_) {
+                                        setState(() {
+                                          if (isSelected) {
+                                            _selectedRequirementIds.remove(req.id);
+                                          } else {
+                                            _selectedRequirementIds.add(req.id);
+                                          }
+                                        });
+                                      },
                               ),
                             ),
                             const SizedBox(width: 6),
@@ -4417,6 +4617,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 _showAddEditDialog(req);
                               } else if (action == 'delete') {
                                 _showDeleteConfirmDialog(req);
+                              } else if (action == 'upload_doc') {
+                                final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
+                                context.go(
+                                  isRent ? '/rental-library' : '/resale-library',
+                                  extra: {
+                                    'autoOpenUpload': true,
+                                    'clientName': req.clientName,
+                                  },
+                                );
                               }
                             },
                             itemBuilder: (context) => [
@@ -4430,7 +4639,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   ],
                                 ),
                               ),
-                              if (!_isLeadTransferredAway(req, currentUser))
+                              if (!isClosed && !_isLeadTransferredAway(req, currentUser))
                                 const PopupMenuItem(
                                   value: 'add_another',
                                   child: Row(
@@ -4441,17 +4650,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                     ],
                                   ),
                                 ),
-                              const PopupMenuItem(
-                                value: 'share',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.share_outlined, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('Share Properties'),
-                                  ],
+                              if (!isClosed)
+                                const PopupMenuItem(
+                                  value: 'share',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.share_outlined, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Share Properties'),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              if (_hasEditAccess(req, currentUser)) ...[
+                              if (isWon)
+                                const PopupMenuItem(
+                                  value: 'upload_doc',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.upload_file_rounded, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Upload Document'),
+                                    ],
+                                  ),
+                                ),
+                              if (!isClosed && _hasEditAccess(req, currentUser)) ...[
                                 const PopupMenuItem(
                                   value: 'edit',
                                   child: Row(
@@ -4462,6 +4683,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                     ],
                                   ),
                                 ),
+                              ],
+                              if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
                                 const PopupMenuItem(
                                   value: 'delete',
                                   child: Row(
@@ -4561,32 +4784,49 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           ),
                         ],
                       ),
-                      InkWell(
-                        onTap: () async {
-                          final phone = req.clientMobile.replaceAll(RegExp(r'\D'), '');
-                          final formattedPhone = phone.length == 10 ? '91$phone' : phone;
-                          final url = "https://wa.me/$formattedPhone";
-                          final uri = Uri.parse(url);
-                          if (await canLaunchUrl(uri)) {
-                            await launchUrl(uri, mode: LaunchMode.externalApplication);
-                          }
-                        },
-                        child: const Row(
+                      if (isClosed)
+                        Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.chat_bubble_outline_rounded, size: 14, color: kWhatsAppGreen),
-                            SizedBox(width: 4),
+                            Icon(Icons.chat_bubble_outline_rounded, size: 14, color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.4)),
+                            const SizedBox(width: 4),
                             Text(
-                              'Chat on WhatsApp',
+                              'WhatsApp (Disabled)',
                               style: TextStyle(
-                                color: kWhatsAppGreen,
-                                fontWeight: FontWeight.bold,
+                                color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.5),
+                                fontWeight: FontWeight.w600,
                                 fontSize: 12,
                               ),
                             ),
                           ],
+                        )
+                      else
+                        InkWell(
+                          onTap: () async {
+                            final phone = req.clientMobile.replaceAll(RegExp(r'\D'), '');
+                            final formattedPhone = phone.length == 10 ? '91$phone' : phone;
+                            final url = "https://wa.me/$formattedPhone";
+                            final uri = Uri.parse(url);
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            }
+                          },
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.chat_bubble_outline_rounded, size: 14, color: kWhatsAppGreen),
+                              SizedBox(width: 4),
+                              Text(
+                                'Chat on WhatsApp',
+                                style: TextStyle(
+                                  color: kWhatsAppGreen,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -4623,7 +4863,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         children: [
                           Icon(Icons.person_outline_rounded, size: 13, color: CRMColors.textMutedOf(context)),
                           const SizedBox(width: 4),
-                          if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
+                          if (!isClosed && currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -4640,7 +4880,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           else
                             Text(
                               'Assign: ${_getSalesmanName(req, currentUser)}',
-                              style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5, fontWeight: FontWeight.w600),
+                              style: TextStyle(color: CRMColors.textSecondaryOf(context).withValues(alpha: isClosed ? 0.7 : 1.0), fontSize: 11.5, fontWeight: FontWeight.w600),
                             ),
                         ],
                       ),
@@ -4693,11 +4933,45 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 12),
-                                _RunMatchesButtonWithBadge(
-                                  requirement: req,
-                                  onPressed: () => _showMatchesDrawer(req),
-                                  properties: _propertiesForMatches,
-                                ),
+                                isClosed
+                                    ? Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: isWon
+                                              ? CRMColors.success.withValues(alpha: 0.12)
+                                              : CRMColors.danger.withValues(alpha: 0.08),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: isWon
+                                                ? CRMColors.success.withValues(alpha: 0.3)
+                                                : CRMColors.danger.withValues(alpha: 0.25),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              isWon ? Icons.verified_rounded : Icons.cancel_outlined,
+                                              size: 13,
+                                              color: isWon ? CRMColors.success : CRMColors.danger,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              isWon ? 'Deal Won' : 'Lead Closed',
+                                              style: TextStyle(
+                                                color: isWon ? CRMColors.success : CRMColors.danger,
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : _RunMatchesButtonWithBadge(
+                                        requirement: req,
+                                        onPressed: () => _showMatchesDrawer(req),
+                                        properties: _propertiesForMatches,
+                                      ),
                               ],
                             ),
                              if (req.remarks != null && req.remarks!.trim().isNotEmpty) ...[
@@ -6876,34 +7150,65 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _showSharePropertiesDialog(RequirementModel req) {
+    final searchController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) {
-        List<PropertyModel> matchedProps = [];
-        List<String> selectedPropIds = [];
+        List<PropertyMatchResult> allMatches = [];
+        final Set<String> selectedPropIds = {};
         bool isInitLoading = true;
         bool isGeneratingLink = false;
         bool isSharingPdf = false;
         String? error;
         String? generatedLink;
+        String searchQuery = '';
+        int? minScoreFilter;
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
             Future<void> loadMatches() async {
               try {
-                final properties = await PropertiesRepository().getProperties();
-                final List<PropertyModel> matches = [];
-                for (final p in properties) {
-                  if (await _isRequirementPropertyMatchAsync(p, req)) {
-                    matches.add(p);
+                final List<PropertyMatchResult> results = [];
+
+                // 1. Authoritative Backend Matching
+                try {
+                  final serverResponse = await RequirementsRepository().getRequirementMatches(
+                    req.id,
+                    minScore: MatchCriteriaManager().threshold,
+                  );
+                  final data = serverResponse['data'] as Map<String, dynamic>? ?? {};
+                  final rawMatches = data['matches'] as List? ?? [];
+                  if (rawMatches.isNotEmpty || data.containsKey('matching_metadata')) {
+                    for (final item in rawMatches) {
+                      final pJson = item['property'] as Map<String, dynamic>? ?? {};
+                      final prop = PropertyModel.fromJson(pJson);
+                      results.add(PropertyMatchResult.fromServerJson(item as Map<String, dynamic>, prop));
+                    }
+                  }
+                } catch (serverErr) {
+                  debugPrint("⚠️ [Share Dialog Backend Match Fallback] $serverErr");
+                }
+
+                // 2. Offline / Local fallback if backend returns empty or fails
+                if (results.isEmpty) {
+                  final properties = await PropertiesRepository().getProperties();
+                  for (final p in properties) {
+                    if (await _isRequirementPropertyMatchAsync(p, req)) {
+                      final res = PropertyRequirementMatcher.match(p, req);
+                      results.add(res);
+                    }
                   }
                 }
 
-                matches.sort((a, b) =>
-                  PropertyRequirementMatcher.calculateMatchPercentage(b, req)
-                    .compareTo(PropertyRequirementMatcher.calculateMatchPercentage(a, req)));
+                // 3. Strictly sort by match percentage descending (highest first)
+                results.sort((a, b) {
+                  final cmp = b.matchPercentage.compareTo(a.matchPercentage);
+                  if (cmp != 0) return cmp;
+                  return a.property.price.compareTo(b.property.price);
+                });
+
                 setDialogState(() {
-                  matchedProps = matches;
+                  allMatches = results;
                   isInitLoading = false;
                 });
               } catch (e) {
@@ -6965,7 +7270,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               final url = "https://wa.me/?text=$text";
                               final uri = Uri.parse(url);
                               if (await canLaunchUrl(uri)) {
-                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                await launchUrl(uri, mode: LaunchMode.externalApplication);
                               }
                             },
                           ),
@@ -7000,76 +7305,659 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               );
             }
 
+            // Compute filtered list based on search and min-score filter
+            final filteredMatches = allMatches.where((m) {
+              if (minScoreFilter != null && m.matchPercentage < minScoreFilter!) {
+                return false;
+              }
+              if (searchQuery.trim().isNotEmpty) {
+                final q = searchQuery.trim().toLowerCase();
+                final p = m.property;
+                final bhk = (p.configurationName ?? "${p.bedrooms} BHK").toLowerCase();
+                final area = p.areaName.toLowerCase();
+                final code = p.propertyCode.toLowerCase();
+                final title = p.title.toLowerCase();
+                final reasons = m.matchedCriteria.join(' ').toLowerCase();
+                final match = bhk.contains(q) || area.contains(q) || code.contains(q) || title.contains(q) || reasons.contains(q);
+                if (!match) return false;
+              }
+              return true;
+            }).toList();
+
+            Future<void> shareViaWhatsAppDirect() async {
+              setDialogState(() => isGeneratingLink = true);
+              try {
+                final response = await DioClient.dio.post(
+                  '/share-sessions',
+                  data: {
+                    'requirement_id': req.id,
+                    'property_ids': selectedPropIds.toList(),
+                    'expiry_days': 7
+                  },
+                );
+                if (response.data != null && response.data['success'] == true) {
+                  final sessionId = response.data['data']['session']['id'];
+                  final authState = context.read<AuthBloc>().state;
+                  String? currentAgentName;
+                  String? currentAgentMobile;
+                  if (authState is Authenticated) {
+                    currentAgentName = authState.user.fullName;
+                    currentAgentMobile = authState.user.mobile;
+                  }
+
+                  var link = "${AppConfig.publicShareBaseUrl}/$sessionId";
+                  final queryParams = <String>[];
+                  if (currentAgentName != null && currentAgentName.isNotEmpty) {
+                    queryParams.add("agentName=${Uri.encodeComponent(currentAgentName)}");
+                  }
+                  if (currentAgentMobile != null && currentAgentMobile.isNotEmpty) {
+                    queryParams.add("agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+                  }
+                  if (queryParams.isNotEmpty) {
+                    link += "?${queryParams.join('&')}";
+                  }
+
+                  final selectedItems = allMatches.where((m) => selectedPropIds.contains(m.property.id)).toList();
+                  final StringBuffer sb = StringBuffer();
+                  final clientGreeting = req.clientName.trim().isNotEmpty ? req.clientName.trim() : 'Sir/Madam';
+                  sb.writeln("Hello $clientGreeting,");
+                  sb.writeln("Here are the top matching properties curated for your requirement:");
+                  sb.writeln("");
+                  int counter = 1;
+                  for (final item in selectedItems) {
+                    final p = item.property;
+                    final bhk = p.configurationName ?? "${p.bedrooms} BHK";
+                    final price = '₹${BudgetFormatter.format(p.price)}';
+                    sb.writeln("$counter. *$bhk in ${p.areaName}* – $price (${item.matchPercentage}% Match) [${p.propertyCode}]");
+                    counter++;
+                  }
+                  sb.writeln("");
+                  sb.writeln("View photos, amenities & complete details here:\n$link");
+
+                  final phone = req.clientMobile;
+                  final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+                  String formattedPhone = cleanPhone;
+                  if (cleanPhone.length == 10) {
+                    formattedPhone = '91$cleanPhone';
+                  }
+
+                  final encodedMsg = Uri.encodeComponent(sb.toString());
+                  final nativeUrl = "whatsapp://send?phone=$formattedPhone&text=$encodedMsg";
+                  final nativeUri = Uri.parse(nativeUrl);
+
+                  if (await canLaunchUrl(nativeUri)) {
+                    await launchUrl(nativeUri, mode: LaunchMode.externalApplication);
+                  } else {
+                    final webUrl = "https://web.whatsapp.com/send?phone=$formattedPhone&text=$encodedMsg";
+                    final webUri = Uri.parse(webUrl);
+                    if (await canLaunchUrl(webUri)) {
+                      await launchUrl(webUri, mode: LaunchMode.externalApplication);
+                    } else {
+                      final fallbackUrl = "https://wa.me/$formattedPhone?text=$encodedMsg";
+                      final fallbackUri = Uri.parse(fallbackUrl);
+                      if (await canLaunchUrl(fallbackUri)) {
+                        await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
+                      }
+                    }
+                  }
+
+                  setDialogState(() {
+                    generatedLink = link;
+                    isGeneratingLink = false;
+                  });
+                } else {
+                  setDialogState(() {
+                    error = "Failed to create share session.";
+                    isGeneratingLink = false;
+                  });
+                }
+              } catch (e) {
+                setDialogState(() {
+                  error = "Failed to share via WhatsApp: $e";
+                  isGeneratingLink = false;
+                });
+              }
+            }
+
+            final double screenWidth = MediaQuery.of(context).size.width;
+            final double dialogWidth = (screenWidth < 560 ? (screenWidth - 32) : 500.0).clamp(280.0, 500.0);
+
             return Stack(
               children: [
                 AlertDialog(
                   backgroundColor: CRMColors.cardBgOf(context),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
-                  title: Text("Share Matching Properties", style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                  insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
+                  titlePadding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
+                  contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  title: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: CRMColors.primaryOf(context).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(Icons.share_rounded, size: 18, color: CRMColors.primaryOf(context)),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Share Matching Properties",
+                              style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontSize: 16),
+                            ),
+                            Text(
+                              "Ranked by Match Score • ${req.clientName.trim().isNotEmpty ? req.clientName : 'Client'}",
+                              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: (isGeneratingLink || isSharingPdf) ? null : () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
                   content: isInitLoading
-                      ? const SizedBox(
-                          height: 150,
-                          child: Center(child: CircularProgressIndicator()),
+                      ? SizedBox(
+                          height: 200,
+                          width: dialogWidth,
+                          child: const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(),
+                                SizedBox(height: 12),
+                                Text("Analyzing and ranking matches...", style: TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                          ),
                         )
                       : error != null
-                          ? Text(error!, style: const TextStyle(color: CRMColors.danger))
-                          : matchedProps.isEmpty
-                              ? const Text("No matching properties found for this requirement.")
+                          ? SizedBox(
+                              width: dialogWidth,
+                              height: 100,
+                              child: Center(child: Text(error!, style: const TextStyle(color: CRMColors.danger))),
+                            )
+                          : allMatches.isEmpty
+                              ? SizedBox(
+                                  width: dialogWidth,
+                                  height: 100,
+                                  child: const Center(child: Text("No matching properties found for this requirement.")),
+                                )
                               : SizedBox(
-                                  width: 400,
-                                  height: 300,
-                                  child: ListView.builder(
-                                    itemCount: matchedProps.length,
-                                    itemBuilder: (context, idx) {
-                                      final p = matchedProps[idx];
-                                      final isSelected = selectedPropIds.contains(p.id);
-                                      final bhk = p.configurationName ?? "${p.bedrooms} BHK";
-                                      final price = '₹${BudgetFormatter.format(p.price)}';
-                                      final title = "$bhk in ${p.areaName} - $price (${p.propertyCode})";
-
-                                      return CheckboxListTile(
-                                        title: Text(title, style: CRMTypography.body.copyWith(color: CRMColors.textOf(context))),
-                                        value: isSelected,
-                                        activeColor: CRMColors.primary,
-                                        onChanged: (isGeneratingLink || isSharingPdf) ? null : (val) {
+                                  width: dialogWidth,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      // Search Bar
+                                      TextField(
+                                        controller: searchController,
+                                        style: const TextStyle(fontSize: 13),
+                                        decoration: InputDecoration(
+                                          hintText: "Filter by locality, BHK, price, code...",
+                                          hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                                          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                                          suffixIcon: searchQuery.isNotEmpty
+                                              ? IconButton(
+                                                  icon: const Icon(Icons.clear_rounded, size: 16),
+                                                  onPressed: () {
+                                                    setDialogState(() {
+                                                      searchController.clear();
+                                                      searchQuery = '';
+                                                    });
+                                                  },
+                                                )
+                                              : null,
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: BorderSide(color: CRMColors.primaryOf(context)),
+                                          ),
+                                          filled: true,
+                                          fillColor: CRMColors.backgroundOf(context),
+                                        ),
+                                        onChanged: (val) {
                                           setDialogState(() {
-                                            if (val == true) {
-                                              selectedPropIds.add(p.id);
-                                            } else {
-                                              selectedPropIds.remove(p.id);
-                                            }
+                                            searchQuery = val;
                                           });
                                         },
-                                      );
-                                    },
+                                      ),
+                                      const SizedBox(height: 8),
+                                      // Filter Chips & Quick Selectors Bar (Responsive Wrap)
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 6,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        alignment: WrapAlignment.spaceBetween,
+                                        children: [
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 4,
+                                            crossAxisAlignment: WrapCrossAlignment.center,
+                                            children: [
+                                              // All filter
+                                              InkWell(
+                                                onTap: () => setDialogState(() => minScoreFilter = null),
+                                                borderRadius: BorderRadius.circular(12),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                  decoration: BoxDecoration(
+                                                    color: minScoreFilter == null
+                                                        ? CRMColors.primaryOf(context).withValues(alpha: 0.12)
+                                                        : CRMColors.backgroundOf(context),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(
+                                                      color: minScoreFilter == null
+                                                          ? CRMColors.primaryOf(context)
+                                                          : CRMColors.borderOf(context),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    "All (${allMatches.length})",
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: minScoreFilter == null ? FontWeight.w700 : FontWeight.w500,
+                                                      color: minScoreFilter == null ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              // 90%+ filter chip
+                                              if (allMatches.any((m) => m.matchPercentage >= 90))
+                                                InkWell(
+                                                  onTap: () => setDialogState(() => minScoreFilter = minScoreFilter == 90 ? null : 90),
+                                                  borderRadius: BorderRadius.circular(12),
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                    decoration: BoxDecoration(
+                                                      color: minScoreFilter == 90
+                                                          ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                                          : CRMColors.backgroundOf(context),
+                                                      borderRadius: BorderRadius.circular(12),
+                                                      border: Border.all(
+                                                        color: minScoreFilter == 90
+                                                            ? const Color(0xFF059669)
+                                                            : CRMColors.borderOf(context),
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      "90%+ (${allMatches.where((m) => m.matchPercentage >= 90).length})",
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: minScoreFilter == 90 ? FontWeight.w700 : FontWeight.w500,
+                                                        color: minScoreFilter == 90 ? const Color(0xFF059669) : CRMColors.textSecondaryOf(context),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 4,
+                                            crossAxisAlignment: WrapCrossAlignment.center,
+                                            children: [
+                                              // Top 3 quick button
+                                              InkWell(
+                                                onTap: filteredMatches.isEmpty ? null : () {
+                                                  setDialogState(() {
+                                                    selectedPropIds.clear();
+                                                    for (final m in filteredMatches.take(3)) {
+                                                      selectedPropIds.add(m.property.id);
+                                                    }
+                                                  });
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: CRMColors.surfaceElevatedOf(context),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: CRMColors.borderOf(context)),
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.bolt_rounded, size: 12, color: Color(0xFFD97706)),
+                                                      SizedBox(width: 2),
+                                                      Text("Top 3", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                              // Select / Deselect All
+                                              InkWell(
+                                                onTap: filteredMatches.isEmpty ? null : () {
+                                                  setDialogState(() {
+                                                    final allSel = filteredMatches.every((m) => selectedPropIds.contains(m.property.id));
+                                                    if (allSel) {
+                                                      for (final m in filteredMatches) {
+                                                        selectedPropIds.remove(m.property.id);
+                                                      }
+                                                    } else {
+                                                      for (final m in filteredMatches) {
+                                                        selectedPropIds.add(m.property.id);
+                                                      }
+                                                    }
+                                                  });
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: CRMColors.surfaceElevatedOf(context),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: CRMColors.borderOf(context)),
+                                                  ),
+                                                  child: Text(
+                                                    filteredMatches.every((m) => selectedPropIds.contains(m.property.id)) ? "Deselect" : "All",
+                                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      // Selected Counter strip
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: selectedPropIds.isNotEmpty
+                                              ? CRMColors.primary.withValues(alpha: 0.08)
+                                              : CRMColors.backgroundOf(context),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              selectedPropIds.isNotEmpty ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+                                              size: 13,
+                                              color: selectedPropIds.isNotEmpty ? CRMColors.primary : CRMColors.textSecondaryOf(context),
+                                            ),
+                                            const SizedBox(width: 5),
+                                            Text(
+                                              "${selectedPropIds.length} of ${filteredMatches.length} selected",
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: selectedPropIds.isNotEmpty ? CRMColors.primary : CRMColors.textSecondaryOf(context),
+                                              ),
+                                            ),
+                                            if (selectedPropIds.isNotEmpty) ...[
+                                              const Spacer(),
+                                              InkWell(
+                                                onTap: () => setDialogState(() => selectedPropIds.clear()),
+                                                child: const Text(
+                                                  "Clear",
+                                                  style: TextStyle(fontSize: 11, color: CRMColors.danger, fontWeight: FontWeight.w600),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      // List of prioritized matches
+                                      SizedBox(
+                                        height: 310,
+                                        child: filteredMatches.isEmpty
+                                            ? Center(
+                                                child: Text(
+                                                  searchQuery.isNotEmpty
+                                                      ? "No matches found matching '$searchQuery'"
+                                                      : "No properties meet the current filter.",
+                                                  style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                                                ),
+                                              )
+                                            : ListView.separated(
+                                                itemCount: filteredMatches.length,
+                                                separatorBuilder: (context, idx) => Divider(
+                                                  height: 1,
+                                                  color: CRMColors.borderOf(context).withValues(alpha: 0.4),
+                                                ),
+                                                itemBuilder: (context, idx) {
+                                                  final m = filteredMatches[idx];
+                                                  final p = m.property;
+                                                  final isSelected = selectedPropIds.contains(p.id);
+                                                  final bhk = p.configurationName ?? "${p.bedrooms} BHK";
+                                                  final price = '₹${BudgetFormatter.format(p.price)}';
+                                                  final area = p.areaName.isNotEmpty ? p.areaName : 'Ahmedabad';
+                                                  final score = m.matchPercentage;
+
+                                                  Color badgeBg;
+                                                  Color badgeText;
+                                                  if (score >= 90) {
+                                                    badgeBg = const Color(0xFF10B981).withValues(alpha: 0.14);
+                                                    badgeText = const Color(0xFF047857);
+                                                  } else if (score >= 75) {
+                                                    badgeBg = const Color(0xFF3B82F6).withValues(alpha: 0.14);
+                                                    badgeText = const Color(0xFF1D4ED8);
+                                                  } else {
+                                                    badgeBg = const Color(0xFFF59E0B).withValues(alpha: 0.14);
+                                                    badgeText = const Color(0xFFB45309);
+                                                  }
+
+                                                  return Material(
+                                                    color: isSelected
+                                                        ? CRMColors.primary.withValues(alpha: 0.06)
+                                                        : Colors.transparent,
+                                                    child: InkWell(
+                                                      onTap: (isGeneratingLink || isSharingPdf)
+                                                          ? null
+                                                          : () {
+                                                              setDialogState(() {
+                                                                if (isSelected) {
+                                                                  selectedPropIds.remove(p.id);
+                                                                } else {
+                                                                  selectedPropIds.add(p.id);
+                                                                }
+                                                              });
+                                                            },
+                                                      child: Padding(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                                        child: Row(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Padding(
+                                                              padding: const EdgeInsets.only(top: 2, right: 8),
+                                                              child: SizedBox(
+                                                                width: 18,
+                                                                height: 18,
+                                                                child: Checkbox(
+                                                                  value: isSelected,
+                                                                  activeColor: CRMColors.primary,
+                                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                                  onChanged: (isGeneratingLink || isSharingPdf)
+                                                                      ? null
+                                                                      : (val) {
+                                                                          setDialogState(() {
+                                                                            if (val == true) {
+                                                                              selectedPropIds.add(p.id);
+                                                                            } else {
+                                                                              selectedPropIds.remove(p.id);
+                                                                            }
+                                                                          });
+                                                                        },
+                                                                ),
+                                                             ),
+                                                            ),
+                                                            Expanded(
+                                                              child: Column(
+                                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                                children: [
+                                                                  Row(
+                                                                    children: [
+                                                                      Expanded(
+                                                                        child: Text(
+                                                                          "$bhk in $area",
+                                                                          style: TextStyle(
+                                                                            fontSize: 13,
+                                                                            fontWeight: FontWeight.w600,
+                                                                            color: CRMColors.textOf(context),
+                                                                          ),
+                                                                          maxLines: 1,
+                                                                          overflow: TextOverflow.ellipsis,
+                                                                        ),
+                                                                      ),
+                                                                      const SizedBox(width: 6),
+                                                                      Container(
+                                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                                                        decoration: BoxDecoration(
+                                                                          color: badgeBg,
+                                                                          borderRadius: BorderRadius.circular(10),
+                                                                          border: Border.all(color: badgeText.withValues(alpha: 0.25)),
+                                                                        ),
+                                                                        child: Row(
+                                                                          mainAxisSize: MainAxisSize.min,
+                                                                          children: [
+                                                                            Icon(Icons.verified_rounded, size: 10, color: badgeText),
+                                                                            const SizedBox(width: 2.5),
+                                                                            Text(
+                                                                              "$score% Match",
+                                                                              style: TextStyle(
+                                                                                fontSize: 10.5,
+                                                                                fontWeight: FontWeight.w700,
+                                                                                color: badgeText,
+                                                                              ),
+                                                                            ),
+                                                                          ],
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                  const SizedBox(height: 2),
+                                                                  Row(
+                                                                    children: [
+                                                                      Text(
+                                                                        price,
+                                                                        style: TextStyle(
+                                                                          fontSize: 12,
+                                                                          fontWeight: FontWeight.w700,
+                                                                          color: CRMColors.primaryOf(context),
+                                                                        ),
+                                                                      ),
+                                                                      if (p.propertyCode.isNotEmpty) ...[
+                                                                        const SizedBox(width: 5),
+                                                                        Text(
+                                                                          "(${p.propertyCode})",
+                                                                          style: TextStyle(
+                                                                            fontSize: 11,
+                                                                            color: CRMColors.textSecondaryOf(context),
+                                                                          ),
+                                                                        ),
+                                                                      ],
+                                                                      if (p.listingTypeName != null && p.listingTypeName!.isNotEmpty) ...[
+                                                                        const SizedBox(width: 5),
+                                                                        Container(
+                                                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                                          decoration: BoxDecoration(
+                                                                            color: CRMColors.backgroundOf(context),
+                                                                            borderRadius: BorderRadius.circular(3),
+                                                                            border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
+                                                                          ),
+                                                                          child: Text(
+                                                                            p.listingTypeName!,
+                                                                            style: TextStyle(
+                                                                              fontSize: 9.5,
+                                                                              color: CRMColors.textSecondaryOf(context),
+                                                                            ),
+                                                                          ),
+                                                                        ),
+                                                                      ],
+                                                                    ],
+                                                                  ),
+                                                                  if (m.matchedCriteria.isNotEmpty) ...[
+                                                                    const SizedBox(height: 3),
+                                                                    Wrap(
+                                                                      spacing: 4,
+                                                                      runSpacing: 2,
+                                                                      children: m.matchedCriteria.take(3).map((r) => Container(
+                                                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                                        decoration: BoxDecoration(
+                                                                          color: CRMColors.success.withValues(alpha: 0.08),
+                                                                          borderRadius: BorderRadius.circular(3),
+                                                                        ),
+                                                                        child: Text(
+                                                                          r,
+                                                                          style: const TextStyle(
+                                                                            fontSize: 9.5,
+                                                                            color: CRMColors.success,
+                                                                            fontWeight: FontWeight.w500,
+                                                                          ),
+                                                                          maxLines: 1,
+                                                                          overflow: TextOverflow.ellipsis,
+                                                                        ),
+                                                                      )).toList(),
+                                                                    ),
+                                                                  ],
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                  actionsAlignment: MainAxisAlignment.spaceBetween,
                   actions: [
                     TextButton(
                       onPressed: (isGeneratingLink || isSharingPdf) ? null : () => Navigator.pop(context),
                       child: const Text("Cancel"),
                     ),
-                    if (!isInitLoading && error == null && matchedProps.isNotEmpty)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+                    if (!isInitLoading && error == null && allMatches.isNotEmpty)
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        alignment: WrapAlignment.end,
                         children: [
-                          OutlinedButton(
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
+                            label: const Text("Share PDF", style: TextStyle(fontSize: 12)),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            ),
                             onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
                                 ? null
                                 : () async {
                                     setDialogState(() => isSharingPdf = true);
                                     try {
-                                      final selected = matchedProps
-                                          .where((p) => selectedPropIds.contains(p.id))
+                                      final selected = allMatches
+                                          .where((m) => selectedPropIds.contains(m.property.id))
+                                          .map((m) => m.property)
                                           .toList();
                                       final bytes = await PropertySharePdf.build(selected);
                                       final fileName = selected.length == 1
                                           ? PropertySharePdf.fileName(selected.first)
                                           : 'Selected_Properties_Details.pdf';
-                                      
+
                                       await FileDownloader.download(bytes, fileName);
-                                      
+
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
@@ -7089,20 +7977,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                         formattedPhone = '91$cleanPhone';
                                       }
 
-                                      // Try launching native WhatsApp scheme first to open desktop/mobile app directly
                                       final nativeUrl = "whatsapp://send?phone=$formattedPhone";
                                       final nativeUri = Uri.parse(nativeUrl);
-                                      
+
                                       if (await canLaunchUrl(nativeUri)) {
                                         await launchUrl(nativeUri, mode: LaunchMode.externalApplication);
                                       } else {
-                                        // Fallback to WhatsApp Web directly, which bypasses the landing page
                                         final webUrl = "https://web.whatsapp.com/send?phone=$formattedPhone";
                                         final webUri = Uri.parse(webUrl);
                                         if (await canLaunchUrl(webUri)) {
                                           await launchUrl(webUri, mode: LaunchMode.externalApplication);
                                         } else {
-                                          // Last resort fallback
                                           final fallbackUrl = "https://wa.me/$formattedPhone";
                                           final fallbackUri = Uri.parse(fallbackUrl);
                                           if (await canLaunchUrl(fallbackUri)) {
@@ -7126,10 +8011,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                       }
                                     }
                                   },
-                            child: const Text("Share PDF"),
                           ),
-                          const SizedBox(width: CRMSpacing.s),
-                          ElevatedButton(
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.link_rounded, size: 15),
+                            label: const Text("Generate Link", style: TextStyle(fontSize: 12)),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            ),
                             onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
                                 ? null
                                 : () async {
@@ -7139,7 +8028,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                         '/share-sessions',
                                         data: {
                                           'requirement_id': req.id,
-                                          'property_ids': selectedPropIds,
+                                          'property_ids': selectedPropIds.toList(),
                                           'expiry_days': 7
                                         },
                                       );
@@ -7181,7 +8070,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                       });
                                     }
                                   },
-                            child: const Text("Generate Link"),
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: kWhatsAppGreen,
+                              foregroundColor: Colors.white,
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 15),
+                            label: const Text("Share on WhatsApp", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                            onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
+                                ? null
+                                : () => shareViaWhatsAppDirect(),
                           ),
                         ],
                       ),
@@ -7198,7 +8099,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             const CircularProgressIndicator(),
                             const SizedBox(height: CRMSpacing.s),
                             Text(
-                              isSharingPdf ? 'Preparing property PDF(s)...' : 'Generating link...',
+                              isSharingPdf ? 'Preparing property PDF(s)...' : 'Generating share link & message...',
                               style: CRMTypography.caption.copyWith(color: CRMColors.textOf(context)),
                             ),
                           ],
@@ -7211,7 +8112,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           },
         );
       },
-    );
+    ).then((_) => searchController.dispose());
   }
 
   void _showRequirementDetailDrawer(RequirementModel req) {
@@ -7488,7 +8389,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     return DataRow(
                       color: isHighlighted
                           ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
-                          : null,
+                          : WidgetStateProperty.all(CRMColors.sidebarBgOf(context).withValues(alpha: 0.5)),
                       cells: [
                         DataCell(
                           SizedBox(
@@ -7504,7 +8405,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: CRMTypography.bodyMedium.copyWith(
-                                      color: CRMColors.primary,
+                                      color: CRMColors.primaryOf(context),
                                       fontWeight: FontWeight.bold,
                                       decoration: TextDecoration.underline,
                                     ),
@@ -7536,15 +8437,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             ),
                           ),
                         DataCell(
-                          currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')
-                              ? _buildAssignToDropdown(req)
-                              : _buildSalesAssignToLabel(req, currentUser),
+                          Text(
+                            _getSalesmanName(req, currentUser),
+                            style: CRMTypography.caption.copyWith(
+                              color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                         DataCell(_buildSpecsConfigCell(req)),
                         DataCell(
                           Text(
                             '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}',
-                            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary),
+                            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primaryOf(context)),
                           ),
                         ),
                         DataCell(_buildTargetAreasCell(req)),
@@ -7553,10 +8458,28 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         ),
 
                         DataCell(
-                          _RunMatchesButtonWithBadge(
-                            requirement: req,
-                            onPressed: () => _showMatchesDrawer(req),
-                            properties: _propertiesForMatches,
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: CRMColors.success.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: CRMColors.success.withValues(alpha: 0.3)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.verified_rounded, size: 13, color: CRMColors.success),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Deal Won',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: CRMColors.success,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         DataCell(
@@ -7564,14 +8487,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             icon: const Icon(Icons.more_vert_rounded),
                             tooltip: 'More Actions',
                             onSelected: (action) {
-                              if (action == 'add_another') {
-                                _showAddAnotherRequirementDialog(req);
-                              } else if (action == 'share') {
-                                _showSharePropertiesDialog(req);
-                              } else if (action == 'view_details') {
+                              if (action == 'view_details') {
                                 _showRequirementDetailDrawer(req);
-                              } else if (action == 'edit') {
-                                _showAddEditDialog(req);
                               } else if (action == 'delete') {
                                 _showDeleteConfirmDialog(req);
                               } else if (action == 'upload_doc') {
@@ -7606,17 +8523,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   ],
                                 ),
                               ),
-                              if (_hasEditAccess(req, currentUser)) ...[
-                                const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.edit_outlined, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Edit'),
-                                    ],
-                                  ),
-                                ),
+                              if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
                                 const PopupMenuItem(
                                   value: 'delete',
                                   child: Row(
@@ -8729,20 +9636,15 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
 
   Future<void> _loadAndFilterMatches() async {
     try {
-      final properties = await _propertiesRepository.getProperties();
       final req = widget.requirement;
-
       final isWonReq = req.status.toLowerCase() == 'won' || req.status.toLowerCase() == 'closed';
-      List<String> wonIds = [];
-      String? wonClientName;
-      if (isWonReq) {
-        wonIds = await PropertyDealClientStore.getWonPropertyIds(req.id);
-        wonClientName = await PropertyDealClientStore.getClientName(req.id);
-      }
 
-      final List<PropertyMatchResult> results = [];
-      for (final p in properties) {
-        if (isWonReq) {
+      if (isWonReq) {
+        final properties = await _propertiesRepository.getProperties();
+        List<String> wonIds = await PropertyDealClientStore.getWonPropertyIds(req.id);
+        String? wonClientName = await PropertyDealClientStore.getClientName(req.id);
+        final List<PropertyMatchResult> results = [];
+        for (final p in properties) {
           final isWon = wonIds.contains(p.id) || (wonClientName != null && wonClientName.trim().toLowerCase() == req.clientName.trim().toLowerCase());
           if (isWon) {
             results.add(PropertyMatchResult(
@@ -8751,9 +9653,45 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
               matchedCriteria: ['✓ Finalized Deal Property'],
             ));
           }
-          continue;
         }
+        setState(() {
+          _matchedProperties = results.map((r) => r.property).toList();
+          _matchResults = { for (var r in results) r.property.id: r };
+          _isLoading = false;
+        });
+        return;
+      }
 
+      // 1. Authoritative Backend Matching
+      try {
+        final serverResponse = await RequirementsRepository().getRequirementMatches(
+          req.id,
+          minScore: MatchCriteriaManager().threshold,
+        );
+        final data = serverResponse['data'] as Map<String, dynamic>? ?? {};
+        final rawMatches = data['matches'] as List? ?? [];
+        if (rawMatches.isNotEmpty || data.containsKey('matching_metadata')) {
+          final List<PropertyMatchResult> results = [];
+          for (final item in rawMatches) {
+            final pJson = item['property'] as Map<String, dynamic>? ?? {};
+            final prop = PropertyModel.fromJson(pJson);
+            results.add(PropertyMatchResult.fromServerJson(item as Map<String, dynamic>, prop));
+          }
+          setState(() {
+            _matchedProperties = results.map((r) => r.property).toList();
+            _matchResults = { for (var r in results) r.property.id: r };
+            _isLoading = false;
+          });
+          return;
+        }
+      } catch (serverErr) {
+        debugPrint("⚠️ [Backend Match Fallback] Falling back to local engine: $serverErr");
+      }
+
+      // 2. Offline / Local fallback
+      final properties = await _propertiesRepository.getProperties();
+      final List<PropertyMatchResult> results = [];
+      for (final p in properties) {
         final res = PropertyRequirementMatcher.match(p, req);
         if (res.matchPercentage >= MatchCriteriaManager().threshold) {
           results.add(res);
@@ -8984,26 +9922,43 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                         children: [
                           Builder(builder: (context) {
                             final matchRes = _matchResults[p.id];
-                            if (matchRes == null || matchRes.matchedCriteria.isEmpty || isWonReq) {
+                            if (matchRes == null || isWonReq) {
                               return const SizedBox.shrink();
                             }
+                            final hasTags = matchRes.matchedCriteria.isNotEmpty || matchRes.unmatchedPreferences.isNotEmpty;
+                            if (!hasTags) return const SizedBox.shrink();
+
                             return Padding(
                               padding: const EdgeInsets.only(top: 5, bottom: 4),
                               child: Wrap(
                                 spacing: 5,
                                 runSpacing: 4,
-                                children: matchRes.matchedCriteria.map((tag) => Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: CRMColors.surfaceElevatedOf(context),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
-                                  ),
-                                  child: Text(
-                                    tag,
-                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)),
-                                  ),
-                                )).toList(),
+                                children: [
+                                  ...matchRes.matchedCriteria.map((tag) => Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: CRMColors.success.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: CRMColors.success.withValues(alpha: 0.3)),
+                                    ),
+                                    child: Text(
+                                      tag,
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: CRMColors.success),
+                                    ),
+                                  )),
+                                  ...matchRes.unmatchedPreferences.map((tag) => Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.3)),
+                                    ),
+                                    child: Text(
+                                      '~ $tag',
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFFD97706)),
+                                    ),
+                                  )),
+                                ],
                               ),
                             );
                           }),
