@@ -144,6 +144,10 @@ class RequirementsRepository {
         if ((local.notes == null || local.notes!.trim().isEmpty) && existing != null) {
           local.notes = existing.notes;
         }
+        if ((local.assignedTo == null || local.assignedTo!.trim().isEmpty) && existing != null && existing.assignedTo != null && existing.assignedTo!.trim().isNotEmpty) {
+          local.assignedTo = existing.assignedTo;
+          local.assigneeName = existing.assigneeName;
+        }
         return local;
       }).toList();
       await _coordinator.requirementLocal.saveRequirements(localEntities);

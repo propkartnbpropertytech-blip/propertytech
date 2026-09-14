@@ -136,11 +136,7 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
     if (roleId != null && _cachedRoles.isNotEmpty) {
       for (final r in _cachedRoles) {
         if (r.id == roleId) {
-          final resolvedName = r.name;
-          if (resolvedName.toLowerCase() == 'admin' && _callerRole?.toLowerCase() == 'admin') {
-            return 'Telecaller';
-          }
-          return resolvedName;
+          return r.name;
         }
       }
     }

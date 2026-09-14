@@ -91,6 +91,7 @@ class CampaignSubshellHeader extends StatelessWidget {
 
           // Subshell Tab Switcher: Connections & Leads
           Container(
+            width: isCompact ? double.infinity : null,
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
@@ -101,35 +102,69 @@ class CampaignSubshellHeader extends StatelessWidget {
               ),
             ),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisSize: isCompact ? MainAxisSize.max : MainAxisSize.min,
               children: [
-                _buildTabButton(
-                  context,
-                  title: 'Connections',
-                  icon: Icons.hub_rounded,
-                  isActive: activeTab == 'connections',
-                  isDark: isDark,
-                  primaryColor: primaryColor,
-                  onTap: () {
-                    if (activeTab != 'connections') {
-                      context.go('/campaign/connections');
-                    }
-                  },
-                ),
-                const SizedBox(width: 4),
-                _buildTabButton(
-                  context,
-                  title: 'Leads',
-                  icon: Icons.table_chart_rounded,
-                  isActive: activeTab == 'leads',
-                  isDark: isDark,
-                  primaryColor: primaryColor,
-                  onTap: () {
-                    if (activeTab != 'leads') {
-                      context.go('/campaign/leads');
-                    }
-                  },
-                ),
+                if (isCompact) ...[
+                  Expanded(
+                    child: _buildTabButton(
+                      context,
+                      title: 'Connections',
+                      icon: Icons.hub_rounded,
+                      isActive: activeTab == 'connections',
+                      isDark: isDark,
+                      primaryColor: primaryColor,
+                      onTap: () {
+                        if (activeTab != 'connections') {
+                          context.go('/campaign/connections');
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: _buildTabButton(
+                      context,
+                      title: 'Leads',
+                      icon: Icons.table_chart_rounded,
+                      isActive: activeTab == 'leads',
+                      isDark: isDark,
+                      primaryColor: primaryColor,
+                      onTap: () {
+                        if (activeTab != 'leads') {
+                          context.go('/campaign/leads');
+                        }
+                      },
+                    ),
+                  ),
+                ] else ...[
+                  _buildTabButton(
+                    context,
+                    title: 'Connections',
+                    icon: Icons.hub_rounded,
+                    isActive: activeTab == 'connections',
+                    isDark: isDark,
+                    primaryColor: primaryColor,
+                    onTap: () {
+                      if (activeTab != 'connections') {
+                        context.go('/campaign/connections');
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  _buildTabButton(
+                    context,
+                    title: 'Leads',
+                    icon: Icons.table_chart_rounded,
+                    isActive: activeTab == 'leads',
+                    isDark: isDark,
+                    primaryColor: primaryColor,
+                    onTap: () {
+                      if (activeTab != 'leads') {
+                        context.go('/campaign/leads');
+                      }
+                    },
+                  ),
+                ],
               ],
             ),
           ),
@@ -178,6 +213,7 @@ class CampaignSubshellHeader extends StatelessWidget {
                 : null,
           ),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(

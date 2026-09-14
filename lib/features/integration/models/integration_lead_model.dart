@@ -588,11 +588,18 @@ class IntegrationLeadModel {
     DateTime? interactedAt,
     String? interactedBy,
   }) {
+    final updatedRaw = rawJson != null
+        ? Map<String, dynamic>.from(rawJson)
+        : Map<String, dynamic>.from(this.rawJson);
+    final finalLeadType = leadType ?? this.leadType;
+    updatedRaw['_lead_type'] = finalLeadType;
+    updatedRaw['lead_type'] = finalLeadType;
+
     return IntegrationLeadModel(
       id: id ?? this.id,
       source: source ?? this.source,
       receivedAt: receivedAt ?? this.receivedAt,
-      rawJson: rawJson ?? Map<String, dynamic>.from(this.rawJson),
+      rawJson: updatedRaw,
       externalLeadId: externalLeadId ?? this.externalLeadId,
       isDuplicate: isDuplicate ?? this.isDuplicate,
       duplicateReason: duplicateReason ?? this.duplicateReason,
@@ -602,7 +609,7 @@ class IntegrationLeadModel {
       metaFeedbackEventId: metaFeedbackEventId ?? this.metaFeedbackEventId,
       metaFeedbackSentAt: metaFeedbackSentAt ?? this.metaFeedbackSentAt,
       enquiryCount: enquiryCount ?? this.enquiryCount,
-      leadType: leadType ?? this.leadType,
+      leadType: finalLeadType,
       campaignStatus: campaignStatus ?? this.campaignStatus,
       followupScheduledAt: followupScheduledAt ?? this.followupScheduledAt,
       followupRemarks: followupRemarks ?? this.followupRemarks,
@@ -657,7 +664,12 @@ class IntegrationLeadModel {
       } catch (_) {}
     }
 
-    final explicitType = json['lead_type']?.toString();
+    final explicitType = json['lead_type']?.toString() ??
+        json['leadType']?.toString() ??
+        json['targetLeadType']?.toString() ??
+        raw['_lead_type']?.toString() ??
+        raw['lead_type']?.toString() ??
+        raw['leadType']?.toString();
     final type = resolveLeadType(explicitType, raw);
 
     final latestFu = json['latest_followup'] is Map<String, dynamic>
@@ -665,14 +677,19 @@ class IntegrationLeadModel {
         : null;
 
     final transferObj = raw['_transfer'] is Map ? raw['_transfer'] as Map : null;
-    final assignedToVal = json['assigned_to']?.toString() ?? transferObj?['assigned_to']?.toString();
+    final assignedToVal = json['assigned_to']?.toString() ??
+        raw['_assigned_to']?.toString() ??
+        transferObj?['assigned_to']?.toString();
     final assignedNameVal = json['assigned_to_name']?.toString() ??
+        raw['_assigned_to_name']?.toString() ??
         json['assigned_user']?['full_name']?.toString() ??
         transferObj?['assigned_to_name']?.toString();
-    final transferRemarksVal = json['transfer_remarks']?.toString() ?? transferObj?['remarks']?.toString();
-    final interactedAtRaw = json['interacted_at'] ?? transferObj?['interacted_at'];
+    final transferRemarksVal = json['transfer_remarks']?.toString() ??
+        raw['_transfer_remarks']?.toString() ??
+        transferObj?['remarks']?.toString();
+    final interactedAtRaw = json['interacted_at'] ?? raw['_interacted_at'] ?? transferObj?['interacted_at'];
     final interactedAtVal = interactedAtRaw != null ? DateTime.tryParse(interactedAtRaw.toString()) : null;
-    final interactedByVal = json['interacted_by']?.toString() ?? transferObj?['interacted_by']?.toString();
+    final interactedByVal = json['interacted_by']?.toString() ?? raw['_interacted_by']?.toString() ?? transferObj?['interacted_by']?.toString();
 
     return IntegrationLeadModel(
       id: json['id']?.toString() ?? '',

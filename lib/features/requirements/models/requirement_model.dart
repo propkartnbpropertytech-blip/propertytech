@@ -339,8 +339,13 @@ class RequirementModel {
       assigneeName: () {
         if (json['assigneeName'] != null) return json['assigneeName'] as String;
         if (json['assignee_name'] != null) return json['assignee_name'] as String;
+        if (json['assignedToName'] != null) return json['assignedToName'] as String;
+        if (json['assigned_to_name'] != null) return json['assigned_to_name'] as String;
         if (json['assignee'] is Map) {
           return (json['assignee']['full_name'] ?? json['assignee']['fullName'] ?? json['assignee']['name']) as String?;
+        }
+        if (json['assigned_user'] is Map) {
+          return (json['assigned_user']['full_name'] ?? json['assigned_user']['fullName'] ?? json['assigned_user']['name']) as String?;
         }
         return null;
       }(),

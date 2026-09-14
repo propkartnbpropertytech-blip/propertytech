@@ -4,6 +4,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:propkart/main.dart';
 import 'package:propkart/features/auth/repository/auth_repository.dart';
+import 'package:propkart/core/services/app_notifier_service.dart';
+import 'package:propkart/core/telemetry/audit_telemetry_service.dart';
 
 class MockAuthRepository extends AuthRepository {
   @override
@@ -23,6 +25,11 @@ void main() {
       buildSignature: '',
     );
     SharedPreferences.setMockInitialValues({});
+  });
+
+  tearDown(() async {
+    AppNotifierService.dismissToast();
+    AuditTelemetryService.instance.dispose();
   });
 
   testWidgets('Login screen loads correctly test', (WidgetTester tester) async {
@@ -52,5 +59,9 @@ void main() {
     expect(find.text('Email Address'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
     expect(find.text('Remember me'), findsOneWidget);
+
+    AppNotifierService.dismissToast();
+    AuditTelemetryService.instance.dispose();
+    await tester.pump(const Duration(seconds: 10));
   });
 }

@@ -161,19 +161,18 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Top Header & Actions Bar
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.tune_rounded, size: 24),
-                            SizedBox(width: 10),
-                            Text(
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isMobile = constraints.maxWidth < 700;
+                  final titleWidget = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.tune_rounded, size: 24),
+                          SizedBox(width: 10),
+                          Flexible(
+                            child: Text(
                               'Lead Metrics & Configuration',
                               style: TextStyle(
                                 fontSize: 22,
@@ -181,20 +180,21 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                                 letterSpacing: -0.4,
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Configure Key Performance Indicators, arrange dashboard layout order, and manage default metric views for executive insights.',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Configure Key Performance Indicators, arrange dashboard layout order, and manage default metric views for executive insights.',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                         ),
-                      ],
-                    ),
-                  ),
-                  Wrap(
+                      ),
+                    ],
+                  );
+
+                  final buttonsWidget = Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
@@ -236,8 +236,29 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                         ),
                       ),
                     ],
-                  ),
-                ],
+                  );
+
+                  if (isMobile) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        titleWidget,
+                        const SizedBox(height: 12),
+                        buttonsWidget,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: titleWidget),
+                      const SizedBox(width: 16),
+                      buttonsWidget,
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: CRMSpacing.m),
 
@@ -299,19 +320,25 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         const Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.format_list_numbered_rounded, size: 20),
                             SizedBox(width: 8),
-                            Text(
-                              'Key Performance Indicators (KPIs)',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: -0.2,
+                            Flexible(
+                              child: Text(
+                                'Key Performance Indicators (KPIs)',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: -0.2,
+                                ),
                               ),
                             ),
                           ],
@@ -366,7 +393,7 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                         return Container(
                           key: ValueKey(kpi.type.name),
                           margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             color: isDark
                                 ? (isEnabled ? const Color(0xFF0F172A) : const Color(0xFF0F172A).withValues(alpha: 0.5))
@@ -379,130 +406,163 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                               width: 1,
                             ),
                           ),
-                          child: Row(
-                            children: [
-                              // Drag Handle
-                              ReorderableDragStartListener(
-                                index: index,
-                                child: const MouseRegion(
-                                  cursor: SystemMouseCursors.grab,
-                                  child: Padding(
-                                    padding: EdgeInsets.only(right: 10),
-                                    child: Icon(
-                                      Icons.drag_indicator_rounded,
-                                      size: 20,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                              // Position badge
-                              Container(
-                                width: 26,
-                                height: 26,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Text(
-                                  '${index + 1}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: isDark ? Colors.white70 : const Color(0xFF475569),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-
-                              // KPI Icon
-                              Container(
-                                padding: const EdgeInsets.all(7),
-                                decoration: BoxDecoration(
-                                  color: kpi.type.defaultColor.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(
-                                  kpi.type.icon,
-                                  size: 18,
-                                  color: kpi.type.defaultColor,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-
-                              // KPI Title & Denominator Formula
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      kpi.type.displayName,
-                                      style: TextStyle(
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: isEnabled
-                                            ? (isDark ? Colors.white : const Color(0xFF0F172A))
-                                            : (isDark ? Colors.white38 : Colors.black38),
+                          child: LayoutBuilder(
+                            builder: (context, itemConstraints) {
+                              final isCompact = itemConstraints.maxWidth < 520;
+                              final mainInfo = Row(
+                                children: [
+                                  // Drag Handle
+                                  ReorderableDragStartListener(
+                                    index: index,
+                                    child: const MouseRegion(
+                                      cursor: SystemMouseCursors.grab,
+                                      child: Padding(
+                                        padding: EdgeInsets.only(right: 8),
+                                        child: Icon(
+                                          Icons.drag_indicator_rounded,
+                                          size: 20,
+                                          color: Colors.grey,
+                                        ),
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      kpi.type.denominatorExplanation,
+                                  ),
+
+                                  // Position badge
+                                  Container(
+                                    width: 24,
+                                    height: 24,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text(
+                                      '${index + 1}',
                                       style: TextStyle(
                                         fontSize: 11,
-                                        color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white70 : const Color(0xFF475569),
                                       ),
                                     ),
+                                  ),
+                                  const SizedBox(width: 8),
+
+                                  // KPI Icon
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: kpi.type.defaultColor.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      kpi.type.icon,
+                                      size: 16,
+                                      color: kpi.type.defaultColor,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+
+                                  // KPI Title & Denominator Formula
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          kpi.type.displayName,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: isEnabled
+                                                ? (isDark ? Colors.white : const Color(0xFF0F172A))
+                                                : (isDark ? Colors.white38 : Colors.black38),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          kpi.type.denominatorExplanation,
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              );
+
+                              final controls = Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isEnabled) ...[
+                                    _buildMetricTogglePill(
+                                      label: 'Count',
+                                      isActive: kpi.showCount,
+                                      canToggleOff: kpi.showPercentage,
+                                      onTap: () {
+                                        setState(() {
+                                          _kpiConfigs[index] = kpi.copyWith(showCount: !kpi.showCount);
+                                        });
+                                      },
+                                      isDark: isDark,
+                                      primaryColor: primaryColor,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    _buildMetricTogglePill(
+                                      label: '%',
+                                      isActive: kpi.showPercentage,
+                                      canToggleOff: kpi.showCount,
+                                      onTap: () {
+                                        setState(() {
+                                          _kpiConfigs[index] = kpi.copyWith(showPercentage: !kpi.showPercentage);
+                                        });
+                                      },
+                                      isDark: isDark,
+                                      primaryColor: primaryColor,
+                                    ),
+                                    const SizedBox(width: 8),
                                   ],
-                                ),
-                              ),
+                                  Transform.scale(
+                                    scale: 0.8,
+                                    child: Switch(
+                                      value: isEnabled,
+                                      activeThumbColor: primaryColor,
+                                      onChanged: (val) {
+                                        setState(() {
+                                          _kpiConfigs[index] = kpi.copyWith(isEnabled: val);
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              );
 
-                              // Metric quick toggles (Count ON/OFF, % ON/OFF)
-                              if (isEnabled) ...[
-                                _buildMetricTogglePill(
-                                  label: 'Count',
-                                  isActive: kpi.showCount,
-                                  canToggleOff: kpi.showPercentage,
-                                  onTap: () {
-                                    setState(() {
-                                      _kpiConfigs[index] = kpi.copyWith(showCount: !kpi.showCount);
-                                    });
-                                  },
-                                  isDark: isDark,
-                                  primaryColor: primaryColor,
-                                ),
-                                const SizedBox(width: 6),
-                                _buildMetricTogglePill(
-                                  label: '%',
-                                  isActive: kpi.showPercentage,
-                                  canToggleOff: kpi.showCount,
-                                  onTap: () {
-                                    setState(() {
-                                      _kpiConfigs[index] = kpi.copyWith(showPercentage: !kpi.showPercentage);
-                                    });
-                                  },
-                                  isDark: isDark,
-                                  primaryColor: primaryColor,
-                                ),
-                                const SizedBox(width: 16),
-                              ],
+                              if (isCompact) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    mainInfo,
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [controls],
+                                    ),
+                                  ],
+                                );
+                              }
 
-                              // Enable / Disable Switch
-                              Transform.scale(
-                                scale: 0.8,
-                                child: Switch(
-                                  value: isEnabled,
-                                  activeThumbColor: primaryColor,
-                                  onChanged: (val) {
-                                    setState(() {
-                                      _kpiConfigs[index] = kpi.copyWith(isEnabled: val);
-                                    });
-                                  },
-                                ),
-                              ),
-                            ],
+                              return Row(
+                                children: [
+                                  Expanded(child: mainInfo),
+                                  const SizedBox(width: 8),
+                                  controls,
+                                ],
+                              );
+                            },
                           ),
                         );
                       },
@@ -523,19 +583,25 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         const Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.dashboard_customize_rounded, size: 20),
                             SizedBox(width: 8),
-                            Text(
-                              'Analytical Dashboard Sections',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: -0.2,
+                            Flexible(
+                              child: Text(
+                                'Analytical Dashboard Sections',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: -0.2,
+                                ),
                               ),
                             ),
                           ],
@@ -616,8 +682,11 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: borderColor),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 10,
                   children: [
                     Text(
                       'Changes will be applied to the Overall Business Insight dashboard upon saving.',
@@ -790,12 +859,15 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                   color: isEnabled ? primaryColor : (isDark ? Colors.white60 : const Color(0xFF64748B)),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                Flexible(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: 8),

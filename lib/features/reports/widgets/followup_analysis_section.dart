@@ -60,15 +60,15 @@ class _FollowupAnalysisSectionState extends State<FollowupAnalysisSection> {
           const SizedBox(height: 14),
 
           // 4 Category Cards / Tabs
-          Row(
-            children: List.generate(widget.categories.length, (idx) {
-              final cat = widget.categories[idx];
-              final isSelected = idx == _selectedCategoryIndex;
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 500;
+              final content = Row(
+                children: List.generate(widget.categories.length, (idx) {
+                  final cat = widget.categories[idx];
+                  final isSelected = idx == _selectedCategoryIndex;
 
-              return Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(right: idx == widget.categories.length - 1 ? 0 : 8),
-                  child: InkWell(
+                  final Widget cardWidget = InkWell(
                     onTap: () => setState(() => _selectedCategoryIndex = idx),
                     borderRadius: BorderRadius.circular(10),
                     child: AnimatedContainer(
@@ -109,10 +109,32 @@ class _FollowupAnalysisSectionState extends State<FollowupAnalysisSection> {
                         ],
                       ),
                     ),
-                  ),
-                ),
+                  );
+
+                  if (isNarrow) {
+                    return Container(
+                      width: 120,
+                      margin: EdgeInsets.only(right: idx == widget.categories.length - 1 ? 0 : 8),
+                      child: cardWidget,
+                    );
+                  }
+
+                  return Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(right: idx == widget.categories.length - 1 ? 0 : 8),
+                      child: cardWidget,
+                    ),
+                  );
+                }),
               );
-            }),
+
+              return isNarrow
+                  ? SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: content,
+                    )
+                  : content;
+            },
           ),
           const SizedBox(height: 14),
 
@@ -154,13 +176,14 @@ class _FollowupAnalysisSectionState extends State<FollowupAnalysisSection> {
                       return ListTile(
                         dense: true,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        title: Row(
+                        title: Wrap(
+                          spacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Text(
                               item.leadName,
                               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                             ),
-                            const SizedBox(width: 8),
                             if (item.clientMobile != null)
                               Text(
                                 item.clientMobile!,

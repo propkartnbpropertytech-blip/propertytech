@@ -166,24 +166,26 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Top Title & Export Bar
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
+                      if (MediaQuery.of(context).size.width < 700) ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Row(
                                 children: [
-                                  const Text(
-                                    'Overall Business Insight',
-                                    style: TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: -0.4,
+                                  const Expanded(
+                                    child: Text(
+                                      'Overall Business Insight',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: -0.4,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                   if (isSoftLoading) ...[
-                                    const SizedBox(width: 10),
+                                    const SizedBox(width: 6),
                                     SizedBox(
                                       width: 14,
                                       height: 14,
@@ -195,121 +197,266 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                                   ],
                                 ],
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Executive overview of lead lifecycle, agent productivity, conversion funnel, and pipeline velocity.',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              PopupMenuButton<String>(
-                                tooltip: 'Analytical Sections Visibility',
-                                offset: const Offset(0, 36),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                itemBuilder: (ctx) => [
-                                  _buildSectionToggleItem(
-                                    'Pipeline Velocity',
-                                    config.showLeadStatusPipeline,
-                                    () => context.read<ReportsBloc>().add(
-                                          ToggleSectionEvent(showPipeline: !config.showLeadStatusPipeline),
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                PopupMenuButton<String>(
+                                  tooltip: 'Analytical Sections Visibility',
+                                  offset: const Offset(0, 36),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  itemBuilder: (ctx) => [
+                                    _buildSectionToggleItem(
+                                      'Pipeline Velocity',
+                                      config.showLeadStatusPipeline,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showPipeline: !config.showLeadStatusPipeline),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Conversion Funnel',
+                                      config.showConversionFunnel,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showFunnel: !config.showConversionFunnel),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Follow-up Analysis',
+                                      config.showFollowupAnalysis,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showFollowup: !config.showFollowupAnalysis),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Team Ranking',
+                                      config.showTeamRanking,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showTeamRanking: !config.showTeamRanking),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Business Insights',
+                                      config.showBusinessInsights,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showInsights: !config.showBusinessInsights),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Growth & Comparison',
+                                      config.showGrowthComparison,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showGrowth: !config.showGrowthComparison),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Lead Sources',
+                                      config.showLeadSourceAnalysis,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showLeadSource: !config.showLeadSourceAnalysis),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Trend Analysis',
+                                      config.showTrendAnalysis,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showTrend: !config.showTrendAnalysis),
+                                          ),
+                                    ),
+                                  ],
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.view_quilt_outlined,
+                                          size: 15,
+                                          color: isDark ? Colors.white70 : const Color(0xFF334155),
                                         ),
-                                  ),
-                                  _buildSectionToggleItem(
-                                    'Conversion Funnel',
-                                    config.showConversionFunnel,
-                                    () => context.read<ReportsBloc>().add(
-                                          ToggleSectionEvent(showFunnel: !config.showConversionFunnel),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Sections',
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                          ),
                                         ),
-                                  ),
-                                  _buildSectionToggleItem(
-                                    'Follow-up Analysis',
-                                    config.showFollowupAnalysis,
-                                    () => context.read<ReportsBloc>().add(
-                                          ToggleSectionEvent(showFollowup: !config.showFollowupAnalysis),
-                                        ),
-                                  ),
-                                  _buildSectionToggleItem(
-                                    'Team Ranking',
-                                    config.showTeamRanking,
-                                    () => context.read<ReportsBloc>().add(
-                                          ToggleSectionEvent(showTeamRanking: !config.showTeamRanking),
-                                        ),
-                                  ),
-                                  _buildSectionToggleItem(
-                                    'Business Insights',
-                                    config.showBusinessInsights,
-                                    () => context.read<ReportsBloc>().add(
-                                          ToggleSectionEvent(showInsights: !config.showBusinessInsights),
-                                        ),
-                                  ),
-                                  _buildSectionToggleItem(
-                                    'Growth & Comparison',
-                                    config.showGrowthComparison,
-                                    () => context.read<ReportsBloc>().add(
-                                          ToggleSectionEvent(showGrowth: !config.showGrowthComparison),
-                                        ),
-                                  ),
-                                  _buildSectionToggleItem(
-                                    'Lead Sources',
-                                    config.showLeadSourceAnalysis,
-                                    () => context.read<ReportsBloc>().add(
-                                          ToggleSectionEvent(showLeadSource: !config.showLeadSourceAnalysis),
-                                        ),
-                                  ),
-                                  _buildSectionToggleItem(
-                                    'Trend Analysis',
-                                    config.showTrendAnalysis,
-                                    () => context.read<ReportsBloc>().add(
-                                          ToggleSectionEvent(showTrend: !config.showTrendAnalysis),
-                                        ),
-                                  ),
-                                ],
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                                  decoration: BoxDecoration(
-                                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                                        const Icon(Icons.arrow_drop_down, size: 16),
+                                      ],
                                     ),
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.view_quilt_outlined,
-                                        size: 16,
-                                        color: isDark ? Colors.white70 : const Color(0xFF334155),
+                                ),
+                                const SizedBox(width: 6),
+                                ReportExportMenu(
+                                  reportData: reportData,
+                                  config: config,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Executive overview of lead lifecycle, agent productivity, conversion funnel, and pipeline velocity.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ] else ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Text(
+                                      'Overall Business Insight',
+                                      style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: -0.4,
                                       ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Sections',
-                                        style: TextStyle(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w600,
-                                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                    ),
+                                    if (isSoftLoading) ...[
+                                      const SizedBox(width: 10),
+                                      SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: primaryColor,
                                         ),
                                       ),
-                                      const SizedBox(width: 4),
-                                      const Icon(Icons.arrow_drop_down, size: 16),
                                     ],
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Executive overview of lead lifecycle, agent productivity, conversion funnel, and pipeline velocity.',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              ReportExportMenu(
-                                reportData: reportData,
-                                config: config,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                PopupMenuButton<String>(
+                                  tooltip: 'Analytical Sections Visibility',
+                                  offset: const Offset(0, 36),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  itemBuilder: (ctx) => [
+                                    _buildSectionToggleItem(
+                                      'Pipeline Velocity',
+                                      config.showLeadStatusPipeline,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showPipeline: !config.showLeadStatusPipeline),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Conversion Funnel',
+                                      config.showConversionFunnel,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showFunnel: !config.showConversionFunnel),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Follow-up Analysis',
+                                      config.showFollowupAnalysis,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showFollowup: !config.showFollowupAnalysis),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Team Ranking',
+                                      config.showTeamRanking,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showTeamRanking: !config.showTeamRanking),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Business Insights',
+                                      config.showBusinessInsights,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showInsights: !config.showBusinessInsights),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Growth & Comparison',
+                                      config.showGrowthComparison,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showGrowth: !config.showGrowthComparison),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Lead Sources',
+                                      config.showLeadSourceAnalysis,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showLeadSource: !config.showLeadSourceAnalysis),
+                                          ),
+                                    ),
+                                    _buildSectionToggleItem(
+                                      'Trend Analysis',
+                                      config.showTrendAnalysis,
+                                      () => context.read<ReportsBloc>().add(
+                                            ToggleSectionEvent(showTrend: !config.showTrendAnalysis),
+                                          ),
+                                    ),
+                                  ],
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.view_quilt_outlined,
+                                          size: 16,
+                                          color: isDark ? Colors.white70 : const Color(0xFF334155),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Sections',
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Icon(Icons.arrow_drop_down, size: 16),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                ReportExportMenu(
+                                  reportData: reportData,
+                                  config: config,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: CRMSpacing.m),
 
                       // Filter Section: Date Filter Bar
@@ -339,51 +486,105 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                       const SizedBox(height: CRMSpacing.m),
 
                       // KPI Header
-                      Row(
-                        children: [
-                          const Icon(Icons.speed_rounded, size: 18),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Key Performance Indicators',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: -0.2,
+                      if (MediaQuery.of(context).size.width < 700) ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.speed_rounded, size: 16),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'KPIs',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: primaryColor.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '${enabledKpis.length}/13 Active',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: primaryColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: primaryColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10),
+                            TextButton.icon(
+                              icon: const Icon(Icons.tune_rounded, size: 13),
+                              label: const Text(
+                                'Lead Metrics',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: primaryColor,
+                                padding: EdgeInsets.zero,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () {
+                                context.go('/reports/leads/metrics');
+                              },
                             ),
-                            child: Text(
-                              '${enabledKpis.length} / 13 Active',
+                          ],
+                        ),
+                      ] else ...[
+                        Row(
+                          children: [
+                            const Icon(Icons.speed_rounded, size: 18),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Key Performance Indicators',
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: primaryColor,
+                                letterSpacing: -0.2,
                               ),
                             ),
-                          ),
-                          const Spacer(),
-                          TextButton.icon(
-                            icon: const Icon(Icons.tune_rounded, size: 14),
-                            label: const Text(
-                              'Configure in Lead Metrics',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: primaryColor.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${enabledKpis.length} / 13 Active',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: primaryColor,
+                                ),
+                              ),
                             ),
-                            style: TextButton.styleFrom(
-                              foregroundColor: primaryColor,
-                              visualDensity: VisualDensity.compact,
+                            const Spacer(),
+                            TextButton.icon(
+                              icon: const Icon(Icons.tune_rounded, size: 14),
+                              label: const Text(
+                                'Configure in Lead Metrics',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: primaryColor,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () {
+                                context.go('/reports/leads/metrics');
+                              },
                             ),
-                            onPressed: () {
-                              context.go('/reports/leads/metrics');
-                            },
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 10),
 
                       // Responsive KPI Cards Grid (Static executive display)

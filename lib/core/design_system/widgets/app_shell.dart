@@ -22,6 +22,7 @@ import 'dart:async';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../features/properties/services/properties_service.dart';
 import '../../../features/properties/models/property_model.dart';
+import '../../../features/properties/repository/properties_repository.dart';
 import '../../navigation/mobile_system_back_handler.dart';
 import '../../../../features/shell/widgets/sidebar.dart';
 import '../../../../features/shell/widgets/top_bar.dart';
@@ -435,13 +436,69 @@ class _CRMAppShellState extends State<CRMAppShell>
     });
   }
 
+  int _levenshteinDistance(String s, String t) {
+    if (s == t) return 0;
+    if (s.isEmpty) return t.length;
+    if (t.isEmpty) return s.length;
+
+    List<int> v0 = List<int>.generate(t.length + 1, (i) => i);
+    List<int> v1 = List<int>.filled(t.length + 1, 0);
+
+    for (int i = 0; i < s.length; i++) {
+      v1[0] = i + 1;
+      for (int j = 0; j < t.length; j++) {
+        int cost = (s.codeUnitAt(i) == t.codeUnitAt(j)) ? 0 : 1;
+        int subCost = v0[j] + cost;
+        int insCost = v1[j] + 1;
+        int delCost = v0[j + 1] + 1;
+        v1[j + 1] = subCost < insCost
+            ? (subCost < delCost ? subCost : delCost)
+            : (insCost < delCost ? insCost : delCost);
+      }
+      for (int j = 0; j <= t.length; j++) {
+        v0[j] = v1[j];
+      }
+    }
+    return v0[t.length];
+  }
+
+  bool _isFuzzyMatchToken(
+      String token, List<String> fieldStrings, List<String> fieldWords) {
+    if (token.isEmpty) return true;
+
+    // 1. Direct substring match in any field string
+    for (final fs in fieldStrings) {
+      if (fs.contains(token)) return true;
+      if (token.length >= 4 && fs.length >= 3 && token.contains(fs)) return true;
+    }
+
+    // 2. Word level matching (exact, prefix, or Levenshtein distance)
+    for (final w in fieldWords) {
+      if (w.isEmpty) continue;
+      if (w == token || w.contains(token) || token.contains(w)) return true;
+
+      if (token.length <= 3) {
+        if (w.startsWith(token)) return true;
+      } else if (token.length <= 6) {
+        if (_levenshteinDistance(token, w) <= 1) return true;
+      } else {
+        if (_levenshteinDistance(token, w) <= 2) return true;
+      }
+    }
+    return false;
+  }
+
+  void _addStr(List<String> list, dynamic val) {
+    if (val != null) {
+      final s = val.toString().trim().toLowerCase();
+      if (s.isNotEmpty) list.add(s);
+    }
+  }
+
   Future<void> _performSearch(String query) async {
     setState(() => _isSearching = true);
     _showSearchOverlay();
     try {
-      final queryLower = query.toLowerCase();
-      final queryNormalized = queryLower.replaceAll(' ', '');
-
       final authState = context.read<AuthBloc>().state;
       String? currentUserRole;
       if (authState is Authenticated) {
@@ -450,48 +507,70 @@ class _CRMAppShellState extends State<CRMAppShell>
       final bool isUserAdminOrSuperAdmin =
           currentUserRole == 'Admin' || currentUserRole == 'Super Admin';
 
-      // 1. Active Properties
-      final props = await RepositoryCoordinator().propertyLocal.getProperties();
+      // Standardize query & aliases
+      String queryNorm = query.toLowerCase().trim();
+      queryNorm = queryNorm.replaceAll(RegExp(r'(\d+)\s*bhk'), r'$1 bhk');
+      queryNorm = queryNorm.replaceAll(RegExp(r'\bresel(l)?\b'), 'resale');
+      queryNorm = queryNorm.replaceAll(RegExp(r'\bre-sale\b'), 'resale');
+
+      final queryTokens = queryNorm
+          .split(RegExp(r'[\s,/\-]+'))
+          .where((t) => t.isNotEmpty)
+          .toList();
+
+      // 1. Active Properties (with fallback to repository API if local is empty)
+      List<dynamic> props = [];
+      try {
+        props = await RepositoryCoordinator().propertyLocal.getProperties();
+      } catch (_) {}
+      if (props.isEmpty) {
+        try {
+          props = await PropertiesRepository().getProperties();
+        } catch (_) {}
+      }
+
       final matchedProps = props
           .where((p) {
-            final code = (p.propertyCode ?? '').toLowerCase();
-            final name = (p.title ?? '').toLowerCase();
-            final ownerName = (p.ownerName ?? '').toLowerCase();
-            final ownerMobile = (p.ownerMobile ?? '').toLowerCase();
-            final area = (p.areaName ?? '').toLowerCase();
-            final bhk = (p.configurationName ?? '').toLowerCase();
-            final bhkNormalized = bhk.replaceAll(' ', '');
-            final date = p.createdAt.toString().toLowerCase();
-            final status = (p.propertyStatusName ?? '').toLowerCase();
-            final superBuiltup = (p.superBuiltupArea?.toString() ?? '')
-                .toLowerCase();
-            final type = (p.propertyTypeName ?? '').toLowerCase();
-            final category = (p.categoryName ?? '').toLowerCase();
-            final remarks = (p.remarks ?? '').toLowerCase();
-            final description = (p.description ?? '').toLowerCase();
-            final salesman = (p.createdByName ?? '').toLowerCase();
+            final fieldStrings = <String>[];
+            _addStr(fieldStrings, p.propertyCode);
+            _addStr(fieldStrings, p.title);
+            _addStr(fieldStrings, p.ownerName);
+            _addStr(fieldStrings, p.ownerMobile);
+            _addStr(fieldStrings, p.areaName);
+            _addStr(fieldStrings, p.configurationName);
+            _addStr(fieldStrings, p.createdAt);
+            _addStr(fieldStrings, p.propertyStatusName);
+            _addStr(fieldStrings, p.superBuiltupArea);
+            _addStr(fieldStrings, p.propertyTypeName);
+            _addStr(fieldStrings, p.categoryName);
+            _addStr(fieldStrings, p.remarks);
+            _addStr(fieldStrings, p.description);
 
-            final matchesGeneral =
-                code.contains(queryLower) ||
-                name.contains(queryLower) ||
-                ownerName.contains(queryLower) ||
-                ownerMobile.contains(queryLower) ||
-                area.contains(queryLower) ||
-                bhk.contains(queryLower) ||
-                (bhkNormalized.isNotEmpty &&
-                    bhkNormalized.contains(queryNormalized)) ||
-                date.contains(queryLower) ||
-                status.contains(queryLower) ||
-                superBuiltup.contains(queryLower) ||
-                type.contains(queryLower) ||
-                category.contains(queryLower) ||
-                remarks.contains(queryLower) ||
-                description.contains(queryLower);
+            final configLower = p.configurationName?.toLowerCase() ?? '';
+            if (configLower.isNotEmpty) {
+              _addStr(fieldStrings, configLower.replaceAll(' ', ''));
+              _addStr(fieldStrings, configLower.replaceAll(' ', '-'));
+            }
+            final categoryLower = p.categoryName?.toLowerCase() ?? '';
+            if (categoryLower.contains('re-sale') || categoryLower.contains('resale')) {
+              fieldStrings.add('resale');
+              fieldStrings.add('re-sale');
+              fieldStrings.add('resel');
+            }
 
-            final matchesSalesman =
-                isUserAdminOrSuperAdmin && salesman.contains(queryLower);
+            if (isUserAdminOrSuperAdmin) {
+              _addStr(fieldStrings, p.createdByName);
+            }
 
-            return matchesGeneral || matchesSalesman;
+            final fieldWords = fieldStrings
+                .join(' ')
+                .split(RegExp(r'[^a-zA-Z0-9]+'))
+                .where((w) => w.isNotEmpty)
+                .toList();
+
+            return queryTokens.every(
+              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
+            );
           })
           .map(
             (p) => {
@@ -514,44 +593,46 @@ class _CRMAppShellState extends State<CRMAppShell>
 
         matchedBinProps = binProps
             .where((p) {
-              final code = (p.propertyCode ?? '').toLowerCase();
-              final name = (p.title ?? '').toLowerCase();
-              final ownerName = (p.ownerName ?? '').toLowerCase();
-              final ownerMobile = (p.ownerMobile ?? '').toLowerCase();
-              final area = (p.areaName ?? '').toLowerCase();
-              final bhk = (p.configurationName ?? '').toLowerCase();
-              final bhkNormalized = bhk.replaceAll(' ', '');
-              final date = p.createdAt.toString().toLowerCase();
-              final status = (p.propertyStatusName ?? '').toLowerCase();
-              final superBuiltup = (p.superBuiltupArea?.toString() ?? '')
-                  .toLowerCase();
-              final type = (p.propertyTypeName ?? '').toLowerCase();
-              final category = (p.categoryName ?? '').toLowerCase();
-              final remarks = (p.remarks ?? '').toLowerCase();
-              final description = (p.description ?? '').toLowerCase();
-              final salesman = (p.createdByName ?? '').toLowerCase();
+              final fieldStrings = <String>[];
+              _addStr(fieldStrings, p.propertyCode);
+              _addStr(fieldStrings, p.title);
+              _addStr(fieldStrings, p.ownerName);
+              _addStr(fieldStrings, p.ownerMobile);
+              _addStr(fieldStrings, p.areaName);
+              _addStr(fieldStrings, p.configurationName);
+              _addStr(fieldStrings, p.createdAt);
+              _addStr(fieldStrings, p.propertyStatusName);
+              _addStr(fieldStrings, p.superBuiltupArea);
+              _addStr(fieldStrings, p.propertyTypeName);
+              _addStr(fieldStrings, p.categoryName);
+              _addStr(fieldStrings, p.remarks);
+              _addStr(fieldStrings, p.description);
 
-              final matchesGeneral =
-                  code.contains(queryLower) ||
-                  name.contains(queryLower) ||
-                  ownerName.contains(queryLower) ||
-                  ownerMobile.contains(queryLower) ||
-                  area.contains(queryLower) ||
-                  bhk.contains(queryLower) ||
-                  (bhkNormalized.isNotEmpty &&
-                      bhkNormalized.contains(queryNormalized)) ||
-                  date.contains(queryLower) ||
-                  status.contains(queryLower) ||
-                  superBuiltup.contains(queryLower) ||
-                  type.contains(queryLower) ||
-                  category.contains(queryLower) ||
-                  remarks.contains(queryLower) ||
-                  description.contains(queryLower);
+              final configLower = p.configurationName?.toLowerCase() ?? '';
+              if (configLower.isNotEmpty) {
+                _addStr(fieldStrings, configLower.replaceAll(' ', ''));
+                _addStr(fieldStrings, configLower.replaceAll(' ', '-'));
+              }
+              final categoryLower = p.categoryName.toLowerCase();
+              if (categoryLower.contains('re-sale') || categoryLower.contains('resale')) {
+                fieldStrings.add('resale');
+                fieldStrings.add('re-sale');
+                fieldStrings.add('resel');
+              }
 
-              final matchesSalesman =
-                  isUserAdminOrSuperAdmin && salesman.contains(queryLower);
+              if (isUserAdminOrSuperAdmin) {
+                _addStr(fieldStrings, p.createdByName);
+              }
 
-              return matchesGeneral || matchesSalesman;
+              final fieldWords = fieldStrings
+                  .join(' ')
+                  .split(RegExp(r'[^a-zA-Z0-9]+'))
+                  .where((w) => w.isNotEmpty)
+                  .toList();
+
+              return queryTokens.every(
+                (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
+              );
             })
             .map(
               (p) => {
@@ -563,47 +644,38 @@ class _CRMAppShellState extends State<CRMAppShell>
               },
             )
             .toList();
-      } catch (_) {
-        // fail silently if bin fetch fails
-      }
+      } catch (_) {}
 
       final allMatchedProps = [...matchedProps, ...matchedBinProps].take(12).toList();
 
-      // 2. Requirements
-      final reqs = await RepositoryCoordinator().requirementLocal
-          .getRequirements();
+      // 2. Requirements / Leads
+      final reqs = await RepositoryCoordinator().requirementLocal.getRequirements();
       final matchedReqs = reqs
           .where((r) {
-            final name = (r.clientName ?? '').toLowerCase();
-            final mobile = (r.clientMobile ?? '').toLowerCase();
-            final remarks = (r.remarks ?? '').toLowerCase();
-            final type = (r.propertyTypeName ?? '').toLowerCase();
-            final config = (r.configurationName ?? '').toLowerCase();
-            final configNormalized = config.replaceAll(' ', '');
-            final category = (r.categoryName ?? '').toLowerCase();
-            final matchesArea = r.areaNames.any(
-              (name) => name.toLowerCase().contains(queryLower),
+            final fieldStrings = <String>[];
+            _addStr(fieldStrings, r.clientName);
+            _addStr(fieldStrings, r.clientMobile);
+            _addStr(fieldStrings, r.remarks);
+            _addStr(fieldStrings, r.propertyTypeName);
+            _addStr(fieldStrings, r.configurationName);
+            _addStr(fieldStrings, r.categoryName);
+            for (final a in r.areaNames) {
+              _addStr(fieldStrings, a);
+            }
+            if (isUserAdminOrSuperAdmin) {
+              _addStr(fieldStrings, r.creatorName);
+              _addStr(fieldStrings, r.assigneeName);
+            }
+
+            final fieldWords = fieldStrings
+                .join(' ')
+                .split(RegExp(r'[^a-zA-Z0-9]+'))
+                .where((w) => w.isNotEmpty)
+                .toList();
+
+            return queryTokens.every(
+              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
             );
-            final salesmanCreator = (r.creatorName ?? '').toLowerCase();
-            final salesmanAssignee = (r.assigneeName ?? '').toLowerCase();
-
-            final matchesGeneral =
-                name.contains(queryLower) ||
-                mobile.contains(queryLower) ||
-                remarks.contains(queryLower) ||
-                type.contains(queryLower) ||
-                config.contains(queryLower) ||
-                (configNormalized.isNotEmpty &&
-                    configNormalized.contains(queryNormalized)) ||
-                category.contains(queryLower) ||
-                matchesArea;
-
-            final matchesSalesman =
-                isUserAdminOrSuperAdmin &&
-                (salesmanCreator.contains(queryLower) ||
-                    salesmanAssignee.contains(queryLower));
-
-            return matchesGeneral || matchesSalesman;
           })
           .map(
             (r) => {
@@ -618,12 +690,22 @@ class _CRMAppShellState extends State<CRMAppShell>
       // 3. Owners
       final owners = await RepositoryCoordinator().ownerLocal.getOwners();
       final matchedOwners = owners
-          .where(
-            (o) =>
-                (o.name ?? '').toLowerCase().contains(queryLower) ||
-                (o.mobile ?? '').contains(queryLower) ||
-                (o.email?.toLowerCase().contains(queryLower) ?? false),
-          )
+          .where((o) {
+            final fieldStrings = <String>[];
+            _addStr(fieldStrings, o.name);
+            _addStr(fieldStrings, o.mobile);
+            _addStr(fieldStrings, o.email);
+
+            final fieldWords = fieldStrings
+                .join(' ')
+                .split(RegExp(r'[^a-zA-Z0-9]+'))
+                .where((w) => w.isNotEmpty)
+                .toList();
+
+            return queryTokens.every(
+              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
+            );
+          })
           .map((o) => {'id': o.id, 'name': o.name, 'mobile': o.mobile})
           .take(8)
           .toList();
@@ -631,14 +713,24 @@ class _CRMAppShellState extends State<CRMAppShell>
       // 4. Builders
       final builders = await RepositoryCoordinator().builderLocal.getBuilders();
       final matchedBuilders = builders
-          .where(
-            (b) =>
-                (b.companyName ?? '').toLowerCase().contains(queryLower) ||
-                (b.contactPerson ?? '').toLowerCase().contains(queryLower) ||
-                (b.mobile ?? '').contains(queryLower) ||
-                (b.email ?? '').toLowerCase().contains(queryLower) ||
-                (b.remarks?.toLowerCase().contains(queryLower) ?? false),
-          )
+          .where((b) {
+            final fieldStrings = <String>[];
+            _addStr(fieldStrings, b.companyName);
+            _addStr(fieldStrings, b.contactPerson);
+            _addStr(fieldStrings, b.mobile);
+            _addStr(fieldStrings, b.email);
+            _addStr(fieldStrings, b.remarks);
+
+            final fieldWords = fieldStrings
+                .join(' ')
+                .split(RegExp(r'[^a-zA-Z0-9]+'))
+                .where((w) => w.isNotEmpty)
+                .toList();
+
+            return queryTokens.every(
+              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
+            );
+          })
           .map(
             (b) => {
               'id': b.id,
@@ -653,13 +745,23 @@ class _CRMAppShellState extends State<CRMAppShell>
       // 5. Clients
       final clients = await RepositoryCoordinator().clientLocal.getClients();
       final matchedClients = clients
-          .where(
-            (c) =>
-                (c.name ?? '').toLowerCase().contains(queryLower) ||
-                (c.mobile ?? '').contains(queryLower) ||
-                (c.email ?? '').toLowerCase().contains(queryLower) ||
-                (c.remarks?.toLowerCase().contains(queryLower) ?? false),
-          )
+          .where((c) {
+            final fieldStrings = <String>[];
+            _addStr(fieldStrings, c.name);
+            _addStr(fieldStrings, c.mobile);
+            _addStr(fieldStrings, c.email);
+            _addStr(fieldStrings, c.remarks);
+
+            final fieldWords = fieldStrings
+                .join(' ')
+                .split(RegExp(r'[^a-zA-Z0-9]+'))
+                .where((w) => w.isNotEmpty)
+                .toList();
+
+            return queryTokens.every(
+              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
+            );
+          })
           .map((c) => {'id': c.id, 'name': c.name, 'mobile': c.mobile})
           .take(8)
           .toList();
@@ -1082,6 +1184,14 @@ class _CRMAppShellState extends State<CRMAppShell>
                               userName: currentUserName,
                               userRole: currentUserRole,
                               searchController: _searchController,
+                              searchFocusNode: _searchFocusNode,
+                              searchLayerLink: _searchLayerLink,
+                              onSearchChanged: _onSearchChanged,
+                              onSearchSubmitted: (val) {
+                                if (val.trim().isNotEmpty) {
+                                  _performSearch(val.trim());
+                                }
+                              },
                               unreadNotifications: _unreadNotificationsCount > 0
                                   ? _unreadNotificationsCount
                                   : 3,

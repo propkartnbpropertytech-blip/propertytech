@@ -25,18 +25,10 @@ class TeamChatUserModel {
 
   factory TeamChatUserModel.fromJson(Map<String, dynamic> json) {
     String r = json['role']?.toString() ?? 'Sales';
-    final adminId = json['admin_id']?.toString();
-
-    // Telecaller resolution fallback if role was stored as Admin with an admin_id
-    if (r.toLowerCase() == 'admin' && adminId != null && adminId.isNotEmpty) {
-      r = 'Telecaller';
-    }
     if (json['roles'] is Map && json['roles']['name'] != null) {
-      final roleObjName = json['roles']['name'].toString();
-      if (roleObjName.toLowerCase() == 'telecaller') {
-        r = 'Telecaller';
-      }
+      r = json['roles']['name'].toString();
     }
+    final adminId = json['admin_id']?.toString();
 
     return TeamChatUserModel(
       id: json['id']?.toString() ?? '',

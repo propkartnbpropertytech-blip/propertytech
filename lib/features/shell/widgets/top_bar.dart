@@ -16,6 +16,8 @@ class ModernTopBar extends StatefulWidget {
   final String userName;
   final String userRole;
   final TextEditingController? searchController;
+  final FocusNode? searchFocusNode;
+  final LayerLink? searchLayerLink;
   final ValueChanged<String>? onSearchChanged;
   final ValueChanged<String>? onSearchSubmitted;
 
@@ -31,6 +33,8 @@ class ModernTopBar extends StatefulWidget {
     this.userName = 'Super Administrator',
     this.userRole = 'Super Admin',
     this.searchController,
+    this.searchFocusNode,
+    this.searchLayerLink,
     this.onSearchChanged,
     this.onSearchSubmitted,
   });
@@ -541,41 +545,82 @@ class _ModernTopBarState extends State<ModernTopBar> {
               },
             ),
             Expanded(
-              child: Container(
-                height: 40,
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF334155) : Colors.transparent,
-                  ),
-                ),
-                child: TextField(
-                  autofocus: true,
-                  controller: widget.searchController,
-                  onChanged: widget.onSearchChanged,
-                  onSubmitted: widget.onSearchSubmitted,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Search properties, leads, or locations...',
-                    hintStyle: TextStyle(
-                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                      fontSize: 13,
+              child: widget.searchLayerLink != null
+                  ? CompositedTransformTarget(
+                      link: widget.searchLayerLink!,
+                      child: Container(
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF334155) : Colors.transparent,
+                          ),
+                        ),
+                        child: TextField(
+                          autofocus: true,
+                          focusNode: widget.searchFocusNode,
+                          controller: widget.searchController,
+                          onChanged: widget.onSearchChanged,
+                          onSubmitted: widget.onSearchSubmitted,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Search properties, leads, or locations...',
+                            hintStyle: TextStyle(
+                              color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                              fontSize: 13,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                              size: 20,
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF334155) : Colors.transparent,
+                        ),
+                      ),
+                      child: TextField(
+                        autofocus: true,
+                        focusNode: widget.searchFocusNode,
+                        controller: widget.searchController,
+                        onChanged: widget.onSearchChanged,
+                        onSubmitted: widget.onSearchSubmitted,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'Search properties, leads, or locations...',
+                          hintStyle: TextStyle(
+                            color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                            fontSize: 13,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.search_rounded,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                            size: 20,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                          isDense: true,
+                        ),
+                      ),
                     ),
-                    prefixIcon: Icon(
-                      Icons.search_rounded,
-                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                      size: 20,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                    isDense: true,
-                  ),
-                ),
-              ),
             ),
             if (widget.searchController != null && widget.searchController!.text.isNotEmpty)
               IconButton(
@@ -648,41 +693,82 @@ class _ModernTopBarState extends State<ModernTopBar> {
           ] else ...[
             // ── Search Bar on Tablet/Desktop ─────────────────────
             Expanded(
-              child: Container(
-                height: 42,
-                constraints: const BoxConstraints(maxWidth: 420),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF334155) : Colors.transparent,
-                  ),
-                ),
-                child: TextField(
-                  controller: widget.searchController,
-                  onChanged: widget.onSearchChanged,
-                  onSubmitted: widget.onSearchSubmitted,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                  ),
-                  decoration: InputDecoration(
-                    hintText: isMobile ? 'Search...' : 'Search properties, leads, or locations...',
-                    hintStyle: TextStyle(
-                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                      fontSize: 13,
+              child: widget.searchLayerLink != null
+                  ? CompositedTransformTarget(
+                      link: widget.searchLayerLink!,
+                      child: Container(
+                        height: 42,
+                        constraints: const BoxConstraints(maxWidth: 420),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF334155) : Colors.transparent,
+                          ),
+                        ),
+                        child: TextField(
+                          focusNode: widget.searchFocusNode,
+                          controller: widget.searchController,
+                          onChanged: widget.onSearchChanged,
+                          onSubmitted: widget.onSearchSubmitted,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+                          ),
+                          decoration: InputDecoration(
+                            hintText: isMobile ? 'Search...' : 'Search properties, leads, or locations...',
+                            hintStyle: TextStyle(
+                              color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                              fontSize: 13,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                              size: 20,
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 11, horizontal: 16),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Container(
+                      height: 42,
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF334155) : Colors.transparent,
+                        ),
+                      ),
+                      child: TextField(
+                        focusNode: widget.searchFocusNode,
+                        controller: widget.searchController,
+                        onChanged: widget.onSearchChanged,
+                        onSubmitted: widget.onSearchSubmitted,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+                        ),
+                        decoration: InputDecoration(
+                          hintText: isMobile ? 'Search...' : 'Search properties, leads, or locations...',
+                          hintStyle: TextStyle(
+                            color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                            fontSize: 13,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.search_rounded,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                            size: 20,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 11, horizontal: 16),
+                          isDense: true,
+                        ),
+                      ),
                     ),
-                    prefixIcon: Icon(
-                      Icons.search_rounded,
-                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                      size: 20,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 11, horizontal: 16),
-                    isDense: true,
-                  ),
-                ),
-              ),
             ),
             const SizedBox(width: 12),
           ],

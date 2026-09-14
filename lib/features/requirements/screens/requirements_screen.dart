@@ -497,6 +497,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   DateTime? _reqFollowupDateFilter = DateTime.now();
   String _selectedFollowupSubTab = "Today"; // "Today", "Due", "Future"
   String _selectedMainFollowupSection = "Follow ups"; // "Follow ups" or "Site Visit Scheduled"
+  final Set<String> _selectedFollowupClientKeys = {};
   int _currentPage = 1;
   int _requirementsPerPage = 10;
   int _currentFollowupPage = 1;
@@ -855,10 +856,22 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _showAddEditDialog([RequirementModel? req]) async {
+    String? currentListingTypeId;
+    if (_metadata != null && _metadata!.listingTypes.isNotEmpty) {
+      try {
+        final matched = _metadata!.listingTypes.firstWhere(
+          (lt) => lt.name.toLowerCase().contains(_activeListingTab == 'Rent' ? 'rent' : 'sale'),
+        );
+        currentListingTypeId = matched.id;
+      } catch (_) {}
+    }
+
     await showDialog(
       context: context,
       builder: (dialogContext) => AddEditRequirementScreen(
         requirement: req,
+        initialListingTypeId: currentListingTypeId,
+        initialListingTab: _activeListingTab,
         onSaved: () {
           _triggerFetch();
         },
@@ -1143,6 +1156,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       context: context,
       builder: (dialogContext) => AddEditRequirementScreen(
         requirement: prefilled,
+        initialListingTab: _activeListingTab,
         onSaved: () {
           _triggerFetch();
         },
@@ -1961,22 +1975,27 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   String _getSalesmanName(RequirementModel req, UserModel? currentUser) {
-    if (req.assigneeName != null && req.assigneeName!.isNotEmpty) {
-      return req.assigneeName!;
+    if (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty) {
+      return req.assigneeName!.trim();
     }
-    if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
+    if (req.assignedTo != null && req.assignedTo!.trim().isNotEmpty) {
       try {
         final usersState = context.read<UsersBloc>().state;
         if (usersState is UsersLoaded) {
-          final match = usersState.users.firstWhereOrNull((u) => u.id == req.assignedTo);
+          final match = usersState.users.firstWhereOrNull(
+            (u) => u.id == req.assignedTo || u.fullName.trim().toLowerCase() == req.assignedTo!.trim().toLowerCase(),
+          );
           if (match != null && match.fullName.isNotEmpty) {
             return match.fullName;
           }
         }
       } catch (_) {}
+      if (req.assignedTo!.trim() != 'Unassigned') {
+        return req.assignedTo!.trim();
+      }
     }
-    if (req.creatorName != null && req.creatorName!.isNotEmpty) {
-      return req.creatorName!;
+    if (req.creatorName != null && req.creatorName!.trim().isNotEmpty) {
+      return req.creatorName!.trim();
     }
     if (currentUser != null && req.adminId == currentUser.id) {
       return currentUser.fullName;
@@ -2138,8 +2157,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           final currentUser = authState is Authenticated ? authState.user : null;
 
           String? currentAssignedTo;
+          final targetName = (req.assigneeName ?? req.assignedTo ?? '').trim().toLowerCase();
           if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
-            currentAssignedTo = req.assignedTo;
+            final match = state.users.firstWhereOrNull((u) => u.id == req.assignedTo || (targetName.isNotEmpty && u.fullName.trim().toLowerCase() == targetName));
+            currentAssignedTo = match != null ? match.id : req.assignedTo;
+          } else if (req.assigneeName != null && req.assigneeName!.isNotEmpty) {
+            final match = state.users.firstWhereOrNull((u) => u.fullName.trim().toLowerCase() == req.assigneeName!.trim().toLowerCase());
+            if (match != null) currentAssignedTo = match.id;
           } else if (req.assignedTo == null && req.createdBy != null && req.createdBy!.isNotEmpty) {
             final creatorUser = state.users.firstWhereOrNull((u) => u.id == req.createdBy);
             if (creatorUser != null) {
@@ -4569,7 +4593,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           Icon(Icons.person_add_alt_1_outlined, size: 13, color: CRMColors.textMutedOf(context)),
                           const SizedBox(width: 4),
                           Text(
-                            'Added by: ${req.creatorName ?? "System"}',
+                            'Added by: ${(req.creatorName != null && req.creatorName!.trim().isNotEmpty && req.creatorName != "System") ? req.creatorName : "Propkart Admin"}',
                             style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5),
                           ),
                         ],
@@ -4957,7 +4981,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         req.nextFollowupDate != null && req.nextFollowupDate!.isNotEmpty
             ? DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal())
             : '',
-        req.creatorName ?? 'System',
+        (req.creatorName != null && req.creatorName != 'System' && req.creatorName!.trim().isNotEmpty) ? req.creatorName! : 'Propkart Admin',
         _getSalesmanName(req, currentUser),
         _getCleanNote(req) ?? '',
         req.createdAt != null ? DateFormat('dd/MM/yyyy hh:mm a').format(req.createdAt!.toLocal()) : '',
@@ -5505,7 +5529,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
 
     if (_selectedFollowupSubTab == 'AllClients') {
-      return OutlinedButton.icon(
+      final historyBtn = OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           side: BorderSide(color: CRMColors.primary.withValues(alpha: 0.5)),
@@ -5517,6 +5541,30 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
         ),
         onPressed: () => _openFollowupStepper(targetReq, targetReq.status ?? 'Re-Followup', initialStep: 2),
+      );
+
+      final authState = context.read<AuthBloc>().state;
+      final currentUser = authState is Authenticated ? authState.user : null;
+      final isAdminOrSuperAdmin = currentUser != null &&
+          (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
+
+      if (!isAdminOrSuperAdmin) {
+        return historyBtn;
+      }
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          historyBtn,
+          const SizedBox(width: 8),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: const Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 20),
+            tooltip: _selectedMainFollowupSection == 'Site Visit Scheduled' ? 'Delete Client Site Visit' : 'Delete Client Follow-ups',
+            onPressed: () => _confirmAndDeleteClientFollowup(f, reqModel),
+          ),
+        ],
       );
     }
 
@@ -5705,6 +5753,158 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         ),
       ),
     );
+  }
+
+  String _getFollowupClientKey(DashboardFollowup f) {
+    if (f.requirementId != null && f.requirementId!.isNotEmpty) {
+      return f.requirementId!;
+    }
+    if (f.id.isNotEmpty) {
+      return f.id;
+    }
+    return '${f.clientName}_${f.mobile}';
+  }
+
+  Future<void> _confirmAndDeleteClientFollowup(DashboardFollowup f, RequirementModel? reqModel) async {
+    final isSiteVisit = _selectedMainFollowupSection == 'Site Visit Scheduled';
+    final titleText = isSiteVisit ? 'Delete Site Visit' : 'Delete Follow-ups';
+    final contentText = isSiteVisit
+        ? 'Are you sure you want to delete all scheduled site visits for client "${f.clientName}" from the database?'
+        : 'Are you sure you want to delete all follow-ups for client "${f.clientName}" from the database?';
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 22),
+            const SizedBox(width: 8),
+            Text(titleText),
+          ],
+        ),
+        content: Text(contentText, style: TextStyle(fontSize: 13.5, color: CRMColors.textOf(context))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final reqId = reqModel?.id ?? f.requirementId;
+      final endpoint = isSiteVisit ? '/site_visits/delete-client' : '/followups/delete-client';
+      
+      await DioClient.dio.post(endpoint, data: {
+        'requirement_id': reqId,
+        'mobile': f.mobile,
+        'client_name': f.clientName,
+      });
+
+      if (mounted) {
+        _selectedFollowupClientKeys.remove(_getFollowupClientKey(f));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('All records for "${f.clientName}" deleted successfully.'),
+            backgroundColor: CRMColors.success,
+          ),
+        );
+        context.read<RequirementsBloc>().add(FetchRequirementsEvent());
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete client records: $e'),
+            backgroundColor: CRMColors.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmAndDeleteSelectedClients(List<DashboardFollowup> pageItems, List<RequirementModel> reqsList) async {
+    final selectedCount = _selectedFollowupClientKeys.length;
+    if (selectedCount == 0) return;
+
+    final isSiteVisit = _selectedMainFollowupSection == 'Site Visit Scheduled';
+    final titleText = isSiteVisit ? 'Delete Selected Site Visits' : 'Delete Selected Client Follow-ups';
+    final contentText = 'Are you sure you want to delete all records for the $selectedCount selected client(s) from the database? This action cannot be undone.';
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 22),
+            const SizedBox(width: 8),
+            Text(titleText),
+          ],
+        ),
+        content: Text(contentText, style: TextStyle(fontSize: 13.5, color: CRMColors.textOf(context))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete Selected'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final itemsToDelete = pageItems.where((f) => _selectedFollowupClientKeys.contains(_getFollowupClientKey(f))).toList();
+    int successCount = 0;
+
+    for (final f in itemsToDelete) {
+      try {
+        final reqModel = reqsList.firstWhereOrNull((r) =>
+            (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+            (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+            (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+
+        final reqId = reqModel?.id ?? f.requirementId;
+        final endpoint = isSiteVisit ? '/site_visits/delete-client' : '/followups/delete-client';
+
+        await DioClient.dio.post(endpoint, data: {
+          'requirement_id': reqId,
+          'mobile': f.mobile,
+          'client_name': f.clientName,
+        });
+
+        _selectedFollowupClientKeys.remove(_getFollowupClientKey(f));
+        successCount++;
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$successCount client(s) deleted successfully.'),
+          backgroundColor: CRMColors.success,
+        ),
+      );
+      context.read<RequirementsBloc>().add(FetchRequirementsEvent());
+    }
   }
 
   Widget _buildFollowupsView() {
@@ -6164,6 +6364,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final currentUser = authState is Authenticated ? authState.user : null;
               final isHighRole = currentUser != null &&
                   (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
+              final isAdminOrSuperAdmin = currentUser != null &&
+                  (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
+              final bool showSelectColumn = _selectedFollowupSubTab == 'AllClients' && isAdminOrSuperAdmin;
 
               final pageItems = (startIndex < totalCount)
                   ? filtered.sublist(startIndex, endIndex)
@@ -6267,7 +6470,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: CRMSpacing.m),
+                  if (showSelectColumn && _selectedFollowupClientKeys.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: CRMColors.danger.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: CRMColors.danger.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${_selectedFollowupClientKeys.length} client(s) selected',
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: CRMColors.danger),
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: CRMColors.danger,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            ),
+                            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                            label: const Text('Delete Selected Clients'),
+                            onPressed: () => _confirmAndDeleteSelectedClients(pageItems, reqsList),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: CRMSpacing.m),
+                  ],
 
                   if (_selectedFollowupSubTab == 'Due' && dueFollowups.isNotEmpty) ...[
                     Container(
@@ -6322,6 +6554,25 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       dataRowMaxHeight: 72.0,
                       columnSpacing: 16.0,
                       columns: [
+                        if (showSelectColumn)
+                          DataColumn(
+                            label: Checkbox(
+                              value: pageItems.isNotEmpty && pageItems.every((f) => _selectedFollowupClientKeys.contains(_getFollowupClientKey(f))),
+                              onChanged: (val) {
+                                setState(() {
+                                  if (val == true) {
+                                    for (final f in pageItems) {
+                                      _selectedFollowupClientKeys.add(_getFollowupClientKey(f));
+                                    }
+                                  } else {
+                                    for (final f in pageItems) {
+                                      _selectedFollowupClientKeys.remove(_getFollowupClientKey(f));
+                                    }
+                                  }
+                                });
+                              },
+                            ),
+                          ),
                         const DataColumn(label: Text('Client Details')),
                         if (isHighRole) const DataColumn(label: Text('Added by')),
                         const DataColumn(label: Text('Requirement / Config')),
@@ -6401,8 +6652,24 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           }
                         }
 
+                        final clientKey = _getFollowupClientKey(f);
                         return DataRow(
                           cells: [
+                            if (showSelectColumn)
+                              DataCell(
+                                Checkbox(
+                                  value: _selectedFollowupClientKeys.contains(clientKey),
+                                  onChanged: (val) {
+                                    setState(() {
+                                      if (val == true) {
+                                        _selectedFollowupClientKeys.add(clientKey);
+                                      } else {
+                                        _selectedFollowupClientKeys.remove(clientKey);
+                                      }
+                                    });
+                                  },
+                                ),
+                              ),
                             // 1. Client Details
                             DataCell(
                               SizedBox(

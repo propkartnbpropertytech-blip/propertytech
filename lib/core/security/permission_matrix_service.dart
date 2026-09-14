@@ -137,8 +137,8 @@ class PermissionMatrixService extends ChangeNotifier {
       category: PermissionCategory.pages,
       relatedRoute: '/bin',
       defaultAdmin: true,
-      defaultTelecaller: false,
-      defaultSales: false,
+      defaultTelecaller: true,
+      defaultSales: true,
     ),
     PermissionItem(
       key: 'page.settings',

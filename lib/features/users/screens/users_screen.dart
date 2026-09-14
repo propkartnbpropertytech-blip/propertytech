@@ -135,12 +135,7 @@ class _UsersScreenState extends State<UsersScreen> {
             );
             roles = [
               if (salesRole.id.isNotEmpty) salesRole,
-              if (adminRole.id.isNotEmpty)
-                RoleModel(
-                  id: adminRole.id,
-                  name: 'Telecaller',
-                  description: 'Telecaller with Admin privileges',
-                ),
+              if (adminRole.id.isNotEmpty) adminRole,
             ];
           } else if (callerRole == 'Super Admin') {
             roles = usersState.roles

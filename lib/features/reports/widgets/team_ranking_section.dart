@@ -90,10 +90,14 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header & Tab Switcher
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               const Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.military_tech_outlined, size: 20),
                   SizedBox(width: 8),
@@ -114,6 +118,7 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
                 ),
                 padding: const EdgeInsets.all(3),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     _buildTabButton(
                       title: 'Sales Users',
@@ -141,7 +146,7 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
           ),
           const SizedBox(height: 14),
 
-          // Interactive Sortable Ranking Table
+          // Interactive Sortable Ranking Table / Mobile Cards
           if (sortedList.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 30),
@@ -155,120 +160,246 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
               ),
             )
           else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                sortColumnIndex: _sortColumnIndex,
-                sortAscending: _sortAscending,
-                columnSpacing: 24,
-                headingRowHeight: 42,
-                dataRowMinHeight: 46,
-                dataRowMaxHeight: 52,
-                columns: [
-                  DataColumn(
-                    label: const Text('Rank', style: TextStyle(fontWeight: FontWeight.bold)),
-                    numeric: true,
-                    onSort: (idx, asc) => _onSort(idx, asc),
-                  ),
-                  DataColumn(
-                    label: const Text('User', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onSort: (idx, asc) => _onSort(idx, asc),
-                  ),
-                  DataColumn(
-                    label: const Text('Leads', style: TextStyle(fontWeight: FontWeight.bold)),
-                    numeric: true,
-                    onSort: (idx, asc) => _onSort(idx, asc),
-                  ),
-                  DataColumn(
-                    label: const Text('Contacted', style: TextStyle(fontWeight: FontWeight.bold)),
-                    numeric: true,
-                    onSort: (idx, asc) => _onSort(idx, asc),
-                  ),
-                  DataColumn(
-                    label: const Text('Qualified', style: TextStyle(fontWeight: FontWeight.bold)),
-                    numeric: true,
-                    onSort: (idx, asc) => _onSort(idx, asc),
-                  ),
-                  DataColumn(
-                    label: const Text('Site Visits', style: TextStyle(fontWeight: FontWeight.bold)),
-                    numeric: true,
-                    onSort: (idx, asc) => _onSort(idx, asc),
-                  ),
-                  DataColumn(
-                    label: const Text('Won Deals', style: TextStyle(fontWeight: FontWeight.bold)),
-                    numeric: true,
-                    onSort: (idx, asc) => _onSort(idx, asc),
-                  ),
-                  DataColumn(
-                    label: const Text('Conversion %', style: TextStyle(fontWeight: FontWeight.bold)),
-                    numeric: true,
-                    onSort: (idx, asc) => _onSort(idx, asc),
-                  ),
-                ],
-                rows: sortedList.map((m) {
-                  return DataRow(
-                    cells: [
-                      DataCell(
-                        CircleAvatar(
-                          radius: 12,
-                          backgroundColor: m.rank == 1
-                              ? const Color(0xFFEAB308).withValues(alpha: 0.2)
-                              : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                          child: Text(
-                            '#${m.rank}',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: m.rank == 1 ? const Color(0xFFCA8A04) : (isDark ? Colors.white70 : Colors.black87),
-                            ),
-                          ),
-                        ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 600) {
+                  return Column(
+                    children: sortedList.map((m) => _buildMobileRankingCard(context, m, isDark, primaryColor)).toList(),
+                  );
+                }
+
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    sortColumnIndex: _sortColumnIndex,
+                    sortAscending: _sortAscending,
+                    columnSpacing: 24,
+                    headingRowHeight: 42,
+                    dataRowMinHeight: 46,
+                    dataRowMaxHeight: 52,
+                    columns: [
+                      DataColumn(
+                        label: const Text('Rank', style: TextStyle(fontWeight: FontWeight.bold)),
+                        numeric: true,
+                        onSort: (idx, asc) => _onSort(idx, asc),
                       ),
-                      DataCell(
-                        InkWell(
-                          onTap: () {
-                            if (widget.onUserSelected != null) {
-                              widget.onUserSelected!(m);
-                            } else {
-                              final target = _activeTab == 0 ? '/reports/leads/telecaller' : '/reports/leads/sales';
-                              context.go(target);
-                            }
-                          },
-                          child: Text(
-                            m.userName,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: primaryColor,
-                            ),
-                          ),
-                        ),
+                      DataColumn(
+                        label: const Text('User', style: TextStyle(fontWeight: FontWeight.bold)),
+                        onSort: (idx, asc) => _onSort(idx, asc),
                       ),
-                      DataCell(Text(m.leadsCount.toString())),
-                      DataCell(Text(m.contactedCount.toString())),
-                      DataCell(Text(m.qualifiedCount.toString())),
-                      DataCell(Text(m.siteVisitsCount.toString())),
-                      DataCell(
-                        Text(
-                          m.wonCount.toString(),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: m.wonCount > 0 ? const Color(0xFF16A34A) : null,
-                          ),
-                        ),
+                      DataColumn(
+                        label: const Text('Leads', style: TextStyle(fontWeight: FontWeight.bold)),
+                        numeric: true,
+                        onSort: (idx, asc) => _onSort(idx, asc),
                       ),
-                      DataCell(
-                        Text(
-                          '${m.conversionRate.toStringAsFixed(1)}%',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
+                      DataColumn(
+                        label: const Text('Contacted', style: TextStyle(fontWeight: FontWeight.bold)),
+                        numeric: true,
+                        onSort: (idx, asc) => _onSort(idx, asc),
+                      ),
+                      DataColumn(
+                        label: const Text('Qualified', style: TextStyle(fontWeight: FontWeight.bold)),
+                        numeric: true,
+                        onSort: (idx, asc) => _onSort(idx, asc),
+                      ),
+                      DataColumn(
+                        label: const Text('Site Visits', style: TextStyle(fontWeight: FontWeight.bold)),
+                        numeric: true,
+                        onSort: (idx, asc) => _onSort(idx, asc),
+                      ),
+                      DataColumn(
+                        label: const Text('Won Deals', style: TextStyle(fontWeight: FontWeight.bold)),
+                        numeric: true,
+                        onSort: (idx, asc) => _onSort(idx, asc),
+                      ),
+                      DataColumn(
+                        label: const Text('Conversion %', style: TextStyle(fontWeight: FontWeight.bold)),
+                        numeric: true,
+                        onSort: (idx, asc) => _onSort(idx, asc),
                       ),
                     ],
-                  );
-                }).toList(),
-              ),
+                    rows: sortedList.map((m) {
+                      return DataRow(
+                        cells: [
+                          DataCell(
+                            CircleAvatar(
+                              radius: 12,
+                              backgroundColor: m.rank == 1
+                                  ? const Color(0xFFEAB308).withValues(alpha: 0.2)
+                                  : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                              child: Text(
+                                '#${m.rank}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: m.rank == 1 ? const Color(0xFFCA8A04) : (isDark ? Colors.white70 : Colors.black87),
+                                ),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            InkWell(
+                              onTap: () {
+                                if (widget.onUserSelected != null) {
+                                  widget.onUserSelected!(m);
+                                } else {
+                                  final target = _activeTab == 0 ? '/reports/leads/telecaller' : '/reports/leads/sales';
+                                  context.go(target);
+                                }
+                              },
+                              child: Text(
+                                m.userName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: primaryColor,
+                                ),
+                              ),
+                            ),
+                          ),
+                          DataCell(Text(m.leadsCount.toString())),
+                          DataCell(Text(m.contactedCount.toString())),
+                          DataCell(Text(m.qualifiedCount.toString())),
+                          DataCell(Text(m.siteVisitsCount.toString())),
+                          DataCell(
+                            Text(
+                              m.wonCount.toString(),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: m.wonCount > 0 ? const Color(0xFF16A34A) : null,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${m.conversionRate.toStringAsFixed(1)}%',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMobileRankingCard(BuildContext context, TeamMemberRanking m, bool isDark, Color primaryColor) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 12,
+                backgroundColor: m.rank == 1
+                    ? const Color(0xFFEAB308).withValues(alpha: 0.2)
+                    : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                child: Text(
+                  '#${m.rank}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: m.rank == 1 ? const Color(0xFFCA8A04) : (isDark ? Colors.white70 : Colors.black87),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    if (widget.onUserSelected != null) {
+                      widget.onUserSelected!(m);
+                    } else {
+                      final target = _activeTab == 0 ? '/reports/leads/telecaller' : '/reports/leads/sales';
+                      context.go(target);
+                    }
+                  },
+                  child: Text(
+                    m.userName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13.5,
+                      color: primaryColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF16A34A).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${m.conversionRate.toStringAsFixed(1)}% Conv',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF16A34A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            children: [
+              _buildMetricStat('Leads', m.leadsCount.toString(), isDark),
+              _buildMetricStat('Contacted', m.contactedCount.toString(), isDark),
+              _buildMetricStat('Qualified', m.qualifiedCount.toString(), isDark),
+              _buildMetricStat('Site Visits', m.siteVisitsCount.toString(), isDark),
+              _buildMetricStat('Won Deals', m.wonCount.toString(), isDark, highlight: m.wonCount > 0),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricStat(String label, String val, bool isDark, {bool highlight = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$label: ',
+          style: TextStyle(
+            fontSize: 11,
+            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+          ),
+        ),
+        Text(
+          val,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.bold,
+            color: highlight
+                ? const Color(0xFF16A34A)
+                : (isDark ? Colors.white : const Color(0xFF14213D)),
+          ),
+        ),
+      ],
     );
   }
 

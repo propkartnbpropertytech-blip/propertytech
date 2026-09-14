@@ -94,5 +94,57 @@ void main() {
       expect(reqs.length, equals(1));
       expect(reqs.first.id, equals('2'));
     });
+
+    test('Reclassifying lead via copyWith updates rawJson and preserves leadType on fromJson roundtrip', () {
+      final lead = IntegrationLeadModel(
+        id: 'reclassify-1',
+        source: 'Meta Ads',
+        receivedAt: DateTime.now(),
+        leadType: 'Requirement',
+        rawJson: {
+          'Client Name': 'Rajesh Kumar',
+          'Which Area Are You Looking For?': 'SG Highway',
+        },
+      );
+
+      expect(lead.leadType, equals('Requirement'));
+
+      // Perform reclassification (e.g. Wrong Lead action)
+      final reclassified = lead.copyWith(leadType: 'Property Listing');
+      expect(reclassified.leadType, equals('Property Listing'));
+      expect(reclassified.rawJson['_lead_type'], equals('Property Listing'));
+      expect(reclassified.rawJson['lead_type'], equals('Property Listing'));
+
+      // Serialize and deserialize
+      final jsonMap = reclassified.toJson();
+      final restored = IntegrationLeadModel.fromJson(jsonMap);
+
+      expect(restored.leadType, equals('Property Listing'));
+      expect(restored.id, equals('reclassify-1'));
+    });
+
+    test('IntegrationLeadModel.fromJson extracts leadType from rawJson _lead_type or camelCase leadType', () {
+      final jsonWithRawLeadType = {
+        'id': 'raw-type-1',
+        'source': 'Meta Ads',
+        'raw_json': {
+          'Client Name': 'Anita Shah',
+          '_lead_type': 'Property Listing',
+        },
+      };
+
+      final restoredFromRaw = IntegrationLeadModel.fromJson(jsonWithRawLeadType);
+      expect(restoredFromRaw.leadType, equals('Property Listing'));
+
+      final jsonWithCamelCase = {
+        'id': 'camel-type-1',
+        'source': 'Meta Ads',
+        'leadType': 'Property Listing',
+        'raw_json': {'Client Name': 'Bhavin Patel'},
+      };
+
+      final restoredFromCamel = IntegrationLeadModel.fromJson(jsonWithCamelCase);
+      expect(restoredFromCamel.leadType, equals('Property Listing'));
+    });
   });
 }

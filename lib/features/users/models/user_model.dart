@@ -61,9 +61,6 @@ class UserModel {
     }
 
     final adminId = json['admin_id'] as String?;
-    if (rName == 'Admin' && adminId != null) {
-      rName = 'Telecaller';
-    }
 
     return UserModel(
       id: json['id'] ?? '',

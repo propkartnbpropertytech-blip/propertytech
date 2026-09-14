@@ -22,12 +22,16 @@ class AddEditRequirementScreen extends StatefulWidget {
   final RequirementModel? requirement;
   final VoidCallback onSaved;
   final bool isInline;
+  final String? initialListingTypeId;
+  final String? initialListingTab;
 
   const AddEditRequirementScreen({
     super.key,
     this.requirement,
     required this.onSaved,
     this.isInline = false,
+    this.initialListingTypeId,
+    this.initialListingTab,
   });
 
   @override
@@ -151,7 +155,22 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               _selectedTypeIds.add(firstCatTypes.first.id);
             }
           }
-          if (_listingTypes.isNotEmpty) _selectedListingTypeId = _listingTypes.first.id;
+          if (_listingTypes.isNotEmpty) {
+            if (widget.initialListingTypeId != null &&
+                widget.initialListingTypeId!.isNotEmpty &&
+                _listingTypes.any((lt) => lt.id == widget.initialListingTypeId)) {
+              _selectedListingTypeId = widget.initialListingTypeId;
+            } else if (widget.initialListingTab != null && widget.initialListingTab!.isNotEmpty) {
+              final targetStr = widget.initialListingTab!.toLowerCase();
+              final matched = _listingTypes.firstWhere(
+                (lt) => lt.name.toLowerCase().contains(targetStr == 'rent' ? 'rent' : 'sale'),
+                orElse: () => _listingTypes.first,
+              );
+              _selectedListingTypeId = matched.id;
+            } else {
+              _selectedListingTypeId = _listingTypes.first.id;
+            }
+          }
         } else {
           final req = widget.requirement!;
           _nameController.text = req.clientName;

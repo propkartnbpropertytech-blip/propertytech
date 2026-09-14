@@ -35,50 +35,53 @@ class ReportDateFilterBar extends StatelessWidget {
         alignment: WrapAlignment.spaceBetween,
         children: [
           // Segmented Period Pills
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildPeriodOption(
-                context,
-                title: 'Today',
-                isSelected: activeRange.periodType == ReportPeriodType.today,
-                onTap: () => onRangeChanged(ReportDateRange.today()),
-              ),
-              const SizedBox(width: 4),
-              _buildPeriodMenu(
-                context,
-                title: 'Weekly',
-                isSelected: activeRange.periodType == ReportPeriodType.weekly,
-                isCurrent: activeRange.subOption == ReportSubPeriodOption.current,
-                onSelectCurrent: () => onRangeChanged(ReportDateRange.currentWeek()),
-                onSelectCustom: () => _pickCustomWeek(context),
-              ),
-              const SizedBox(width: 4),
-              _buildPeriodMenu(
-                context,
-                title: 'Monthly',
-                isSelected: activeRange.periodType == ReportPeriodType.monthly,
-                isCurrent: activeRange.subOption == ReportSubPeriodOption.current,
-                onSelectCurrent: () => onRangeChanged(ReportDateRange.currentMonth()),
-                onSelectCustom: () => _pickCustomMonth(context),
-              ),
-              const SizedBox(width: 4),
-              _buildPeriodMenu(
-                context,
-                title: 'Yearly',
-                isSelected: activeRange.periodType == ReportPeriodType.yearly,
-                isCurrent: activeRange.subOption == ReportSubPeriodOption.current,
-                onSelectCurrent: () => onRangeChanged(ReportDateRange.currentYear()),
-                onSelectCustom: () => _pickCustomYear(context),
-              ),
-              const SizedBox(width: 4),
-              _buildPeriodOption(
-                context,
-                title: 'Date Range',
-                isSelected: activeRange.periodType == ReportPeriodType.customRange,
-                onTap: () => _pickCustomDateRange(context),
-              ),
-            ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildPeriodOption(
+                  context,
+                  title: 'Today',
+                  isSelected: activeRange.periodType == ReportPeriodType.today,
+                  onTap: () => onRangeChanged(ReportDateRange.today()),
+                ),
+                const SizedBox(width: 4),
+                _buildPeriodMenu(
+                  context,
+                  title: 'Weekly',
+                  isSelected: activeRange.periodType == ReportPeriodType.weekly,
+                  isCurrent: activeRange.subOption == ReportSubPeriodOption.current,
+                  onSelectCurrent: () => onRangeChanged(ReportDateRange.currentWeek()),
+                  onSelectCustom: () => _pickCustomWeek(context),
+                ),
+                const SizedBox(width: 4),
+                _buildPeriodMenu(
+                  context,
+                  title: 'Monthly',
+                  isSelected: activeRange.periodType == ReportPeriodType.monthly,
+                  isCurrent: activeRange.subOption == ReportSubPeriodOption.current,
+                  onSelectCurrent: () => onRangeChanged(ReportDateRange.currentMonth()),
+                  onSelectCustom: () => _pickCustomMonth(context),
+                ),
+                const SizedBox(width: 4),
+                _buildPeriodMenu(
+                  context,
+                  title: 'Yearly',
+                  isSelected: activeRange.periodType == ReportPeriodType.yearly,
+                  isCurrent: activeRange.subOption == ReportSubPeriodOption.current,
+                  onSelectCurrent: () => onRangeChanged(ReportDateRange.currentYear()),
+                  onSelectCustom: () => _pickCustomYear(context),
+                ),
+                const SizedBox(width: 4),
+                _buildPeriodOption(
+                  context,
+                  title: 'Date Range',
+                  isSelected: activeRange.periodType == ReportPeriodType.customRange,
+                  onTap: () => _pickCustomDateRange(context),
+                ),
+              ],
+            ),
           ),
 
           // Active Formatted Period Label & Calendar Icon
