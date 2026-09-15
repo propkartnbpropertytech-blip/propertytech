@@ -15,6 +15,7 @@ import '../tokens/app_typography.dart';
 import '../tokens/app_motion.dart';
 import '../tokens/app_shadows.dart';
 import 'crm_brand_lockup.dart';
+import 'package:dio/dio.dart';
 import '../../api/dio_client.dart';
 import '../../utils/budget_formatter.dart';
 import '../../network/sync_manager.dart';
@@ -85,6 +86,10 @@ class _CRMAppShellState extends State<CRMAppShell>
     });
 
     _notifCenterSub = NotificationCenter.stream.listen((newNotif) {
+      if ((newNotif['action'] ?? '').toString() == 'refresh' ||
+          (newNotif['id'] ?? '').toString() == 'refresh') {
+        return;
+      }
       if (mounted) {
         setState(() {
           _notifications.insert(0, newNotif);
@@ -114,7 +119,12 @@ class _CRMAppShellState extends State<CRMAppShell>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       await AppNotifierService.init();
-      await NotificationCenter.init();
+      String? userId;
+      final authState = context.read<AuthBloc>().state;
+      if (authState is Authenticated) {
+        userId = authState.user.id;
+      }
+      await NotificationCenter.init(userId: userId);
       await _fetchNotifications();
       _notificationsTimer?.cancel();
       _notificationsTimer = Timer.periodic(const Duration(seconds: 25), (
@@ -183,89 +193,154 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   void _showQuickActionsBottomSheet() {
+    final themeManager = ThemeManager();
+    final isDark = themeManager.isDarkMode;
+    final primaryColor = themeManager.primaryColor;
+
     showModalBottomSheet(
       context: context,
-      backgroundColor: CRMColors.surfaceElevatedOf(context),
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(CRMBorderRadius.sheet),
         ),
       ),
-      builder: (context) {
+      builder: (ctx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: CRMSpacing.l,
-              horizontal: CRMSpacing.xl,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       'Quick Actions',
-                      style: CRMTypography.sectionTitle.copyWith(
-                        color: CRMColors.text,
+                      style: TextStyle(
+                        fontSize: 18,
                         fontWeight: FontWeight.bold,
+                        color: isDark
+                            ? const Color(0xFFF8FAFC)
+                            : const Color(0xFF14213D),
                       ),
                     ),
                     IconButton(
                       icon: Icon(
                         Icons.close_rounded,
-                        color: CRMColors.textSecondary,
+                        size: 20,
+                        color: isDark
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF68738A),
                       ),
-                      onPressed: () => Navigator.pop(context),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
+                      onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
                 ),
-                const SizedBox(height: CRMSpacing.m),
+                const SizedBox(height: 12),
                 ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: CRMColors.primary.withOpacity(0.12),
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                     child: Icon(
-                      Icons.add_business_rounded,
-                      color: CRMColors.primary,
+                      Icons.add_home_work_rounded,
+                      color: primaryColor,
                     ),
                   ),
                   title: Text(
-                    'Add Property',
-                    style: CRMTypography.bodyMedium.copyWith(
-                      color: CRMColors.text,
-                      fontWeight: FontWeight.bold,
+                    'Add New Property',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFFF8FAFC)
+                          : const Color(0xFF14213D),
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Create a rental or re-sale listing',
+                    style: TextStyle(
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF68738A),
                     ),
                   ),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     context.go('/properties?action=add');
                   },
                 ),
-                const Divider(height: CRMSpacing.m),
                 ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: CRMColors.primary.withOpacity(0.12),
-                    child: Icon(
-                      Icons.add_task_rounded,
-                      color: CRMColors.primary,
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.person_add_rounded,
+                      color: Color(0xFF3B82F6),
                     ),
                   ),
                   title: Text(
-                    'Add Requirement',
-                    style: CRMTypography.bodyMedium.copyWith(
-                      color: CRMColors.text,
-                      fontWeight: FontWeight.bold,
+                    'Add New Lead / Requirement',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFFF8FAFC)
+                          : const Color(0xFF14213D),
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Capture customer demand details',
+                    style: TextStyle(
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF68738A),
                     ),
                   ),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     context.go('/requirements?action=add');
                   },
                 ),
-                const SizedBox(height: CRMSpacing.s),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.calendar_month_rounded,
+                      color: Color(0xFF8B5CF6),
+                    ),
+                  ),
+                  title: Text(
+                    'Schedule Site Visit',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFFF8FAFC)
+                          : const Color(0xFF14213D),
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Book client inspection appointment',
+                    style: TextStyle(
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF68738A),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    context.go('/dashboard');
+                  },
+                ),
               ],
             ),
           ),
@@ -304,49 +379,236 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
     });
 
-    await NotificationCenter.init();
-    await _checkOverdueFollowupsForBell();
+    String? role;
+    String? userId;
+    final authState = context.read<AuthBloc>().state;
+    if (authState is Authenticated) {
+      role = authState.user.role;
+      userId = authState.user.id;
+    }
+    await NotificationCenter.init(userId: userId);
 
     List<dynamic> apiList = [];
     int apiTotalPages = 1;
+    bool keepExistingList = false;
     try {
       final response = await DioClient.dio.get(
         '/notifications',
-        queryParameters: {'page': _notificationsPage, 'limit': 5},
+        queryParameters: {
+          'page': _notificationsPage,
+          'limit': 100,
+          '_ts': DateTime.now().millisecondsSinceEpoch,
+        },
+        options: Options(
+          headers: const {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          },
+          validateStatus: (status) => status != null && status < 500,
+        ),
       );
-      apiList = response.data['data']['notifications'] as List? ?? [];
-      final pagination = response.data['data']['pagination'] ?? {};
-      apiTotalPages = pagination['totalPages'] ?? 1;
-    } catch (_) {}
-
-    final authState = context.read<AuthBloc>().state;
-    String? role;
-    if (authState is Authenticated) {
-      role = authState.user.role;
+      if (response.statusCode == 304) {
+        keepExistingList = true;
+      } else {
+        final raw = response.data;
+        if (raw is List) {
+          apiList = List<dynamic>.from(raw);
+        } else if (raw is Map) {
+          final dataNode = raw['data'] ?? raw;
+          if (dataNode is List) {
+            apiList = List<dynamic>.from(dataNode);
+          } else if (dataNode is Map && dataNode['notifications'] is List) {
+            apiList = List<dynamic>.from(dataNode['notifications'] as List);
+          } else if (raw['notifications'] is List) {
+            apiList = List<dynamic>.from(raw['notifications'] as List);
+          }
+          final pagination = dataNode is Map ? (dataNode['pagination'] ?? {}) : {};
+          apiTotalPages = pagination['totalPages'] ?? 1;
+        }
+      }
+    } catch (_) {
+      keepExistingList = _notifications.isNotEmpty && !loadMore;
     }
+
+    if (keepExistingList) {
+      apiList = _notifications
+          .where((n) => n is Map && !(n['id']?.toString() ?? '').startsWith('local_') && !(n['id']?.toString() ?? '').startsWith('due_'))
+          .toList();
+    }
+
+    if (!loadMore) {
+      try {
+        final assignedRes = await DioClient.dio.get(
+          '/notifications',
+          queryParameters: {
+            'page': 1,
+            'limit': 50,
+            'type': 'lead_assigned',
+            '_ts': DateTime.now().millisecondsSinceEpoch,
+          },
+          options: Options(
+            headers: const {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+            },
+            validateStatus: (status) => status != null && status < 500,
+          ),
+        );
+        if (assignedRes.statusCode != null && assignedRes.statusCode! < 400) {
+          List<dynamic> assignedList = [];
+          final assignedRaw = assignedRes.data;
+          if (assignedRaw is List) {
+            assignedList = List<dynamic>.from(assignedRaw);
+          } else if (assignedRaw is Map) {
+            final dataNode = assignedRaw['data'] ?? assignedRaw;
+            if (dataNode is List) {
+              assignedList = List<dynamic>.from(dataNode);
+            } else if (dataNode is Map && dataNode['notifications'] is List) {
+              assignedList = List<dynamic>.from(dataNode['notifications'] as List);
+            }
+          }
+          if (assignedList.isNotEmpty) {
+            apiList = [...assignedList, ...apiList];
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!loadMore) {
+      await _checkOverdueFollowupsForBell(existingApi: apiList);
+    }
+
     final isAdminOrSuperAdmin = role == 'Admin' || role == 'Super Admin';
 
-    final combined = [...NotificationCenter.localNotifications, ...apiList];
+    final currentPanel = _notifications.where((raw) {
+      if (raw is! Map) return false;
+      final id = (raw['id'] ?? '').toString();
+      final action = (raw['action'] ?? '').toString();
+      return id != 'refresh' && action != 'refresh';
+    }).toList();
+    final combined = [
+      ...apiList,
+      ...NotificationCenter.localNotifications,
+      ...currentPanel,
+    ];
     final uniqueNotifs = <dynamic>[];
     final seenIds = <String>{};
-    for (final n in combined) {
+    final seenFingerprints = <String>{};
+    for (final raw in combined) {
+      if (raw is! Map) continue;
+      final n = Map<String, dynamic>.from(raw);
+      final payload = n['payload'] is Map ? Map<String, dynamic>.from(n['payload'] as Map) : <String, dynamic>{};
+      n['type'] = (n['type'] ?? payload['type'] ?? '').toString();
+      if ((n['type'] as String).isEmpty &&
+          (n['title'] ?? '').toString().toLowerCase().contains('assigned')) {
+        n['type'] = 'lead_assigned';
+      }
+      n['route'] = n['route'] ?? payload['route'];
+      if ((n['route'] == null || n['route'].toString().isEmpty) && n['type'] == 'lead_assigned') {
+        n['route'] = '/requirements?group=assigned';
+      }
       final id = n['id']?.toString() ?? '';
-      final type = n['type']?.toString().toLowerCase() ?? '';
+      if (id == 'refresh' || (n['action'] ?? '').toString() == 'refresh') {
+        continue;
+      }
+      final type = n['type'].toString().toLowerCase();
+      final isRead = n['is_read'] == true || n['is_read'] == 'true' || n['is_read'] == 1;
+      n['message'] = (n['message'] ?? '').toString().replaceAll(
+        RegExp(r'\s*\(Sales Person:\s*System\)', caseSensitive: false),
+        '',
+      );
 
       if (!isAdminOrSuperAdmin &&
           (type == 'forgot_password' || type == 'password_reset')) {
         continue;
       }
 
-      if (id.isNotEmpty &&
-          !seenIds.contains(id) &&
-          !NotificationCenter.deletedIds.contains(id)) {
-        seenIds.add(id);
-        uniqueNotifs.add(n);
+      final fuId = (payload['followupId'] ?? '').toString();
+      final titleLower = (n['title'] ?? '').toString().toLowerCase();
+      final reqId = (payload['requirementId'] ?? '').toString();
+      final propId = (payload['propertyId'] ?? '').toString();
+      final isDueNotif = _isDueAlertNotif(type, titleLower);
+      final clientKey = _dueClientKey(n, payload);
+      String fingerprint;
+      if (isDueNotif && clientKey.isNotEmpty) {
+        fingerprint = 'dueclient|$clientKey';
+      } else if (isDueNotif && fuId.isNotEmpty) {
+        fingerprint = 'duefu|$fuId';
+      } else if (fuId.isNotEmpty && isDueNotif) {
+        fingerprint = 'duefu|$fuId';
+      } else {
+        fingerprint =
+            '$type|$titleLower|${(n['message'] ?? '').toString().toLowerCase().replaceAll(RegExp(r'\s*\(sales person:[^)]*\)'), '')}';
+      }
+      if (!isDueNotif) {
+        if (type.contains('assign')) {
+          final audience = (payload['audience'] ?? '').toString();
+          if (clientKey.isNotEmpty &&
+              seenFingerprints.contains('assignedclient|$audience|$clientKey')) {
+            continue;
+          }
+          fingerprint = reqId.isNotEmpty
+              ? 'assigned|$reqId|$audience|$titleLower'
+              : 'assignedclient|$audience|$clientKey|$titleLower';
+        } else if (propId.isNotEmpty && (type.contains('property') || type.contains('created'))) {
+          fingerprint = 'createdprop|$propId';
+        } else if (reqId.isNotEmpty &&
+            (type.contains('created') || type.contains('new_lead'))) {
+          fingerprint = 'createdreq|$reqId';
+        }
+      }
+      final isAssigned = type.contains('assign') || titleLower.contains('assigned');
+      if (id.isNotEmpty && seenIds.contains(id)) {
+        continue;
+      }
+      if (id.isNotEmpty && NotificationCenter.deletedIds.contains(id) && !isAssigned) {
+        continue;
+      }
+      if (isAssigned) {
+        final notifKey =
+            '${n['title']}_${n['message']}'.replaceAll(' ', '').toLowerCase();
+        if (NotificationCenter.deletedIds.contains(notifKey)) {
+          continue;
+        }
+      }
+      if (isDueNotif && fuId.isNotEmpty && seenFingerprints.contains('duefu|$fuId')) {
+        continue;
+      }
+      if (isDueNotif && clientKey.isNotEmpty && seenFingerprints.contains('dueclient|$clientKey')) {
+        continue;
+      }
+      if (seenFingerprints.contains(fingerprint)) {
+        continue;
+      }
 
-        // Detect new incoming unread notification
-        final isRead = n['is_read'] == true;
-        if (!_isFirstNotifFetch && !isRead && !_knownNotificationIds.contains(id)) {
+      if (id.isNotEmpty) seenIds.add(id);
+      if (isDueNotif && fuId.isNotEmpty) seenFingerprints.add('duefu|$fuId');
+      if (isDueNotif && clientKey.isNotEmpty) seenFingerprints.add('dueclient|$clientKey');
+      if (!isDueNotif && type.contains('assign') && clientKey.isNotEmpty) {
+        seenFingerprints.add(
+          'assignedclient|${payload['audience'] ?? ''}|$clientKey',
+        );
+      }
+      seenFingerprints.add(fingerprint);
+      n['is_read'] = isRead;
+      uniqueNotifs.add(n);
+
+      if (!_isFirstNotifFetch && !isRead && id.isNotEmpty && !_knownNotificationIds.contains(id)) {
+        final alreadyLocalAssign = isAssigned &&
+            NotificationCenter.localNotifications.any((l) {
+              final lp = l['payload'] is Map
+                  ? Map<String, dynamic>.from(l['payload'] as Map)
+                  : <String, dynamic>{};
+              final localClient =
+                  (lp['clientName'] ?? '').toString().trim().toLowerCase();
+              return (l['type'] ?? '').toString().toLowerCase().contains('assign') &&
+                  localClient.isNotEmpty &&
+                  localClient == clientKey;
+            });
+        if (!isDueNotif &&
+            type != 'lead_created' &&
+            type != 'property_created' &&
+            !(isAssigned && alreadyLocalAssign)) {
           AppNotifierService.notify(
             title: n['title'] ?? 'Notification',
             message: n['message'] ?? '',
@@ -381,7 +643,7 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   Future<void> _markNotificationRead(String id) async {
     try {
-      if (id.startsWith('local_')) {
+      if (id.startsWith('local_') || id.startsWith('due_')) {
         await NotificationCenter.markAsRead(id);
       } else {
         await DioClient.dio.patch('/notifications/$id/read');
@@ -407,7 +669,7 @@ class _CRMAppShellState extends State<CRMAppShell>
       final title = notif?['title']?.toString();
       final message = notif?['message']?.toString();
 
-      if (id.startsWith('local_')) {
+      if (id.startsWith('local_') || id.startsWith('due_')) {
         await NotificationCenter.deleteNotification(
           id,
           title: title,
@@ -1075,9 +1337,12 @@ class _CRMAppShellState extends State<CRMAppShell>
               ).animate(entryCurved),
               child: Scaffold(
                 backgroundColor: CRMColors.backgroundOf(context),
-                extendBody: isMobile,
+                extendBody: true,
                 drawer: isMobile
                     ? Drawer(
+                        width: size.width < 360
+                            ? size.width * 0.88
+                            : (size.width < 420 ? size.width * 0.82 : 304),
                         backgroundColor: ThemeManager().isDarkMode
                             ? const Color(0xFF0F172A)
                             : Colors.white,
@@ -1090,33 +1355,11 @@ class _CRMAppShellState extends State<CRMAppShell>
                         ),
                       )
                     : null,
-                bottomNavigationBar: isMobile
-                    ? AnimatedSlide(
-                        offset: _isBottomBarVisible
-                            ? Offset.zero
-                            : const Offset(0, 1.5),
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeInOut,
-                        child: IgnorePointer(
-                          ignoring: !_isBottomBarVisible,
-                          child: CustomBottomNavBar(
-                            selectedIndex: targetIndex,
-                            onItemSelected: (index) {
-                              if (index == 2) {
-                                _showQuickActionsBottomSheet();
-                                return;
-                              }
-                              final path = _getTabRoutePath(index);
-                              if (GoRouterState.of(context).matchedLocation !=
-                                  path) {
-                                context.go(path);
-                              }
-                            },
-                          ),
-                        ),
-                      )
-                    : null,
-                body: Row(
+                body: Stack(
+                  children: [
+                    SizedBox(
+                  width: size.width,
+                  child: Row(
                   children: [
                     if (showSidebar) ...[
                       SizedBox(
@@ -1192,15 +1435,13 @@ class _CRMAppShellState extends State<CRMAppShell>
                                   _performSearch(val.trim());
                                 }
                               },
-                              unreadNotifications: _unreadNotificationsCount > 0
-                                  ? _unreadNotificationsCount
-                                  : 3,
+                              unreadNotifications: _unreadNotificationsCount,
                               unreadMessages: _unreadTeamMessagesCount,
                               onNotificationsTap: () {
                                 setState(() {
-                                  _notificationsPanelOpen =
-                                      !_notificationsPanelOpen;
+                                  _notificationsPanelOpen = true;
                                 });
+                                _fetchNotifications();
                               },
                             ),
                           ),
@@ -1242,25 +1483,50 @@ class _CRMAppShellState extends State<CRMAppShell>
                                       }
                                       return false;
                                     },
-                                    child: MediaQuery(
-                                      data: MediaQuery.of(context).copyWith(
-                                        padding: MediaQuery.of(context).padding
-                                            .copyWith(
-                                              bottom:
-                                                  MediaQuery.of(
-                                                    context,
-                                                  ).padding.bottom +
-                                                  76,
-                                            ),
-                                      ),
-                                      child: widget.child,
-                                    ),
+                                    child: widget.child,
                                   )
                                 : widget.child,
                           ),
                         ],
                       ),
                     ),
+                  ],
+                  ),
+                    ),
+                    if (isMobile)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: AnimatedSlide(
+                          offset: _isBottomBarVisible
+                              ? Offset.zero
+                              : const Offset(0, 1.5),
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                          child: IgnorePointer(
+                            ignoring: !_isBottomBarVisible,
+                            child: Material(
+                              type: MaterialType.transparency,
+                              child: CustomBottomNavBar(
+                                selectedIndex: targetIndex,
+                                onItemSelected: (index) {
+                                  if (index == 2) {
+                                    _showQuickActionsBottomSheet();
+                                    return;
+                                  }
+                                  final path = _getTabRoutePath(index);
+                                  if (GoRouterState.of(context)
+                                          .matchedLocation !=
+                                      path) {
+                                    context.go(path);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1620,7 +1886,125 @@ class _CRMAppShellState extends State<CRMAppShell>
     );
   }
 
-  Future<void> _checkOverdueFollowupsForBell() async {
+  bool _isDueAlertNotif(String type, String title) {
+    final titleLower = title.toLowerCase();
+    if (titleLower.contains('follow-up scheduled') ||
+        titleLower.contains('re-followup scheduled')) {
+      return false;
+    }
+    return type == 'due_followup' ||
+        type == 'site_visit' ||
+        titleLower.contains('follow-up alert') ||
+        titleLower.contains('overdue follow-up') ||
+        titleLower.contains('site visit');
+  }
+
+  String _dueClientKey(Map n, Map payload) {
+    final fromPayload = (payload['clientName'] ?? '').toString().trim().toLowerCase();
+    if (fromPayload.isNotEmpty) return fromPayload;
+    final msg = (n['message'] ?? '').toString();
+    final quoted = RegExp(r'client\s+"([^"]+)"', caseSensitive: false).firstMatch(msg);
+    if (quoted != null) {
+      return quoted.group(1)!.trim().toLowerCase();
+    }
+    final dueMatch = RegExp(
+      r'(?:follow-up|site visit) for (?:client\s+)?["“]?(.+?)["”]?(?:\s*\(| is | has |$)',
+      caseSensitive: false,
+    ).firstMatch(msg);
+    return (dueMatch?.group(1) ?? '').trim().toLowerCase();
+  }
+
+  String _cleanPersonName(String? raw) {
+    final v = (raw ?? '').trim();
+    if (v.isEmpty) return '';
+    final lower = v.toLowerCase();
+    if (lower == 'system' ||
+        lower == 'sales team' ||
+        lower == 'team member' ||
+        lower == 'propkart admin' ||
+        lower == 'n/a' ||
+        lower == 'sales person') {
+      return '';
+    }
+    if (RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      caseSensitive: false,
+    ).hasMatch(v)) {
+      return '';
+    }
+    return v;
+  }
+
+  String _salesPersonForFollowup(dynamic f, dynamic req, String? fallback) {
+    String name = '';
+    if (req != null) {
+      try {
+        name = _cleanPersonName(req.assigneeName);
+      } catch (_) {}
+    }
+    if (name.isEmpty) name = _cleanPersonName(f?.creatorName);
+    if (name.isEmpty && req != null) {
+      try {
+        name = _cleanPersonName(req.creatorName);
+      } catch (_) {}
+    }
+    if (name.isEmpty) name = _cleanPersonName(fallback);
+    return name;
+  }
+
+  Future<void> _emitDueFollowupNotification({
+    required String id,
+    required String title,
+    required String message,
+    required String type,
+    required String route,
+    Map<String, dynamic>? payload,
+  }) async {
+    final followupId = (payload?['followupId'] ?? '').toString();
+    final clientName = (payload?['clientName'] ?? '').toString();
+    if (NotificationCenter.containsId(id)) return;
+    if (followupId.isNotEmpty && NotificationCenter.hasDueFollowup(followupId)) return;
+    if (clientName.isNotEmpty && NotificationCenter.hasDueClientToday(clientName)) return;
+    await NotificationCenter.addNotification(
+      id: id,
+      title: title,
+      message: message,
+      type: type,
+      route: route,
+      payload: payload,
+      notifyToast: false,
+    );
+  }
+
+  bool _apiHasDueNotification(
+    List<dynamic> existingApi, {
+    String? followupId,
+    String? clientName,
+  }) {
+    final fuId = (followupId ?? '').trim();
+    final client = (clientName ?? '').trim().toLowerCase();
+    for (final raw in existingApi) {
+      if (raw is! Map) continue;
+      final payload = raw['payload'] is Map
+          ? Map<String, dynamic>.from(raw['payload'] as Map)
+          : <String, dynamic>{};
+      final type = (raw['type'] ?? payload['type'] ?? '').toString().toLowerCase();
+      final title = (raw['title'] ?? '').toString().toLowerCase();
+      if (!_isDueAlertNotif(type, title)) continue;
+      if (fuId.isNotEmpty && (payload['followupId'] ?? '').toString() == fuId) {
+        return true;
+      }
+      final payloadClient = _dueClientKey(raw, payload);
+      if (client.isNotEmpty &&
+          (payloadClient == client ||
+              (raw['message'] ?? '').toString().toLowerCase().contains(client))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _checkOverdueFollowupsForBell({List<dynamic> existingApi = const []}) async {
     try {
       final dashboardData = await DashboardRepository().getDashboardData(
         backgroundRefresh: false,
@@ -1639,10 +2023,10 @@ class _CRMAppShellState extends State<CRMAppShell>
         currentUserId = authState.user.id;
         currentUserName = authState.user.fullName;
       }
-      final isHighRole =
-          role == 'Admin' || role == 'Super Admin' || role == 'Telecaller';
+      final isAdmin = role == 'Admin' || role == 'Super Admin';
+      final isTelecaller = role == 'Telecaller';
+      final dueClientsThisPass = <String>{};
 
-      int activeDueCount = 0;
       for (final f in followups) {
         final parsed = DateTime.tryParse(f.followupDate);
         if (parsed == null) continue;
@@ -1662,38 +2046,28 @@ class _CRMAppShellState extends State<CRMAppShell>
           }
         }
 
-        if (!isHighRole) {
-          String salesPerson = f.creatorName ?? '';
-          if (salesPerson.isEmpty && req != null) {
-            try {
-              salesPerson =
-                  (req.assignedToName ??
-                          req.addedByName ??
-                          req.creatorName ??
-                          '')
-                      .toString();
-            } catch (_) {}
-          }
-
+        if (!isAdmin) {
           bool isMine = false;
-          if (salesPerson.isNotEmpty &&
-              currentUserName != null &&
-              currentUserName.isNotEmpty) {
-            if (salesPerson.trim().toLowerCase() ==
-                currentUserName.trim().toLowerCase()) {
-              isMine = true;
-            }
-          }
-          if (!isMine && req != null) {
+          if (req != null && currentUserId != null) {
             try {
-              if (req.adminId == currentUserId ||
-                  req.assignedToId == currentUserId) {
+              final assignedId = (req.assignedTo ?? '').toString();
+              if (assignedId.isNotEmpty && assignedId == currentUserId) {
                 isMine = true;
               }
             } catch (_) {}
           }
-
+          final creator = _cleanPersonName(f.creatorName);
+          if (!isMine &&
+              currentUserName != null &&
+              currentUserName.isNotEmpty &&
+              creator.isNotEmpty &&
+              creator.toLowerCase() == currentUserName.trim().toLowerCase()) {
+            isMine = true;
+          }
           if (!isMine) {
+            continue;
+          }
+          if (isTelecaller && creator.isEmpty) {
             continue;
           }
         }
@@ -1703,69 +2077,154 @@ class _CRMAppShellState extends State<CRMAppShell>
         final isToday = fDate.isAtSameMomentAs(today);
 
         if (isOverdue || isToday) {
-          activeDueCount++;
-          if (activeDueCount <= 6) {
-            final clientName = f.clientName;
-
-            // Send notification only once per day per client
-            if (NotificationCenter.hasNotificationToday(clientName)) {
+            final clientName = (f.clientName ?? '').toString().trim();
+            if (clientName.isEmpty) continue;
+            final clientKey = clientName.toLowerCase();
+            if (dueClientsThisPass.contains(clientKey)) continue;
+            final dueId =
+                'due_${f.id}_${today.year}${today.month.toString().padLeft(2, '0')}${today.day.toString().padLeft(2, '0')}';
+            if (NotificationCenter.containsId(dueId) ||
+                NotificationCenter.hasDueFollowup(f.id) ||
+                NotificationCenter.hasDueClientToday(clientName) ||
+                _apiHasDueNotification(
+                  existingApi,
+                  followupId: f.id,
+                  clientName: clientName,
+                )) {
+              dueClientsThisPass.add(clientKey);
               continue;
             }
 
-            String salesPerson = f.creatorName ?? '';
-            if (salesPerson.isEmpty && req != null) {
-              try {
-                salesPerson =
-                    (req.assignedToName ??
-                            req.addedByName ??
-                            req.creatorName ??
-                            '')
-                        .toString();
-              } catch (_) {}
-            }
-            if (salesPerson.isEmpty) salesPerson = 'Sales Team';
+            final salesPerson = _salesPersonForFollowup(
+              f,
+              req,
+              isAdmin ? null : currentUserName,
+            );
 
             String notifTitle;
             String notifMsg;
             String notifType;
+            final reqId = (f.requirementId ?? req?.id ?? '').toString();
+            final route = reqId.isNotEmpty
+                ? '/requirements?openId=${Uri.encodeComponent(reqId)}&tab=follow-ups&subTab=Today'
+                : '/requirements?tab=follow-ups&subTab=Today';
 
             if (isSiteVisit) {
               notifType = 'site_visit';
               if (isOverdue) {
                 notifTitle = 'Overdue Site Visit';
-                notifMsg = isHighRole
+                notifMsg = isAdmin && salesPerson.isNotEmpty
                     ? 'Site visit for $clientName (Sales Person: $salesPerson) is overdue! Please take action.'
                     : 'Site visit for $clientName is overdue! Please take action.';
               } else {
                 notifTitle = "Today's Site Visit Scheduled";
-                notifMsg = isHighRole
+                notifMsg = isAdmin && salesPerson.isNotEmpty
                     ? 'Site visit for $clientName (Sales Person: $salesPerson) is scheduled for today.'
                     : 'Site visit for $clientName is scheduled for today.';
               }
             } else {
-              notifType = isOverdue ? 'due_followup' : 'followup';
+              notifType = 'due_followup';
               if (isOverdue) {
                 notifTitle = 'Overdue Follow-up Alert';
-                notifMsg = isHighRole
+                notifMsg = isAdmin && salesPerson.isNotEmpty
                     ? 'Follow-up for $clientName (Sales Person: $salesPerson) is overdue! Please take action.'
                     : 'Follow-up for $clientName is overdue! Please take action immediately.';
               } else {
                 notifTitle = "Today's Follow-up Alert";
-                notifMsg = isHighRole
+                notifMsg = isAdmin && salesPerson.isNotEmpty
                     ? 'Follow-up for $clientName (Sales Person: $salesPerson) is scheduled for today.'
                     : 'Follow-up for $clientName is scheduled for today.';
               }
             }
 
-            NotificationCenter.addNotification(
+            await _emitDueFollowupNotification(
+              id: dueId,
               title: notifTitle,
               message: notifMsg,
               type: notifType,
-              route: '/requirements?tab=follow-ups&subTab=Today',
+              route: route,
+              payload: {
+                'followupId': f.id,
+                'requirementId': reqId,
+                'clientName': clientName,
+                'assigneeName': salesPerson,
+              },
             );
-          }
+            dueClientsThisPass.add(clientKey);
         }
       }
+
+      try {
+        final campRes = await DioClient.dio.get(
+          '/integrations/followups',
+          queryParameters: const {'filter': 'all'},
+        );
+        final rawFollowups = campRes.data is Map
+            ? (campRes.data['followups'] ?? campRes.data['data'])
+            : null;
+        if (rawFollowups is List) {
+          for (final item in rawFollowups) {
+            if (item is! Map) continue;
+            final status = (item['status'] ?? 'Pending').toString();
+            if (status.toLowerCase() != 'pending') continue;
+            final scheduled = DateTime.tryParse(
+              (item['scheduled_at'] ?? '').toString(),
+            );
+            if (scheduled == null) continue;
+            final fDate = DateTime(scheduled.year, scheduled.month, scheduled.day);
+            final isOverdue = fDate.isBefore(today);
+            final isTodayDue = fDate.isAtSameMomentAs(today);
+            if (!isOverdue && !isTodayDue) continue;
+
+            final createdBy = (item['created_by'] ?? '').toString();
+            if (!isAdmin &&
+                (createdBy.isEmpty ||
+                    currentUserId == null ||
+                    createdBy != currentUserId)) {
+              continue;
+            }
+
+            final clientName = (item['client_name'] ?? 'Campaign lead')
+                .toString()
+                .trim();
+            final fuId = (item['id'] ?? '').toString();
+            if (fuId.isEmpty) continue;
+            final clientKey = clientName.toLowerCase();
+            if (dueClientsThisPass.contains(clientKey)) continue;
+            final dueId =
+                'due_campaign_${fuId}_${today.year}${today.month.toString().padLeft(2, '0')}${today.day.toString().padLeft(2, '0')}';
+            if (NotificationCenter.containsId(dueId) ||
+                NotificationCenter.hasDueFollowup(fuId) ||
+                NotificationCenter.hasDueClientToday(clientName) ||
+                _apiHasDueNotification(
+                  existingApi,
+                  followupId: fuId,
+                  clientName: clientName,
+                )) {
+              dueClientsThisPass.add(clientKey);
+              continue;
+            }
+
+            await _emitDueFollowupNotification(
+              id: dueId,
+              title: isOverdue
+                  ? 'Overdue Follow-up Alert'
+                  : "Today's Follow-up Alert",
+              message: isOverdue
+                  ? 'Follow-up for $clientName is overdue! Please take action.'
+                  : 'Follow-up for $clientName is scheduled for today.',
+              type: 'due_followup',
+              route: '/campaign/leads',
+              payload: {
+                'followupId': fuId,
+                'campaignLeadId': (item['lead_id'] ?? '').toString(),
+                'clientName': clientName,
+              },
+            );
+            dueClientsThisPass.add(clientKey);
+          }
+        }
+      } catch (_) {}
     } catch (_) {}
   }
 
@@ -1801,7 +2260,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   Widget _buildNotificationsPanel(BuildContext context) {
-    final unread = _notifications.where((n) => n['is_read'] == false).toList();
+    final unread = _notifications.where((n) => n['is_read'] != true).toList();
     final read = _notifications.where((n) => n['is_read'] == true).toList();
 
     return Positioned.fill(
@@ -2049,6 +2508,9 @@ class _CRMAppShellState extends State<CRMAppShell>
     if (type.contains('meta')) return 'META LEAD';
     if (type.contains('assign')) return 'LEAD ASSIGNED';
     if (type.contains('site_visit') || type.contains('visit')) return 'SITE VISIT';
+    if (type.contains('property')) return 'PROPERTY ADDED';
+    if (type.contains('created')) return 'LEAD ADDED';
+    if (type.contains('new_lead')) return 'NEW LEAD';
     if (type.contains('followup')) return 'FOLLOW UP';
     if (type.contains('welcome')) return 'WELCOME';
     return type.toUpperCase();
@@ -2056,8 +2518,35 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   Widget _buildNotificationTile(dynamic n) {
     final isRead = n['is_read'] == true;
-    final type = (n['type'] ?? '').toString();
+    final payload = n['payload'] is Map
+        ? Map<String, dynamic>.from(n['payload'] as Map)
+        : <String, dynamic>{};
+    String type = (n['type'] ?? payload['type'] ?? '').toString();
+    if (type.isEmpty &&
+        (n['title'] ?? '').toString().toLowerCase().contains('assigned')) {
+      type = 'lead_assigned';
+    }
     final badgeColor = _getCategoryColor(type);
+    final assigner = _cleanPersonName(payload['assignerName']?.toString());
+    final assignee = _cleanPersonName(payload['assigneeName']?.toString());
+    final client = (payload['clientName'] ?? '').toString().trim();
+    String message = (n['message'] ?? '').toString();
+    final audience = (payload['audience'] ?? '').toString();
+    if (type.toLowerCase() == 'lead_assigned' &&
+        audience == 'assignee' &&
+        assigner.isNotEmpty &&
+        client.isNotEmpty) {
+      message = '$assigner assigned client "$client" to you.';
+    } else if (type.toLowerCase() == 'lead_assigned' &&
+        audience == 'assigner' &&
+        assignee.isNotEmpty &&
+        client.isNotEmpty) {
+      message = 'You assigned client "$client" to $assignee.';
+    }
+    message = message.replaceAll(
+      RegExp(r'\s*\(Sales Person:\s*System\)', caseSensitive: false),
+      '',
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -2143,7 +2632,7 @@ class _CRMAppShellState extends State<CRMAppShell>
           children: [
             const SizedBox(height: 2),
             Text(
-              n['message'] ?? '',
+              message,
               style: CRMTypography.caption.copyWith(
                 color: CRMColors.textSecondaryOf(context),
               ),
@@ -3128,18 +3617,20 @@ class CustomBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isNarrow = screenWidth < 360;
     return SafeArea(
       top: false,
-      minimum: const EdgeInsets.only(bottom: 8),
+      minimum: EdgeInsets.only(bottom: isNarrow ? 4 : 8),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+        padding: EdgeInsets.fromLTRB(isNarrow ? 8 : 12, 0, isNarrow ? 8 : 12, 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Container(
                 height: 64,
-                padding: const EdgeInsets.symmetric(horizontal: 6),
+                padding: EdgeInsets.symmetric(horizontal: isNarrow ? 2 : 6),
                 decoration: BoxDecoration(
                   color: CRMColors.cardBgOf(context),
                   borderRadius: BorderRadius.circular(CRMBorderRadius.card),
@@ -3179,15 +3670,15 @@ class CustomBottomNavBar extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: isNarrow ? 6 : 10),
             Material(
               color: Colors.transparent,
               child: InkWell(
                 onTap: () => onItemSelected(2),
                 customBorder: const CircleBorder(),
                 child: Ink(
-                  width: 52,
-                  height: 52,
+                  width: isNarrow ? 48 : 52,
+                  height: isNarrow ? 48 : 52,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: CRMColors.primaryOf(context),

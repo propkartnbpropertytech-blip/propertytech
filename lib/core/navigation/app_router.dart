@@ -124,7 +124,10 @@ class AppRouter {
       ),
       GoRoute(
         path: '/get-started',
-        builder: (context, state) => const GetStartedScreen(),
+        builder: (context, state) => MobileSystemBackHandler(
+          homeLocation: '/get-started',
+          child: const GetStartedScreen(),
+        ),
       ),
       GoRoute(
         path: '/terms-and-conditions',
@@ -162,13 +165,16 @@ class AppRouter {
         pageBuilder: (context, state) => crmFadeSlidePage(
           key: state.pageKey,
           name: state.name,
-          child: BlocProvider(
-            create: (context) => PropertiesBloc(),
-            child: PropertySearchScreen(
-              initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
-              initialListingType: state.uri.queryParameters['listingType'],
-              initialCategoryTab: state.uri.queryParameters['categoryTab'],
-              initialBhk: state.uri.queryParameters['bhk'],
+          child: MobileSystemBackHandler(
+            homeLocation: '/get-started',
+            child: BlocProvider(
+              create: (context) => PropertiesBloc(),
+              child: PropertySearchScreen(
+                initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
+                initialListingType: state.uri.queryParameters['listingType'],
+                initialCategoryTab: state.uri.queryParameters['categoryTab'],
+                initialBhk: state.uri.queryParameters['bhk'],
+              ),
             ),
           ),
         ),
@@ -410,6 +416,7 @@ class AppRouter {
         builder: (context, state) {
           final id = state.pathParameters['id']!;
           return MobileSystemBackHandler(
+            homeLocation: '/properties',
             child: PropertyDetailScreen(propertyId: id),
           );
         },

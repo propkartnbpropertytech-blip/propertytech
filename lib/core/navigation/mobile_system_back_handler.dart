@@ -4,16 +4,18 @@ import 'package:go_router/go_router.dart';
 import '../design_system/widgets/dialogs.dart';
 
 /// Intercepts the mobile system back button inside the signed-in app:
-/// any page → Dashboard (home), then a confirm dialog to close the app.
+/// pop one route at a time, then return to [homeLocation], then confirm before exit.
 /// Does not log the user out or change session timeout.
 class MobileSystemBackHandler extends StatefulWidget {
   final Widget child;
   final Future<bool> Function()? onBeforeBack;
+  final String homeLocation;
 
   const MobileSystemBackHandler({
     super.key,
     required this.child,
     this.onBeforeBack,
+    this.homeLocation = '/dashboard',
   });
 
   @override
@@ -24,7 +26,10 @@ class _MobileSystemBackHandlerState extends State<MobileSystemBackHandler> {
   bool _isHandlingBack = false;
 
   bool _isHomeLocation(String location) {
-    return location == '/dashboard' || location.startsWith('/dashboard');
+    final home = widget.homeLocation;
+    if (location == home) return true;
+    if (home == '/dashboard' && location.startsWith('/dashboard')) return true;
+    return false;
   }
 
   Future<void> _handleBack() async {
@@ -36,9 +41,14 @@ class _MobileSystemBackHandlerState extends State<MobileSystemBackHandler> {
         if (handled) return;
       }
 
+      if (context.canPop()) {
+        context.pop();
+        return;
+      }
+
       final location = GoRouterState.of(context).matchedLocation;
       if (!_isHomeLocation(location)) {
-        context.go('/dashboard');
+        context.go(widget.homeLocation);
         return;
       }
 

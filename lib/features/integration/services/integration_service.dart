@@ -1169,7 +1169,25 @@ class IntegrationService extends ChangeNotifier {
         'remarks': remarks,
       });
 
-      return res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+      final scheduledOk = res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+      if (scheduledOk) {
+        final lead = idx != -1 ? _leads[idx] : null;
+        final name = lead != null
+            ? (lead.getStringValue('Client Name').isNotEmpty
+                ? lead.getStringValue('Client Name')
+                : (lead.getStringValue('full_name').isNotEmpty
+                    ? lead.getStringValue('full_name')
+                    : lead.getStringValue('Client / Owner Name')))
+            : '';
+        final display = name.isNotEmpty ? name : 'client';
+        unawaited(NotificationCenter.addNotification(
+          title: 'Follow-up scheduled',
+          message: 'Follow-up for client "$display" has been scheduled.',
+          type: 'followup',
+          route: '/campaign/leads',
+        ));
+      }
+      return scheduledOk;
     } catch (e) {
       debugPrint('[IntegrationService] Error scheduling follow-up for $leadId: $e');
       return false;
@@ -1235,10 +1253,22 @@ class IntegrationService extends ChangeNotifier {
         final targetLead = idx != -1 ? _leads[idx] : null;
         final leadName = targetLead != null ? _mapLeadFields(targetLead)['name'] : null;
         final displayName = (leadName != null && leadName.isNotEmpty) ? leadName : 'Lead';
+        final transferData = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
+        final requirementId = (transferData['requirementId'] ?? transferData['requirement_id'] ?? '').toString();
         unawaited(NotificationCenter.addNotification(
-          title: 'Lead Transferred & Assigned',
-          message: 'Lead "$displayName" was transferred and assigned to ${assignedToName ?? "Sales Person"}.',
-          route: '/requirements',
+          title: 'Lead assigned',
+          message: 'You assigned client "$displayName" to ${assignedToName ?? "Sales"}.',
+          type: 'lead_assigned',
+          route: '/requirements?group=assigned',
+          payload: {
+            'clientName': displayName,
+            'assigneeName': assignedToName,
+            'assignerName': user?.fullName,
+            'assignedTo': assignedTo,
+            'audience': 'assigner',
+            'campaignLeadId': leadId,
+            if (requirementId.isNotEmpty) 'requirementId': requirementId,
+          },
         ));
 
         if (targetLead?.leadType == 'Property Listing') {

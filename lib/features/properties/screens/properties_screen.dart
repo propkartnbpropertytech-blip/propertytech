@@ -1805,6 +1805,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           children: [
             Text(
               displayPortalText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: textColor,
                 fontSize: 11,
@@ -2079,7 +2081,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               children: [
                 titleWidget,
                 const SizedBox(height: 10),
-                sortWidget,
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: sortWidget,
+                ),
               ],
             );
           }
@@ -2286,70 +2291,63 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                    Builder(
+                      builder: (context) {
+                        final titleBlock = Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              propertyTitle,
+                              style: CRMTypography.sectionTitle.copyWith(
+                                color: CRMColors.textOf(context),
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (p.title.isNotEmpty && p.title != propertyTitle) ...[
+                              const SizedBox(height: 2),
                               Text(
-                                propertyTitle,
-                                style: CRMTypography.sectionTitle.copyWith(
-                                  color: CRMColors.textOf(context),
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.bold,
+                                p.title,
+                                style: TextStyle(
+                                  color: CRMColors.primaryOf(context),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              if (p.title.isNotEmpty && p.title != propertyTitle) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  p.title,
-                                  style: TextStyle(
-                                    color: CRMColors.primaryOf(context),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
+                            ],
+                            const SizedBox(height: 3),
+                            Row(
+                              children: [
+                                Icon(Icons.location_on_outlined, size: 14, color: CRMColors.primaryOf(context)),
+                                const SizedBox(width: 3),
+                                Expanded(
+                                  child: Text(
+                                    locationFullText.isNotEmpty ? locationFullText : addressText,
+                                    style: CRMTypography.caption.copyWith(
+                                      color: CRMColors.textMutedOf(context),
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
-                              const SizedBox(height: 3),
-                              Row(
-                                children: [
-                                  Icon(Icons.location_on_outlined, size: 14, color: CRMColors.primaryOf(context)),
-                                  const SizedBox(width: 3),
-                                  Expanded(
-                                    child: Text(
-                                      locationFullText.isNotEmpty ? locationFullText : addressText,
-                                      style: CRMTypography.caption.copyWith(
-                                        color: CRMColors.textMutedOf(context),
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
+                            ),
+                          ],
+                        );
+
+                        final badges = Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            // Portal Status Toggle Button
                             _buildCardPortalBadge(p),
-                            const SizedBox(width: 8),
-                            // Interactive Status Dropdown Toggle Button
                             _buildCardStatusBadge(p, metadata),
-                            const SizedBox(width: 8),
-                            // Glassmorphism Box for Property Code ID
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 5),
@@ -2382,8 +2380,29 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                               ),
                             ),
                           ],
-                        ),
-                      ],
+                        );
+
+                        if (isNarrow) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              titleBlock,
+                              const SizedBox(height: 8),
+                              badges,
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: titleBlock),
+                            const SizedBox(width: 12),
+                            badges,
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 10),
 
@@ -2470,9 +2489,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 const SizedBox(height: 12),
 
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    TextButton.icon(
+                    Flexible(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
                       style: TextButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
@@ -2487,8 +2508,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       label: const Text('View Details',
                           style: TextStyle(
                               fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
                     ),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildPropertyActionsMenu(
                             context, p, metadata, isMine),
@@ -2526,19 +2550,28 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
 
   Widget _buildMetaChip(IconData icon, String text) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 13, color: CRMColors.textMutedOf(context)),
-        const SizedBox(width: 4),
-        Text(
-          text,
-          style: TextStyle(
-            color: CRMColors.textSecondaryOf(context),
-            fontSize: 11.5,
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width - 64,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: CRMColors.textMutedOf(context)),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: CRMColors.textSecondaryOf(context),
+                fontSize: 11.5,
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -3210,8 +3243,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
                 // Rent vs Re-Sale Toggle Tabs
                 Wrap(
-                  spacing: CRMSpacing.s,
-                  runSpacing: CRMSpacing.s,
+                  spacing: 12,
+                  runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Container(
@@ -5176,57 +5209,63 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         spacing: 12,
         runSpacing: 8,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (!_isTableView && pagedProperties.isNotEmpty) ...[
-                Theme(
-                  data: ThemeData(unselectedWidgetColor: CRMColors.textSecondaryOf(context)),
-                  child: Checkbox(
-                    value: pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
-                    tristate: pagedProperties.any((p) => _selectedPropertyIds.contains(p.id)) &&
-                        !pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
-                    activeColor: CRMColors.primaryOf(context),
-                    onChanged: (bool? checked) {
-                      setState(() {
-                        if (checked == true) {
-                          for (final p in pagedProperties) {
-                            _selectedPropertyIds.add(p.id);
-                          }
-                        } else {
-                          for (final p in pagedProperties) {
-                            _selectedPropertyIds.remove(p.id);
-                          }
-                        }
-                      });
-                    },
-                  ),
-                ),
-                InkWell(
-                  onTap: () {
-                    setState(() {
-                      final allSel = pagedProperties.every((p) => _selectedPropertyIds.contains(p.id));
-                      if (!allSel) {
-                        for (final p in pagedProperties) {
-                          _selectedPropertyIds.add(p.id);
-                        }
-                      } else {
-                        for (final p in pagedProperties) {
-                          _selectedPropertyIds.remove(p.id);
-                        }
-                      }
-                    });
-                  },
-                  child: Text(
-                    'Select All (${pagedProperties.length})',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: CRMColors.textOf(context),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Theme(
+                      data: ThemeData(unselectedWidgetColor: CRMColors.textSecondaryOf(context)),
+                      child: Checkbox(
+                        value: pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
+                        tristate: pagedProperties.any((p) => _selectedPropertyIds.contains(p.id)) &&
+                            !pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
+                        activeColor: CRMColors.primaryOf(context),
+                        onChanged: (bool? checked) {
+                          setState(() {
+                            if (checked == true) {
+                              for (final p in pagedProperties) {
+                                _selectedPropertyIds.add(p.id);
+                              }
+                            } else {
+                              for (final p in pagedProperties) {
+                                _selectedPropertyIds.remove(p.id);
+                              }
+                            }
+                          });
+                        },
+                      ),
                     ),
-                  ),
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          final allSel = pagedProperties.every((p) => _selectedPropertyIds.contains(p.id));
+                          if (!allSel) {
+                            for (final p in pagedProperties) {
+                              _selectedPropertyIds.add(p.id);
+                            }
+                          } else {
+                            for (final p in pagedProperties) {
+                              _selectedPropertyIds.remove(p.id);
+                            }
+                          }
+                        });
+                      },
+                      child: Text(
+                        'Select All (${pagedProperties.length})',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
               ],
               FilterChip(
                 avatar: Icon(
@@ -5301,8 +5340,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               ),
             ],
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (canExport) ...[
                 ElevatedButton.icon(
@@ -5320,7 +5361,6 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     elevation: 1,
                   ),
                 ),
-                const SizedBox(width: 12),
               ],
               Container(
                 padding: const EdgeInsets.all(2),
@@ -6459,9 +6499,7 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final double cardWidth = (screenWidth - (CRMSpacing.m * 2) - CRMSpacing.m).clamp(0.0, double.infinity) / 2;
-    final double cardHeight = 105.0;
+    const double cardHeight = 105.0;
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -6478,20 +6516,21 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
       children: [
         Row(
           children: [
-            SizedBox(
-              width: cardWidth,
-              height: cardHeight,
-              child: widget.kpiCard,
+            Expanded(
+              child: SizedBox(
+                height: cardHeight,
+                child: widget.kpiCard,
+              ),
             ),
-            const SizedBox(width: CRMSpacing.m),
-            GestureDetector(
+            const SizedBox(width: CRMSpacing.s),
+            Expanded(
+              child: GestureDetector(
               onTap: () {
                 setState(() {
                   _isExpanded = !_isExpanded;
                 });
               },
               child: Container(
-                width: cardWidth,
                 height: cardHeight,
                 decoration: BoxDecoration(
                   color: CRMColors.cardBgOf(context),
@@ -6521,12 +6560,17 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          widget.chartTitle,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: CRMColors.textOf(context),
+                        Flexible(
+                          child: Text(
+                            widget.chartTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: CRMColors.textOf(context),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 2),
@@ -6540,6 +6584,7 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
                   ],
                 ),
               ),
+            ),
             ),
           ],
         ),

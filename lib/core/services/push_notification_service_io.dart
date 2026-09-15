@@ -24,9 +24,9 @@ class PushNotificationService {
   static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
-    'propkart_lead_assigned',
-    'Lead assignments',
-    description: 'Notifies sales users when a telecaller assigns a client lead',
+    'propkart_notifications',
+    'PropKart notifications',
+    description: 'Lead assignments, follow-ups, and important CRM alerts',
     importance: Importance.high,
   );
 
@@ -46,7 +46,6 @@ class PushNotificationService {
       onDidReceiveNotificationResponse: (response) {
         AppNotifierService.handleNotificationTap({
           'route': response.payload,
-          'type': 'lead_assigned',
         });
       },
     );
@@ -76,8 +75,8 @@ class PushNotificationService {
         AppNotifierService.notify(
           title: title,
           message: body,
-          type: message.data['type']?.toString() ?? 'lead_assigned',
-          route: message.data['route']?.toString() ?? '/requirements?group=assigned',
+          type: message.data['type']?.toString() ?? 'general',
+          route: message.data['route']?.toString(),
           data: message.data,
         );
         showOsNotification(title: title, body: body, payload: message.data['route']?.toString());
@@ -85,8 +84,9 @@ class PushNotificationService {
       FirebaseMessaging.onMessageOpenedApp.listen((message) {
         AppNotifierService.handleNotificationTap({
           'id': message.data['id'],
-          'type': message.data['type'] ?? 'lead_assigned',
-          'route': message.data['route'] ?? '/requirements?group=assigned',
+          'type': message.data['type'],
+          'route': message.data['route'],
+          'payload': message.data,
         });
       });
     } catch (e) {

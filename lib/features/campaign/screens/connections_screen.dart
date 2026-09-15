@@ -101,8 +101,15 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
     return Scaffold(
       backgroundColor: CRMColors.backgroundOf(context),
       body: SafeArea(
+        top: false,
+        bottom: false,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(CRMSpacing.l),
+          padding: EdgeInsets.fromLTRB(
+            MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.m : CRMSpacing.l,
+            MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.s : CRMSpacing.l,
+            MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.m : CRMSpacing.l,
+            MediaQuery.sizeOf(context).width < 700 ? 96 : CRMSpacing.l,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

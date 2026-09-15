@@ -106,12 +106,33 @@ class AppNotifierService {
     if (notification == null) return;
 
     final String id = (notification['id'] ?? '').toString();
-    final String type = (notification['type'] ?? '').toString().toLowerCase();
-    final String? explicitRoute = notification['route']?.toString();
+    String type = (notification['type'] ?? '').toString().toLowerCase();
+    final String title = (notification['title'] ?? '').toString().toLowerCase();
+    final payload = <String, dynamic>{};
+    void mergeMap(dynamic value) {
+      if (value is Map) {
+        payload.addAll(Map<String, dynamic>.from(value));
+      }
+    }
+    mergeMap(notification['payload']);
+    mergeMap(notification['data']);
+    for (final key in ['requirementId', 'followupId', 'campaignLeadId', 'route', 'type', 'clientName']) {
+      final value = notification[key];
+      if (value != null && (payload[key] == null || payload[key].toString().isEmpty)) {
+        payload[key] = value;
+      }
+    }
+    if (type.isEmpty) {
+      type = (payload['type'] ?? '').toString().toLowerCase();
+    }
+    if (type.isEmpty && title.contains('assigned')) {
+      type = 'lead_assigned';
+    }
+    final String? explicitRoute = notification['route']?.toString() ?? payload['route']?.toString();
 
     // Mark as read in background
     if (id.isNotEmpty) {
-      if (id.startsWith('local_')) {
+      if (id.startsWith('local_') || id.startsWith('due_')) {
         NotificationCenter.markAsRead(id);
       } else {
         DioClient.dio
@@ -126,22 +147,38 @@ class AppNotifierService {
     if (explicitRoute != null && explicitRoute.trim().isNotEmpty) {
       targetRoute = explicitRoute.trim();
     } else {
+      final openId = (payload['requirementId'] ?? notification['requirementId'] ?? '').toString();
       switch (type) {
         case 'lead_assigned':
-          targetRoute = '/requirements?group=assigned';
+          targetRoute = openId.isNotEmpty
+              ? '/requirements?openId=${Uri.encodeComponent(openId)}'
+              : '/requirements?group=assigned';
+          break;
+        case 'lead_created':
+        case 'new_lead':
+          targetRoute = openId.isNotEmpty
+              ? '/requirements?openId=${Uri.encodeComponent(openId)}'
+              : '/requirements';
+          break;
+        case 'property_created':
+          final propertyId = (payload['propertyId'] ?? notification['propertyId'] ?? '').toString();
+          targetRoute = propertyId.isNotEmpty
+              ? '/properties?openId=${Uri.encodeComponent(propertyId)}'
+              : '/properties';
           break;
         case 'meta_lead':
           targetRoute = '/campaign/leads';
           break;
-        case 'new_lead':
-          targetRoute = '/requirements';
-          break;
         case 'due_followup':
         case 'followup':
-          targetRoute = '/requirements?tab=follow-ups&subTab=Today';
-          break;
         case 'site_visit':
-          targetRoute = '/requirements?tab=follow-ups&subTab=Today';
+          if ((payload['campaignLeadId'] ?? '').toString().isNotEmpty) {
+            targetRoute = '/campaign/leads';
+          } else {
+            targetRoute = openId.isNotEmpty
+                ? '/requirements?openId=${Uri.encodeComponent(openId)}&tab=follow-ups&subTab=Today'
+                : '/requirements?tab=follow-ups&subTab=Today';
+          }
           break;
         case 'team_message':
         case 'message':
@@ -161,6 +198,60 @@ class AppNotifierService {
         debugPrint('[AppNotifierService] Navigation failed: $e');
       }
     }
+  }
+
+  static Future<void> notifyLeadAdded({
+    required String clientName,
+    required String requirementId,
+  }) async {
+    final name = clientName.trim().isEmpty ? 'a client' : clientName.trim();
+    final id = 'lead_created_$requirementId';
+    if (NotificationCenter.containsId(id)) return;
+    final title = 'Lead added';
+    final message = 'You successfully added client "$name".';
+    final route = requirementId.isNotEmpty
+        ? '/requirements?openId=${Uri.encodeComponent(requirementId)}'
+        : '/requirements';
+    final payload = {
+      'requirementId': requirementId,
+      'clientName': name,
+      'audience': 'creator',
+    };
+    await NotificationCenter.addNotification(
+      id: id,
+      title: title,
+      message: message,
+      type: 'lead_created',
+      route: route,
+      payload: payload,
+    );
+  }
+
+  static Future<void> notifyPropertyAdded({
+    required String propertyName,
+    required String propertyId,
+  }) async {
+    final name = propertyName.trim().isEmpty ? 'a property' : propertyName.trim();
+    final id = 'property_created_$propertyId';
+    if (NotificationCenter.containsId(id)) return;
+    final title = 'Property added';
+    final message = 'You successfully added property "$name".';
+    final route = propertyId.isNotEmpty
+        ? '/properties?openId=${Uri.encodeComponent(propertyId)}'
+        : '/properties';
+    final payload = {
+      'propertyId': propertyId,
+      'propertyName': name,
+      'audience': 'creator',
+    };
+    await NotificationCenter.addNotification(
+      id: id,
+      title: title,
+      message: message,
+      type: 'property_created',
+      route: route,
+      payload: payload,
+    );
   }
 
   /// Dispatches both Web/Platform OS notification and an In-App floating toast banner
@@ -234,6 +325,12 @@ class AppNotifierService {
         } else if (typeLower.contains('site_visit') || typeLower.contains('visit')) {
           badgeColor = const Color(0xFF8B5CF6); // Purple
           badgeLabel = 'SITE VISIT';
+        } else if (typeLower.contains('property')) {
+          badgeColor = const Color(0xFF3B82F6);
+          badgeLabel = 'PROPERTY';
+        } else if (typeLower.contains('created') || typeLower.contains('new_lead')) {
+          badgeColor = const Color(0xFF3B82F6);
+          badgeLabel = 'LEAD';
         } else if (typeLower.contains('followup')) {
           badgeColor = const Color(0xFFF59E0B); // Amber
           badgeLabel = 'FOLLOW UP';

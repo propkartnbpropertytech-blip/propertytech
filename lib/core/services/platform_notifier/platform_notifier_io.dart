@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../app_notifier_service.dart';
 
 class PlatformNotifier {
   static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
@@ -11,7 +12,22 @@ class PlatformNotifier {
     const iosInit = DarwinInitializationSettings();
     await _plugin.initialize(
       const InitializationSettings(android: androidInit, iOS: iosInit),
+      onDidReceiveNotificationResponse: (response) {
+        AppNotifierService.handleNotificationTap({
+          'route': response.payload,
+        });
+      },
     );
+    await _plugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            'propkart_notifications',
+            'PropKart notifications',
+            description: 'Lead assignments, follow-ups, and important CRM alerts',
+            importance: Importance.high,
+          ),
+        );
     _ready = true;
   }
 
@@ -40,9 +56,9 @@ class PlatformNotifier {
         body,
         const NotificationDetails(
           android: AndroidNotificationDetails(
-            'propkart_lead_assigned',
-            'Lead assignments',
-            channelDescription: 'Notifies sales users when a telecaller assigns a client lead',
+            'propkart_notifications',
+            'PropKart notifications',
+            channelDescription: 'Lead assignments, follow-ups, and important CRM alerts',
             importance: Importance.high,
             priority: Priority.high,
             icon: '@mipmap/ic_launcher',

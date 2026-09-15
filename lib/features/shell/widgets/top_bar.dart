@@ -322,12 +322,15 @@ class _ModernTopBarState extends State<ModernTopBar> {
                 ),
               ),
               const SizedBox(width: 10),
-              Column(
+              Expanded(
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     widget.userName.isNotEmpty ? widget.userName : 'Super Administrator',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
                       fontSize: 13.5,
@@ -354,6 +357,7 @@ class _ModernTopBarState extends State<ModernTopBar> {
                     ),
                   ),
                 ],
+              ),
               ),
             ],
           ),
@@ -498,6 +502,44 @@ class _ModernTopBarState extends State<ModernTopBar> {
     );
   }
 
+  Widget _wrapMobileSafeBar({
+    required bool isDark,
+    required Widget child,
+  }) {
+    return Material(
+      color: isDark ? const Color(0xFF0F172A) : Colors.white,
+      child: SafeArea(bottom: false, child: child),
+    );
+  }
+
+  Widget _headerIconButton({
+    required VoidCallback? onPressed,
+    required Widget icon,
+    required String tooltip,
+    required bool compact,
+    double splashRadius = 22,
+  }) {
+    return IconButton(
+      onPressed: onPressed,
+      icon: icon,
+      tooltip: tooltip,
+      splashRadius: compact ? 18 : splashRadius,
+      padding: compact ? EdgeInsets.zero : const EdgeInsets.all(8),
+      visualDensity: compact ? VisualDensity.compact : VisualDensity.standard,
+      constraints: compact
+          ? const BoxConstraints.tightFor(width: 40, height: 40)
+          : const BoxConstraints(minWidth: 48, minHeight: 48),
+      style: compact
+          ? IconButton.styleFrom(
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: const Size(40, 40),
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+            )
+          : null,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeManager = ThemeManager();
@@ -520,35 +562,77 @@ class _ModernTopBarState extends State<ModernTopBar> {
 
     // Collapsed or expanded search view on small mobile screens
     if (isSmallMobile && _isSearchExpanded) {
-      return Container(
-        height: 62,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF0F172A) : Colors.white,
-          border: Border(
-            bottom: BorderSide(
-              color: isDark ? const Color(0xFF334155) : const Color(0xFFE8ECF2),
-              width: 1,
+      return _wrapMobileSafeBar(
+        isDark: isDark,
+        child: Container(
+          height: 56,
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0F172A) : Colors.white,
+            border: Border(
+              bottom: BorderSide(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE8ECF2),
+                width: 1,
+              ),
             ),
           ),
-        ),
-        child: Row(
-          children: [
-            IconButton(
-              icon: Icon(
-                Icons.arrow_back_rounded,
-                color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                size: 22,
+          child: Row(
+            children: [
+              _headerIconButton(
+                compact: true,
+                tooltip: 'Back',
+                onPressed: () {
+                  setState(() => _isSearchExpanded = false);
+                },
+                icon: Icon(
+                  Icons.arrow_back_rounded,
+                  color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+                  size: 22,
+                ),
               ),
-              onPressed: () {
-                setState(() => _isSearchExpanded = false);
-              },
-            ),
-            Expanded(
-              child: widget.searchLayerLink != null
-                  ? CompositedTransformTarget(
-                      link: widget.searchLayerLink!,
-                      child: Container(
+              Expanded(
+                child: widget.searchLayerLink != null
+                    ? CompositedTransformTarget(
+                        link: widget.searchLayerLink!,
+                        child: Container(
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF334155) : Colors.transparent,
+                            ),
+                          ),
+                          child: TextField(
+                            autofocus: true,
+                            focusNode: widget.searchFocusNode,
+                            controller: widget.searchController,
+                            onChanged: widget.onSearchChanged,
+                            onSubmitted: widget.onSearchSubmitted,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Search properties, leads, or locations...',
+                              hintStyle: TextStyle(
+                                color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                fontSize: 13,
+                              ),
+                              prefixIcon: Icon(
+                                Icons.search_rounded,
+                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                                size: 20,
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Container(
                         height: 40,
                         decoration: BoxDecoration(
                           color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
@@ -584,64 +668,31 @@ class _ModernTopBarState extends State<ModernTopBar> {
                           ),
                         ),
                       ),
-                    )
-                  : Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isDark ? const Color(0xFF334155) : Colors.transparent,
-                        ),
-                      ),
-                      child: TextField(
-                        autofocus: true,
-                        focusNode: widget.searchFocusNode,
-                        controller: widget.searchController,
-                        onChanged: widget.onSearchChanged,
-                        onSubmitted: widget.onSearchSubmitted,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Search properties, leads, or locations...',
-                          hintStyle: TextStyle(
-                            color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                            fontSize: 13,
-                          ),
-                          prefixIcon: Icon(
-                            Icons.search_rounded,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                            size: 20,
-                          ),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                          isDense: true,
-                        ),
-                      ),
-                    ),
-            ),
-            if (widget.searchController != null && widget.searchController!.text.isNotEmpty)
-              IconButton(
-                icon: Icon(
-                  Icons.close_rounded,
-                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                  size: 20,
-                ),
-                onPressed: () {
-                  widget.searchController?.clear();
-                  widget.onSearchChanged?.call('');
-                },
               ),
-          ],
+              if (widget.searchController != null && widget.searchController!.text.isNotEmpty)
+                _headerIconButton(
+                  compact: true,
+                  tooltip: 'Clear',
+                  onPressed: () {
+                    widget.searchController?.clear();
+                    widget.onSearchChanged?.call('');
+                  },
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                    size: 20,
+                  ),
+                ),
+            ],
+          ),
         ),
       );
     }
 
-    return Container(
-      height: isMobile ? 62 : 74,
-      padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 20),
+    final bar = Container(
+      height: isMobile ? 56 : 74,
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 20),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF0F172A) : Colors.white,
         border: Border(
@@ -654,32 +705,36 @@ class _ModernTopBarState extends State<ModernTopBar> {
       child: Row(
         children: [
           // ── Sidebar Toggle ─────────────────────────────────
-          IconButton(
+          _headerIconButton(
+            compact: isMobile,
             onPressed: widget.onToggleSidebar,
             icon: Icon(
               Icons.menu_rounded,
               color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-              size: 24,
+              size: isMobile ? 22 : 24,
             ),
             tooltip: 'Toggle Menu',
             splashRadius: 22,
           ),
-          const SizedBox(width: 6),
+          SizedBox(width: isMobile ? 2 : 6),
 
           // Brand name on mobile when search is collapsed
           if (isSmallMobile) ...[
-            Text(
-              'PropKart',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 17,
-                color: primaryColor,
-                letterSpacing: -0.3,
+            Expanded(
+              child: Text(
+                'PropKart',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: primaryColor,
+                  letterSpacing: -0.3,
+                ),
               ),
             ),
-            const Spacer(),
-            // Search icon button to expand search
-            IconButton(
+            _headerIconButton(
+              compact: true,
               icon: Icon(
                 Icons.search_rounded,
                 color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
@@ -770,47 +825,61 @@ class _ModernTopBarState extends State<ModernTopBar> {
                       ),
                     ),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: isMobile ? 6 : 12),
           ],
 
           // ── Right Side Actions ─────────────────────────────
-          Row(
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Circular Quick Add "+" Action Button with dynamic primaryColor
-              Container(
-                width: isMobile ? 34 : 38,
-                height: isMobile ? 34 : 38,
-                decoration: BoxDecoration(
-                  color: primaryColor,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: primaryColor.withValues(alpha: 0.35),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+              if (!isMobile) ...[
+                SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: primaryColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: primaryColor.withValues(alpha: 0.35),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.add_rounded,
-                    color: Colors.white,
-                    size: 20,
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.add_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 38,
+                        height: 38,
+                      ),
+                      style: IconButton.styleFrom(
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: EdgeInsets.zero,
+                      ),
+                      onPressed: widget.onQuickAdd ?? () => _showQuickAddModal(context),
+                      tooltip: 'Quick Add',
+                    ),
                   ),
-                  padding: EdgeInsets.zero,
-                  onPressed: widget.onQuickAdd ?? () => _showQuickAddModal(context),
-                  tooltip: 'Quick Add',
                 ),
-              ),
-
-              SizedBox(width: isMobile ? 6 : 12),
+                const SizedBox(width: 12),
+              ],
 
               // Notifications with Badge
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  IconButton(
+                  _headerIconButton(
+                    compact: isMobile,
                     onPressed: widget.onNotificationsTap ??
                         () {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -830,8 +899,8 @@ class _ModernTopBarState extends State<ModernTopBar> {
                   ),
                   if (widget.unreadNotifications > 0)
                     Positioned(
-                      top: 8,
-                      right: 8,
+                      top: isMobile ? 4 : 8,
+                      right: isMobile ? 4 : 8,
                       child: Container(
                         padding: const EdgeInsets.all(4),
                         decoration: const BoxDecoration(
@@ -851,7 +920,8 @@ class _ModernTopBarState extends State<ModernTopBar> {
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  IconButton(
+                  _headerIconButton(
+                    compact: isMobile,
                     onPressed: widget.onMessagesTap ??
                         () {
                           context.go('/messages');
@@ -866,8 +936,8 @@ class _ModernTopBarState extends State<ModernTopBar> {
                   ),
                   if (widget.unreadMessages > 0)
                     Positioned(
-                      top: 8,
-                      right: 8,
+                      top: isMobile ? 4 : 8,
+                      right: isMobile ? 4 : 8,
                       child: Container(
                         padding: const EdgeInsets.all(4),
                         decoration: const BoxDecoration(
@@ -882,7 +952,7 @@ class _ModernTopBarState extends State<ModernTopBar> {
                     ),
                 ],
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: isMobile ? 2 : 8),
 
               // Divider before Profile
               if (!isMobile)
@@ -900,21 +970,22 @@ class _ModernTopBarState extends State<ModernTopBar> {
                   borderRadius: BorderRadius.circular(20),
                   hoverColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isMobile ? 2 : 6,
                       vertical: 4,
                     ),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         CircleAvatar(
-                          radius: 17,
+                          radius: isMobile ? 15 : 17,
                           backgroundColor: primaryColor.withValues(alpha: 0.15),
                           child: Text(
                             initials,
                             style: TextStyle(
                               color: primaryColor,
                               fontWeight: FontWeight.bold,
-                              fontSize: 12,
+                              fontSize: isMobile ? 11 : 12,
                             ),
                           ),
                         ),
@@ -954,10 +1025,16 @@ class _ModernTopBarState extends State<ModernTopBar> {
                 ),
               ),
             ],
+            ),
           ),
         ],
       ),
     );
+
+    if (isMobile) {
+      return _wrapMobileSafeBar(isDark: isDark, child: bar);
+    }
+    return bar;
   }
 
   void _showQuickAddModal(BuildContext context) {

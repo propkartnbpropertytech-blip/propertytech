@@ -22,7 +22,7 @@ class CampaignSubshellHeader extends StatelessWidget {
     final isCompact = screenWidth < 1050;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: CRMSpacing.l),
+      margin: EdgeInsets.only(bottom: isCompact ? CRMSpacing.s : CRMSpacing.l),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

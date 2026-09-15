@@ -100,7 +100,7 @@ class _KpiCardWidgetState extends State<KpiCardWidget> {
                             fontWeight: FontWeight.w600,
                             letterSpacing: -0.1,
                           ),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),

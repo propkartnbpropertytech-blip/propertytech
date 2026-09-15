@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:propkart/core/storage/repository_coordinator.dart';
+import '../../../core/services/app_notifier_service.dart';
 import '../models/requirement_model.dart';
 import '../repository/requirements_repository.dart';
 
@@ -143,6 +144,12 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
   ) async {
     try {
       final saved = await requirementsRepository.createRequirement(event.requirement);
+      unawaited(AppNotifierService.notifyLeadAdded(
+        clientName: saved.clientName.isNotEmpty
+            ? saved.clientName
+            : event.requirement.clientName,
+        requirementId: saved.id,
+      ));
       final List<RequirementModel> next;
       if (state is RequirementsLoaded) {
         final current = state as RequirementsLoaded;

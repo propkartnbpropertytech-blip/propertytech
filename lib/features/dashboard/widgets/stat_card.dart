@@ -106,7 +106,7 @@ class _StatCardState extends State<StatCard> {
                               fontWeight: FontWeight.w500,
                               letterSpacing: -0.1,
                             ),
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                           SizedBox(height: compact ? 3 : 6),

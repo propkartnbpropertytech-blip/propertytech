@@ -973,8 +973,6 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _buildDownloadImagesHeaderButton(context),
-                        const SizedBox(width: 8),
                         _buildShortlistedHeaderIconButton(context),
                         if (showHeaderClose) ...[
                           const SizedBox(width: 12),
@@ -1006,9 +1004,25 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Property Images',
-                            style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Text(
+                                'Property Images',
+                                style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                              ),
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: _buildDownloadImagesHeaderButton(context),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: CRMSpacing.s),
                           CRMImageSlider(images: property.images, videos: property.videos),
@@ -2294,10 +2308,15 @@ class _InvestmentOptionsSectionWidgetState extends State<_InvestmentOptionsSecti
           const SizedBox(height: CRMSpacing.m),
 
           // Option Cards Horizontal List
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: currentOptions.map((opt) {
+          _ArrowedHScroll(
+            key: ValueKey(_selectedTab),
+            scrollStep: 211,
+            builder: (controller) => SingleChildScrollView(
+              controller: controller,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Row(
+                children: currentOptions.map((opt) {
                 final keyword = opt['keyword'] as String;
                 return MouseRegion(
                   cursor: SystemMouseCursors.click,
@@ -2369,6 +2388,7 @@ class _InvestmentOptionsSectionWidgetState extends State<_InvestmentOptionsSecti
                   ),
                 );
               }).toList(),
+              ),
             ),
           ),
         ],
@@ -2500,10 +2520,14 @@ Widget _buildSimilarPropertiesSection(BuildContext context, PropertyModel curren
               );
             }
 
-            return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: similar.map((p) {
+            return _ArrowedHScroll(
+              scrollStep: 246,
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Row(
+                  children: similar.map((p) {
                   final String imgUrl = p.images.isNotEmpty ? p.images.first : '';
                   final pCatLower = p.categoryName.toLowerCase();
                   final pTypeLower = p.propertyTypeName.toLowerCase();
@@ -2646,6 +2670,7 @@ Widget _buildSimilarPropertiesSection(BuildContext context, PropertyModel curren
                     ),
                   );
                 }).toList(),
+                ),
               ),
             );
           },
@@ -2653,6 +2678,105 @@ Widget _buildSimilarPropertiesSection(BuildContext context, PropertyModel curren
       ],
     ),
   );
+}
+
+class _ArrowedHScroll extends StatefulWidget {
+  final double scrollStep;
+  final Widget Function(ScrollController controller) builder;
+
+  const _ArrowedHScroll({
+    super.key,
+    required this.scrollStep,
+    required this.builder,
+  });
+
+  @override
+  State<_ArrowedHScroll> createState() => _ArrowedHScrollState();
+}
+
+class _ArrowedHScrollState extends State<_ArrowedHScroll> {
+  final ScrollController _controller = ScrollController();
+  bool _showPrev = false;
+  bool _showNext = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_syncArrows);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncArrows());
+  }
+
+  void _syncArrows() {
+    if (!_controller.hasClients) return;
+    final pos = _controller.position;
+    final showPrev = pos.pixels > 4;
+    final showNext = pos.maxScrollExtent > 4 && pos.pixels < pos.maxScrollExtent - 4;
+    if (showPrev != _showPrev || showNext != _showNext) {
+      setState(() {
+        _showPrev = showPrev;
+        _showNext = showNext;
+      });
+    }
+  }
+
+  Future<void> _scroll(bool forward) async {
+    if (!_controller.hasClients) return;
+    final target = (_controller.offset + (forward ? widget.scrollStep : -widget.scrollStep))
+        .clamp(0.0, _controller.position.maxScrollExtent);
+    await _controller.animateTo(
+      target,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _arrow({required bool isLeft}) {
+    final enabled = isLeft ? _showPrev : _showNext;
+    return Material(
+      color: CRMColors.cardBgOf(context),
+      elevation: 3,
+      shadowColor: Colors.black26,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: enabled ? () => _scroll(!isLeft) : null,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(
+            isLeft ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+            size: 22,
+            color: enabled
+                ? CRMColors.primaryOf(context)
+                : CRMColors.textMutedOf(context).withValues(alpha: 0.35),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        widget.builder(_controller),
+        Positioned(
+          left: 0,
+          child: _arrow(isLeft: true),
+        ),
+        Positioned(
+          right: 0,
+          child: _arrow(isLeft: false),
+        ),
+      ],
+    );
+  }
 }
 
 String _getParkingDisplay(int parkingVal) {

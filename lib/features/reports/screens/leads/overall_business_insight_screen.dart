@@ -155,9 +155,11 @@ class _OverallBusinessInsightContent extends StatelessWidget {
             },
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.symmetric(
-                horizontal: CRMBreakpoints.pagePadding(context),
-                vertical: CRMSpacing.m,
+              padding: EdgeInsets.fromLTRB(
+                CRMBreakpoints.pagePadding(context),
+                CRMSpacing.m,
+                CRMBreakpoints.pagePadding(context),
+                MediaQuery.sizeOf(context).width < 768 ? 96 : CRMSpacing.m,
               ),
               child: Center(
                 child: ConstrainedBox(
@@ -167,41 +169,32 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                     children: [
                       // Top Title & Export Bar
                       if (MediaQuery.of(context).size.width < 700) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Overall Business Insight',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: -0.4,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  if (isSoftLoading) ...[
-                                    const SizedBox(width: 6),
-                                    SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: primaryColor,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
+                        const Text(
+                          'Overall Business Insight',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.4,
+                          ),
+                        ),
+                        if (isSoftLoading) ...[
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: primaryColor,
                             ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                PopupMenuButton<String>(
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            PopupMenuButton<String>(
                                   tooltip: 'Analytical Sections Visibility',
                                   offset: const Offset(0, 36),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -299,8 +292,6 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                                   reportData: reportData,
                                   config: config,
                                 ),
-                              ],
-                            ),
                           ],
                         ),
                         const SizedBox(height: 4),
@@ -488,38 +479,43 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                       // KPI Header
                       if (MediaQuery.of(context).size.width < 700) ...[
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.speed_rounded, size: 16),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  'KPIs',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: -0.2,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: primaryColor.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text(
-                                    '${enabledKpis.length}/13 Active',
+                            Flexible(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.speed_rounded, size: 16),
+                                  const SizedBox(width: 6),
+                                  const Text(
+                                    'KPIs',
                                     style: TextStyle(
-                                      fontSize: 10,
+                                      fontSize: 15,
                                       fontWeight: FontWeight.bold,
-                                      color: primaryColor,
+                                      letterSpacing: -0.2,
                                     ),
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: primaryColor.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Text(
+                                        '${enabledKpis.length}/13 Active',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: primaryColor,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                             TextButton.icon(
                               icon: const Icon(Icons.tune_rounded, size: 13),

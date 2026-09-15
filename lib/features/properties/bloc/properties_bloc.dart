@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:propkart/core/storage/repository_coordinator.dart';
+import '../../../core/services/app_notifier_service.dart';
 import '../models/property_model.dart';
 import '../repository/properties_repository.dart';
 import '../../../core/storage/model_mappers.dart';
@@ -287,6 +288,13 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
   ) async {
     try {
       final saved = await _repository.createProperty(event.propertyData);
+      final propertyName = saved.title.trim().isNotEmpty
+          ? saved.title.trim()
+          : (saved.propertyCode.trim().isNotEmpty ? saved.propertyCode.trim() : 'a property');
+      unawaited(AppNotifierService.notifyPropertyAdded(
+        propertyName: propertyName,
+        propertyId: saved.id,
+      ));
       if (state is PropertiesLoaded) {
         final current = state as PropertiesLoaded;
         final updatedList = [saved, ...current.properties.where((p) => p.id != saved.id)];

@@ -40,6 +40,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   final IntegrationService _service = IntegrationService();
   final UsersRepository _usersRepository = UsersRepository();
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _notInterestedSearchController = TextEditingController();
   List<users_model.UserModel>? _cachedUsers;
 
   // Active view mode: 'active' (default pipeline), 'followups' (scheduled callbacks), 'not_interested' (archived)
@@ -67,7 +68,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   int _currentPage = 1;
   int _pageSize = 25;
   String _searchQuery = '';
+  String _notInterestedSearchQuery = '';
   Timer? _searchDebounce;
+  Timer? _notInterestedSearchDebounce;
   Timer? _uiDebounce;
 
   @override
@@ -96,10 +99,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _notInterestedSearchDebounce?.cancel();
     _uiDebounce?.cancel();
     _service.unwatchCampaignUi();
     _service.removeListener(_onServiceUpdate);
     _searchController.dispose();
+    _notInterestedSearchController.dispose();
     super.dispose();
   }
 
@@ -668,8 +673,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       child: Scaffold(
         backgroundColor: CRMColors.backgroundOf(context),
         body: SafeArea(
+          top: false,
+          bottom: false,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(CRMSpacing.l),
+            padding: EdgeInsets.fromLTRB(
+              MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.m : CRMSpacing.l,
+              MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.s : CRMSpacing.l,
+              MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.m : CRMSpacing.l,
+              MediaQuery.sizeOf(context).width < 700 ? 96 : CRMSpacing.l,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -679,7 +691,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   trailing: _buildHeaderActions(context),
                 ),
 
-              const SizedBox(height: CRMSpacing.m),
+              SizedBox(height: MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.s : CRMSpacing.m),
 
               // Main View Mode Selector (Active Leads, Follow-ups, Not Interested)
               _buildViewSelector(context),
@@ -1430,6 +1442,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ],
           ),
         ),
+        if (_selectedSection != 'Property Listing')
         PopupMenuItem(
           value: 'Transfer',
           child: Row(
@@ -3301,16 +3314,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       filteredBySub = notInterestedLeads.where((l) => l.leadType == 'Requirement').toList();
     }
 
-    final query = _searchQuery.trim().toLowerCase();
+    final query = _notInterestedSearchQuery.trim().toLowerCase();
     final displayedLeads = query.isEmpty
         ? filteredBySub
-        : filteredBySub.where((l) {
-            if (l.source.toLowerCase().contains(query)) return true;
-            for (final val in l.rawJson.values) {
-              if (val != null && val.toString().toLowerCase().contains(query)) return true;
-            }
-            return false;
-          }).toList();
+        : filteredBySub.where((l) => _matchesNotInterestedSearch(l, query)).toList();
 
     final isMobile = MediaQuery.of(context).size.width < 700;
     Widget wrapMetric(Widget item, String filterKey) {
@@ -3368,7 +3375,76 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           elevated: true,
           title: 'Not Interested Leads',
           subtitle: 'Archived leads kept separate to keep active leads clean. You can restore them anytime.',
-          child: displayedLeads.isEmpty
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 40,
+                        child: TextField(
+                          controller: _notInterestedSearchController,
+                          onChanged: (value) {
+                            _notInterestedSearchDebounce?.cancel();
+                            _notInterestedSearchDebounce = Timer(const Duration(milliseconds: 250), () {
+                              if (!mounted) return;
+                              setState(() {
+                                _notInterestedSearchQuery = value.trim().toLowerCase();
+                              });
+                            });
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Search by client name, phone, email, source...',
+                            hintStyle: CRMTypography.caption.copyWith(
+                              color: CRMColors.textSecondaryOf(context),
+                            ),
+                            prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                            suffixIcon: _notInterestedSearchController.text.isNotEmpty
+                                ? IconButton(
+                                    tooltip: 'Clear',
+                                    icon: const Icon(Icons.close_rounded, size: 18),
+                                    onPressed: () {
+                                      _notInterestedSearchDebounce?.cancel();
+                                      _notInterestedSearchController.clear();
+                                      setState(() {
+                                        _notInterestedSearchQuery = '';
+                                      });
+                                    },
+                                  )
+                                : null,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                            ),
+                            filled: true,
+                            fillColor: CRMColors.cardBgOf(context),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: CRMSpacing.s),
+                    CRMButton(
+                      label: 'Search',
+                      onPressed: () {
+                        _notInterestedSearchDebounce?.cancel();
+                        setState(() {
+                          _notInterestedSearchQuery =
+                              _notInterestedSearchController.text.trim().toLowerCase();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              displayedLeads.isEmpty
               ? Container(
                   height: 200,
                   alignment: Alignment.center,
@@ -3377,9 +3453,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     children: [
                       const Icon(Icons.check_circle_outline_rounded, size: 44, color: Color(0xFF10B981)),
                       const SizedBox(height: 12),
-                      Text('No Not-Interested Leads', style: CRMTypography.headline.copyWith(fontSize: 16)),
+                      Text(
+                        query.isEmpty ? 'No Not-Interested Leads' : 'No matching Not Interested leads',
+                        style: CRMTypography.headline.copyWith(fontSize: 16),
+                      ),
                       const SizedBox(height: 4),
-                      Text('Any lead marked as "Not interested" will be kept here safely.',
+                      Text(
+                        query.isEmpty
+                            ? 'Any lead marked as "Not interested" will be kept here safely.'
+                            : 'Try a different name, phone number, or other lead detail.',
                           style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 13)),
                     ],
                   ),
@@ -3496,9 +3578,31 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         ),
                       ),
                     ),
+            ],
+          ),
         ),
       ],
     );
+  }
+
+  bool _matchesNotInterestedSearch(IntegrationLeadModel lead, String query) {
+    if (query.isEmpty) return true;
+    final name = lead.getStringValue('full_name').isNotEmpty
+        ? lead.getStringValue('full_name')
+        : lead.getStringValue('name');
+    final phone = lead.getStringValue('phone_number').isNotEmpty
+        ? lead.getStringValue('phone_number')
+        : lead.getStringValue('phone');
+    final email = lead.getStringValue('email');
+    if (name.toLowerCase().contains(query)) return true;
+    if (phone.toLowerCase().contains(query)) return true;
+    if (email.toLowerCase().contains(query)) return true;
+    if (lead.source.toLowerCase().contains(query)) return true;
+    if (lead.leadType.toLowerCase().contains(query)) return true;
+    for (final val in lead.rawJson.values) {
+      if (val != null && val.toString().toLowerCase().contains(query)) return true;
+    }
+    return false;
   }
 
   Future<void> _launchTel(String phone) async {
@@ -4675,25 +4779,27 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 children: [
                   Icon(fieldIcon, size: 14, color: CRMColors.textSecondaryOf(context)),
                   const SizedBox(width: 6),
-                  SizedBox(
-                    width: 115,
+                  Expanded(
+                    flex: 4,
                     child: Text(
-                      '$header: ',
+                      '$header:',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  const SizedBox(width: 6),
                   Expanded(
-                    child: Row(
+                    flex: 6,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Expanded(
-                          child: Text(
-                            displayVal,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: isPhoneField ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                            ),
+                        Text(
+                          displayVal,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isPhoneField ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
                           ),
                         ),
                         if (isPhoneField && displayVal.isNotEmpty) ...[
@@ -4701,7 +4807,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             onTap: () => _launchTel(displayVal),
                             child: const Icon(Icons.phone_rounded, size: 16, color: Color(0xFF10B981)),
                           ),
-                          const SizedBox(width: 8),
                           InkWell(
                             onTap: () => _launchWhatsApp(displayVal, name),
                             child: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Color(0xFF22C55E)),
@@ -5150,7 +5255,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     final sourceDropdown = Container(
       height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: CRMColors.cardBgOf(context),
         borderRadius: BorderRadius.circular(8),
@@ -5193,7 +5298,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ...filterUsers.map(
         (u) => DropdownMenuItem(
           value: u.id,
-          child: Text('${u.fullName} (${u.roleName})', overflow: TextOverflow.ellipsis),
+          child: Text('${u.fullName} (${u.roleName})'),
         ),
       ),
     ];
@@ -5307,17 +5412,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               const SizedBox(height: CRMSpacing.s),
               searchInput,
               const SizedBox(height: CRMSpacing.s),
-              Row(
-                children: [
-                  Expanded(child: sourceDropdown),
-                  const SizedBox(width: CRMSpacing.s),
-                  if (TeamUserVisibility.canUseFilter(currentRole)) ...[
-                    Expanded(child: userDropdown),
-                    const SizedBox(width: CRMSpacing.s),
-                  ],
-                  Expanded(child: duplicateDropdown),
-                ],
-              ),
+              sourceDropdown,
+              if (TeamUserVisibility.canUseFilter(currentRole)) ...[
+                const SizedBox(height: CRMSpacing.s),
+                userDropdown,
+              ],
+              const SizedBox(height: CRMSpacing.s),
+              duplicateDropdown,
             ] else ...[
               Row(
                 children: [

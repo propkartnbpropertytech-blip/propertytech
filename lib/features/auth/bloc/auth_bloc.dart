@@ -8,6 +8,7 @@ import '../../../core/storage/session_cleanup.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/services/push_notification_service.dart';
+import '../../../core/services/notification_center.dart';
 
 // ==========================================
 // Auth Events
@@ -171,6 +172,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) async {
     RoleGuard.currentUser = null;
+    try {
+      await NotificationCenter.clearSession();
+    } catch (_) {}
     // Emit first so the router does not bounce /get-started back to /dashboard
     // while network sign-out is still in flight.
     emit(Unauthenticated());
@@ -192,6 +196,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     } catch (_) {}
     unawaited(SyncManager().disconnect());
     RoleGuard.currentUser = null;
+    try {
+      await NotificationCenter.clearSession();
+    } catch (_) {}
     emit(Unauthenticated());
   }
 }

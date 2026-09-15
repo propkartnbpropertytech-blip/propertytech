@@ -355,9 +355,6 @@ class RequirementModel {
         if (json['creator'] is Map) {
           return (json['creator']['full_name'] ?? json['creator']['fullName'] ?? json['creator']['name']) as String?;
         }
-        if (json['admin'] is Map) {
-          return (json['admin']['full_name'] ?? json['admin']['fullName'] ?? json['admin']['name']) as String?;
-        }
         return null;
       }(),
       nextFollowupDate: json['nextFollowupDate'] ?? json['next_followup_date'],

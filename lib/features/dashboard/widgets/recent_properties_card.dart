@@ -57,9 +57,12 @@ class RecentPropertiesCard extends StatelessWidget {
         children: [
           // ── Card Header ──────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -170,6 +173,8 @@ class RecentPropertiesCard extends StatelessWidget {
                           horizontal: 8,
                           vertical: 4,
                         ),
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         textStyle: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,

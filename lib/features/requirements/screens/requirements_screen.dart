@@ -653,6 +653,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         _activeMainTab = 'Follow-ups';
       } else if (tabLower == 'my won' || tabLower == 'won') {
         _activeMainTab = 'My Won';
+      } else if (tabLower == 'leads added by me' || tabLower == 'added') {
+        _activeMainTab = 'Leads Added by Me';
       } else if (tabLower == 'leads') {
         _activeMainTab = 'Leads';
       }
@@ -746,6 +748,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _activeMainTab = 'My Won';
         });
         _triggerFetch();
+      } else if (tabLower == 'leads added by me' || tabLower == 'added') {
+        setState(() {
+          _activeMainTab = 'Leads Added by Me';
+        });
+        _triggerFetch();
       } else if (tabLower == 'leads') {
         setState(() {
           _activeMainTab = 'Leads';
@@ -782,6 +789,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           targetTab = 'Follow-ups';
         } else if (tabLower == 'my won' || tabLower == 'won') {
           targetTab = 'My Won';
+        } else if (tabLower == 'leads added by me' || tabLower == 'added') {
+          targetTab = 'Leads Added by Me';
         } else if (tabLower == 'leads') {
           targetTab = 'Leads';
         }
@@ -1337,7 +1346,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         },
         child: SingleChildScrollView(
           controller: _scrollController,
-          padding: const EdgeInsets.all(CRMSpacing.l),
+          padding: EdgeInsets.all(
+            MediaQuery.sizeOf(context).width < 600 ? CRMSpacing.m : CRMSpacing.l,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1364,14 +1375,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       _buildMainViewTabButton('Follow-ups'),
                       const SizedBox(width: 4),
                       _buildMainViewTabButton('My Won'),
+                      if (currentUser != null &&
+                          (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')) ...[
+                        const SizedBox(width: 4),
+                        _buildMainViewTabButton('Leads Added by Me'),
+                      ],
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: CRMSpacing.l),
 
-              if (_activeMainTab == 'Leads') ...[
-                if (currentUser != null && currentUser.role == 'Sales') ...[
+              if (_activeMainTab == 'Leads' || _activeMainTab == 'Leads Added by Me') ...[
+                if (_activeMainTab == 'Leads' && currentUser != null && currentUser.role == 'Sales') ...[
                   _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
                   const SizedBox(height: CRMSpacing.m),
                 ],
@@ -2129,6 +2145,45 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         onChanged: onChanged,
       ),
     );
+  }
+
+  bool _looksLikeUserId(String value) {
+    return RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    ).hasMatch(value.trim());
+  }
+
+  String? _liveUserName(String? idOrName) {
+    if (idOrName == null || idOrName.trim().isEmpty) return null;
+    try {
+      final usersState = context.read<UsersBloc>().state;
+      if (usersState is UsersLoaded) {
+        final needle = idOrName.trim();
+        final match = usersState.users.firstWhereOrNull(
+          (u) =>
+              u.id == needle ||
+              u.fullName.trim().toLowerCase() == needle.toLowerCase(),
+        );
+        if (match != null && match.fullName.trim().isNotEmpty) {
+          return match.fullName.trim();
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  String _getAddedByName(RequirementModel req) {
+    final fromCreatorId = _liveUserName(req.createdBy);
+    if (fromCreatorId != null) return fromCreatorId;
+
+    final rawName = req.creatorName?.trim();
+    if (rawName != null && rawName.isNotEmpty && rawName != 'System') {
+      final fromCreatorName = _liveUserName(rawName);
+      if (fromCreatorName != null) return fromCreatorName;
+      if (!_looksLikeUserId(rawName)) return rawName;
+    }
+
+    return 'Propkart Admin';
   }
 
   String _getSalesmanName(RequirementModel req, UserModel? currentUser) {
@@ -3489,7 +3544,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
     final notesController = TextEditingController(text: '');
 
-    const double popoverWidth = 320.0;
+    final double popoverWidth = (maxCanvasWidth - 32).clamp(240.0, 320.0);
     const double popoverHeight = 245.0;
 
     final double targetCenterX = offset.dx + (size.width / 2);
@@ -3826,6 +3881,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         if (rawLoadedList.isNotEmpty) {
           final query = _searchController.text.trim().toLowerCase();
           requirements = rawLoadedList.where((r) {
+            if (_activeMainTab == 'Leads Added by Me') {
+              if (currentUser == null || !_isUserCreator(r, currentUser)) {
+                return false;
+              }
+            }
             if (currentUser != null && currentUser.role == 'Sales') {
               if (!_salesCanViewRequirement(r, currentUser)) {
                 return false;
@@ -3861,7 +3921,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
             // Exclude Won requirements from the active Requirements view unless user explicitly selected "Won"
             // or is viewing a specific team member's complete lead set.
-            if (!userFilterActive && _selectedStatus != 'Won' && mappedStatus == 'Won') return false;
+            if (_activeMainTab != 'Leads Added by Me' &&
+                !userFilterActive &&
+                _selectedStatus != 'Won' &&
+                mappedStatus == 'Won') return false;
 
             final matchesStatus = userFilterActive
                 ? (_selectedStatus == "All" ||
@@ -3876,7 +3939,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             final matchesDate = _matchesLeadDateFilter(r);
 
             bool matchesUser = true;
-            if (userFilterActive) {
+            if (_activeMainTab != 'Leads Added by Me' && userFilterActive) {
               users_model.UserModel? selectedUser;
               try {
                 final usersState = context.read<UsersBloc>().state;
@@ -3953,8 +4016,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   isLoading: isLoading,
                   emptyTitle: 'No Requirements Found',
                   emptyDescription: 'Try adjusting filters or create a new requirement pipeline.',
-                  dataRowMinHeight: 56.0,
-                  dataRowMaxHeight: 72.0,
+                  dataRowMinHeight: 88.0,
+                  dataRowMaxHeight: 160.0,
                   columnSpacing: 10.0,
                   horizontalMargin: 12.0,
                   columns: [
@@ -4115,7 +4178,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                           DataCell(
                             Text(
-                              _getSalesmanName(req, currentUser),
+                              _getAddedByName(req),
                               style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -4497,10 +4560,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 color: CRMColors.primaryOf(context).withOpacity(0.3),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Checkbox(
                       value: _selectedRequirementIds.length == requirements.length && requirements.isNotEmpty,
@@ -4525,7 +4592,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     ),
                   ],
                 ),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     TextButton.icon(
                       onPressed: () {
@@ -4536,7 +4605,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       icon: const Icon(Icons.close_rounded, size: 16),
                       label: const Text('Cancel'),
                     ),
-                    const SizedBox(width: 8),
                     ElevatedButton.icon(
                       onPressed: () => _confirmBulkMoveToBin(requirements),
                       style: ElevatedButton.styleFrom(
@@ -4621,179 +4689,210 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ),
                     ),
                   // Top Row: Checkbox, Client Name, User badge, Share button, Status dropdown
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Row(
+                  Builder(
+                    builder: (context) {
+                      final isNarrowCard = MediaQuery.sizeOf(context).width < 700;
+                      final nameBlock = Expanded(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            SizedBox(
-                              width: 28,
-                              height: 28,
-                              child: Checkbox(
-                                value: isSelected,
-                                activeColor: CRMColors.primaryOf(context),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4),
+                            GestureDetector(
+                              onTap: () => _showRequirementDetailDrawer(req),
+                              child: Text(
+                                req.clientName,
+                                style: CRMTypography.sectionTitle.copyWith(
+                                  color: CRMColors.primaryOf(context),
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
                                 ),
-                                onChanged: isClosed
-                                    ? null
-                                    : (_) {
-                                        setState(() {
-                                          if (isSelected) {
-                                            _selectedRequirementIds.remove(req.id);
-                                          } else {
-                                            _selectedRequirementIds.add(req.id);
-                                          }
-                                        });
-                                      },
                               ),
                             ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Wrap(
-                                spacing: 8,
-                                runSpacing: 4,
-                                crossAxisAlignment: WrapCrossAlignment.center,
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: CRMColors.primaryOf(context).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: CRMColors.primaryOf(context).withOpacity(0.3)),
+                              ),
+                              child: Text(
+                                req.requirementCode,
+                                style: TextStyle(
+                                  color: CRMColors.primaryOf(context),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            if (req.matchingReadiness != 'Ready')
+                              _buildNeedsMoreDetailsBadge(req, compact: true),
+                          ],
+                        ),
+                      );
+                      final moreMenu = PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert_rounded, size: 18),
+                        tooltip: 'More Actions',
+                        onSelected: (action) {
+                          if (action == 'add_another') {
+                            _showAddAnotherRequirementDialog(req);
+                          } else if (action == 'share') {
+                            _showSharePropertiesDialog(req);
+                          } else if (action == 'view_details') {
+                            _showRequirementDetailDrawer(req);
+                          } else if (action == 'edit') {
+                            _showAddEditDialog(req);
+                          } else if (action == 'delete') {
+                            _showDeleteConfirmDialog(req);
+                          } else if (action == 'upload_doc') {
+                            final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
+                            context.go(
+                              isRent ? '/rental-library' : '/resale-library',
+                              extra: {
+                                'autoOpenUpload': true,
+                                'clientName': req.clientName,
+                              },
+                            );
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'view_details',
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded, size: 18),
+                                SizedBox(width: 8),
+                                Text('View Details'),
+                              ],
+                            ),
+                          ),
+                          if (!isClosed && !_isLeadTransferredAway(req, currentUser))
+                            const PopupMenuItem(
+                              value: 'add_another',
+                              child: Row(
                                 children: [
-                                  GestureDetector(
-                                    onTap: () => _showRequirementDetailDrawer(req),
-                                    child: Text(
-                                      req.clientName,
-                                      style: CRMTypography.sectionTitle.copyWith(
-                                        color: CRMColors.primaryOf(context),
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.bold,
-                                        decoration: TextDecoration.underline,
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: CRMColors.primaryOf(context).withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: CRMColors.primaryOf(context).withOpacity(0.3)),
-                                    ),
-                                    child: Text(
-                                      req.requirementCode,
-                                      style: TextStyle(
-                                        color: CRMColors.primaryOf(context),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  if (req.matchingReadiness != 'Ready')
-                                    _buildNeedsMoreDetailsBadge(req, compact: true),
+                                  Icon(Icons.add_circle_outline_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Add Another Requirement'),
+                                ],
+                              ),
+                            ),
+                          if (!isClosed)
+                            const PopupMenuItem(
+                              value: 'share',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.share_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Share Properties'),
+                                ],
+                              ),
+                            ),
+                          if (isWon)
+                            const PopupMenuItem(
+                              value: 'upload_doc',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.upload_file_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Upload Document'),
+                                ],
+                              ),
+                            ),
+                          if (!isClosed && _hasEditAccess(req, currentUser)) ...[
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Edit'),
                                 ],
                               ),
                             ),
                           ],
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildStatusControlWithNotes(req, currentUser, compact: true),
-                          PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert_rounded, size: 18),
-                            tooltip: 'More Actions',
-                            onSelected: (action) {
-                              if (action == 'add_another') {
-                                _showAddAnotherRequirementDialog(req);
-                              } else if (action == 'share') {
-                                _showSharePropertiesDialog(req);
-                              } else if (action == 'view_details') {
-                                _showRequirementDetailDrawer(req);
-                              } else if (action == 'edit') {
-                                _showAddEditDialog(req);
-                              } else if (action == 'delete') {
-                                _showDeleteConfirmDialog(req);
-                              } else if (action == 'upload_doc') {
-                                final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
-                                context.go(
-                                  isRent ? '/rental-library' : '/resale-library',
-                                  extra: {
-                                    'autoOpenUpload': true,
-                                    'clientName': req.clientName,
-                                  },
-                                );
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(
-                                value: 'view_details',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.info_outline_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('View Details'),
-                                  ],
-                                ),
+                          if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
+                                  SizedBox(width: 8),
+                                  Text('Delete', style: TextStyle(color: CRMColors.danger)),
+                                ],
                               ),
-                              if (!isClosed && !_isLeadTransferredAway(req, currentUser))
-                                const PopupMenuItem(
-                                  value: 'add_another',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.add_circle_outline_rounded, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Add Another Requirement'),
-                                    ],
-                                  ),
-                                ),
-                              if (!isClosed)
-                                const PopupMenuItem(
-                                  value: 'share',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.share_outlined, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Share Properties'),
-                                    ],
-                                  ),
-                                ),
-                              if (isWon)
-                                const PopupMenuItem(
-                                  value: 'upload_doc',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.upload_file_rounded, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Upload Document'),
-                                    ],
-                                  ),
-                                ),
-                              if (!isClosed && _hasEditAccess(req, currentUser)) ...[
-                                const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.edit_outlined, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Edit'),
-                                    ],
-                                  ),
-                                ),
+                            ),
+                          ],
+                        ],
+                      );
+                      final checkbox = SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: Checkbox(
+                          value: isSelected,
+                          activeColor: CRMColors.primaryOf(context),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          onChanged: isClosed
+                              ? null
+                              : (_) {
+                                  setState(() {
+                                    if (isSelected) {
+                                      _selectedRequirementIds.remove(req.id);
+                                    } else {
+                                      _selectedRequirementIds.add(req.id);
+                                    }
+                                  });
+                                },
+                        ),
+                      );
+
+                      if (isNarrowCard) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                checkbox,
+                                const SizedBox(width: 6),
+                                nameBlock,
+                                moreMenu,
                               ],
-                              if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
-                                      SizedBox(width: 8),
-                                      Text('Delete', style: TextStyle(color: CRMColors.danger)),
-                                    ],
-                                  ),
-                                ),
+                            ),
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: _buildStatusControlWithNotes(req, currentUser, compact: true),
+                            ),
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                checkbox,
+                                const SizedBox(width: 6),
+                                nameBlock,
                               ],
+                            ),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildStatusControlWithNotes(req, currentUser, compact: true),
+                              moreMenu,
                             ],
                           ),
                         ],
-                      ),
-                    ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 4),
 
@@ -4926,8 +5025,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           Icon(Icons.person_add_alt_1_outlined, size: 13, color: CRMColors.textMutedOf(context)),
                           const SizedBox(width: 4),
                           Text(
-                            'Added by: ${(req.creatorName != null && req.creatorName!.trim().isNotEmpty && req.creatorName != "System") ? req.creatorName : "Propkart Admin"}',
+                            'Added by: ${_getAddedByName(req)}',
                             style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
@@ -5270,8 +5371,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
         children: [
           if (canExport)
             ElevatedButton.icon(
@@ -5290,7 +5394,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ),
             )
           else
-            const SizedBox(),
+            const SizedBox.shrink(),
           _buildViewSwitcher(),
         ],
       ),
@@ -5434,7 +5538,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _activeMainTab = label;
         });
         // My Won needs an unfiltered status fetch so Won rows are present.
-        if (label == 'My Won' || label == 'Leads' || label == 'Requirements') {
+        if (label == 'My Won' ||
+            label == 'Leads' ||
+            label == 'Requirements' ||
+            label == 'Leads Added by Me') {
           _triggerFetch();
         }
       },
@@ -8525,7 +8632,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                           DataCell(
                             Text(
-                              _getSalesmanName(req, currentUser),
+                              _getAddedByName(req),
                               style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -11876,37 +11983,44 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
   Widget build(BuildContext context) {
     final notesList = _parseNotesList(_currentReq.notes);
 
+    final screenSize = MediaQuery.sizeOf(context);
+    final dialogWidth = (screenSize.width - 32).clamp(280.0, 480.0);
+
     return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       backgroundColor: CRMColors.cardBgOf(context),
-      child: Container(
-        width: 480,
-        constraints: const BoxConstraints(maxHeight: 580),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: SizedBox(
+        width: dialogWidth,
+        child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: screenSize.height * 0.78,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.sticky_note_2_rounded,
-                      color: CRMColors.primaryOf(context),
-                      size: 22,
+                Icon(
+                  Icons.sticky_note_2_rounded,
+                  color: CRMColors.primaryOf(context),
+                  size: 22,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'All Notes (${notesList.length})',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: CRMColors.textOf(context),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'All Notes (${notesList.length})',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: CRMColors.textOf(context),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
                 IconButton(
                   icon: Icon(Icons.close_rounded, color: CRMColors.textMutedOf(context)),
@@ -11914,33 +12028,37 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Divider(color: CRMColors.borderOf(context).withOpacity(0.6), height: 1),
             const SizedBox(height: 12),
 
-            Expanded(
+            Flexible(
               child: notesList.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.notes_outlined,
-                            size: 48,
-                            color: CRMColors.textMutedOf(context).withOpacity(0.5),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'No notes added yet.',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: CRMColors.textSecondaryOf(context),
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.notes_outlined,
+                              size: 48,
+                              color: CRMColors.textMutedOf(context).withOpacity(0.5),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 8),
+                            Text(
+                              'No notes added yet.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: CRMColors.textSecondaryOf(context),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     )
                   : ListView.separated(
+                      shrinkWrap: true,
                       itemCount: notesList.length,
                       separatorBuilder: (context, index) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
@@ -12094,7 +12212,9 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
                   ),
                 ],
               ),
-          ],
+            ],
+          ),
+        ),
         ),
       ),
     );

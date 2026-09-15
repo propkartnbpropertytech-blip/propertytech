@@ -205,26 +205,25 @@ class _DashboardScreenState extends State<DashboardScreen>
                           const SizedBox(height: 20),
 
                           // Atmosphere (Desk Mode) Switch Header
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          Wrap(
+                            alignment: WrapAlignment.spaceBetween,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
-                              Expanded(
-                                child: Text(
-                                  _isRent
-                                      ? 'Rental Desk Overview'
-                                      : 'Re-Sale Desk Overview',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: ThemeManager().isDarkMode
-                                        ? const Color(0xFFF8FAFC)
-                                        : const Color(0xFF14213D),
-                                    letterSpacing: -0.2,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                              Text(
+                                _isRent
+                                    ? 'Rental Desk Overview'
+                                    : 'Re-Sale Desk Overview',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: ThemeManager().isDarkMode
+                                      ? const Color(0xFFF8FAFC)
+                                      : const Color(0xFF14213D),
+                                  letterSpacing: -0.2,
                                 ),
                               ),
-                              const SizedBox(width: 8),
                               _buildModernAtmosphereToggle(),
                             ],
                           ),
