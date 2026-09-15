@@ -27,6 +27,7 @@ import '../bloc/campaign_leads_bloc.dart';
 import 'campaign_subshell_header.dart';
 import '../../users/repository/users_repository.dart';
 import '../../users/models/user_model.dart' as users_model;
+import '../../../core/utils/team_user_visibility.dart';
 
 class CampaignLeadsScreen extends StatefulWidget {
   const CampaignLeadsScreen({super.key});
@@ -56,6 +57,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   late String _selectedSection = _persistedSection;
   late String _selectedSourceFilter = _persistedSourceFilter;
   late String _selectedDuplicateFilter = _persistedDuplicateFilter;
+  String _selectedUserFilterId = 'All';
   late CampaignDateFilter _selectedDateFilter = _persistedDateFilter;
   DateTime? _customStartDate;
   DateTime? _customEndDate;
@@ -77,6 +79,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _service.ensureLoaded();
     unawaited(_service.fetchServerLeads(silent: true));
     unawaited(_service.fetchHealthAlerts());
+    unawaited(_preloadFilterUsers());
+  }
+
+  Future<void> _preloadFilterUsers() async {
+    if (_cachedUsers != null && _cachedUsers!.isNotEmpty) return;
+    try {
+      final allUsers = await _usersRepository.getUsers();
+      if (!mounted) return;
+      setState(() {
+        _cachedUsers = allUsers.where((u) => u.isActive).toList();
+      });
+    } catch (_) {}
   }
 
   @override
@@ -123,6 +137,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   String? _lastSectionFilter;
   String? _lastSourceFilter;
   String? _lastDuplicateFilter;
+  String? _lastUserFilter;
   CampaignDateFilter? _lastDateFilter;
   DateTime? _lastCustomStartDate;
   DateTime? _lastCustomEndDate;
@@ -245,6 +260,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         _lastSectionFilter == _selectedSection &&
         _lastSourceFilter == _selectedSourceFilter &&
         _lastDuplicateFilter == _selectedDuplicateFilter &&
+        _lastUserFilter == _selectedUserFilterId &&
         _lastDateFilter == _selectedDateFilter &&
         _lastCustomStartDate == _customStartDate &&
         _lastCustomEndDate == _customEndDate &&
@@ -260,6 +276,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _lastSectionFilter = _selectedSection;
     _lastSourceFilter = _selectedSourceFilter;
     _lastDuplicateFilter = _selectedDuplicateFilter;
+    _lastUserFilter = _selectedUserFilterId;
     _lastDateFilter = _selectedDateFilter;
     _lastCustomStartDate = _customStartDate;
     _lastCustomEndDate = _customEndDate;
@@ -273,13 +290,40 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     // In 'archive_listed' (or legacy 'listed') mode, show leads where leadType == 'Property Listing' and campaignStatus is listed/archived.
     // In 'archive_requirements' mode, show leads where leadType == 'Requirement' and campaignStatus is archived/closed/won.
     // In 'active' mode (default), filter out 'Not interested', 'Property Listed' / 'Listed', and 'Archived' leads.
-    var list = _viewMode == 'not_interested'
-        ? currentLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList()
-        : (_viewMode == 'archive_listed' || _viewMode == 'listed'
-            ? currentLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList()
-            : (_viewMode == 'archive_requirements'
-                ? currentLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won')).toList()
-                : currentLeads.where((l) => l.leadType == _selectedSection && !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned')).toList()));
+    final userFilterActive = _selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty;
+    users_model.UserModel? selectedFilterUser;
+    if (userFilterActive && _cachedUsers != null) {
+      for (final u in _cachedUsers!) {
+        if (u.id == _selectedUserFilterId) {
+          selectedFilterUser = u;
+          break;
+        }
+      }
+    }
+
+    List<IntegrationLeadModel> list;
+    final selectedUser = selectedFilterUser;
+    if (userFilterActive && selectedUser != null && _viewMode == 'active') {
+      list = currentLeads
+          .where((l) =>
+              l.leadType == _selectedSection &&
+              TeamUserVisibility.campaignLeadBelongsToUser(l, selectedUser))
+          .toList();
+    } else {
+      list = _viewMode == 'not_interested'
+          ? currentLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList()
+          : (_viewMode == 'archive_listed' || _viewMode == 'listed'
+              ? currentLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList()
+              : (_viewMode == 'archive_requirements'
+                  ? currentLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won')).toList()
+                  : currentLeads.where((l) {
+                      if (l.leadType != _selectedSection) return false;
+                      return !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned');
+                    }).toList()));
+      if (userFilterActive && selectedUser != null) {
+        list = list.where((l) => TeamUserVisibility.campaignLeadBelongsToUser(l, selectedUser)).toList();
+      }
+    }
 
     // Filter by Date (Today is default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
     if (_selectedDateFilter != CampaignDateFilter.allTime) {
@@ -465,12 +509,17 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         totalActiveCount++;
       }
 
+      final isFollowupStatus = l.campaignStatus == 'Follow up' || l.campaignStatus == 'Follow-up';
+      final isTransferred = l.campaignStatus == 'Assigned' ||
+          l.importStatus == 'Imported' ||
+          (l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned');
+      if (isFollowupStatus && !isTransferred && !isNotInterested && !isArchived) {
+        followupCount++;
+      }
+
       if (isSelectedSec && !isNotInterested && !isArchived) {
         if (l.campaignStatus == 'Interested' && l.importStatus != 'Imported') {
           interestedCount++;
-        }
-        if (l.campaignStatus == 'Follow up') {
-          followupCount++;
         }
 
         allTimeSectionCount++;
@@ -501,7 +550,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _cachedCountThisMonth = countThisMonth;
     _cachedCountAllTime = allTimeSectionCount;
     _cachedInterestedCount = interestedCount;
-    _cachedFollowupCount = _followupsList.isNotEmpty ? _followupsList.length : followupCount;
+    _cachedFollowupCount = followupCount;
     _cachedNotInterestedCount = notInterestedCount;
     _cachedNotInterestedTodayCount = notInterestedTodayCount;
     _cachedTotalActiveCount = totalActiveCount;
@@ -1172,6 +1221,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               _cachedFilteredLeads = null;
             });
             final ok = result['success'] == true;
+            unawaited(_loadFollowups());
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
@@ -1189,6 +1239,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             setState(() {
               _cachedFilteredLeads = null;
             });
+            unawaited(_loadFollowups());
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text('Property listing marked as Listed and saved in Archive.'),
@@ -1214,6 +1265,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             setState(() {
               _cachedFilteredLeads = null;
             });
+            unawaited(_loadFollowups());
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text('Requirement lead archived and saved in Archive.'),
@@ -1289,6 +1341,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             setState(() {
               _cachedFilteredLeads = null;
             });
+            unawaited(_loadFollowups());
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Lead marked as Interested! Highlighted row is ready to move to Leads page.'),
@@ -1302,6 +1355,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             setState(() {
               _cachedFilteredLeads = null;
             });
+            unawaited(_loadFollowups());
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text('Lead marked as Not Interested and moved to Not Interested tab.'),
@@ -2385,6 +2439,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             remarks: remarksController.text.trim(),
                           );
                           if (!context.mounted) return;
+                          setState(() {
+                            _cachedFilteredLeads = null;
+                          });
+                          unawaited(_loadFollowups());
                           final ok = result['success'] == true;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -2599,9 +2657,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       final list = await _service.fetchFollowups(filter: 'all');
       if (mounted) {
         setState(() {
-          _followupsList = list;
-          _cachedFollowupCount = list.length;
+          _followupsList = list.where((f) {
+            if (f.status == 'Completed' || f.status == 'Cancelled') return false;
+            final leadStatus = f.lead?.campaignStatus;
+            if (leadStatus != null &&
+                leadStatus != 'Follow up' &&
+                leadStatus != 'Follow-up') {
+              return false;
+            }
+            return true;
+          }).toList();
           _isLoadingFollowups = false;
+          _cachedFilteredLeads = null;
         });
       }
     } catch (e) {
@@ -2671,7 +2738,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     // If items empty or incomplete, incorporate leads in memory that have scheduled followups
     final leadFollowupIds = allItems.map((f) => f.leadId).toSet();
     for (final lead in _service.leads) {
-      if ((lead.campaignStatus == 'Follow up' || lead.followupScheduledAt != null) &&
+      if ((lead.campaignStatus == 'Follow up' || lead.campaignStatus == 'Follow-up') &&
           !leadFollowupIds.contains(lead.id)) {
         final name = lead.getStringValue('full_name').isNotEmpty
             ? lead.getStringValue('full_name')
@@ -5108,6 +5175,59 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ),
     );
 
+    final currentAuth = context.read<AuthBloc>().state;
+    final currentRole = currentAuth is Authenticated ? currentAuth.user.role : null;
+    final currentUserId = currentAuth is Authenticated ? currentAuth.user.id : '';
+    final filterUsers = TeamUserVisibility.canUseFilter(currentRole)
+        ? TeamUserVisibility.visibleUsers(
+            users: _cachedUsers ?? const [],
+            currentRole: currentRole,
+            currentUserId: currentUserId,
+          )
+        : <users_model.UserModel>[];
+    final userDropdownItems = <DropdownMenuItem<String>>[
+      const DropdownMenuItem(value: 'All', child: Text('All Users')),
+      ...filterUsers.map(
+        (u) => DropdownMenuItem(
+          value: u.id,
+          child: Text('${u.fullName} (${u.roleName})', overflow: TextOverflow.ellipsis),
+        ),
+      ),
+    ];
+    final userDropdownValue = userDropdownItems.any((i) => i.value == _selectedUserFilterId)
+        ? _selectedUserFilterId
+        : 'All';
+
+    final userDropdown = TeamUserVisibility.canUseFilter(currentRole)
+        ? Container(
+            height: 38,
+            constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 240),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: CRMColors.borderOf(context)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                isExpanded: isMobile,
+                hint: const Text('User'),
+                value: userDropdownValue,
+                items: userDropdownItems,
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _selectedUserFilterId = val;
+                      _cachedFilteredLeads = null;
+                      _currentPage = 1;
+                    });
+                  }
+                },
+              ),
+            ),
+          )
+        : const SizedBox.shrink();
+
     final duplicateDropdown = Container(
       height: 38,
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -5188,6 +5308,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 children: [
                   Expanded(child: sourceDropdown),
                   const SizedBox(width: CRMSpacing.s),
+                  if (TeamUserVisibility.canUseFilter(currentRole)) ...[
+                    Expanded(child: userDropdown),
+                    const SizedBox(width: CRMSpacing.s),
+                  ],
                   Expanded(child: duplicateDropdown),
                 ],
               ),
@@ -5197,6 +5321,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   Expanded(flex: 3, child: searchInput),
                   const SizedBox(width: CRMSpacing.m),
                   sourceDropdown,
+                  if (TeamUserVisibility.canUseFilter(currentRole)) ...[
+                    const SizedBox(width: CRMSpacing.m),
+                    userDropdown,
+                  ],
                   const SizedBox(width: CRMSpacing.m),
                   duplicateDropdown,
                 ],

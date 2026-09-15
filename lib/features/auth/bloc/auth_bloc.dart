@@ -7,6 +7,7 @@ import '../../../core/network/sync_manager.dart';
 import '../../../core/storage/session_cleanup.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/services/push_notification_service.dart';
 
 // ==========================================
 // Auth Events
@@ -110,6 +111,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         final user = await _authRepository.getProfile();
         RoleGuard.currentUser = user;
         emit(Authenticated(user: user));
+        unawaited(PushNotificationService.registerCurrentUser());
         unawaited(() async {
           try {
             await SyncManager().performStartupSync();
@@ -155,6 +157,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       }());
 
       emit(Authenticated(user: user));
+      unawaited(PushNotificationService.registerCurrentUser());
     } catch (e, stackTrace) {
       AppLogger.e('Login failed for ${event.email}', e, stackTrace);
       RoleGuard.currentUser = null;

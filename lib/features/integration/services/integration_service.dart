@@ -870,20 +870,37 @@ class IntegrationService extends ChangeNotifier {
               if (local != null) {
                 final bool isLocalUserModified = local.campaignStatus.isNotEmpty && local.campaignStatus != 'New';
                 final bool isIncDefault = inc.campaignStatus.isEmpty || inc.campaignStatus == 'New' || inc.campaignStatus == 'Pending';
-                final bool keepLocalStatus = isLocalUserModified && (isIncDefault || inc.campaignStatus.trim().toLowerCase() == local.campaignStatus.trim().toLowerCase());
+                final bool localProtected = local.campaignStatus == 'Assigned' ||
+                    local.campaignStatus == 'CNR' ||
+                    local.campaignStatus == 'Interested' ||
+                    local.campaignStatus == 'Not interested' ||
+                    local.importStatus == 'Imported' ||
+                    (local.assignedTo != null && local.assignedTo!.isNotEmpty && local.assignedTo != 'Unassigned');
+                final bool incomingHasAssignment = (inc.assignedTo != null && inc.assignedTo!.isNotEmpty && inc.assignedTo != 'Unassigned') ||
+                    inc.campaignStatus == 'Assigned' ||
+                    inc.importStatus == 'Imported';
+                final bool keepLocalStatus = (isLocalUserModified && (isIncDefault || inc.campaignStatus.trim().toLowerCase() == local.campaignStatus.trim().toLowerCase())) ||
+                    (localProtected && !incomingHasAssignment && (inc.campaignStatus == 'Follow up' || inc.campaignStatus == 'Follow-up' || isIncDefault));
+                final mergedStatus = keepLocalStatus ? local.campaignStatus : (inc.campaignStatus.isNotEmpty ? inc.campaignStatus : local.campaignStatus);
+                final incomingIsFollowup = mergedStatus == 'Follow up' || mergedStatus == 'Follow-up';
                 final merged = inc.copyWith(
                   leadType: (local.leadType != inc.leadType && local.leadType.isNotEmpty) ? local.leadType : inc.leadType,
-                  campaignStatus: keepLocalStatus ? local.campaignStatus : (inc.campaignStatus.isNotEmpty ? inc.campaignStatus : local.campaignStatus),
+                  campaignStatus: mergedStatus,
                   assignedTo: (inc.assignedTo != null && inc.assignedTo!.isNotEmpty) ? inc.assignedTo : local.assignedTo,
                   assignedToName: (inc.assignedToName != null && inc.assignedToName!.isNotEmpty) ? inc.assignedToName : local.assignedToName,
                   transferRemarks: (inc.transferRemarks != null && inc.transferRemarks!.isNotEmpty) ? inc.transferRemarks : local.transferRemarks,
                   interactedAt: inc.interactedAt ?? local.interactedAt,
                   interactedBy: (inc.interactedBy != null && inc.interactedBy!.isNotEmpty) ? inc.interactedBy : local.interactedBy,
-                  followupScheduledAt: inc.followupScheduledAt ?? local.followupScheduledAt,
-                  followupRemarks: (inc.followupRemarks != null && inc.followupRemarks!.isNotEmpty) ? inc.followupRemarks : local.followupRemarks,
-                  followupStatus: (inc.followupStatus != null && inc.followupStatus!.isNotEmpty) ? inc.followupStatus : local.followupStatus,
-                  importStatus: local.importStatus == 'Imported' ? 'Imported' : inc.importStatus,
+                  followupScheduledAt: incomingIsFollowup ? (inc.followupScheduledAt ?? local.followupScheduledAt) : inc.followupScheduledAt,
+                  followupRemarks: incomingIsFollowup
+                      ? ((inc.followupRemarks != null && inc.followupRemarks!.isNotEmpty) ? inc.followupRemarks : local.followupRemarks)
+                      : inc.followupRemarks,
+                  followupStatus: incomingIsFollowup
+                      ? ((inc.followupStatus != null && inc.followupStatus!.isNotEmpty) ? inc.followupStatus : local.followupStatus)
+                      : (inc.followupStatus ?? 'Completed'),
+                  importStatus: local.importStatus == 'Imported' || inc.importStatus == 'Imported' ? 'Imported' : inc.importStatus,
                   importedClientId: (inc.importedClientId != null && inc.importedClientId!.isNotEmpty) ? inc.importedClientId : local.importedClientId,
+                  clearFollowup: !incomingIsFollowup,
                 );
                 mergedIncoming.add(merged);
               } else {
@@ -1028,11 +1045,27 @@ class IntegrationService extends ChangeNotifier {
             final remarks = record['remarks']?.toString() ?? lead.followupRemarks;
             final status = record['status']?.toString() ?? lead.followupStatus;
             final isPending = status == 'Pending';
+            const protectedStatuses = {
+              'CNR',
+              'Assigned',
+              'Picked Up',
+              'Interested',
+              'Not interested',
+              'Property Listed',
+              'Listed',
+              'Archived',
+              'Closed',
+              'Won',
+            };
+            final keepCurrentStatus = protectedStatuses.contains(lead.campaignStatus);
             _leads[index] = lead.copyWith(
-              campaignStatus: isPending ? 'Follow up' : (lead.campaignStatus == 'Follow up' ? 'New' : lead.campaignStatus),
-              followupScheduledAt: isPending ? scheduledAt : null,
+              campaignStatus: isPending
+                  ? (keepCurrentStatus ? lead.campaignStatus : 'Follow up')
+                  : (lead.campaignStatus == 'Follow up' || lead.campaignStatus == 'Follow-up' ? 'New' : lead.campaignStatus),
+              followupScheduledAt: isPending && !keepCurrentStatus ? scheduledAt : null,
               followupRemarks: remarks,
               followupStatus: status,
+              clearFollowup: !isPending || keepCurrentStatus,
             );
             notifyListeners();
             unawaited(_persistLeads());
@@ -1050,11 +1083,12 @@ class IntegrationService extends ChangeNotifier {
       // 1. Optimistically update in memory & persist to local DB immediately
       final idx = _leads.indexWhere((l) => l.id == leadId);
       if (idx != -1) {
-        final isFollowup = status == 'Follow up';
+        final isFollowup = status == 'Follow up' || status == 'Follow-up';
         _leads[idx] = _leads[idx].copyWith(
           campaignStatus: status,
           followupScheduledAt: isFollowup ? _leads[idx].followupScheduledAt : null,
           followupStatus: isFollowup ? _leads[idx].followupStatus : 'Completed',
+          clearFollowup: !isFollowup,
         );
         notifyListeners();
         await _persistLeads();
@@ -1071,11 +1105,12 @@ class IntegrationService extends ChangeNotifier {
             final updatedLead = IntegrationLeadModel.fromJson(Map<String, dynamic>.from(res.data['lead']));
             final leadIdx = _leads.indexWhere((l) => l.id == leadId);
             if (leadIdx != -1) {
-              final isFollowup = status == 'Follow up';
+              final isFollowup = status == 'Follow up' || status == 'Follow-up';
               _leads[leadIdx] = updatedLead.copyWith(
                 campaignStatus: status,
                 followupScheduledAt: isFollowup ? updatedLead.followupScheduledAt : null,
                 followupStatus: isFollowup ? updatedLead.followupStatus : 'Completed',
+                clearFollowup: !isFollowup,
               );
               notifyListeners();
               await _persistLeads();
@@ -1149,6 +1184,7 @@ class IntegrationService extends ChangeNotifier {
           interactedAt: now,
           interactedBy: user?.fullName,
           importStatus: isCnr ? _leads[idx].importStatus : 'Imported',
+          clearFollowup: true,
         );
         notifyListeners();
         unawaited(_persistLeads());
@@ -1168,11 +1204,10 @@ class IntegrationService extends ChangeNotifier {
           notifyListeners();
           unawaited(_persistLeads());
         }
+        await fetchServerLeads(resetWithServer: true);
         final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
-        return {
-          'success': false,
-          'message': (data['message'] ?? 'Failed to transfer lead (HTTP ${res.statusCode}).').toString(),
-        };
+        final errMessage = (data['message'] ?? 'Failed to transfer lead (HTTP ${res.statusCode}).').toString();
+        return {'success': false, 'message': errMessage};
       }
 
       // 3. Dispatch notification & trigger CRM import only after a confirmed transfer
@@ -1189,8 +1224,9 @@ class IntegrationService extends ChangeNotifier {
         if (targetLead?.leadType == 'Property Listing') {
           unawaited(importLeadsToProperties([leadId], skipFetchServerLeads: false));
         } else {
-          unawaited(importLeadsToCrm([leadId], forceReimport: false, skipFetchServerLeads: false));
+          unawaited(importLeadsToCrm([leadId], forceReimport: true, skipFetchServerLeads: false));
         }
+        unawaited(_requirementsRepository.getRequirements(refreshFromServer: true));
       }
 
       final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
@@ -1205,6 +1241,7 @@ class IntegrationService extends ChangeNotifier {
               assignedToName: assignedToName ?? updatedLead.assignedToName,
               transferRemarks: remarks ?? updatedLead.transferRemarks,
               importStatus: isCnr ? (_leads[leadIdx].importStatus ?? updatedLead.importStatus) : 'Imported',
+              clearFollowup: true,
             );
             notifyListeners();
             unawaited(_persistLeads());

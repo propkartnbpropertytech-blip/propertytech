@@ -50,6 +50,7 @@ import '../utils/property_share_pdf.dart';
 import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/telemetry/audit_dwell_tracker.dart';
+import '../../../core/utils/team_user_visibility.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color kWhatsAppGreen = Color(0xFF25D366);
@@ -541,6 +542,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   final List<String> _selectedConfigIds = [];
   String? _selectedCategoryId;
   String _selectedStatus = "All";
+  String _selectedUserFilterId = "All";
   String _selectedReadiness = "All";
   LeadDateFilterPreset _selectedLeadDateFilter = LeadDateFilterPreset.allTime;
   DateTime? _customStartDate;
@@ -910,6 +912,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _selectedConfigIds.clear();
       _selectedCategoryId = null;
       _selectedStatus = "All";
+      _selectedUserFilterId = "All";
       _selectedReadiness = "All";
       _selectedLeadDateFilter = LeadDateFilterPreset.allTime;
       _customStartDate = null;
@@ -1670,6 +1673,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       },
                     ),
                     const SizedBox(height: CRMSpacing.s),
+                    _buildUserFilterDropdown(isMobile: isMobile),
+                    const SizedBox(height: CRMSpacing.s),
                     CRMButton(
                       label: "Clear Filters",
                       variant: CRMButtonVariant.outline,
@@ -1733,6 +1738,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         _triggerFetch();
                       },
                     ),
+                    _buildUserFilterDropdown(isMobile: isMobile),
                     CRMButton(
                       label: "Clear Filters",
                       variant: CRMButtonVariant.outline,
@@ -1784,10 +1790,27 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
   }
 
+  users_model.UserModel? _selectedUserForDateCounts() {
+    if (_selectedUserFilterId == 'All' || _selectedUserFilterId.isEmpty) return null;
+    try {
+      final usersState = context.read<UsersBloc>().state;
+      if (usersState is UsersLoaded) {
+        return usersState.users.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   int _getLeadDateFilterCount(List<RequirementModel> baseList, LeadDateFilterPreset preset) {
+    final selectedUser = _selectedUserForDateCounts();
     return baseList.where((req) {
       final matchesListingType = getListingTypeLabel(req) == _activeListingTab;
-      return matchesListingType && _matchesLeadDateFilterWithPreset(req, preset);
+      if (!matchesListingType) return false;
+      if (selectedUser != null &&
+          !TeamUserVisibility.requirementBelongsToUser(req, selectedUser)) {
+        return false;
+      }
+      return _matchesLeadDateFilterWithPreset(req, preset);
     }).length;
   }
 
@@ -2013,6 +2036,55 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildUserFilterDropdown({required bool isMobile}) {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    if (currentUser == null || !TeamUserVisibility.canUseFilter(currentUser.role)) {
+      return const SizedBox.shrink();
+    }
+
+    return BlocBuilder<UsersBloc, UsersState>(
+      builder: (context, state) {
+        final users = state is UsersLoaded
+            ? TeamUserVisibility.visibleUsers(
+                users: state.users,
+                currentRole: currentUser.role,
+                currentUserId: currentUser.id,
+              )
+            : <users_model.UserModel>[];
+        final items = <DropdownMenuItem<String>>[
+          const DropdownMenuItem(value: 'All', child: Text('All Users')),
+          ...users.map(
+            (u) => DropdownMenuItem(
+              value: u.id,
+              child: Text(
+                '${u.fullName} (${u.roleName})',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ];
+        final value = items.any((i) => i.value == _selectedUserFilterId)
+            ? _selectedUserFilterId
+            : 'All';
+
+        return _buildDropdownFilter<String>(
+          label: 'User',
+          value: value,
+          items: items,
+          isMobile: isMobile,
+          onChanged: (val) {
+            setState(() {
+              _selectedUserFilterId = val ?? 'All';
+              _currentPage = 1;
+            });
+            _triggerFetch();
+          },
+        );
+      },
     );
   }
 
@@ -3785,16 +3857,35 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
             if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
 
-            // Exclude Won requirements from the active Requirements view unless user explicitly selected "Won"
-            if (_selectedStatus != 'Won' && mappedStatus == 'Won') return false;
+            final userFilterActive = _selectedUserFilterId != "All" && _selectedUserFilterId.isNotEmpty;
 
-            final matchesStatus = _selectedStatus == "All" ||
+            // Exclude Won requirements from the active Requirements view unless user explicitly selected "Won"
+            // or is viewing a specific team member's complete lead set.
+            if (!userFilterActive && _selectedStatus != 'Won' && mappedStatus == 'Won') return false;
+
+            final matchesStatus = userFilterActive
+                ? (_selectedStatus == "All" ||
+                    mappedStatus == _selectedStatus ||
+                    r.status == _selectedStatus)
+                : (_selectedStatus == "All" ||
                 mappedStatus == _selectedStatus ||
                 (!isUnhandledAssigned && r.status == _selectedStatus) ||
                 (!isUnhandledAssigned && _selectedStatus == 'Rejected' && r.status.startsWith('Rejected')) ||
-                (!isUnhandledAssigned && _selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')));
+                (!isUnhandledAssigned && _selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted'))));
 
             final matchesDate = _matchesLeadDateFilter(r);
+
+            bool matchesUser = true;
+            if (userFilterActive) {
+              users_model.UserModel? selectedUser;
+              try {
+                final usersState = context.read<UsersBloc>().state;
+                if (usersState is UsersLoaded) {
+                  selectedUser = usersState.users.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
+                }
+              } catch (_) {}
+              matchesUser = selectedUser != null && TeamUserVisibility.requirementBelongsToUser(r, selectedUser);
+            }
 
             bool matchesSearch = true;
             if (query.isNotEmpty) {
@@ -3822,7 +3913,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             final matchesReadiness = _selectedReadiness == "All" ||
                 (_selectedReadiness == "Needs Details" ? r.matchingReadiness != 'Ready' : r.matchingReadiness == _selectedReadiness);
 
-            return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch && matchesDate && matchesReadiness;
+            return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch && matchesDate && matchesReadiness && matchesUser;
           }).toList();
           
           // Sort by recently updated/created (descending)

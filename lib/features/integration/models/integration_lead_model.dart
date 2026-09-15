@@ -587,6 +587,7 @@ class IntegrationLeadModel {
     String? transferRemarks,
     DateTime? interactedAt,
     String? interactedBy,
+    bool clearFollowup = false,
   }) {
     final updatedRaw = rawJson != null
         ? Map<String, dynamic>.from(rawJson)
@@ -611,9 +612,9 @@ class IntegrationLeadModel {
       enquiryCount: enquiryCount ?? this.enquiryCount,
       leadType: finalLeadType,
       campaignStatus: campaignStatus ?? this.campaignStatus,
-      followupScheduledAt: followupScheduledAt ?? this.followupScheduledAt,
-      followupRemarks: followupRemarks ?? this.followupRemarks,
-      followupStatus: followupStatus ?? this.followupStatus,
+      followupScheduledAt: clearFollowup ? null : (followupScheduledAt ?? this.followupScheduledAt),
+      followupRemarks: clearFollowup ? null : (followupRemarks ?? this.followupRemarks),
+      followupStatus: clearFollowup ? 'Completed' : (followupStatus ?? this.followupStatus),
       crmMatch: crmMatch ?? this.crmMatch,
       assignedTo: assignedTo ?? this.assignedTo,
       assignedToName: assignedToName ?? this.assignedToName,

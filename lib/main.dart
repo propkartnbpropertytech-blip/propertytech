@@ -32,6 +32,7 @@ import 'package:flutter/foundation.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'core/platform/video_player_init.dart';
+import 'core/services/push_notification_service.dart';
 
 void main() async {
   if (kIsWeb) {
@@ -41,6 +42,11 @@ void main() async {
   Future<void> bootstrap() async {
     WidgetsFlutterBinding.ensureInitialized();
     initWindowsVideoPlayer();
+    try {
+      await PushNotificationService.initialize();
+    } catch (e) {
+      debugPrint('[PushNotificationService] startup init skipped: $e');
+    }
 
     // Keep Isar on the critical path (offline reads). Defer logging/sync
     // until after the first frame so Android cold start stays responsive.

@@ -1,7 +1,24 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class PlatformNotifier {
+  static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  static bool _ready = false;
+
+  static Future<void> _ensureReady() async {
+    if (_ready) return;
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosInit = DarwinInitializationSettings();
+    await _plugin.initialize(
+      const InitializationSettings(android: androidInit, iOS: iosInit),
+    );
+    _ready = true;
+  }
+
   static Future<bool> requestPermission() async {
+    await _ensureReady();
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await android?.requestNotificationsPermission();
     return true;
   }
 
@@ -16,7 +33,27 @@ class PlatformNotifier {
     VoidCallback? onClick,
     dynamic data,
   }) {
-    // On native mobile & desktop, notifications are surfaced cleanly via in-app toast overlays
-    // and can be hooked into native OS notification center as needed.
+    _ensureReady().then((_) {
+      _plugin.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'propkart_lead_assigned',
+            'Lead assignments',
+            channelDescription: 'Notifies sales users when a telecaller assigns a client lead',
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: '@mipmap/ic_launcher',
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+        payload: data is Map ? data['route']?.toString() : null,
+      );
+    }).catchError((e) {
+      debugPrint('[PlatformNotifier] native notification failed: $e');
+    });
   }
 }
+
