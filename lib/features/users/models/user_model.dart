@@ -30,6 +30,8 @@ class UserModel {
   final String? createdAt;
   final String? adminId;
   final String? organizationId;
+  final String? organizationName;
+  final bool campaignEnabled;
   final String? createdByName;
 
   const UserModel({
@@ -44,6 +46,8 @@ class UserModel {
     this.createdAt,
     this.adminId,
     this.organizationId,
+    this.organizationName,
+    this.campaignEnabled = false,
     this.createdByName,
   });
 
@@ -61,6 +65,10 @@ class UserModel {
     }
 
     final adminId = json['admin_id'] as String?;
+    final org = json['organizations'] is Map ? json['organizations'] as Map : null;
+    final campaignEnabled = json['campaign_enabled'] == true ||
+        json['campaignEnabled'] == true ||
+        org?['campaign_enabled'] == true;
 
     return UserModel(
       id: json['id'] ?? '',
@@ -72,8 +80,10 @@ class UserModel {
       isActive: json['is_active'] ?? true,
       profilePhoto: json['profile_photo'],
       createdAt: json['created_at'],
-      adminId: json['admin_id'] as String?,
+      adminId: adminId,
       organizationId: json['organization_id'] as String?,
+      organizationName: json['organization_name']?.toString() ?? org?['name']?.toString(),
+      campaignEnabled: campaignEnabled,
       createdByName: cName,
     );
   }

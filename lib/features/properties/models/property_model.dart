@@ -131,6 +131,34 @@ class PropertyModel {
     this.portalStatus = 'None',
   });
 
+  bool get showsAddedBy {
+    final name = createdByName.trim();
+    return createdBy.trim().isNotEmpty &&
+        name.isNotEmpty &&
+        name.toLowerCase() != 'n/a' &&
+        name != '-';
+  }
+
+  bool isOwnTeamListing({
+    required String userId,
+    required String role,
+    String? adminId,
+  }) {
+    final r = role.toLowerCase();
+    if (r == 'super admin') return true;
+    if (createdBy == userId) return true;
+    if (r == 'admin' && this.adminId != null && this.adminId == userId) {
+      return true;
+    }
+    if ((r == 'telecaller' || r == 'sales') &&
+        this.adminId != null &&
+        adminId != null &&
+        this.adminId == adminId) {
+      return true;
+    }
+    return false;
+  }
+
   factory PropertyModel.fromJson(Map<String, dynamic> json) {
     final category = json['category'] != null ? Map<String, dynamic>.from(json['category'] as Map) : null;
     final propType = json['property_type'] != null ? Map<String, dynamic>.from(json['property_type'] as Map) : null;
@@ -308,7 +336,7 @@ class PropertyModel {
       flatNo: json['flat_no'] as String?,
       isVerified: json['is_verified'] as bool? ?? false,
       createdBy: json['created_by'] as String? ?? '',
-      createdByName: creator != null ? creator['full_name'] as String? ?? 'N/A' : 'N/A',
+      createdByName: creator != null ? creator['full_name'] as String? ?? '' : '',
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : DateTime.now(),
       images: imageList,
       amenities: amenityList,

@@ -121,13 +121,13 @@ class _UsersScreenState extends State<UsersScreen> {
               (r) => r.name.toLowerCase() == 'sales',
               orElse: () => const RoleModel(id: '', name: 'Sales', description: ''),
             );
-            final adminRole = usersState.roles.firstWhere(
-              (r) => r.name.toLowerCase() == 'admin',
-              orElse: () => const RoleModel(id: '', name: 'Admin', description: ''),
+            final telecallerRole = usersState.roles.firstWhere(
+              (r) => r.name.toLowerCase() == 'telecaller',
+              orElse: () => const RoleModel(id: '', name: 'Telecaller', description: ''),
             );
             roles = [
               if (salesRole.id.isNotEmpty) salesRole,
-              if (adminRole.id.isNotEmpty) adminRole,
+              if (telecallerRole.id.isNotEmpty) telecallerRole,
             ];
           } else if (callerRole == 'Super Admin') {
             roles = usersState.roles
@@ -1060,6 +1060,9 @@ class _UsersScreenState extends State<UsersScreen> {
 
         if (users.isEmpty) {
           final isInactiveFilter = _selectedStatus.toLowerCase() == 'inactive';
+          final emptyWorkspace = currentUser != null &&
+              currentUser.role == 'Admin' &&
+              !isInactiveFilter;
           return Center(
             child: CRMCard(
               elevated: true,
@@ -1072,7 +1075,9 @@ class _UsersScreenState extends State<UsersScreen> {
                     Text(
                       isInactiveFilter
                           ? 'No Inactive Employees Found'
-                          : 'No Employees Found',
+                          : emptyWorkspace
+                              ? 'No employees in this workspace'
+                              : 'No Employees Found',
                       style: CRMTypography.sectionTitle.copyWith(
                         color: CRMColors.textOf(context),
                       ),
@@ -1080,7 +1085,11 @@ class _UsersScreenState extends State<UsersScreen> {
                     ),
                     const SizedBox(height: CRMSpacing.s),
                     Text(
-                      'Try adjusting your filters or add a new employee profile.',
+                      isInactiveFilter
+                          ? 'Try adjusting your filters or add a new employee profile.'
+                          : emptyWorkspace
+                              ? 'This admin workspace starts empty. Add Sales and Telecaller users here — they will not see another admin\'s inventory or campaign inbox.'
+                              : 'Try adjusting your filters or add a new employee profile.',
                       style: CRMTypography.body.copyWith(
                         color: CRMColors.textSecondaryOf(context),
                       ),

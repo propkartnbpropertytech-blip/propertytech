@@ -963,7 +963,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
 
             final ownerDisplayName = p.ownerName.isNotEmpty
                 ? p.ownerName
-                : (p.createdByName.isNotEmpty ? p.createdByName : "PROPKART ADMIN");
+                : (p.showsAddedBy ? p.createdByName : 'Owner');
             final initialsPrefix = _getInitials(ownerDisplayName);
             final isShortlisted = _shortlistedPropertyIds.contains(p.id);
 

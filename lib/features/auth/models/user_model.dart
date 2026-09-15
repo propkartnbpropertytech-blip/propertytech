@@ -13,6 +13,8 @@ class UserModel extends Equatable {
   final String? createdAt;
   final String? adminId;
   final String? organizationId;
+  final String? organizationName;
+  final bool campaignEnabled;
   final String? adminName;
   final String? adminEmail;
   final String? adminRole;
@@ -30,6 +32,8 @@ class UserModel extends Equatable {
     this.createdAt,
     this.adminId,
     this.organizationId,
+    this.organizationName,
+    this.campaignEnabled = false,
     this.adminName,
     this.adminEmail,
     this.adminRole,
@@ -60,6 +64,19 @@ class UserModel extends Equatable {
     final createdAt = userMap['created_at']?.toString() ?? userMap['createdAt']?.toString();
     final adminId = userMap['admin_id']?.toString() ?? userMap['adminId']?.toString();
     final organizationId = userMap['organization_id']?.toString() ?? userMap['organizationId']?.toString();
+    final organizationName = userMap['organization_name']?.toString() ??
+        userMap['organizationName']?.toString() ??
+        (userMap['organizations'] is Map ? userMap['organizations']['name']?.toString() : null);
+    final hasCampaignFlag = userMap.containsKey('campaign_enabled') ||
+        userMap.containsKey('campaignEnabled') ||
+        userMap['organizations'] is Map;
+    final campaignEnabled = role.toLowerCase() == 'super admin'
+        ? true
+        : hasCampaignFlag
+            ? (userMap['campaign_enabled'] == true ||
+                userMap['campaignEnabled'] == true ||
+                (userMap['organizations'] is Map && userMap['organizations']['campaign_enabled'] == true))
+            : true;
 
     String? adminName;
     String? adminEmail;
@@ -108,6 +125,8 @@ class UserModel extends Equatable {
       createdAt: createdAt,
       adminId: adminId,
       organizationId: organizationId,
+      organizationName: organizationName,
+      campaignEnabled: campaignEnabled,
       adminName: adminName,
       adminEmail: adminEmail,
       adminRole: adminRole,
@@ -128,6 +147,8 @@ class UserModel extends Equatable {
       if (createdAt != null) 'created_at': createdAt,
       if (adminId != null) 'admin_id': adminId,
       if (organizationId != null) 'organization_id': organizationId,
+      if (organizationName != null) 'organization_name': organizationName,
+      'campaign_enabled': campaignEnabled,
       if (adminName != null) 'admin_name': adminName,
       if (adminEmail != null) 'admin_email': adminEmail,
       if (adminRole != null) 'admin_role': adminRole,
@@ -147,6 +168,8 @@ class UserModel extends Equatable {
     String? createdAt,
     String? adminId,
     String? organizationId,
+    String? organizationName,
+    bool? campaignEnabled,
     String? adminName,
     String? adminEmail,
     String? adminRole,
@@ -164,6 +187,8 @@ class UserModel extends Equatable {
       createdAt: createdAt ?? this.createdAt,
       adminId: adminId ?? this.adminId,
       organizationId: organizationId ?? this.organizationId,
+      organizationName: organizationName ?? this.organizationName,
+      campaignEnabled: campaignEnabled ?? this.campaignEnabled,
       adminName: adminName ?? this.adminName,
       adminEmail: adminEmail ?? this.adminEmail,
       adminRole: adminRole ?? this.adminRole,
@@ -183,6 +208,8 @@ class UserModel extends Equatable {
         createdAt,
         adminId,
         organizationId,
+        organizationName,
+        campaignEnabled,
         adminName,
         adminEmail,
         adminRole,

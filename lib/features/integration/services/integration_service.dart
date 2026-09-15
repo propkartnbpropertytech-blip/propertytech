@@ -22,8 +22,17 @@ class IntegrationService extends ChangeNotifier {
   factory IntegrationService() => _instance;
   IntegrationService._internal();
 
-  static const _leadsPrefsKey = 'campaign_ingestion_leads_json';
-  static const _sheetUrlPrefsKey = 'campaign_google_sheet_url';
+  String get _orgScope => RoleGuard.currentUser?.organizationId ?? 'global';
+
+  String get _leadsPrefsKey => 'campaign_ingestion_leads_json_$_orgScope';
+  String get _sheetUrlPrefsKey => 'campaign_google_sheet_url_$_orgScope';
+  String get _propCustomHeadersPrefsKey => 'campaign_prop_custom_headers_v1_$_orgScope';
+  String get _reqCustomHeadersPrefsKey => 'campaign_req_custom_headers_v1_$_orgScope';
+  String get _propHiddenHeadersPrefsKey => 'campaign_prop_hidden_headers_v1_$_orgScope';
+  String get _reqHiddenHeadersPrefsKey => 'campaign_req_hidden_headers_v1_$_orgScope';
+  String get _headerOrderPrefsKey => 'campaign_header_order_v1_$_orgScope';
+  String get _propHeaderOrderPrefsKey => 'campaign_prop_header_order_v1_$_orgScope';
+  String get _reqHeaderOrderPrefsKey => 'campaign_req_header_order_v1_$_orgScope';
 
   final ApiClient _apiClient = ApiClient();
   final RequirementsRepository _requirementsRepository = RequirementsRepository();
@@ -39,6 +48,8 @@ class IntegrationService extends ChangeNotifier {
   );
 
   bool _loaded = false;
+  String? _loadedOrgScope;
+  bool? _loadedCampaignOff;
   String _googleSheetUrl = '';
   Timer? _sheetPollTimer;
   String? lastSyncError;
@@ -71,8 +82,6 @@ class IntegrationService extends ChangeNotifier {
   // Section-specific custom headers
   final Set<String> _propertyListingCustomHeaders = {};
   final Set<String> _requirementCustomHeaders = {};
-  static const String _propCustomHeadersPrefsKey = 'campaign_prop_custom_headers_v1';
-  static const String _reqCustomHeadersPrefsKey = 'campaign_req_custom_headers_v1';
 
   // Set of headers hidden by user preference
   final Set<String> _hiddenHeaders = {};
@@ -82,19 +91,14 @@ class IntegrationService extends ChangeNotifier {
   // Section-specific hidden headers
   final Set<String> _propertyListingHiddenHeaders = {};
   final Set<String> _requirementHiddenHeaders = {};
-  static const String _propHiddenHeadersPrefsKey = 'campaign_prop_hidden_headers_v1';
-  static const String _reqHiddenHeadersPrefsKey = 'campaign_req_hidden_headers_v1';
 
   // Column header ordering (preserves exact Google Sheet order or custom drag-and-drop order)
   List<String> _headerOrder = [];
   List<String> get headerOrder => List.unmodifiable(_headerOrder);
-  static const String _headerOrderPrefsKey = 'campaign_header_order_v1';
 
   // Section-specific header orders
   List<String> _propertyListingHeaderOrder = [];
   List<String> _requirementHeaderOrder = [];
-  static const String _propHeaderOrderPrefsKey = 'campaign_prop_header_order_v1';
-  static const String _reqHeaderOrderPrefsKey = 'campaign_req_header_order_v1';
 
   Set<String> customHeadersFor(String? section) {
     if (section == 'Property Listing') return Set.unmodifiable(_propertyListingCustomHeaders);
@@ -684,14 +688,30 @@ class IntegrationService extends ChangeNotifier {
   }
 
   Future<void> ensureLoaded() async {
-    if (_loaded) return;
+    final campaignOff = RoleGuard.currentUser?.campaignEnabled == false &&
+        RoleGuard.currentUser?.role.toLowerCase() != 'super admin';
+    if (_loaded &&
+        _loadedOrgScope == _orgScope &&
+        _loadedCampaignOff == campaignOff) {
+      return;
+    }
     _loaded = true;
+    _loadedOrgScope = _orgScope;
+    _loadedCampaignOff = campaignOff;
+    _leads = [];
     try {
       final prefs = await SharedPreferences.getInstance();
       _googleSheetUrl = prefs.getString(_sheetUrlPrefsKey) ?? '';
 
-      // 1. Try loading from Isar database first
-      final dbLeads = await RepositoryCoordinator().campaignLeadLocal.getLeads();
+      // 1. Try loading from Isar database first (only if this org owns the local vault)
+      final isarOrg = prefs.getString('campaign_isar_org_v1');
+      final canUseIsar = isarOrg == null || isarOrg == _orgScope;
+      final dbLeads = canUseIsar
+          ? await RepositoryCoordinator().campaignLeadLocal.getLeads()
+          : <CampaignLeadLocal>[];
+      if (canUseIsar && isarOrg == null && dbLeads.isNotEmpty) {
+        await prefs.setString('campaign_isar_org_v1', _orgScope);
+      }
       if (dbLeads.isNotEmpty) {
         final parsed = <IntegrationLeadModel>[];
         for (final item in dbLeads) {
@@ -2640,8 +2660,14 @@ function onFormSubmit(e) {
             return local;
           }).toList();
 
-          await dbRepo.clearAll();
-          await dbRepo.saveLeads(locals);
+          final prefsForIsar = await SharedPreferences.getInstance();
+          final isarOrg = prefsForIsar.getString('campaign_isar_org_v1');
+          final canWriteIsar = isarOrg == null || isarOrg == _orgScope;
+          if (canWriteIsar) {
+            await dbRepo.clearAll();
+            await dbRepo.saveLeads(locals);
+            await prefsForIsar.setString('campaign_isar_org_v1', _orgScope);
+          }
 
           // 2. Keep local prefs backup in sync (skip on Web for large sets to eliminate localStorage main-thread lock)
           if (!kIsWeb || _leads.length <= 100) {

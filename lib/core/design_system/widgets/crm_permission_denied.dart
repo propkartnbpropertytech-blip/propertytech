@@ -6,10 +6,15 @@ import 'buttons.dart';
 
 class CRMPermissionDenied extends StatelessWidget {
   final VoidCallback? onGoBack;
+  final String title;
+  final String message;
 
   const CRMPermissionDenied({
     super.key,
     this.onGoBack,
+    this.title = 'Access Restricted',
+    this.message =
+        'You do not have the required permissions to view this module. Please contact your system administrator.',
   });
 
   @override
@@ -39,7 +44,7 @@ class CRMPermissionDenied extends StatelessWidget {
             ),
             const SizedBox(height: CRMSpacing.l),
             Text(
-              'Access Restricted',
+              title,
               style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
               textAlign: TextAlign.center,
             ),
@@ -47,7 +52,7 @@ class CRMPermissionDenied extends StatelessWidget {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 360),
               child: Text(
-                'You do not have the required permissions to view this module. Please contact your system administrator.',
+                message,
                 style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
                 textAlign: TextAlign.center,
               ),

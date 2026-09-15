@@ -1217,7 +1217,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
             ),
             const SizedBox(height: 4),
           ],
-          if (isUserAdminOrSuperAdmin && p.createdByName.isNotEmpty) ...[
+          if (isUserAdminOrSuperAdmin && p.showsAddedBy) ...[
             Row(
               children: [
                 Icon(Icons.badge_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),

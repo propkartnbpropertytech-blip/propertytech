@@ -90,6 +90,9 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
         body: SafeArea(
           child: CRMPermissionDenied(
             onGoBack: () => Navigator.of(context).maybePop(),
+            title: 'Access Restricted',
+            message:
+                'You do not have the required permissions to view this module. Please contact your system administrator.',
           ),
         ),
       );

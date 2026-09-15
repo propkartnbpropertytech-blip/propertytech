@@ -2118,7 +2118,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final isUserAdminOrSuperAdmin =
         currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin';
     final isMine = currentUser != null &&
-        (p.createdBy == currentUser.id || isUserAdminOrSuperAdmin);
+        p.isOwnTeamListing(
+          userId: currentUser.id,
+          role: currentUser.role,
+          adminId: currentUser.adminId,
+        );
     final isRent = p.listingTypeName.toLowerCase().contains('rent');
     final rawPriceFormatted = CRMCurrencyFormatter.formatShort(p.price);
     final priceText = rawPriceFormatted.startsWith('₹')
@@ -2450,7 +2454,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           Icons.person_outline_rounded,
                           "Owner: ${p.ownerName} (${p.ownerMobile})",
                         ),
-                        if (isUserAdminOrSuperAdmin)
+                        if (isUserAdminOrSuperAdmin && p.showsAddedBy)
                           _buildMetaChip(
                             Icons.badge_outlined,
                             "Added By: ${p.createdByName}",
@@ -2805,6 +2809,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       ],
                     ),
                     const SizedBox(height: CRMSpacing.xs),
+                    if (p.showsAddedBy)
                     Row(
                       children: [
                         Icon(Icons.badge_outlined,
@@ -2817,7 +2822,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         ),
                         Expanded(
                           child: Text(
-                            p.createdByName.isNotEmpty ? p.createdByName : 'N/A',
+                            p.createdByName,
                             style: CRMTypography.captionBold.copyWith(
                               color: CRMColors.textOf(context),
                               fontWeight: FontWeight.w600,
@@ -3023,11 +3028,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     p.categoryName.toLowerCase().contains(word) ||
                     (p.configurationName?.toLowerCase().contains(word) ?? false) ||
                     p.propertyTypeName.toLowerCase().contains(word) ||
-                    (isUserAdminOrSuperAdmin &&
-                     (currentUser?.role == 'Super Admin' ||
-                      (currentUser?.role == 'Admin' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.id)) ||
-                      (currentUser?.role == 'Telecaller' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.adminId))) &&
-                     p.createdByName.toLowerCase().contains(word)));
+                    (p.showsAddedBy && p.createdByName.toLowerCase().contains(word)));
               }
 
               final matchesMyAdded = !_myAddedOnly || (p.createdBy == currentUserId);
@@ -3377,11 +3378,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                   fontWeight: FontWeight.bold))),
                           if (isUserAdminOrSuperAdmin)
                             DataCell(Text(
-                              (currentUser?.role == 'Super Admin' ||
-                                      (currentUser?.role == 'Admin' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.id)) ||
-                                      (currentUser?.role == 'Telecaller' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.adminId)))
-                                  ? p.createdByName
-                                  : '-',
+                              p.showsAddedBy ? p.createdByName : '-',
                             )),
                           DataCell(
                             Column(
@@ -5489,7 +5486,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         p.ownerName,
         p.ownerMobile,
         p.propertyStatusName,
-        p.createdByName.isNotEmpty ? p.createdByName : 'System',
+        p.showsAddedBy ? p.createdByName : '',
         DateFormat('dd/MM/yyyy hh:mm a').format(p.createdAt.toLocal()),
       ];
 

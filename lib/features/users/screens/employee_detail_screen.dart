@@ -20,6 +20,7 @@ import '../../requirements/repository/requirements_repository.dart';
 import '../bloc/users_bloc.dart';
 import '../models/user_model.dart';
 import '../utils/employee_activity.dart';
+import '../../../core/security/role_guard.dart';
 
 enum _LeadFocus { all, won, followup, overdue, visits, assigned, created }
 
@@ -39,6 +40,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   final _teamKey = GlobalKey();
 
   bool _loadingActivity = true;
+  bool _updatingAccess = false;
   String? _activityError;
   List<PropertyModel> _properties = [];
   List<RequirementModel> _requirements = [];
@@ -99,6 +101,50 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         _activityError = 'Could not load employee activity.';
         _loadingActivity = false;
       });
+    }
+  }
+
+  Future<void> _setCampaignAccess(UserModel user, bool enabled) async {
+    setState(() => _updatingAccess = true);
+    try {
+      final response = await DioClient.dio.patch(
+        '/users/admins/${user.id}/access',
+        data: {'campaignEnabled': enabled},
+      );
+      final body = response.data;
+      final ok = body is Map && body['success'] == true;
+      if (!mounted) return;
+      setState(() {
+        _updatingAccess = false;
+        if (ok && _adminStats != null) {
+          _adminStats = {
+            ..._adminStats!,
+            'campaignEnabled': enabled,
+          };
+        }
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? (enabled
+                    ? 'Campaign access enabled for this workspace.'
+                    : 'Campaign access turned off. This admin keeps an empty campaign inbox.')
+                : 'Could not update campaign access.',
+          ),
+          backgroundColor: ok ? CRMColors.success : CRMColors.danger,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _updatingAccess = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update campaign access.'),
+          backgroundColor: CRMColors.danger,
+        ),
+      );
     }
   }
 
@@ -434,6 +480,48 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                     },
                     createdLabel: _formatCreatedDate(user.createdAt),
                   ),
+                  if (RoleGuard.isSuperAdmin(RoleGuard.currentUser?.role) &&
+                      user.roleName.toLowerCase() == 'admin') ...[
+                    const SizedBox(height: CRMSpacing.m),
+                    CRMCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Workspace access',
+                            style: CRMTypography.sectionTitle.copyWith(
+                              color: CRMColors.textOf(context),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _adminStats?['organizationName']?.toString() ??
+                                user.organizationName ??
+                                'Isolated admin workspace',
+                            style: CRMTypography.caption.copyWith(
+                              color: CRMColors.textSecondaryOf(context),
+                            ),
+                          ),
+                          const SizedBox(height: CRMSpacing.s),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Campaign / Meta inbox'),
+                            subtitle: Text(
+                              ((_adminStats?['campaignEnabled'] as bool?) ??
+                                      user.campaignEnabled)
+                                  ? 'Connected — this admin can ingest Meta and Sheets leads into their own inbox.'
+                                  : 'Off — new admin starts empty. Enable when they should run campaigns.',
+                            ),
+                            value: (_adminStats?['campaignEnabled'] as bool?) ??
+                                user.campaignEnabled,
+                            onChanged: _updatingAccess
+                                ? null
+                                : (val) => _setCampaignAccess(user, val),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: CRMSpacing.m),
                   if (_loadingActivity)
                     const Padding(
@@ -557,6 +645,72 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                             benefit:
                                 '$activeSales active  •  $inactiveSales inactive',
                             onTap: () => _scrollTo(_teamKey),
+                          ),
+                        if (isAdminRole && _adminStats != null)
+                          CRMKPICard(
+                            title: 'TELECALLERS',
+                            value: '${_adminStats!['telecallersCreated'] ?? 0}',
+                            icon: Icons.headset_mic_outlined,
+                            iconColor: CRMColors.info,
+                            benefit:
+                                '${_adminStats!['activeTelecallers'] ?? 0} active on this workspace',
+                          ),
+                        if (isAdminRole && _adminStats != null)
+                          CRMKPICard(
+                            title: 'WON DEALS',
+                            value: '${_adminStats!['wonRequirements'] ?? wonCount}',
+                            icon: Icons.emoji_events_outlined,
+                            iconColor: CRMColors.success,
+                            benefit: 'Closed from this admin team',
+                          ),
+                        if (isAdminRole && _adminStats != null)
+                          CRMKPICard(
+                            title: 'CAMPAIGN LEADS',
+                            value: '${_adminStats!['campaignLeads'] ?? 0}',
+                            icon: Icons.campaign_outlined,
+                            iconColor: CRMColors.warning,
+                            benefit: (_adminStats!['campaignEnabled'] == true)
+                                ? 'In their own Meta/Sheets inbox'
+                                : 'Inbox disconnected',
+                          ),
+                        if (isAdminRole && _adminStats != null)
+                          CRMKPICard(
+                            title: 'IMPORTED',
+                            value: '${_adminStats!['campaignImported'] ?? 0}',
+                            icon: Icons.file_download_done_outlined,
+                            iconColor: CRMColors.success,
+                            benefit:
+                                '${_adminStats!['campaignPending'] ?? 0} still pending in their inbox',
+                          ),
+                        if (isAdminRole && _adminStats != null)
+                          CRMKPICard(
+                            title: 'OWNERS',
+                            value: '${_adminStats!['ownersCount'] ?? 0}',
+                            icon: Icons.apartment_outlined,
+                            iconColor: CRMColors.primaryOf(context),
+                            benefit: 'Owner records in this workspace only',
+                          ),
+                        if (isAdminRole && _adminStats != null)
+                          CRMKPICard(
+                            title: 'CLIENTS',
+                            value: '${_adminStats!['clientsCount'] ?? 0}',
+                            icon: Icons.people_outline,
+                            iconColor: CRMColors.info,
+                            benefit: 'Client records in this workspace only',
+                          ),
+                        if (isAdminRole && _adminStats != null)
+                          CRMKPICard(
+                            title: 'META PAGE',
+                            value: (_adminStats!['webhookConnected'] == true)
+                                ? 'ON'
+                                : 'OFF',
+                            icon: Icons.link_outlined,
+                            iconColor: (_adminStats!['webhookConnected'] == true)
+                                ? CRMColors.success
+                                : CRMColors.textSecondaryOf(context),
+                            benefit: (_adminStats!['campaignEnabled'] == true)
+                                ? 'Webhook scoped to this admin workspace'
+                                : 'Campaign access is off until you enable it',
                           ),
                       ],
                     ),
