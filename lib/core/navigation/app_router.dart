@@ -12,6 +12,7 @@ import '../../features/properties/screens/property_search_screen.dart';
 import '../../features/properties/screens/property_detail_screen.dart';
 import '../../features/properties/bloc/properties_bloc.dart';
 import '../../features/users/screens/users_screen.dart';
+import '../../features/users/screens/employee_detail_screen.dart';
 import '../../features/requirements/screens/requirements_screen.dart';
 import '../../features/clients/screens/clients_screen.dart';
 
@@ -202,6 +203,15 @@ class AppRouter {
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
               child: const UsersScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/users/:id',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: EmployeeDetailScreen(
+                userId: state.pathParameters['id'] ?? '',
+              ),
             ),
           ),
           GoRoute(

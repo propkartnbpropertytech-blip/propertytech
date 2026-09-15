@@ -198,6 +198,7 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
       }
       await _usersRepository.createUser(event.userData);
       emit(const UsersOperationSuccess(message: "User created successfully."));
+      emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
     } catch (e) {
       emit(UsersError(message: e.toString()));
       emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
@@ -224,6 +225,7 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
       }
       await _usersRepository.updateUser(event.id, event.userData);
       emit(const UsersOperationSuccess(message: "User updated successfully."));
+      emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
     } catch (e) {
       emit(UsersError(message: e.toString()));
       emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
@@ -242,6 +244,7 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
       }
       await _usersRepository.toggleUserStatus(event.id, event.isActive);
       emit(const UsersOperationSuccess(message: "User status updated."));
+      emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
     } catch (e) {
       emit(UsersError(message: e.toString()));
       emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));

@@ -40,6 +40,8 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
   String? _activeBhkFilter;
   String? _selectedPriceSort;
   final Set<String> _shortlistedPropertyIds = {};
+  List<PropertyModel> _cachedSearchProperties = [];
+  PropertyMetadataModel? _cachedSearchMetadata;
 
   String _getInitials(String name) {
     final clean = name.trim();
@@ -336,18 +338,34 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
           ),
         ),
       ),
-      body: BlocBuilder<PropertiesBloc, PropertiesState>(
+      body: BlocConsumer<PropertiesBloc, PropertiesState>(
+        listenWhen: (previous, current) => current is PropertiesError,
+        listener: (context, state) {
+          if (state is PropertiesError) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.message),
+                backgroundColor: CRMColors.danger,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        },
         builder: (context, state) {
-          if (state is PropertiesLoading || state is PropertiesInitial) {
+          if (state is PropertiesLoaded) {
+            _cachedSearchProperties = state.properties;
+            if (state.metadata != null) _cachedSearchMetadata = state.metadata;
+          }
+
+          if ((state is PropertiesLoading || state is PropertiesInitial) &&
+              _cachedSearchProperties.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          List<PropertyModel> allProps = [];
-          PropertyMetadataModel? metadata;
-          if (state is PropertiesLoaded) {
-            allProps = state.properties;
-            metadata = state.metadata;
-          }
+          List<PropertyModel> allProps = _cachedSearchProperties;
+          PropertyMetadataModel? metadata = state is PropertiesLoaded
+              ? (state.metadata ?? _cachedSearchMetadata)
+              : _cachedSearchMetadata;
 
           // Auto-sync search query with active BHK filter chip if explicit BHK is typed
           final searchText = _searchController.text.trim();
@@ -1156,6 +1174,11 @@ class _PropertyImageSlider extends StatelessWidget {
       child: CrmNetworkImage(
         url: images.first,
         fit: BoxFit.cover,
+        cacheLogicalWidth: 220,
+        error: (_) => Container(
+          color: Colors.grey.shade200,
+          child: Icon(Icons.home_work_outlined, size: 36, color: Colors.grey.shade400),
+        ),
       ),
     );
   }

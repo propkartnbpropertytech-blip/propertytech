@@ -20,6 +20,7 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
+import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 
@@ -514,10 +515,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             )
                           : (hasPhoto
-                              ? Image.network(
-                                  user.profilePhoto!,
+                              ? CrmNetworkImage(
+                                  url: user.profilePhoto!,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) => _buildDefaultAvatarIcon(),
+                                  width: 110,
+                                  height: 110,
+                                  cacheLogicalWidth: 110,
+                                  error: (context) => _buildDefaultAvatarIcon(),
                                 )
                               : _buildDefaultAvatarIcon()),
                     ),

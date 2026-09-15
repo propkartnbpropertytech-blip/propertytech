@@ -1001,13 +1001,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return true;
   }
 
+  Future<String?> _lookupPropertyStatusId(String needle) async {
+    try {
+      final meta = await PropertiesRepository().getPropertyMetadata();
+      final n = needle.toLowerCase();
+      for (final s in meta.statuses) {
+        if (s.name.toLowerCase().contains(n)) return s.id;
+      }
+    } catch (e) {
+      debugPrint('Error looking up property status "$needle": $e');
+    }
+    return null;
+  }
+
   Future<void> _revertWonPropertiesToAvailable(RequirementModel req) async {
     try {
       final propertiesRepository = PropertiesRepository();
       final propertiesService = PropertiesService();
       final properties = await propertiesRepository.getProperties();
-
-      const availableStatusId = '09521e45-e731-4517-8129-1866f0991ee8';
+      final availableStatusId = await _lookupPropertyStatusId('available');
+      if (availableStatusId == null) {
+        debugPrint('Could not resolve Available property status from metadata.');
+        return;
+      }
 
       for (final p in properties) {
         final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
@@ -1145,32 +1161,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             context.read<RequirementsBloc>().add(
               UpdateRequirementEvent(baseReq.copyWith(status: 'Won')),
             );
-            await RequirementsRepository().updateRequirementFields(req.id, {
-              'status': 'Won',
-              if (isUnhandledAssigned) 'meta_custom_fields': nextCustomFields,
-            });
 
             final selectedIds = selectedProperties.map((p) => p.id).toList();
             await PropertyDealClientStore.setWonRequirementProperties(req.id, selectedIds);
 
             final propertiesService = PropertiesService();
+            final rentedStatusId = await _lookupPropertyStatusId('rented');
+            final soldStatusId = await _lookupPropertyStatusId('sold');
+            var propertyStatusUpdated = selectedProperties.isEmpty;
+
             for (final p in selectedProperties) {
               await PropertyDealClientStore.setClientName(p.id, req.clientName);
 
               final listingType = p.listingTypeName.toLowerCase();
               final isRent = listingType.contains('rent') ||
-                  (LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase().contains('rent') ?? false) ||
-                  p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
+                  (LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase().contains('rent') ?? false);
 
-              final targetStatusId = isRent
-                  ? '7c1d9611-8cad-4058-a9fa-3d68b8adb6f6' // Rented Out
-                  : '33fa8cf3-910d-4f0b-9142-8862974311ab'; // Sold Out
+              final targetStatusId = isRent ? rentedStatusId : soldStatusId;
+              if (targetStatusId == null) {
+                propertyStatusUpdated = false;
+                debugPrint('Could not resolve ${isRent ? 'Rented' : 'Sold'} property status from metadata.');
+                continue;
+              }
 
               try {
                 await propertiesService.updateProperty(p.id, {
                   'property_status_id': targetStatusId,
                 });
+                propertyStatusUpdated = true;
               } catch (e) {
+                propertyStatusUpdated = false;
                 debugPrint("Error updating property status on win: $e");
               }
             }
@@ -1180,9 +1200,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Requirement marked as Won and property status updated!'),
-                  backgroundColor: CRMColors.success,
+                SnackBar(
+                  content: Text(
+                    propertyStatusUpdated
+                        ? 'Requirement marked as Won and property status updated!'
+                        : 'Requirement marked as Won. Property status could not be updated.',
+                  ),
+                  backgroundColor: propertyStatusUpdated ? CRMColors.success : CRMColors.warning,
                 ),
               );
             }
@@ -1194,10 +1218,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       context.read<RequirementsBloc>().add(
         UpdateRequirementEvent(baseReq.copyWith(status: newStatus)),
       );
-      RequirementsRepository().updateRequirementFields(req.id, {
-        'status': newStatus,
-        if (isUnhandledAssigned) 'meta_custom_fields': nextCustomFields,
-      });
     }
   }
 
@@ -2351,15 +2371,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ),
                     ),
                   );
-                  
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(newSalesmanName != null 
-                          ? 'Lead assigned to $newSalesmanName successfully.'
-                          : 'Lead unassigned successfully.'),
-                      backgroundColor: CRMColors.success,
-                    ),
-                  );
                 },
                 icon: Container(
                   margin: const EdgeInsets.only(left: 4),
@@ -2505,15 +2516,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         assignedTo: newSalesmanId ?? '',
                         assigneeName: newSalesmanName ?? '',
                       ),
-                    ),
-                  );
-                  
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(newSalesmanName != null 
-                          ? 'Lead assigned to $newSalesmanName successfully.'
-                          : 'Lead unassigned successfully.'),
-                      backgroundColor: CRMColors.success,
                     ),
                   );
                 },
@@ -10519,7 +10521,7 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
                                         _buildDetailRow("Date", DateFormat('dd/MM/yyyy').format(req.createdAt), Icons.calendar_today_rounded),
-                                        _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
+                                        ..._buildLeadPipelineDetailRows(req),
                                         _buildChipDetailRow(
                                           "Specs",
                                           Icons.business_rounded,
@@ -10657,7 +10659,7 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
                                         _buildDetailRow("Date", DateFormat('dd/MM/yyyy').format(req.createdAt), Icons.calendar_today_rounded),
-                                        _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
+                                        ..._buildLeadPipelineDetailRows(req),
                                         _buildChipDetailRow(
                                           "Specs",
                                           Icons.business_rounded,
@@ -10848,6 +10850,24 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
         ],
       ),
     );
+  }
+
+  List<Widget> _buildLeadPipelineDetailRows(RequirementModel req) {
+    final assignee = (req.assigneeName ?? '').trim().isNotEmpty
+        ? req.assigneeName!.trim()
+        : 'Unassigned';
+    final parsedFu = _parseFollowupDateTime(req.nextFollowupDate);
+    final followup = parsedFu != null
+        ? DateFormat('dd/MM/yyyy').format(parsedFu)
+        : ((req.nextFollowupDate ?? '').trim().isNotEmpty
+            ? req.nextFollowupDate!.trim()
+            : '—');
+    return [
+      _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
+      _buildDetailRow("Status", displayStatusLabel(req.status), Icons.flag_outlined),
+      _buildDetailRow("Assigned To", assignee, Icons.person_outline_rounded),
+      _buildDetailRow("Follow-up", followup, Icons.event_rounded),
+    ];
   }
 
   Widget _buildDetailRow(String label, String value, IconData icon) {

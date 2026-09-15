@@ -56,6 +56,7 @@ class ClientsBloc extends Bloc<ClientsEvent, ClientsState> {
   final ClientsRepository clientsRepository;
   FetchClientsEvent? _lastFetchEvent;
   StreamSubscription? _clientsSubscription;
+  List<ClientModel> _cachedClients = [];
 
   ClientsBloc({required this.clientsRepository}) : super(ClientsInitial()) {
     on<FetchClientsEvent>(_onFetchClients);
@@ -90,9 +91,19 @@ class ClientsBloc extends Bloc<ClientsEvent, ClientsState> {
         stage: event.stage,
         source: event.source,
       );
+      _cachedClients = list;
       emit(ClientsLoaded(clients: list));
     } catch (e) {
       emit(ClientsError(e.toString()));
+      if (_cachedClients.isNotEmpty) {
+        emit(ClientsLoaded(clients: _cachedClients));
+      }
+    }
+  }
+
+  void _restoreLoaded(Emitter<ClientsState> emit) {
+    if (_cachedClients.isNotEmpty) {
+      emit(ClientsLoaded(clients: _cachedClients));
     }
   }
 
@@ -100,12 +111,13 @@ class ClientsBloc extends Bloc<ClientsEvent, ClientsState> {
     CreateClientEvent event,
     Emitter<ClientsState> emit,
   ) async {
-    emit(ClientsLoading());
     try {
       await clientsRepository.createClient(event.client);
       emit(ClientsSuccess("Client created successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(ClientsError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 
@@ -113,12 +125,13 @@ class ClientsBloc extends Bloc<ClientsEvent, ClientsState> {
     UpdateClientEvent event,
     Emitter<ClientsState> emit,
   ) async {
-    emit(ClientsLoading());
     try {
       await clientsRepository.updateClient(event.client);
       emit(ClientsSuccess("Client updated successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(ClientsError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 
@@ -126,12 +139,13 @@ class ClientsBloc extends Bloc<ClientsEvent, ClientsState> {
     DeleteClientEvent event,
     Emitter<ClientsState> emit,
   ) async {
-    emit(ClientsLoading());
     try {
       await clientsRepository.deleteClient(event.id);
       emit(ClientsSuccess("Client deleted successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(ClientsError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 }

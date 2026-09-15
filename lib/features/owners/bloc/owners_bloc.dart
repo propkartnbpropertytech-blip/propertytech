@@ -55,6 +55,7 @@ class OwnersBloc extends Bloc<OwnersEvent, OwnersState> {
   final OwnersRepository ownersRepository;
   FetchOwnersEvent? _lastFetchEvent;
   StreamSubscription? _ownersSubscription;
+  List<OwnerModel> _cachedOwners = [];
 
   OwnersBloc({required this.ownersRepository}) : super(OwnersInitial()) {
     on<FetchOwnersEvent>(_onFetchOwners);
@@ -85,9 +86,17 @@ class OwnersBloc extends Bloc<OwnersEvent, OwnersState> {
     }
     try {
       final list = await ownersRepository.getOwners(search: event.search);
+      _cachedOwners = list;
       emit(OwnersLoaded(owners: list));
     } catch (e) {
       emit(OwnersError(e.toString()));
+      _restoreLoaded(emit);
+    }
+  }
+
+  void _restoreLoaded(Emitter<OwnersState> emit) {
+    if (_cachedOwners.isNotEmpty) {
+      emit(OwnersLoaded(owners: _cachedOwners));
     }
   }
 
@@ -95,12 +104,13 @@ class OwnersBloc extends Bloc<OwnersEvent, OwnersState> {
     CreateOwnerEvent event,
     Emitter<OwnersState> emit,
   ) async {
-    emit(OwnersLoading());
     try {
       await ownersRepository.createOwner(event.owner);
       emit(OwnersSuccess("Owner profile created successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(OwnersError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 
@@ -108,12 +118,13 @@ class OwnersBloc extends Bloc<OwnersEvent, OwnersState> {
     UpdateOwnerEvent event,
     Emitter<OwnersState> emit,
   ) async {
-    emit(OwnersLoading());
     try {
       await ownersRepository.updateOwner(event.owner);
       emit(OwnersSuccess("Owner profile updated successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(OwnersError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 
@@ -121,12 +132,13 @@ class OwnersBloc extends Bloc<OwnersEvent, OwnersState> {
     DeleteOwnerEvent event,
     Emitter<OwnersState> emit,
   ) async {
-    emit(OwnersLoading());
     try {
       await ownersRepository.deleteOwner(event.id);
       emit(OwnersSuccess("Owner profile deleted successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(OwnersError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 }

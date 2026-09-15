@@ -603,6 +603,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
           );
           context.read<CampaignLeadsBloc>().add(const AcknowledgeNewLeadsEvent());
+        } else if (state.errorMessage != null && state.errorMessage!.trim().isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.errorMessage!),
+              backgroundColor: const Color(0xFFEF4444),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
         }
       },
       child: Scaffold(
@@ -1158,15 +1166,20 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         } else if (newStatus == 'Transfer') {
           _showTransferDialog(context, lead);
         } else if (newStatus == 'CNR') {
-          await _service.transferLead(lead.id, status: 'CNR');
+          final result = await _service.transferLead(lead.id, status: 'CNR');
           if (mounted) {
             setState(() {
               _cachedFilteredLeads = null;
             });
+            final ok = result['success'] == true;
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Lead marked as CNR and highlighted as interacted.'),
-                backgroundColor: Color(0xFFD97706),
+              SnackBar(
+                content: Text(
+                  ok
+                      ? 'Lead marked as CNR and highlighted as interacted.'
+                      : (result['message']?.toString() ?? 'Failed to mark lead as CNR.'),
+                ),
+                backgroundColor: ok ? const Color(0xFFD97706) : const Color(0xFFEF4444),
               ),
             );
           }
@@ -2363,26 +2376,31 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           _cachedFilteredLeads = null;
                         });
 
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              selectedStatus == 'CNR'
-                                  ? 'Lead status changed to CNR.'
-                                  : 'Lead transferred & assigned to $targetUserName! Status automatically set to Assigned.',
-                            ),
-                            backgroundColor: selectedStatus == 'CNR'
-                                ? const Color(0xFFD97706)
-                                : const Color(0xFF10B981),
-                          ),
-                        );
-
                         try {
-                          await _service.transferLead(
+                          final result = await _service.transferLead(
                             lead.id,
                             status: selectedStatus,
                             assignedTo: selectedStatus == 'Picked Up' ? selectedUserId : null,
                             assignedToName: selectedStatus == 'Picked Up' ? targetUserName : null,
                             remarks: remarksController.text.trim(),
+                          );
+                          if (!context.mounted) return;
+                          final ok = result['success'] == true;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                ok
+                                    ? (selectedStatus == 'CNR'
+                                        ? 'Lead status changed to CNR.'
+                                        : 'Lead transferred & assigned to $targetUserName! Status automatically set to Assigned.')
+                                    : (result['message']?.toString() ?? 'Failed to transfer lead.'),
+                              ),
+                              backgroundColor: !ok
+                                  ? const Color(0xFFEF4444)
+                                  : (selectedStatus == 'CNR'
+                                      ? const Color(0xFFD97706)
+                                      : const Color(0xFF10B981)),
+                            ),
                           );
                         } catch (e) {
                           if (context.mounted) {
@@ -3698,11 +3716,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (isMobile) {
       return Column(
         children: [
-          Row(children: [items[0], const SizedBox(width: CRMSpacing.s), items[1]]),
+          Row(children: [Expanded(child: items[0]), const SizedBox(width: CRMSpacing.s), Expanded(child: items[1])]),
           const SizedBox(height: CRMSpacing.s),
-          Row(children: [items[2], const SizedBox(width: CRMSpacing.s), items[3]]),
+          Row(children: [Expanded(child: items[2]), const SizedBox(width: CRMSpacing.s), Expanded(child: items[3])]),
           const SizedBox(height: CRMSpacing.s),
-          Row(children: [items[4], const SizedBox(width: CRMSpacing.s), items[5]]),
+          Row(children: [Expanded(child: items[4]), const SizedBox(width: CRMSpacing.s), Expanded(child: items[5])]),
         ],
       );
     }
@@ -3710,7 +3728,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       children: [
         for (int i = 0; i < items.length; i++) ...[
           if (i > 0) const SizedBox(width: CRMSpacing.s),
-          items[i],
+          Expanded(child: items[i]),
         ],
       ],
     );
@@ -3718,56 +3736,55 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   Widget _buildMetricItem(BuildContext context, String label, String value, IconData icon, Color color) {
     final isMobile = MediaQuery.of(context).size.width < 700;
-    return Expanded(
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: isMobile ? 8 : CRMSpacing.m,
-          vertical: isMobile ? 8 : 10,
-        ),
-        decoration: BoxDecoration(
-          color: CRMColors.cardBgOf(context),
-          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-          border: Border.all(color: CRMColors.borderOf(context)),
-          boxShadow: CRMShadows.soft,
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: EdgeInsets.all(isMobile ? 5 : 7),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: color, size: isMobile ? 15 : 18),
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 8 : CRMSpacing.m,
+        vertical: isMobile ? 8 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(color: CRMColors.borderOf(context)),
+        boxShadow: CRMShadows.soft,
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.all(isMobile ? 5 : 7),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
             ),
-            SizedBox(width: isMobile ? 6 : CRMSpacing.s),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    value,
-                    style: CRMTypography.headline.copyWith(
-                      color: CRMColors.textOf(context),
-                      fontSize: isMobile ? 15 : 17,
-                      height: 1.1,
-                    ),
+            child: Icon(icon, color: color, size: isMobile ? 15 : 18),
+          ),
+          SizedBox(width: isMobile ? 6 : CRMSpacing.s),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  style: CRMTypography.headline.copyWith(
+                    color: CRMColors.textOf(context),
+                    fontSize: isMobile ? 15 : 17,
+                    height: 1.1,
                   ),
-                  Text(
-                    label,
-                    style: CRMTypography.caption.copyWith(
-                      color: CRMColors.textSecondaryOf(context),
-                      fontSize: isMobile ? 10 : 11,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  label,
+                  style: CRMTypography.caption.copyWith(
+                    color: CRMColors.textSecondaryOf(context),
+                    fontSize: isMobile ? 10 : 11,
                   ),
-                ],
-              ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

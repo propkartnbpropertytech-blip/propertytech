@@ -15,21 +15,13 @@ import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
+import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/api/cloudinary_uploader.dart';
 import 'package:dio/dio.dart';
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http_parser/http_parser.dart';
-import '../../../core/utils/budget_formatter.dart';
-import '../../../core/security/role_guard.dart';
-import '../../properties/repository/properties_repository.dart';
-import '../../requirements/repository/requirements_repository.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/design_system/widgets/drawers.dart';
-import '../../properties/models/property_model.dart';
-import '../../requirements/models/requirement_model.dart';
 
 class UsersScreen extends StatefulWidget {
   const UsersScreen({super.key});
@@ -239,17 +231,17 @@ class _UsersScreenState extends State<UsersScreen> {
                                           )
                                         : (uploadedPhotoUrl != null &&
                                               uploadedPhotoUrl!.isNotEmpty)
-                                        ? Image.network(
-                                            uploadedPhotoUrl!,
+                                        ? CrmNetworkImage(
+                                            url: uploadedPhotoUrl!,
                                             fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) =>
-                                                    Icon(
-                                                      Icons.person_rounded,
-                                                      size: 48,
-                                                      color:
-                                                          CRMColors.textMuted,
-                                                    ),
+                                            width: 90,
+                                            height: 90,
+                                            cacheLogicalWidth: 90,
+                                            error: (context) => Icon(
+                                              Icons.person_rounded,
+                                              size: 48,
+                                              color: CRMColors.textMuted,
+                                            ),
                                           )
                                         : Icon(
                                             Icons.person_rounded,
@@ -1032,11 +1024,6 @@ class _UsersScreenState extends State<UsersScreen> {
         if (authState is Authenticated) {
           currentUser = authState.user;
         }
-        final isCurrentUserAdmin =
-            currentUser != null &&
-            (currentUser.role == 'Admin' ||
-                currentUser.role == 'Super Admin' ||
-                RoleGuard.isAdmin(currentUser.role));
 
         if (state is UsersLoaded) {
           users = state.users;
@@ -1114,7 +1101,6 @@ class _UsersScreenState extends State<UsersScreen> {
 
         return _buildFullWidthEmployeesTable(
           users: users,
-          isCurrentUserAdmin: isCurrentUserAdmin,
         );
       },
     );
@@ -1122,7 +1108,6 @@ class _UsersScreenState extends State<UsersScreen> {
 
   Widget _buildFullWidthEmployeesTable({
     required List<UserModel> users,
-    required bool isCurrentUserAdmin,
   }) {
     Widget headerCell(String label, {TextAlign align = TextAlign.left}) {
       return Padding(
@@ -1191,9 +1176,6 @@ class _UsersScreenState extends State<UsersScreen> {
           ...users.map((user) {
             final isAdmin = user.roleName.toLowerCase() == 'admin' ||
                 user.roleName.toLowerCase() == 'telecaller';
-            final isClickable = isCurrentUserAdmin &&
-                (user.roleName.toLowerCase() == 'sales' ||
-                    user.roleName.toLowerCase() == 'telecaller');
 
             return TableRow(
               decoration: BoxDecoration(
@@ -1208,7 +1190,7 @@ class _UsersScreenState extends State<UsersScreen> {
               children: [
                 bodyCell(
                   InkWell(
-                    onTap: isClickable ? () => _showSalesmanDetails(user) : null,
+                    onTap: () => _openEmployeePage(user),
                     child: Row(
                       children: [
                         CircleAvatar(
@@ -1319,21 +1301,21 @@ class _UsersScreenState extends State<UsersScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (isAdmin)
-                            IconButton(
-                              icon: const Icon(
-                                Icons.analytics_outlined,
-                                color: CRMColors.warning,
-                                size: 18,
-                              ),
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 32,
-                                minHeight: 32,
-                              ),
-                              onPressed: () => _showAdminStatsDialog(user),
+                          IconButton(
+                            icon: Icon(
+                              Icons.chevron_right_rounded,
+                              color: CRMColors.primary,
+                              size: 20,
                             ),
+                            tooltip: 'Open employee page',
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            onPressed: () => _openEmployeePage(user),
+                          ),
                           IconButton(
                             icon: Icon(
                               Icons.edit_outlined,
@@ -1377,18 +1359,6 @@ class _UsersScreenState extends State<UsersScreen> {
 
   Widget _buildMobileUserCard(UserModel user) {
     final isAdmin = user.roleName.toLowerCase() == 'admin';
-    final authState = context.read<AuthBloc>().state;
-    auth_model.UserModel? currentUser;
-    if (authState is Authenticated) {
-      currentUser = authState.user;
-    }
-    final isCurrentUserAdmin =
-        currentUser != null &&
-        (currentUser.role == 'Admin' ||
-            currentUser.role == 'Super Admin' ||
-            RoleGuard.isAdmin(currentUser.role));
-    final bool isClickable =
-        isCurrentUserAdmin && (user.roleName.toLowerCase() == 'sales' || user.roleName.toLowerCase() == 'telecaller');
 
     final cardContent = Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.s),
@@ -1524,24 +1494,19 @@ class _UsersScreenState extends State<UsersScreen> {
             height: 1,
           ),
           const SizedBox(height: CRMSpacing.s),
-          Row(
+              Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              if (isAdmin) ...[
-                TextButton.icon(
-                  onPressed: () => _showAdminStatsDialog(user),
-                  icon: const Icon(
-                    Icons.analytics_outlined,
-                    color: CRMColors.warning,
-                    size: 16,
-                  ),
-                  label: const Text(
-                    'Stats',
-                    style: TextStyle(color: CRMColors.warning),
-                  ),
+              TextButton.icon(
+                onPressed: () => _openEmployeePage(user),
+                icon: Icon(
+                  Icons.chevron_right_rounded,
+                  color: CRMColors.primary,
+                  size: 16,
                 ),
-                const SizedBox(width: CRMSpacing.s),
-              ],
+                label: Text('Open', style: TextStyle(color: CRMColors.primary)),
+              ),
+              const SizedBox(width: CRMSpacing.s),
               TextButton.icon(
                 onPressed: () => _showAddEditUserDialog(user),
                 icon: Icon(
@@ -1570,16 +1535,14 @@ class _UsersScreenState extends State<UsersScreen> {
       ),
     );
 
-    return isClickable
-        ? Material(
+    return Material(
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-              onTap: () => _showSalesmanDetails(user),
+              onTap: () => _openEmployeePage(user),
               child: cardContent,
             ),
-          )
-        : cardContent;
+          );
   }
 
   Widget _buildPasswordResetsSection() {
@@ -2149,983 +2112,10 @@ class _UsersScreenState extends State<UsersScreen> {
     );
   }
 
-  String _getListingTypeLabelForSalesman(RequirementModel r) {
-    final name = r.listingTypeName ?? '';
-    final id = r.listingTypeId ?? '';
-    final combined = '$name $id'.toLowerCase();
-    if (combined.contains('rent')) {
-      return 'Rent';
-    } else if (combined.contains('sale') || combined.contains('resale')) {
-      return 'Re-Sale';
-    }
-    return 'Rent';
+  void _openEmployeePage(UserModel user) {
+    context.push('/users/${user.id}');
   }
 
-  void _showSalesmanDetails(UserModel salesman) {
-    String activeTab = 'Rent';
-    String currentView = 'stats';
-
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final screenWidth = MediaQuery.of(dialogContext).size.width;
-            final isMobile = screenWidth < 600;
-
-            return Dialog(
-              insetPadding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 0 : 40,
-                vertical: isMobile ? 0 : 24,
-              ),
-              backgroundColor: CRMColors.surfaceElevatedOf(dialogContext),
-              elevation: 8,
-              shadowColor: CRMColors.shadow,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(
-                  isMobile ? 0 : CRMBorderRadius.dialog,
-                ),
-                side: BorderSide(
-                  color: CRMColors.borderOf(dialogContext).withOpacity(0.5),
-                  width: 0.5,
-                ),
-              ),
-              child: Container(
-                width: isMobile ? double.infinity : 650,
-                height: isMobile ? double.infinity : 550,
-                padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.l),
-                child: FutureBuilder<List<dynamic>>(
-                  future: Future.wait([
-                    PropertiesRepository().getProperties(),
-                    RequirementsRepository().getRequirements(),
-                  ]),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    if (snapshot.hasError) {
-                      return Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.error_outline_rounded,
-                            color: CRMColors.danger,
-                            size: 48,
-                          ),
-                          const SizedBox(height: CRMSpacing.m),
-                          Text(
-                            "Failed to load statistics",
-                            style: CRMTypography.sectionTitle,
-                          ),
-                          const SizedBox(height: CRMSpacing.l),
-                          CRMButton(
-                            label: "Close",
-                            onPressed: () => Navigator.pop(dialogContext),
-                          ),
-                        ],
-                      );
-                    }
-
-                    final allProps =
-                        (snapshot.data?[0] as List<PropertyModel>?) ?? [];
-                    final allReqs =
-                        (snapshot.data?[1] as List<RequirementModel>?) ?? [];
-
-                    final sId = salesman.id;
-                    final sName = salesman.fullName.toLowerCase().trim();
-
-                    final salesmanProps = allProps.where((p) {
-                      final pAdminId = p.adminId ?? '';
-                      final pCreatedBy = p.createdBy;
-                      final pCreatedByName = p.createdByName.toLowerCase().trim();
-
-                      return pAdminId == sId ||
-                             pCreatedBy == sId ||
-                             (pCreatedByName.isNotEmpty && pCreatedByName == sName) ||
-                             (pCreatedBy.toLowerCase().trim() == sName);
-                    }).toList();
-
-                    final salesmanReqs = allReqs.where((r) {
-                      final rAdminId = r.adminId ?? '';
-                      final rAssignedTo = r.assignedTo ?? '';
-                      final rCreatedBy = r.createdBy ?? '';
-                      final rCreatorName = (r.creatorName ?? '').toLowerCase().trim();
-                      final rAssigneeName = (r.assigneeName ?? '').toLowerCase().trim();
-
-                      return rAdminId == sId ||
-                             rAssignedTo == sId ||
-                             rCreatedBy == sId ||
-                             (rCreatorName.isNotEmpty && rCreatorName == sName) ||
-                             (rAssigneeName.isNotEmpty && rAssigneeName == sName);
-                    }).toList();
-
-                    // Filter helper functions
-                    List<PropertyModel> getFilteredProperties() {
-                      return salesmanProps.where((p) {
-                        final ltName = p.listingTypeName.toLowerCase();
-                        final matchesListing = activeTab == 'Rent'
-                            ? ltName.contains('rent')
-                            : (ltName.contains('sale') ||
-                                  ltName.contains('resale') ||
-                                  !ltName.contains('rent'));
-                        return matchesListing;
-                      }).toList();
-                    }
-
-                    List<RequirementModel> getFilteredRequirements() {
-                      return salesmanReqs.where((r) {
-                        final matchesListing =
-                            _getListingTypeLabelForSalesman(r) == activeTab;
-                        return matchesListing;
-                      }).toList();
-                    }
-
-                    // Count helpers
-                    final filteredProps = getFilteredProperties();
-                    final filteredReqs = getFilteredRequirements();
-                    final wonReqs = filteredReqs
-                        .where((r) => r.status == 'Won' || r.status == 'Closed')
-                        .length;
-
-                    // Building Views
-                    if (currentView == 'properties') {
-                      return _buildPropertiesView(
-                        salesman,
-                        filteredProps,
-                        () => setDialogState(() => currentView = 'stats'),
-                        isMobile,
-                      );
-                    }
-
-                    if (currentView == 'requirements') {
-                      return _buildRequirementsView(
-                        salesman,
-                        filteredReqs,
-                        () => setDialogState(() => currentView = 'stats'),
-                        isMobile,
-                      );
-                    }
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Header
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                CircleAvatar(
-                                  backgroundColor:
-                                      CRMColors.primary.withOpacity(0.1),
-                                  radius: 20,
-                                  backgroundImage: (salesman.profilePhoto != null && salesman.profilePhoto!.isNotEmpty)
-                                      ? NetworkImage(salesman.profilePhoto!)
-                                      : null,
-                                  child: (salesman.profilePhoto != null && salesman.profilePhoto!.isNotEmpty)
-                                      ? null
-                                      : Icon(
-                                          Icons.person_rounded,
-                                          color: CRMColors.primary,
-                                          size: 20,
-                                        ),
-                                ),
-                                const SizedBox(width: CRMSpacing.m),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      salesman.fullName,
-                                      style: CRMTypography.sectionTitle
-                                          .copyWith(
-                                            color: CRMColors.textOf(context),
-                                          ),
-                                    ),
-                                    Text(
-                                      "Salesman Profile & Metrics",
-                                      style: CRMTypography.caption.copyWith(
-                                        color: CRMColors.textSecondaryOf(
-                                          context,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.close_rounded,
-                                color: CRMColors.textMutedOf(context),
-                              ),
-                              onPressed: () => Navigator.pop(dialogContext),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: CRMSpacing.m),
-                        Divider(
-                          color: CRMColors.borderOf(context).withOpacity(0.5),
-                        ),
-                        const SizedBox(height: CRMSpacing.m),
-
-                        // Contact info
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.mail_outline_rounded,
-                              size: 16,
-                              color: CRMColors.textSecondaryOf(context),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              salesman.email,
-                              style: CRMTypography.bodyMedium.copyWith(
-                                color: CRMColors.textSecondaryOf(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (salesman.mobile != null &&
-                            salesman.mobile!.isNotEmpty) ...[
-                          const SizedBox(height: CRMSpacing.xs),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.phone_outlined,
-                                size: 16,
-                                color: CRMColors.textSecondaryOf(context),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                salesman.mobile!,
-                                style: CRMTypography.bodyMedium.copyWith(
-                                  color: CRMColors.textSecondaryOf(context),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(height: CRMSpacing.l),
-
-                        // Rent vs Re-Sale Toggle Buttons
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            height: 44,
-                            width: 240,
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: CRMColors.backgroundOf(context),
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(
-                                color: CRMColors.borderOf(
-                                  context,
-                                ).withOpacity(0.6),
-                                width: 1.0,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: GestureDetector(
-                                    onTap: () => setDialogState(
-                                      () => activeTab = 'Rent',
-                                    ),
-                                    child: Container(
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        color: activeTab == 'Rent'
-                                            ? CRMColors.primary
-                                            : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        'Rent',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: activeTab == 'Rent'
-                                              ? Colors.white
-                                              : const Color(0xFF6B7280),
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: GestureDetector(
-                                    onTap: () => setDialogState(
-                                      () => activeTab = 'Re-Sale',
-                                    ),
-                                    child: Container(
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        color: activeTab == 'Re-Sale'
-                                            ? CRMColors.primary
-                                            : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        'Re-Sale',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: activeTab == 'Re-Sale'
-                                              ? Colors.white
-                                              : const Color(0xFF6B7280),
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: CRMSpacing.l),
-
-                        // KPI boxes
-                        Wrap(
-                          spacing: CRMSpacing.s,
-                          runSpacing: CRMSpacing.s,
-                          children: [
-                            _buildDialogStatCard(
-                              "Properties Added",
-                              filteredProps.length.toString(),
-                              Icons.home_work_outlined,
-                              CRMColors.primary,
-                              isMobile,
-                            ),
-                            _buildDialogStatCard(
-                              "Requirements",
-                              filteredReqs.length.toString(),
-                              Icons.assignment_outlined,
-                              CRMColors.info,
-                              isMobile,
-                            ),
-                            _buildDialogStatCard(
-                              "Won Clients",
-                              wonReqs.toString(),
-                              Icons.workspace_premium_outlined,
-                              CRMColors.success,
-                              isMobile,
-                            ),
-                          ],
-                        ),
-                        const Spacer(),
-
-                        // Bottom Actions
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                icon: const Icon(
-                                  Icons.home_work_outlined,
-                                  size: 16,
-                                ),
-                                label: Text(
-                                  isMobile
-                                      ? "Properties"
-                                      : "View Properties Added",
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  side: BorderSide(
-                                    color: CRMColors.primary,
-                                  ),
-                                  foregroundColor: CRMColors.primary,
-                                ),
-                                onPressed: () => setDialogState(
-                                  () => currentView = 'properties',
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: CRMSpacing.m),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                icon: const Icon(
-                                  Icons.assignment_outlined,
-                                  size: 16,
-                                ),
-                                label: Text(
-                                  isMobile
-                                      ? "Requirements"
-                                      : "View Requirements",
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  backgroundColor: CRMColors.primary,
-                                  foregroundColor: Colors.white,
-                                ),
-                                onPressed: () => setDialogState(
-                                  () => currentView = 'requirements',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildDialogStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-    bool isMobile,
-  ) {
-    return Container(
-      width: isMobile ? double.infinity : 180,
-      padding: const EdgeInsets.all(CRMSpacing.m),
-      decoration: BoxDecoration(
-        color: CRMColors.backgroundOf(context),
-        borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-        border: Border.all(
-          color: CRMColors.borderOf(context).withOpacity(0.5),
-          width: 0.5,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color, size: 18),
-          ),
-          const SizedBox(width: CRMSpacing.m),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: CRMTypography.caption.copyWith(
-                    color: CRMColors.textSecondaryOf(context),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: CRMTypography.sectionTitle.copyWith(
-                    color: CRMColors.textOf(context),
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPropertiesView(
-    UserModel salesman,
-    List<PropertyModel> list,
-    VoidCallback onBack,
-    bool isMobile,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back_rounded),
-              onPressed: onBack,
-            ),
-            const SizedBox(width: CRMSpacing.s),
-            Expanded(
-              child: Text(
-                "Properties Added by ${salesman.fullName}",
-                style: CRMTypography.sectionTitle.copyWith(fontSize: 16),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            TextButton.icon(
-              icon: const Icon(Icons.open_in_new, size: 14),
-              label: Text(
-                isMobile ? "View All" : "Open in Properties Page",
-                style: const TextStyle(fontSize: 12),
-              ),
-              onPressed: () {
-                Navigator.of(context, rootNavigator: true).pop();
-                context.go('/properties?search=${Uri.encodeComponent(salesman.fullName)}');
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: CRMSpacing.m),
-        Expanded(
-          child: list.isEmpty
-              ? const Center(
-                  child: Text("No properties found for this listing type."),
-                )
-              : ListView.separated(
-                  itemCount: list.length,
-                  separatorBuilder: (context, index) =>
-                      const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final p = list[index];
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      onTap: () {
-                        Navigator.of(context, rootNavigator: true).pop();
-                        showCRMPropertyDrawer(context, p);
-                      },
-                      title: Text(
-                        p.title,
-                        style: CRMTypography.bodyMedium.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: CRMColors.textOf(context),
-                        ),
-                      ),
-                      subtitle: Text(
-                        "${p.propertyCode} • ${p.areaName} • ${p.configurationName ?? p.bedrooms.toString() + ' BHK'}",
-                        style: CRMTypography.caption.copyWith(
-                          color: CRMColors.textSecondaryOf(context),
-                        ),
-                      ),
-                      trailing: Text(
-                        BudgetFormatter.format(p.price),
-                        style: CRMTypography.bodyMedium.copyWith(
-                          color: CRMColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRequirementsView(
-    UserModel salesman,
-    List<RequirementModel> list,
-    VoidCallback onBack,
-    bool isMobile,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back_rounded),
-              onPressed: onBack,
-            ),
-            const SizedBox(width: CRMSpacing.s),
-            Expanded(
-              child: Text(
-                "Requirements Added by ${salesman.fullName}",
-                style: CRMTypography.sectionTitle.copyWith(fontSize: 16),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            TextButton.icon(
-              icon: const Icon(Icons.open_in_new, size: 14),
-              label: Text(
-                isMobile ? "View All" : "Open in Leads Page",
-                style: const TextStyle(fontSize: 12),
-              ),
-              onPressed: () {
-                Navigator.of(context, rootNavigator: true).pop();
-                context.go('/requirements?search=${Uri.encodeComponent(salesman.fullName)}');
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: CRMSpacing.m),
-        Expanded(
-          child: list.isEmpty
-              ? const Center(
-                  child: Text("No requirements found for this listing type."),
-                )
-              : ListView.separated(
-                  itemCount: list.length,
-                  separatorBuilder: (context, index) =>
-                      const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final r = list[index];
-                    final specLabel =
-                        '${r.propertyTypeName} (${r.configurationName ?? ""})';
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      onTap: () {
-                        Navigator.of(context, rootNavigator: true).pop();
-                        context.go('/requirements?search=${Uri.encodeComponent(r.clientName)}');
-                      },
-                      title: Text(
-                        r.clientName,
-                        style: CRMTypography.bodyMedium.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: CRMColors.textOf(context),
-                        ),
-                      ),
-                      subtitle: Text(
-                        "${r.clientMobile} • $specLabel\nTarget: ${r.areaNames.join(', ')}",
-                        style: CRMTypography.caption.copyWith(
-                          color: CRMColors.textSecondaryOf(context),
-                        ),
-                      ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            "₹${BudgetFormatter.format(r.minBudget)} - ₹${BudgetFormatter.format(r.maxBudget)}",
-                            style: CRMTypography.bodyMedium.copyWith(
-                              color: CRMColors.primary,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: (r.status == 'Won' || r.status == 'Closed')
-                                  ? CRMColors.success.withOpacity(0.1)
-                                  : CRMColors.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              r.status,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color:
-                                    (r.status == 'Won' || r.status == 'Closed')
-                                    ? CRMColors.success
-                                    : CRMColors.primary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  void _showAdminStatsDialog(UserModel user) {
-    // Capture once so dialog rebuilds do not re-fire the network call.
-    final statsFuture = DioClient.dio.get('/users/admins/${user.id}/stats');
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return Dialog(
-          backgroundColor: CRMColors.surfaceElevatedOf(dialogContext),
-          elevation: 8,
-          shadowColor: CRMColors.shadow,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(CRMBorderRadius.dialog),
-            side: BorderSide(
-              color: CRMColors.borderOf(dialogContext).withOpacity(0.5),
-              width: 0.5,
-            ),
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 550),
-            child: FutureBuilder<Response>(
-              future: statsFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return SizedBox(
-                    height: 250,
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: CRMColors.primary,
-                      ),
-                    ),
-                  );
-                }
-
-                if (snapshot.hasError ||
-                    !snapshot.hasData ||
-                    snapshot.data?.data['success'] == false) {
-                  return Padding(
-                    padding: const EdgeInsets.all(CRMSpacing.l),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.error_outline_rounded,
-                          color: CRMColors.danger,
-                          size: 48,
-                        ),
-                        const SizedBox(height: CRMSpacing.m),
-                        Text(
-                          "Failed to load statistics.",
-                          style: CRMTypography.sectionTitle.copyWith(
-                            color: CRMColors.text,
-                          ),
-                        ),
-                        const SizedBox(height: CRMSpacing.l),
-                        CRMButton(
-                          label: "Close",
-                          onPressed: () => Navigator.pop(dialogContext),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                final stats = snapshot.data!.data['data'];
-                final adminName = stats['adminName'] ?? user.fullName;
-                final salesCreated = stats['salesCreated'] ?? 0;
-                final activeSales = stats['activeSales'] ?? 0;
-                final inactiveSales = stats['inactiveSales'] ?? 0;
-                final propertiesAdded = stats['propertiesAdded'] ?? 0;
-                final requirementsAdded = stats['requirementsAdded'] ?? 0;
-
-                Widget buildStatCard(
-                  String title,
-                  String value,
-                  IconData icon,
-                  Color color,
-                ) {
-                  return Container(
-                    padding: const EdgeInsets.all(CRMSpacing.m),
-                    decoration: BoxDecoration(
-                      color: CRMColors.backgroundOf(context),
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-                      border: Border.all(
-                        color: CRMColors.borderOf(context).withOpacity(0.5),
-                        width: 0.5,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: color.withOpacity(0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(icon, color: color, size: 20),
-                        ),
-                        const SizedBox(width: CRMSpacing.m),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                title,
-                                style: CRMTypography.caption.copyWith(
-                                  color: CRMColors.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                value,
-                                style: CRMTypography.sectionTitle.copyWith(
-                                  color: CRMColors.text,
-                                  fontSize: 18,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return Padding(
-                  padding: const EdgeInsets.all(CRMSpacing.l),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              const CircleAvatar(
-                                backgroundColor: CRMColors.info,
-                                radius: 20,
-                                child: Icon(
-                                  Icons.admin_panel_settings_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(width: CRMSpacing.m),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    adminName,
-                                    style: CRMTypography.sectionTitle.copyWith(
-                                      color: CRMColors.text,
-                                    ),
-                                  ),
-                                  Text(
-                                    "Administrator Profile & Metrics",
-                                    style: CRMTypography.caption.copyWith(
-                                      color: CRMColors.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.close_rounded,
-                              color: CRMColors.textMuted,
-                            ),
-                            onPressed: () => Navigator.pop(dialogContext),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: CRMSpacing.m),
-                      Divider(
-                        color: CRMColors.borderOf(context).withOpacity(0.5),
-                      ),
-                      const SizedBox(height: CRMSpacing.m),
-
-                      // Contact info
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.mail_outline_rounded,
-                            size: 16,
-                            color: CRMColors.textSecondary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            user.email,
-                            style: CRMTypography.bodyMedium.copyWith(
-                              color: CRMColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (user.mobile != null && user.mobile!.isNotEmpty) ...[
-                        const SizedBox(height: CRMSpacing.xs),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.phone_outlined,
-                              size: 16,
-                              color: CRMColors.textSecondary,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              user.mobile!,
-                              style: CRMTypography.bodyMedium.copyWith(
-                                color: CRMColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: CRMSpacing.l),
-
-                      Text(
-                        "TEAM STATISTICS",
-                        style: CRMTypography.captionBold.copyWith(
-                          color: CRMColors.textSecondary,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                      const SizedBox(height: CRMSpacing.s),
-
-                      // Metrics Grid
-                      GridView.count(
-                        crossAxisCount: 2,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisSpacing: CRMSpacing.s,
-                        mainAxisSpacing: CRMSpacing.s,
-                        childAspectRatio: 2.8,
-                        children: [
-                          buildStatCard(
-                            "Sales Created",
-                            salesCreated.toString(),
-                            Icons.group_add_rounded,
-                            CRMColors.primary,
-                          ),
-                          buildStatCard(
-                            "Active Sales",
-                            activeSales.toString(),
-                            Icons.check_circle_outline_rounded,
-                            CRMColors.success,
-                          ),
-                          buildStatCard(
-                            "Inactive Sales",
-                            inactiveSales.toString(),
-                            Icons.cancel_outlined,
-                            CRMColors.danger,
-                          ),
-                          buildStatCard(
-                            "Properties",
-                            propertiesAdded.toString(),
-                            Icons.home_work_outlined,
-                            CRMColors.info,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: CRMSpacing.s),
-                      buildStatCard(
-                        "Requirements Added",
-                        requirementsAdded.toString(),
-                        Icons.assignment_outlined,
-                        CRMColors.warning,
-                      ),
-
-                      const SizedBox(height: CRMSpacing.xl),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: CRMButton(
-                          label: "Dismiss",
-                          onPressed: () => Navigator.pop(dialogContext),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
 
   Future<void> _pickAndUploadPhoto(
     StateSetter dialogSetState,

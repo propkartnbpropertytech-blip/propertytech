@@ -1137,8 +1137,10 @@ class IntegrationService extends ChangeNotifier {
       final user = RoleGuard.currentUser;
 
       // 1. Optimistically update in memory & notify UI immediately (0ms delay)
+      IntegrationLeadModel? previousLead;
       final idx = _leads.indexWhere((l) => l.id == leadId);
       if (idx != -1) {
+        previousLead = _leads[idx];
         _leads[idx] = _leads[idx].copyWith(
           campaignStatus: finalStatus,
           assignedTo: isCnr ? _leads[idx].assignedTo : assignedTo,
@@ -1159,7 +1161,21 @@ class IntegrationService extends ChangeNotifier {
         'remarks': remarks,
       });
 
-      // 3. Dispatch notification & trigger CRM import non-blockingly
+      final ok = res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+      if (!ok) {
+        if (previousLead != null && idx != -1) {
+          _leads[idx] = previousLead;
+          notifyListeners();
+          unawaited(_persistLeads());
+        }
+        final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
+        return {
+          'success': false,
+          'message': (data['message'] ?? 'Failed to transfer lead (HTTP ${res.statusCode}).').toString(),
+        };
+      }
+
+      // 3. Dispatch notification & trigger CRM import only after a confirmed transfer
       if (!isCnr && assignedTo != null && assignedTo.isNotEmpty) {
         final targetLead = idx != -1 ? _leads[idx] : null;
         final leadName = targetLead != null ? _mapLeadFields(targetLead)['name'] : null;
@@ -1170,37 +1186,32 @@ class IntegrationService extends ChangeNotifier {
           route: '/requirements',
         ));
 
-        // Always trigger CRM import & sync non-blockingly so the lead is live immediately on the active Leads page
         if (targetLead?.leadType == 'Property Listing') {
           unawaited(importLeadsToProperties([leadId], skipFetchServerLeads: false));
         } else {
-          unawaited(importLeadsToCrm([leadId], forceReimport: true, skipFetchServerLeads: false));
+          unawaited(importLeadsToCrm([leadId], forceReimport: false, skipFetchServerLeads: false));
         }
       }
 
-      if (res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300) {
-        final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
-        if (data['lead'] != null && data['lead'] is Map) {
-          try {
-            final updatedLead = IntegrationLeadModel.fromJson(Map<String, dynamic>.from(data['lead']));
-            final leadIdx = _leads.indexWhere((l) => l.id == leadId);
-            if (leadIdx != -1) {
-              _leads[leadIdx] = updatedLead.copyWith(
-                campaignStatus: finalStatus,
-                assignedTo: assignedTo ?? updatedLead.assignedTo,
-                assignedToName: assignedToName ?? updatedLead.assignedToName,
-                transferRemarks: remarks ?? updatedLead.transferRemarks,
-                importStatus: isCnr ? (_leads[leadIdx].importStatus ?? updatedLead.importStatus) : 'Imported',
-              );
-              notifyListeners();
-              unawaited(_persistLeads());
-            }
-          } catch (_) {}
-        }
-        return {'success': true, 'message': data['message'] ?? 'Lead transferred successfully'};
+      final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
+      if (data['lead'] != null && data['lead'] is Map) {
+        try {
+          final updatedLead = IntegrationLeadModel.fromJson(Map<String, dynamic>.from(data['lead']));
+          final leadIdx = _leads.indexWhere((l) => l.id == leadId);
+          if (leadIdx != -1) {
+            _leads[leadIdx] = updatedLead.copyWith(
+              campaignStatus: finalStatus,
+              assignedTo: assignedTo ?? updatedLead.assignedTo,
+              assignedToName: assignedToName ?? updatedLead.assignedToName,
+              transferRemarks: remarks ?? updatedLead.transferRemarks,
+              importStatus: isCnr ? (_leads[leadIdx].importStatus ?? updatedLead.importStatus) : 'Imported',
+            );
+            notifyListeners();
+            unawaited(_persistLeads());
+          }
+        } catch (_) {}
       }
-
-      return {'success': true, 'message': 'Lead transferred successfully'};
+      return {'success': true, 'message': data['message'] ?? 'Lead transferred successfully'};
     } catch (e) {
       debugPrint('[IntegrationService] Error transferring lead $leadId: $e');
       return {'success': false, 'message': e.toString().replaceAll('Exception: ', '')};
@@ -1683,11 +1694,6 @@ class IntegrationService extends ChangeNotifier {
       if (index == null) continue;
 
       final lead = _leads[index];
-      if (!forceReimport && lead.importStatus == 'Imported') {
-        importedCount++;
-        continue;
-      }
-
       final mapped = _mapLeadFields(lead);
       final matchedProperties = _propertiesFromMappedRow(mapped, lead.rawJson, inventory);
       final primaryProperty = matchedProperties.isNotEmpty ? matchedProperties.first : null;
@@ -1707,7 +1713,7 @@ class IntegrationService extends ChangeNotifier {
               : _extractPhone(lead.rawJson));
       final normalizedMobile = _normalizePhone(mobile);
 
-      if (!forceReimport && normalizedMobile.isNotEmpty && existingPhones.contains(normalizedMobile)) {
+      if (normalizedMobile.isNotEmpty && existingPhones.contains(normalizedMobile)) {
         RequirementModel? existingReq;
         for (final r in existing) {
           if (_normalizePhone(r.clientMobile) == normalizedMobile) {
@@ -1716,63 +1722,21 @@ class IntegrationService extends ChangeNotifier {
           }
         }
         if (existingReq != null && lead.assignedTo != null && lead.assignedTo!.isNotEmpty) {
-          final updatedReq = RequirementModel(
-            id: existingReq.id,
-            clientName: existingReq.clientName,
-            clientMobile: existingReq.clientMobile,
-            categoryId: existingReq.categoryId,
-            categoryName: existingReq.categoryName,
-            propertyTypeId: existingReq.propertyTypeId,
-            propertyTypeName: existingReq.propertyTypeName,
-            configurationId: existingReq.configurationId,
-            configurationName: existingReq.configurationName,
-            listingTypeId: existingReq.listingTypeId,
-            listingTypeName: existingReq.listingTypeName,
-            minBudget: existingReq.minBudget,
-            maxBudget: existingReq.maxBudget,
-            minArea: existingReq.minArea,
-            maxArea: existingReq.maxArea,
-            areaIds: existingReq.areaIds,
-            areaNames: existingReq.areaNames,
-            configurationIds: existingReq.configurationIds,
-            propertyTypeIds: existingReq.propertyTypeIds,
-            rawSiteVisits: existingReq.rawSiteVisits,
-            rawShareSessions: existingReq.rawShareSessions,
-            remarks: existingReq.remarks,
-            notes: existingReq.notes,
-            status: existingReq.status,
-            createdAt: existingReq.createdAt,
-            adminId: existingReq.adminId,
+          final updatedReq = existingReq.copyWith(
             assignedTo: lead.assignedTo,
-            organizationId: existingReq.organizationId,
             assigneeName: lead.assignedToName,
-            creatorName: existingReq.creatorName,
-            nextFollowupDate: existingReq.nextFollowupDate,
-            furnishingIds: existingReq.furnishingIds,
-            facingIds: existingReq.facingIds,
-            createdBy: existingReq.createdBy,
-            creatorMobile: existingReq.creatorMobile,
-            creatorEmail: existingReq.creatorEmail,
-            leadSource: existingReq.leadSource,
-            referralName: existingReq.referralName,
-            metaLeadId: existingReq.metaLeadId,
-            metaPageId: existingReq.metaPageId,
-            metaFormId: existingReq.metaFormId,
-            metaCampaignId: existingReq.metaCampaignId,
-            metaCampaignName: existingReq.metaCampaignName,
-            metaAdsetId: existingReq.metaAdsetId,
-            metaAdsetName: existingReq.metaAdsetName,
-            metaAdId: existingReq.metaAdId,
-            metaAdName: existingReq.metaAdName,
-            metaCustomFields: existingReq.metaCustomFields,
-            leadQuality: existingReq.leadQuality,
           );
-          await _requirementsRepository.createRequirement(updatedReq);
+          await _requirementsRepository.updateRequirement(updatedReq);
         }
         _leads[index] = lead.copyWith(
           importStatus: 'Imported',
           importedClientId: existingReq?.id ?? 'existing_$normalizedMobile',
         );
+        importedCount++;
+        continue;
+      }
+
+      if (!forceReimport && lead.importStatus == 'Imported') {
         importedCount++;
         continue;
       }
@@ -1985,9 +1949,25 @@ class IntegrationService extends ChangeNotifier {
 
     // 1. Try smart backend conversion engine first
     try {
+      final leadsPayload = <Map<String, dynamic>>[];
+      for (final id in leadIds) {
+        final idx = _leads.indexWhere((l) => l.id == id);
+        if (idx != -1) {
+          final lead = _leads[idx];
+          leadsPayload.add({
+            'id': lead.id,
+            'assignedTo': lead.assignedTo,
+            'assignedToName': lead.assignedToName,
+            'remarks': lead.transferRemarks,
+          });
+        }
+      }
       final response = await _apiClient.post(
         '/integrations/leads/convert-to-crm',
-        {'leadIds': leadIds},
+        {
+          'leadIds': leadIds,
+          'leads': leadsPayload,
+        },
       );
       if (response.data is Map<String, dynamic> && response.data['success'] == true) {
         final count = response.data['count'] ?? 0;
@@ -2033,6 +2013,19 @@ class IntegrationService extends ChangeNotifier {
 
         final lead = _leads[index];
         if (lead.importStatus == 'Imported') {
+          final importedId = lead.importedClientId;
+          if (importedId != null &&
+              importedId.isNotEmpty &&
+              lead.assignedTo != null &&
+              lead.assignedTo!.isNotEmpty) {
+            try {
+              await _propertiesRepository.updateProperty(importedId, {
+                'assigned_to': lead.assignedTo,
+              });
+            } catch (e) {
+              debugPrint('Error assigning imported property $importedId: $e');
+            }
+          }
           importedCount++;
           continue;
         }
@@ -2189,6 +2182,7 @@ class IntegrationService extends ChangeNotifier {
           'city_id': matchedCity?.id ?? '',
           'remarks': '[Enquired: ${lead.formattedReceivedAt} via ${lead.source}] Campaign: ${lead.getStringValue('Campaign Name')}. Email: $email',
           'created_by': user?.id,
+          if (lead.assignedTo != null && lead.assignedTo!.isNotEmpty) 'assigned_to': lead.assignedTo,
         };
 
         try {

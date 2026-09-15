@@ -144,10 +144,7 @@ class RequirementsRepository {
         if ((local.notes == null || local.notes!.trim().isEmpty) && existing != null) {
           local.notes = existing.notes;
         }
-        if ((local.assignedTo == null || local.assignedTo!.trim().isEmpty) && existing != null && existing.assignedTo != null && existing.assignedTo!.trim().isNotEmpty) {
-          local.assignedTo = existing.assignedTo;
-          local.assigneeName = existing.assigneeName;
-        }
+        // Keep the server assignee as-is so unassign (empty/null) actually sticks.
         return local;
       }).toList();
       await _coordinator.requirementLocal.saveRequirements(localEntities);
@@ -270,24 +267,14 @@ class RequirementsRepository {
       if (freshJson != null) {
         final fresh = RequirementModel.fromJson(freshJson);
         final localItem = fresh.toLocal();
-        if (data.containsKey('notes')) {
-          localItem.notes = data['notes'] as String?;
-        }
-        if (data.containsKey('assigned_to')) {
-          localItem.assignedTo = data['assigned_to'] as String?;
-        }
+        _applyRequirementFieldPatch(localItem, data);
         await _coordinator.requirementLocal.saveRequirements([localItem]);
       } else {
         final existingList = await _coordinator.requirementLocal.getRequirements();
         final matches = existingList.where((r) => r.id == id).toList();
         if (matches.isNotEmpty) {
           final match = matches.first;
-          if (data.containsKey('notes')) {
-            match.notes = data['notes'];
-          }
-          if (data.containsKey('assigned_to')) {
-            match.assignedTo = data['assigned_to'] as String?;
-          }
+          _applyRequirementFieldPatch(match, data);
           await _coordinator.requirementLocal.saveRequirements([match]);
         }
       }
@@ -298,15 +285,22 @@ class RequirementsRepository {
       final matches = existingList.where((r) => r.id == id).toList();
       if (matches.isNotEmpty) {
         final match = matches.first;
-        if (data.containsKey('notes')) {
-          match.notes = data['notes'];
-        }
-        if (data.containsKey('assigned_to')) {
-          match.assignedTo = data['assigned_to'] as String?;
-        }
+        _applyRequirementFieldPatch(match, data);
         await _coordinator.requirementLocal.saveRequirements([match]);
       }
       _coordinator.refreshRequirements();
+    }
+  }
+
+  void _applyRequirementFieldPatch(RequirementLocal match, Map<String, dynamic> data) {
+    if (data.containsKey('notes')) {
+      match.notes = data['notes'] as String?;
+    }
+    if (data.containsKey('assigned_to')) {
+      match.assignedTo = data['assigned_to'] as String?;
+    }
+    if (data.containsKey('status') && data['status'] != null) {
+      match.status = data['status'].toString();
     }
   }
 

@@ -150,10 +150,6 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
       } else {
         next = [saved];
       }
-      emit(RequirementsLoaded(
-        requirements: next,
-        newlyAdded: saved,
-      ));
       emit(RequirementsSuccess(
         "Requirement created successfully.",
         requirement: saved,

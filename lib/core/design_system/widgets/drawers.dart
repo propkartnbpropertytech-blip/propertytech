@@ -2551,7 +2551,16 @@ Widget _buildSimilarPropertiesSection(BuildContext context, PropertyModel curren
                                   width: double.infinity,
                                   color: Colors.grey.shade200,
                                   child: imgUrl.isNotEmpty
-                                      ? CrmNetworkImage(url: imgUrl, fit: BoxFit.cover)
+                                      ? CrmNetworkImage(
+                                          url: imgUrl,
+                                          fit: BoxFit.cover,
+                                          height: 125,
+                                          width: double.infinity,
+                                          cacheLogicalWidth: 230,
+                                          error: (_) => Center(
+                                            child: Icon(Icons.home_work_outlined, size: 36, color: Colors.grey.shade400),
+                                          ),
+                                        )
                                       : Center(
                                           child: Icon(Icons.home_work_outlined, size: 36, color: Colors.grey.shade400),
                                         ),

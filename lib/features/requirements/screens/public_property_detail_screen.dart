@@ -10,6 +10,7 @@ import '../../../../core/design_system/widgets/cards.dart';
 import '../../../../core/utils/currency.dart';
 import '../../../../core/utils/seo_helper.dart';
 import '../../properties/models/property_model.dart';
+import '../../../../core/design_system/widgets/crm_network_image.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color _kWhatsAppGreen = Color(0xFF25D366);
@@ -233,24 +234,22 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
                     fit: StackFit.expand,
                     children: [
                       // Blurred background
-                      Image.network(
-                        imageUrl,
+                      CrmNetworkImage(
+                        url: imageUrl,
                         fit: BoxFit.cover,
-                        cacheWidth: 900,
-                        gaplessPlayback: true,
-                        errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                        cacheLogicalWidth: 900,
+                        error: (_) => Container(color: CRMColors.skeletonBase),
                       ),
                       // Overlay
                       Container(
                         color: Colors.black.withValues(alpha: 0.45),
                       ),
                       // Foreground contain image
-                      Image.network(
-                        imageUrl,
+                      CrmNetworkImage(
+                        url: imageUrl,
                         fit: BoxFit.contain,
-                        cacheWidth: 900,
-                        gaplessPlayback: true,
-                        errorBuilder: (context, error, stackTrace) => Container(
+                        cacheLogicalWidth: 900,
+                        error: (_) => Container(
                           color: CRMColors.skeletonBase,
                           child: Icon(Icons.image_not_supported_rounded, size: 64, color: CRMColors.textMuted),
                         ),

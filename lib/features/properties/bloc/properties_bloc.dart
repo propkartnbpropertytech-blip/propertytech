@@ -137,6 +137,7 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
   final PropertiesRepository _repository = PropertiesRepository();
   PropertyMetadataModel? _cachedMetadata;
   LoadPropertiesEvent? _lastLoadEvent;
+  PropertiesLoaded? _lastLoaded;
   StreamSubscription? _propertiesSubscription;
   StreamSubscription? _lookupsSubscription;
 
@@ -257,8 +258,10 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
         bookmarkedIds: bookmarked,
         activeTab: event.activeTab,
       ));
+      _lastLoaded = state as PropertiesLoaded;
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
     }
   }
 
@@ -270,9 +273,11 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
       _cachedMetadata = await _repository.getPropertyMetadata();
       if (state is PropertiesLoaded) {
         emit((state as PropertiesLoaded).copyWith(metadata: _cachedMetadata));
+        _lastLoaded = state as PropertiesLoaded;
       }
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
     }
   }
 
@@ -290,11 +295,13 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
           newlyAdded: saved,
           isSilentRefreshing: false,
         ));
+        _lastLoaded = state as PropertiesLoaded;
       }
       emit(PropertyCreatedState(saved));
       add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: false));
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
       add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: false));
     }
   }
@@ -343,12 +350,14 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
           bookmarkedIds: current.bookmarkedIds,
           activeTab: current.activeTab,
         ));
+        _lastLoaded = state as PropertiesLoaded;
       } else {
         emit(PropertyUpdatedState(saved));
         add(LoadPropertiesEvent(activeTab: event.activeTab));
       }
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
     }
   }
 
@@ -367,11 +376,13 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
           bookmarkedIds: current.bookmarkedIds,
           activeTab: current.activeTab,
         ));
+        _lastLoaded = state as PropertiesLoaded;
       } else {
         add(LoadPropertiesEvent(activeTab: event.activeTab));
       }
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
     }
   }
 
@@ -388,10 +399,12 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
           properties: updatedList,
           isSilentRefreshing: false,
         ));
+        _lastLoaded = state as PropertiesLoaded;
       }
       add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: true));
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
       add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: true));
     }
   }
@@ -409,10 +422,12 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
           properties: updatedList,
           isSilentRefreshing: false,
         ));
+        _lastLoaded = state as PropertiesLoaded;
       }
       add(LoadPropertiesEvent(activeTab: event.activeTab));
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
       add(LoadPropertiesEvent(activeTab: event.activeTab));
     }
   }
@@ -432,6 +447,7 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
       add(LoadPropertiesEvent(activeTab: event.activeTab));
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
       add(LoadPropertiesEvent(activeTab: event.activeTab));
     }
   }
