@@ -28,6 +28,7 @@ class RequirementsRepository {
     String? status,
     String? listingTypeId,
     bool refreshFromServer = true,
+    bool forceRefresh = false,
   }) async {
     final start = DateTime.now();
 
@@ -55,12 +56,16 @@ class RequirementsRepository {
           return isCreator || r.adminId == currentUser.id;
         }).toList();
       } else if (role == 'Telecaller') {
-        // Telecaller: same leads rights as their supervisor Admin
+        // Telecaller: same team leads as their supervisor Admin, including assigned leads.
+        final supervisorId = currentUser.adminId;
         requirements = requirements.where((r) {
           final isCreator = r.createdBy == currentUser.id ||
               (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
               (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
-          return isCreator || r.adminId == currentUser.adminId;
+          final sameAdminTeam = supervisorId != null &&
+              supervisorId.isNotEmpty &&
+              (r.adminId == supervisorId || r.createdBy == supervisorId);
+          return isCreator || sameAdminTeam;
         }).toList();
       } else if (role != 'Super Admin') {
         // Sales: own leads (including ones transferred away) plus leads assigned to them.
@@ -95,10 +100,40 @@ class RequirementsRepository {
         propertyTypeId: propertyTypeId,
         status: status,
         listingTypeId: listingTypeId,
+        force: forceRefresh,
       );
     }
 
     return requirements;
+  }
+
+  Future<void> refreshFromServerNow({
+    String? search,
+    String? configurationId,
+    String? propertyTypeId,
+    String? status,
+    String? listingTypeId,
+  }) async {
+    _lastRefreshAt = null;
+    if (_refreshInFlight != null) {
+      try {
+        await _refreshInFlight;
+      } catch (_) {}
+      _lastRefreshAt = null;
+    }
+    _triggerBackgroundRequirementsRefresh(
+      search: search,
+      configurationId: configurationId,
+      propertyTypeId: propertyTypeId,
+      status: status,
+      listingTypeId: listingTypeId,
+      force: true,
+    );
+    if (_refreshInFlight != null) {
+      try {
+        await _refreshInFlight;
+      } catch (_) {}
+    }
   }
 
   void _triggerBackgroundRequirementsRefresh({
@@ -107,9 +142,10 @@ class RequirementsRepository {
     String? propertyTypeId,
     String? status,
     String? listingTypeId,
+    bool force = false,
   }) {
     if (_refreshInFlight != null) return;
-    if (_lastRefreshAt != null && DateTime.now().difference(_lastRefreshAt!) < _minRefreshInterval) {
+    if (!force && _lastRefreshAt != null && DateTime.now().difference(_lastRefreshAt!) < _minRefreshInterval) {
       return;
     }
 
@@ -223,6 +259,24 @@ class RequirementsRepository {
     }
   }
 
+  RequirementModel _preserveLeadScope(RequirementModel submitted, RequirementModel incoming) {
+    String? keep(String? next, String? fallback) {
+      if (next != null && next.trim().isNotEmpty) return next;
+      return fallback;
+    }
+
+    return incoming.copyWith(
+      adminId: keep(incoming.adminId, submitted.adminId),
+      createdBy: keep(incoming.createdBy, submitted.createdBy),
+      creatorName: keep(incoming.creatorName, submitted.creatorName),
+      organizationId: keep(incoming.organizationId, submitted.organizationId),
+      listingTypeId: keep(incoming.listingTypeId, submitted.listingTypeId),
+      listingTypeName: keep(incoming.listingTypeName, submitted.listingTypeName),
+      assignedTo: keep(incoming.assignedTo, submitted.assignedTo),
+      assigneeName: keep(incoming.assigneeName, submitted.assigneeName),
+    );
+  }
+
   Future<RequirementModel> updateRequirement(RequirementModel req) async {
     try {
       final response = await _requirementsService.updateRequirement(req.id, req.toBackendJson());
@@ -231,11 +285,12 @@ class RequirementsRepository {
       if (req.remarks != null && req.remarks!.trim().isNotEmpty) {
         reqJson['remarks'] = req.remarks!.trim();
       }
-      final fresh = RequirementModel.fromJson(reqJson);
+      final fresh = reqJson.isEmpty ? req : RequirementModel.fromJson(reqJson);
+      final merged = _preserveLeadScope(req, fresh);
 
-      await _coordinator.requirementLocal.saveRequirements([fresh.toLocal()]);
+      await _coordinator.requirementLocal.saveRequirements([merged.toLocal()]);
       _coordinator.refreshRequirements();
-      return fresh;
+      return merged;
     } catch (e) {
       print("RequirementsRepository.updateRequirement error: $e");
       final json = req.toBackendJson();
@@ -243,7 +298,8 @@ class RequirementsRepository {
       json['updated_at'] = DateTime.now().toIso8601String();
 
       final fresh = RequirementModel.fromJson(json);
-      await _coordinator.requirementLocal.saveRequirements([fresh.toLocal()]);
+      final merged = _preserveLeadScope(req, fresh);
+      await _coordinator.requirementLocal.saveRequirements([merged.toLocal()]);
 
       final outboxItem = OutboxLocal()
         ..id = 'outbox_${DateTime.now().millisecondsSinceEpoch}'
@@ -255,7 +311,7 @@ class RequirementsRepository {
       await _coordinator.outboxLocal.queueRequest(outboxItem);
 
       _coordinator.refreshRequirements();
-      return fresh;
+      return merged;
     }
   }
 

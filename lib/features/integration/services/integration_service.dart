@@ -1203,15 +1203,41 @@ class IntegrationService extends ChangeNotifier {
     String? assignedToName,
     String? remarks,
   }) async {
-    try {
-      final isCnr = status.trim().toUpperCase() == 'CNR';
-      final finalStatus = isCnr ? 'CNR' : 'Assigned';
-      final now = DateTime.now();
-      final user = RoleGuard.currentUser;
+    final isCnr = status.trim().toUpperCase() == 'CNR';
+    final finalStatus = isCnr ? 'CNR' : 'Assigned';
+    final now = DateTime.now();
+    final user = RoleGuard.currentUser;
 
+    IntegrationLeadModel? previousLead;
+    final idx = _leads.indexWhere((l) => l.id == leadId);
+
+    Future<void> rollbackOptimistic() async {
+      if (previousLead != null && idx != -1) {
+        _leads[idx] = previousLead!;
+        notifyListeners();
+        unawaited(_persistLeads());
+      }
+    }
+
+    String _transferErrorMessage(Object e) {
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map && data['message'] != null && data['message'].toString().trim().isNotEmpty) {
+          return data['message'].toString();
+        }
+        if (e.response?.statusCode != null) {
+          return 'Failed to transfer lead (HTTP ${e.response!.statusCode}).';
+        }
+      }
+      final raw = e.toString().replaceAll('Exception: ', '');
+      if (raw.contains('DioException')) {
+        return 'Failed to transfer lead. Please try again.';
+      }
+      return raw;
+    }
+
+    try {
       // 1. Optimistically update in memory & notify UI immediately (0ms delay)
-      IntegrationLeadModel? previousLead;
-      final idx = _leads.indexWhere((l) => l.id == leadId);
       if (idx != -1) {
         previousLead = _leads[idx];
         _leads[idx] = _leads[idx].copyWith(
@@ -1237,24 +1263,28 @@ class IntegrationService extends ChangeNotifier {
 
       final ok = res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
       if (!ok) {
-        if (previousLead != null && idx != -1) {
-          _leads[idx] = previousLead;
-          notifyListeners();
-          unawaited(_persistLeads());
-        }
+        await rollbackOptimistic();
         await fetchServerLeads(resetWithServer: true);
         final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
         final errMessage = (data['message'] ?? 'Failed to transfer lead (HTTP ${res.statusCode}).').toString();
         return {'success': false, 'message': errMessage};
       }
 
-      // 3. Dispatch notification & trigger CRM import only after a confirmed transfer
+      // 3. Notify and refresh CRM once. Backend transfer already writes assigned_to.
       if (!isCnr && assignedTo != null && assignedTo.isNotEmpty) {
         final targetLead = idx != -1 ? _leads[idx] : null;
         final leadName = targetLead != null ? _mapLeadFields(targetLead)['name'] : null;
         final displayName = (leadName != null && leadName.isNotEmpty) ? leadName : 'Lead';
         final transferData = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
-        final requirementId = (transferData['requirementId'] ?? transferData['requirement_id'] ?? '').toString();
+        final nestedData = transferData['data'] is Map
+            ? Map<String, dynamic>.from(transferData['data'] as Map)
+            : transferData;
+        final requirementId = (nestedData['requirementId'] ??
+                nestedData['requirement_id'] ??
+                transferData['requirementId'] ??
+                transferData['requirement_id'] ??
+                '')
+            .toString();
         unawaited(NotificationCenter.addNotification(
           title: 'Lead assigned',
           message: 'You assigned client "$displayName" to ${assignedToName ?? "Sales"}.',
@@ -1267,16 +1297,17 @@ class IntegrationService extends ChangeNotifier {
             'assignedTo': assignedTo,
             'audience': 'assigner',
             'campaignLeadId': leadId,
-            if (requirementId.isNotEmpty) 'requirementId': requirementId,
+            if (requirementId.isNotEmpty && requirementId != 'null') 'requirementId': requirementId,
           },
         ));
 
         if (targetLead?.leadType == 'Property Listing') {
-          unawaited(importLeadsToProperties([leadId], skipFetchServerLeads: false));
+          unawaited(importLeadsToProperties([leadId], skipFetchServerLeads: true));
+        } else if (requirementId.isNotEmpty && requirementId != 'null') {
+          unawaited(_requirementsRepository.refreshFromServerNow());
         } else {
-          unawaited(importLeadsToCrm([leadId], forceReimport: true, skipFetchServerLeads: false));
+          unawaited(importLeadsToCrm([leadId], forceReimport: true, skipFetchServerLeads: true));
         }
-        unawaited(_requirementsRepository.getRequirements(refreshFromServer: true));
       }
 
       final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
@@ -1301,7 +1332,11 @@ class IntegrationService extends ChangeNotifier {
       return {'success': true, 'message': data['message'] ?? 'Lead transferred successfully'};
     } catch (e) {
       debugPrint('[IntegrationService] Error transferring lead $leadId: $e');
-      return {'success': false, 'message': e.toString().replaceAll('Exception: ', '')};
+      await rollbackOptimistic();
+      try {
+        await fetchServerLeads(resetWithServer: true);
+      } catch (_) {}
+      return {'success': false, 'message': _transferErrorMessage(e)};
     }
   }
 

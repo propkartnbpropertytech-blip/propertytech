@@ -40,6 +40,8 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 import '../../users/bloc/users_bloc.dart';
 import '../../users/models/user_model.dart' as users_model;
+import '../../users/repository/users_repository.dart';
+import '../../team_messages/services/team_messages_service.dart';
 import '../../../core/config/app_config.dart';
 import 'package:collection/collection.dart';
 import 'package:propkart/core/storage/repository_coordinator.dart';
@@ -51,6 +53,7 @@ import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/telemetry/audit_dwell_tracker.dart';
 import '../../../core/utils/team_user_visibility.dart';
+import '../../../core/security/role_guard.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color kWhatsAppGreen = Color(0xFF25D366);
@@ -255,6 +258,72 @@ class PropertyRequirementMatcher {
     return bhks;
   }
 
+  static String _normalizeTypeLabel(String raw) {
+    return raw
+        .toLowerCase()
+        .replaceAll('&', ' and ')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static bool _isFlatApartmentType(String raw) {
+    final n = _normalizeTypeLabel(raw);
+    if (n.isEmpty) return false;
+    if (n.contains('apartment') || n.contains('flat')) return true;
+    final tokens = n.split(' ');
+    return tokens.contains('apt') || tokens.contains('apts') || tokens.contains('flats');
+  }
+
+  static bool propertyTypesCompatible({
+    required String reqTypeName,
+    required String propTypeName,
+    String reqTypeId = '',
+    String propTypeId = '',
+    List<String> reqTypeIds = const [],
+    String reqCategory = '',
+    String propCategory = '',
+  }) {
+    if (reqTypeIds.contains(propTypeId) ||
+        (reqTypeId.isNotEmpty && propTypeId.isNotEmpty && reqTypeId == propTypeId)) {
+      return true;
+    }
+
+    final reqType = _normalizeTypeLabel(reqTypeName);
+    final propType = _normalizeTypeLabel(propTypeName);
+    if (reqType.isNotEmpty && propType.isNotEmpty) {
+      if (reqType == propType) return true;
+      if (reqType.contains(propType) || propType.contains(reqType)) return true;
+      if (_isFlatApartmentType(reqType) && _isFlatApartmentType(propType)) {
+        return true;
+      }
+
+      bool isVilla(String s) =>
+          s.contains('villa') ||
+          s.contains('bungalow') ||
+          s.contains('house');
+      bool isPlot(String s) => s.contains('plot') || s.contains('land');
+      bool isOffice(String s) =>
+          s.contains('office') ||
+          s.contains('commercial') ||
+          s.contains('shop') ||
+          s.contains('showroom');
+      if (isVilla(reqType) && isVilla(propType)) return true;
+      if (isPlot(reqType) && isPlot(propType)) return true;
+      if (isOffice(reqType) && isOffice(propType)) return true;
+    }
+
+    final reqCat = _normalizeTypeLabel(reqCategory);
+    final propCat = _normalizeTypeLabel(propCategory);
+    if (reqCat.isNotEmpty && propCat.isNotEmpty &&
+        (reqCat == propCat || reqCat.contains(propCat) || propCat.contains(reqCat))) {
+      if (reqType.isEmpty || propType.isEmpty) return true;
+    }
+
+    if (reqType.isEmpty && reqTypeId.isEmpty && reqCat.isEmpty) return true;
+    return false;
+  }
+
   static bool isAllAreas(RequirementModel req) {
     if (req.areaIds.isEmpty && req.areaNames.isEmpty) return true;
     for (final a in req.areaNames) {
@@ -273,12 +342,97 @@ class PropertyRequirementMatcher {
     return false;
   }
 
-  static const Set<String> _westAhmedabadLocalities = {
-    'bodakdev', 'satellite', 'vastrapur', 'thaltej', 'prahladnagar',
-    'bopal', 'southbopal', 'shela', 'shilaj', 'ambli', 'makarba', 'vejalpur',
-    'jodhpur', 'jodhpurcharrasta', 'anandnagar', 'memnagar', 'sciencecity',
-    'sindhubhavan', 'sola', 'shyamal', 'azadsociety', 'bhadaj'
+  static bool _isAnyConfigurationLabel(String? raw) {
+    final n = (raw ?? '')
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (n.isEmpty) return true;
+    const aliases = {
+      'any',
+      'any config',
+      'any configuration',
+      'any configurations',
+      'all config',
+      'all configuration',
+      'all configurations',
+      'any bhk',
+      'all bhk',
+      'any rk',
+      'na',
+      'n a',
+      'unspecified',
+      'not specified',
+    };
+    return aliases.contains(n);
+  }
+
+  static bool isAnyConfiguration(RequirementModel req) {
+    final hasId = (req.configurationId != null && req.configurationId!.trim().isNotEmpty) ||
+        req.configurationIds.isNotEmpty;
+    if (hasId) return false;
+    return _isAnyConfigurationLabel(req.configurationName);
+  }
+
+  static const Map<String, Set<String>> _zoneLocalities = {
+    'west': {
+      'ambawadi', 'ambli', 'anandnagar', 'azadsociety', 'bhadaj', 'bodakdev',
+      'bopal', 'jodhpur', 'jodhpurcharrasta', 'makarba', 'marigold', 'memnagar',
+      'prahladnagar', 'sarkhej', 'satellite', 'satelite', 'sciencecity', 'sciencepark',
+      'sciencecityroad', 'shela', 'shilaj', 'shyamal', 'sindhubhavan', 'sola',
+      'southbopal', 'thaltej', 'vastrapur', 'westahmedabad', 'westamdavad',
+      'sghighway', 'sgroad',
+    },
+    'north': {
+      'chandkheda', 'chandlodia', 'ghatlodia', 'gota', 'jagatpur', 'kknagar',
+      'naranpura', 'newranip', 'ognaj', 'ranip', 'tragad', 'vaishnodevi',
+      'vaishnodevicircle',
+    },
+    'east': {'naroda', 'nikol'},
+    'central': {'navrangpura'},
   };
+
+  static String? _zoneKeyForName(String cleanName) {
+    final n = cleanName;
+    if (n.isEmpty) return null;
+    if (n.contains('westahmedabad') ||
+        n.contains('westamdavad') ||
+        n.contains('southwestahmedabad') ||
+        n.contains('westernahmedabad') ||
+        n == 'westahmd') {
+      return 'west';
+    }
+    if (n.contains('northahmedabad') || n.contains('northamdavad')) return 'north';
+    if (n.contains('eastahmedabad') || n.contains('eastamdavad')) return 'east';
+    if (n.contains('centralahmedabad') || n.contains('centralamdavad')) return 'central';
+    return null;
+  }
+
+  static bool _isInConfiguredZone(String zoneKey, String areaClean) {
+    if (areaClean.isEmpty) return false;
+    final members = _zoneLocalities[zoneKey];
+    if (members == null) return false;
+    if (members.contains(areaClean)) return true;
+    if (_zoneKeyForName(areaClean) == zoneKey) return true;
+    for (final loc in members) {
+      if (loc.length >= 5 && areaClean.contains(loc)) return true;
+    }
+    return false;
+  }
+
+  static bool _namesReferToSameLocality(String a, String aClean, String b, String bClean) {
+    if (a.isEmpty || b.isEmpty) return false;
+    if (a == b || aClean == bClean) return true;
+    const tooGeneric = {'ahmedabad', 'amdavad', 'gujarat', 'india'};
+    if (tooGeneric.contains(aClean) || tooGeneric.contains(bClean)) return false;
+    if (aClean.length >= 5 && bClean.length >= 5 &&
+        (aClean.contains(bClean) || bClean.contains(aClean))) {
+      return true;
+    }
+    return false;
+  }
 
   static PropertyMatchResult match(PropertyModel p, RequirementModel req) {
     final statusName = p.propertyStatusName.toLowerCase();
@@ -339,50 +493,67 @@ class PropertyRequirementMatcher {
       isAreaMatch = true;
       matchedTags.add('✓ All Areas');
     } else {
-      if (req.areaIds.isNotEmpty && req.areaIds.contains(p.areaId)) {
-        totalScore += 25;
-        isAreaMatch = true;
-        matchedTags.add('✓ Area: ${p.areaName}');
-      } else if (req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
-        final pArea = p.areaName.trim().toLowerCase();
-        final pAreaClean = pArea.replaceAll(RegExp(r'[^a-z0-9]'), '');
-        bool found = false;
-        bool isZoneMatch = false;
+      final pArea = p.areaName.trim().toLowerCase();
+      final pAreaClean = pArea.replaceAll(RegExp(r'[^a-z0-9]'), '');
+      final pTitleClean = p.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      bool found = false;
+      bool isZoneMatch = false;
+      String zoneLabel = '';
 
+      if (req.areaIds.isNotEmpty && p.areaId.isNotEmpty && req.areaIds.contains(p.areaId)) {
+        found = true;
+      }
+
+      if (!found && req.areaNames.isNotEmpty) {
         for (final aName in req.areaNames) {
           final subAreas = aName.split(RegExp(r'[,/|]'));
           for (final sub in subAreas) {
             final trimmed = sub.trim().toLowerCase();
             final trimmedClean = trimmed.replaceAll(RegExp(r'[^a-z0-9]'), '');
-            if (trimmed.isNotEmpty) {
-              if (trimmed == pArea || trimmedClean == pAreaClean || pArea.contains(trimmed) || trimmed.contains(pArea)) {
-                found = true;
-                break;
-              }
-              if ((trimmedClean.contains('westahmedabad') || trimmedClean.contains('westamdavad')) && _westAhmedabadLocalities.contains(pAreaClean)) {
-                isZoneMatch = true;
-                found = true;
-                break;
-              }
+            if (trimmed.isEmpty) continue;
+            if (_namesReferToSameLocality(trimmed, trimmedClean, pArea, pAreaClean)) {
+              found = true;
+              break;
+            }
+            final zoneKey = _zoneKeyForName(trimmedClean);
+            if (zoneKey != null &&
+                (_isInConfiguredZone(zoneKey, pAreaClean) ||
+                    _isInConfiguredZone(zoneKey, pTitleClean))) {
+              isZoneMatch = true;
+              found = true;
+              zoneLabel = sub.trim();
+              break;
             }
           }
           if (found) break;
         }
-        if (found) {
-          totalScore += isZoneMatch ? 22 : 25;
-          isAreaMatch = true;
-          matchedTags.add(isZoneMatch ? '✓ Zone: West Ahmedabad (covers ${p.areaName})' : '✓ Area: ${p.areaName}');
-        } else if (p.cityName.isNotEmpty && (req.cityName.isNotEmpty ? p.cityName.toLowerCase() == req.cityName.toLowerCase() : req.areaNames.any((a) => a.toLowerCase().contains(p.cityName.toLowerCase()) || p.cityName.toLowerCase().contains(a.toLowerCase())))) {
-          totalScore += 10;
-          matchedTags.add('✓ City: ${p.cityName}');
-        }
+      }
+
+      if (found) {
+        totalScore += 25;
+        isAreaMatch = true;
+        matchedTags.add(isZoneMatch
+            ? '✓ Zone: ${zoneLabel.isNotEmpty ? zoneLabel : 'coverage'} (covers ${p.areaName.isNotEmpty ? p.areaName : p.title})'
+            : '✓ Area: ${p.areaName}');
+      } else if (p.cityName.isNotEmpty && (req.cityName.isNotEmpty ? p.cityName.toLowerCase() == req.cityName.toLowerCase() : req.areaNames.any((a) => a.toLowerCase().contains(p.cityName.toLowerCase()) || p.cityName.toLowerCase().contains(a.toLowerCase())))) {
+        totalScore += 10;
+        matchedTags.add('✓ City: ${p.cityName}');
       }
     }
 
     // 3. Configuration / BHK Match (Weight: 25 pts)
+    // "Any Configuration" fully satisfies this criterion (1RK through penthouse/villa/duplex).
     bool isConfigMatch = false;
+    if (isAnyConfiguration(req)) {
+      totalScore += 25;
+      isConfigMatch = true;
+      matchedTags.add('✓ Any Configuration');
+    } else {
     final reqBhks = extractBhkNumbers(req.configurationName);
-    final propBhks = extractBhkNumbers(p.configurationName, fallbackBedrooms: p.bedrooms);
+    final propBhks = extractBhkNumbers(
+      '${p.configurationName ?? ''} ${p.title}',
+      fallbackBedrooms: p.bedrooms,
+    );
 
     final bool hasSameId = (p.configurationId != null && p.configurationId!.isNotEmpty && req.configurationIds.contains(p.configurationId)) ||
         (p.configurationId != null && req.configurationId != null && p.configurationId == req.configurationId);
@@ -422,9 +593,7 @@ class PropertyRequirementMatcher {
         isConfigMatch = true;
         matchedTags.add('✓ ${p.configurationName}');
       }
-    } else if (req.configurationIds.isEmpty && (req.configurationName == null || req.configurationName!.isEmpty)) {
-      totalScore += 15;
-      isConfigMatch = true;
+    }
     }
 
     // 4. Price / Budget Match (Weight: 30 pts)
@@ -452,36 +621,25 @@ class PropertyRequirementMatcher {
     }
 
     // 5. Property Type / Category Match (Weight: 10 pts)
+    // Apartment requirements must match Flat/Apartment inventory (same residential type).
     bool isPropTypeMatch = false;
-    final reqPropType = req.propertyTypeName.toLowerCase();
-    final pPropType = p.propertyTypeName.toLowerCase();
-    final reqCat = req.categoryName.toLowerCase();
-    final pCat = p.categoryName.toLowerCase();
-
-    if (req.propertyTypeIds.contains(p.propertyTypeId) || (req.propertyTypeId.isNotEmpty && req.propertyTypeId == p.propertyTypeId)) {
+    if (propertyTypesCompatible(
+      reqTypeName: req.propertyTypeName,
+      propTypeName: p.propertyTypeName,
+      reqTypeId: req.propertyTypeId,
+      propTypeId: p.propertyTypeId,
+      reqTypeIds: req.propertyTypeIds,
+      reqCategory: req.categoryName,
+      propCategory: p.categoryName,
+    )) {
       totalScore += 10;
       isPropTypeMatch = true;
-      matchedTags.add('✓ ${p.propertyTypeName}');
-    } else if (reqPropType.isNotEmpty && pPropType.isNotEmpty) {
-      final isApartment = (reqPropType.contains('apartment') || reqPropType.contains('flat')) &&
-          (pPropType.contains('apartment') || pPropType.contains('flat'));
-      final isVilla = (reqPropType.contains('villa') || reqPropType.contains('bungalow') || reqPropType.contains('house')) &&
-          (pPropType.contains('villa') || pPropType.contains('bungalow') || pPropType.contains('house'));
-      final isComm = (reqPropType.contains('office') || reqPropType.contains('commercial') || reqPropType.contains('shop')) &&
-          (pPropType.contains('office') || pPropType.contains('commercial') || pPropType.contains('shop'));
-
-      if (isApartment || isVilla || isComm || reqPropType.contains(pPropType) || pPropType.contains(reqPropType)) {
-        totalScore += 10;
-        isPropTypeMatch = true;
-        matchedTags.add('✓ ${p.propertyTypeName}');
+      final typeLabel = p.propertyTypeName.trim().isNotEmpty
+          ? p.propertyTypeName
+          : p.categoryName;
+      if (typeLabel.trim().isNotEmpty) {
+        matchedTags.add('✓ $typeLabel');
       }
-    } else if (reqCat.isNotEmpty && pCat.isNotEmpty && (reqCat.contains(pCat) || pCat.contains(reqCat))) {
-      totalScore += 10;
-      isPropTypeMatch = true;
-      matchedTags.add('✓ ${p.categoryName}');
-    } else if (reqPropType.isEmpty && req.propertyTypeId.isEmpty && reqCat.isEmpty) {
-      totalScore += 10;
-      isPropTypeMatch = true;
     }
 
     final finalPct = totalScore.clamp(0, 100);
@@ -576,6 +734,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String? _highlightedRequirementId;
   List<RequirementModel> _cachedRequirements = [];
   String _salesLeadGroupFilter = 'assigned'; // 'assigned', 'added', 'all'
+  final UsersRepository _usersRepository = UsersRepository();
+  List<users_model.UserModel> _assignUsers = [];
+  bool _assignUsersLoading = false;
 
   Future<void> _confirmBulkMoveToBin(List<RequirementModel> pageItems) async {
     final count = _selectedRequirementIds.length;
@@ -653,6 +814,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         _activeMainTab = 'Follow-ups';
       } else if (tabLower == 'my won' || tabLower == 'won') {
         _activeMainTab = 'My Won';
+      } else if (tabLower == 'rejected') {
+        _activeMainTab = 'Rejected';
       } else if (tabLower == 'leads added by me' || tabLower == 'added') {
         _activeMainTab = 'Leads Added by Me';
       } else if (tabLower == 'leads') {
@@ -671,7 +834,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         setState(() {
           _refreshFollowupsFuture();
         });
-        _triggerFetch();
       }
     });
     _dashboardStreamSub = RepositoryCoordinator().dashboardStream.listen((_) {
@@ -687,6 +849,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     // Avoid a duplicate empty fetch before metadata arrives.
     _loadMetadata();
     context.read<UsersBloc>().add(const FetchUsers());
+    unawaited(_loadAssignUsers());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -748,6 +911,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _activeMainTab = 'My Won';
         });
         _triggerFetch();
+      } else if (tabLower == 'rejected') {
+        setState(() {
+          _activeMainTab = 'Rejected';
+        });
+        _triggerFetch();
       } else if (tabLower == 'leads added by me' || tabLower == 'added') {
         setState(() {
           _activeMainTab = 'Leads Added by Me';
@@ -789,6 +957,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           targetTab = 'Follow-ups';
         } else if (tabLower == 'my won' || tabLower == 'won') {
           targetTab = 'My Won';
+        } else if (tabLower == 'rejected') {
+          targetTab = 'Rejected';
         } else if (tabLower == 'leads added by me' || tabLower == 'added') {
           targetTab = 'Leads Added by Me';
         } else if (tabLower == 'leads') {
@@ -890,7 +1060,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
     String? configId;
     String? propTypeId;
-    if (_activeMainTab != 'My Won') {
+    if (_activeMainTab != 'My Won' && _activeMainTab != 'Rejected') {
       if (_selectedConfigIds.length == 1) {
         if (isPropertyTypeFilter) {
           propTypeId = _selectedConfigIds.first;
@@ -1004,7 +1174,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) {
-        return _CRMPropertyMatchesDrawer(requirement: req);
+        return _CRMPropertyMatchesDrawer(
+          requirement: req,
+          properties: _propertiesForMatches,
+        );
       },
     );
   }
@@ -1077,6 +1250,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       nextCustomFields['handled_by_sales'] = true;
       nextCustomFields['telecaller_status'] = _getTelecallerStatusLabel(req);
       nextCustomFields['sales_handled_at'] = DateTime.now().toIso8601String();
+    }
+    if (newStatus.toLowerCase().startsWith('rejected')) {
+      nextCustomFields['rejected_at'] = DateTime.now().toIso8601String();
     }
     final RequirementModel baseReq = req.copyWith(metaCustomFields: nextCustomFields);
 
@@ -1375,6 +1551,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       _buildMainViewTabButton('Follow-ups'),
                       const SizedBox(width: 4),
                       _buildMainViewTabButton('My Won'),
+                      const SizedBox(width: 4),
+                      _buildMainViewTabButton('Rejected'),
                       if (currentUser != null &&
                           (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')) ...[
                         const SizedBox(width: 4),
@@ -1386,7 +1564,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ),
               const SizedBox(height: CRMSpacing.l),
 
-              if (_activeMainTab == 'Leads' || _activeMainTab == 'Leads Added by Me') ...[
+              if (_activeMainTab == 'Leads' || _activeMainTab == 'Leads Added by Me' || _activeMainTab == 'Rejected') ...[
                 if (_activeMainTab == 'Leads' && currentUser != null && currentUser.role == 'Sales') ...[
                   _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
                   const SizedBox(height: CRMSpacing.m),
@@ -1522,6 +1700,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         allReqs = blocState.requirements;
       }
     }
+
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final bool showUnassign = _canSeeUnassignStatusFilter(currentUser);
+    final statusItems = _statusFilterItems(showUnassign: showUnassign);
+    final String statusFilterValue =
+        (!showUnassign && _selectedStatus == 'Unassign') ? 'All' : _selectedStatus;
 
     final bool isMobile = MediaQuery.of(context).size.width < 600;
     String configDropdownLabel = 'BHK';
@@ -1667,21 +1852,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     const SizedBox(height: CRMSpacing.s),
                     _buildDropdownFilter(
                       label: 'Status',
-                      value: _selectedStatus,
-                      items: const [
-                        DropdownMenuItem(value: "All", child: Text("All")),
-                        DropdownMenuItem(value: "New", child: Text("New")),
-                        DropdownMenuItem(value: "Assigned", child: Text("Assigned")),
-                        DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
-                        DropdownMenuItem(value: "Call Attempted", child: Text("Call Attempted")),
-                        DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
-                        DropdownMenuItem(value: "Interested", child: Text("Interested")),
-                        DropdownMenuItem(value: "Site Visit", child: Text("Site Visit Sche.")),
-                        DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
-                        DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
-                        DropdownMenuItem(value: "Won", child: Text("Won")),
-                        DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
-                      ],
+                      value: statusFilterValue,
+                      items: statusItems,
                       isMobile: isMobile,
                       onChanged: (val) {
                         setState(() => _selectedStatus = val ?? "All");
@@ -1733,21 +1905,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     ),
                     _buildDropdownFilter(
                       label: 'Status',
-                      value: _selectedStatus,
-                      items: const [
-                        DropdownMenuItem(value: "All", child: Text("All")),
-                        DropdownMenuItem(value: "New", child: Text("New")),
-                        DropdownMenuItem(value: "Assigned", child: Text("Assigned")),
-                        DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
-                        DropdownMenuItem(value: "Call Attempted", child: Text("Call Attempted")),
-                        DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
-                        DropdownMenuItem(value: "Interested", child: Text("Interested")),
-                        DropdownMenuItem(value: "Site Visit", child: Text("Site Visit Sche.")),
-                        DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
-                        DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
-                        DropdownMenuItem(value: "Won", child: Text("Won")),
-                        DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
-                      ],
+                      value: statusFilterValue,
+                      items: statusItems,
                       isMobile: isMobile,
                       onChanged: (val) {
                         setState(() => _selectedStatus = val ?? "All");
@@ -1776,7 +1935,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   bool _matchesLeadDateFilterWithPreset(RequirementModel req, LeadDateFilterPreset preset) {
-    final createdAt = req.createdAt.toLocal();
+    final createdAt = _dateForLeadFilter(req);
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
     final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
@@ -1819,10 +1978,21 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   int _getLeadDateFilterCount(List<RequirementModel> baseList, LeadDateFilterPreset preset) {
     final selectedUser = _selectedUserForDateCounts();
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
     return baseList.where((req) {
       final matchesListingType = getListingTypeLabel(req) == _activeListingTab;
       if (!matchesListingType) return false;
-      if (selectedUser != null &&
+      if (_activeMainTab == 'Rejected') {
+        if (!_isLeadRejected(req)) return false;
+        if (currentUser != null && currentUser.role == 'Sales' && !_salesCanViewRequirement(req, currentUser)) {
+          return false;
+        }
+      }
+      if (_activeMainTab == 'Leads Added by Me') {
+        if (currentUser == null || !_isUserCreator(req, currentUser)) return false;
+      } else if (selectedUser != null &&
+          !(_activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser)) &&
           !TeamUserVisibility.requirementBelongsToUser(req, selectedUser)) {
         return false;
       }
@@ -2110,9 +2280,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
     bool isMobile = false,
+    bool highlight = false,
   }) {
     final bool hasValue = value == null || items.any((item) => item.value == value);
     final T? safeValue = hasValue ? value : null;
+    final Color borderColor = highlight
+        ? CRMColors.primaryOf(context)
+        : CRMColors.borderOf(context).withOpacity(0.6);
+    final Color fillColor = highlight
+        ? CRMColors.primaryOf(context).withValues(alpha: 0.10)
+        : CRMColors.backgroundOf(context);
 
     return SizedBox(
       width: isMobile ? double.infinity : 200,
@@ -2121,20 +2298,26 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         value: safeValue,
         isExpanded: true,
         dropdownColor: CRMColors.cardBgOf(context),
-        style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+        style: CRMTypography.body.copyWith(
+          color: highlight ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+          fontWeight: highlight ? FontWeight.w700 : FontWeight.normal,
+        ),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+          labelStyle: CRMTypography.caption.copyWith(
+            color: highlight ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context),
+            fontWeight: highlight ? FontWeight.w700 : FontWeight.normal,
+          ),
           contentPadding: EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: isMobile ? 12 : 8),
           filled: true,
-          fillColor: CRMColors.backgroundOf(context),
+          fillColor: fillColor,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-            borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+            borderSide: BorderSide(color: borderColor, width: highlight ? 1.5 : 1.0),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-            borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+            borderSide: BorderSide(color: borderColor, width: highlight ? 1.5 : 1.0),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
@@ -2147,6 +2330,64 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  bool _canSeeUnassignStatusFilter(UserModel? user) {
+    if (user == null) return false;
+    final role = user.role;
+    return role == 'Admin' || role == 'Super Admin' || role == 'Telecaller';
+  }
+
+  bool _canViewAllRejectedLeads(UserModel? user) {
+    if (user == null) return false;
+    final role = user.role;
+    return role == 'Admin' || role == 'Super Admin' || role == 'Telecaller';
+  }
+
+  bool _isLeadUnassigned(RequirementModel req) {
+    try {
+      final usersState = context.read<UsersBloc>().state;
+      final blocUsers = usersState is UsersLoaded ? usersState.users : <users_model.UserModel>[];
+      final currentAssignedTo = _currentAssignedUserId(req, _mergedAssignUsers(blocUsers));
+      if (currentAssignedTo == null || currentAssignedTo.trim().isEmpty) return true;
+      return currentAssignedTo.trim().toLowerCase() == 'unassigned';
+    } catch (_) {
+      final assigned = (req.assignedTo ?? '').trim();
+      if (assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned') return false;
+      final name = (req.assigneeName ?? '').trim();
+      if (name.isNotEmpty && name.toLowerCase() != 'unassigned') return false;
+      return true;
+    }
+  }
+
+  List<DropdownMenuItem<String>> _statusFilterItems({required bool showUnassign}) {
+    final bool unassignActive = _selectedStatus == 'Unassign';
+    return [
+      const DropdownMenuItem(value: 'All', child: Text('All')),
+      if (showUnassign)
+        DropdownMenuItem(
+          value: 'Unassign',
+          child: Text(
+            'Unassign',
+            style: unassignActive
+                ? TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: CRMColors.primaryOf(context),
+                  )
+                : null,
+          ),
+        ),
+      const DropdownMenuItem(value: 'New', child: Text('New')),
+      const DropdownMenuItem(value: 'Assigned', child: Text('Assigned')),
+      const DropdownMenuItem(value: 'Not Started', child: Text('Not Started')),
+      const DropdownMenuItem(value: 'Call Attempted', child: Text('Call Attempted')),
+      const DropdownMenuItem(value: 'Follow-up', child: Text('Follow-up')),
+      const DropdownMenuItem(value: 'Interested', child: Text('Interested')),
+      const DropdownMenuItem(value: 'Site Visit', child: Text('Site Visit Sche.')),
+      const DropdownMenuItem(value: 'Site Visit Done', child: Text('Site Visit Done')),
+      const DropdownMenuItem(value: 'Negotiation', child: Text('Negotiation')),
+      const DropdownMenuItem(value: 'Won', child: Text('Won')),
+    ];
+  }
+
   bool _looksLikeUserId(String value) {
     return RegExp(
       r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
@@ -2155,18 +2396,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   String? _liveUserName(String? idOrName) {
     if (idOrName == null || idOrName.trim().isEmpty) return null;
+    final needle = idOrName.trim();
     try {
       final usersState = context.read<UsersBloc>().state;
-      if (usersState is UsersLoaded) {
-        final needle = idOrName.trim();
-        final match = usersState.users.firstWhereOrNull(
-          (u) =>
-              u.id == needle ||
-              u.fullName.trim().toLowerCase() == needle.toLowerCase(),
-        );
-        if (match != null && match.fullName.trim().isNotEmpty) {
-          return match.fullName.trim();
-        }
+      final blocUsers = usersState is UsersLoaded ? usersState.users : <users_model.UserModel>[];
+      final match = _mergedAssignUsers(blocUsers).firstWhereOrNull(
+        (u) =>
+            u.id == needle ||
+            u.fullName.trim().toLowerCase() == needle.toLowerCase(),
+      );
+      if (match != null && match.fullName.trim().isNotEmpty) {
+        return match.fullName.trim();
       }
     } catch (_) {}
     return null;
@@ -2191,18 +2431,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       return req.assigneeName!.trim();
     }
     if (req.assignedTo != null && req.assignedTo!.trim().isNotEmpty) {
-      try {
-        final usersState = context.read<UsersBloc>().state;
-        if (usersState is UsersLoaded) {
-          final match = usersState.users.firstWhereOrNull(
-            (u) => u.id == req.assignedTo || u.fullName.trim().toLowerCase() == req.assignedTo!.trim().toLowerCase(),
-          );
-          if (match != null && match.fullName.isNotEmpty) {
-            return match.fullName;
-          }
-        }
-      } catch (_) {}
-      if (req.assignedTo!.trim() != 'Unassigned') {
+      final fromAssignId = _liveUserName(req.assignedTo);
+      if (fromAssignId != null) return fromAssignId;
+      if (req.assignedTo!.trim() != 'Unassigned' && !_looksLikeUserId(req.assignedTo!)) {
         return req.assignedTo!.trim();
       }
     }
@@ -2361,70 +2592,180 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return _isRequirementPropertyMatch(p, req);
   }
 
+  Future<void> _loadAssignUsers() async {
+    if (_assignUsersLoading || _assignUsers.isNotEmpty) return;
+    _assignUsersLoading = true;
+    List<users_model.UserModel> users = [];
+    final role = (RoleGuard.currentUser?.role ?? '').toLowerCase();
+    if (role != 'telecaller') {
+      try {
+        users = await _usersRepository.getUsers();
+      } catch (_) {}
+    }
+    if (users.isEmpty) {
+      try {
+        final team = await TeamMessagesService().getTeamUsers();
+        users = team
+            .map((u) => users_model.UserModel(
+                  id: u.id,
+                  roleId: '',
+                  roleName: u.role,
+                  fullName: u.name,
+                  email: u.email,
+                  isActive: true,
+                  adminId: u.adminId,
+                ))
+            .where((u) => u.id.isNotEmpty)
+            .toList();
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() {
+      _assignUsers = users.where((u) => u.isActive).toList();
+      _assignUsersLoading = false;
+    });
+  }
+
+  List<users_model.UserModel> _mergedAssignUsers(List<users_model.UserModel> blocUsers) {
+    final byId = <String, users_model.UserModel>{};
+    for (final u in blocUsers) {
+      if (u.id.isNotEmpty) byId[u.id] = u;
+    }
+    for (final u in _assignUsers) {
+      if (u.id.isNotEmpty) byId.putIfAbsent(u.id, () => u);
+    }
+    return byId.values.toList();
+  }
+
+  String? _currentAssignedUserId(RequirementModel req, List<users_model.UserModel> users) {
+    if (req.assignedTo != null && req.assignedTo!.trim().isNotEmpty) {
+      return req.assignedTo!.trim();
+    }
+    if (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty) {
+      final needle = req.assigneeName!.trim().toLowerCase();
+      final match = users.firstWhereOrNull((u) => u.fullName.trim().toLowerCase() == needle);
+      if (match != null) return match.id;
+    }
+    if (req.createdBy != null && req.createdBy!.isNotEmpty) {
+      final creatorUser = users.firstWhereOrNull((u) => u.id == req.createdBy);
+      if (creatorUser != null) {
+        final role = creatorUser.roleName.toLowerCase();
+        final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
+        if (!isCreatorAdminOrTelecaller) return req.createdBy;
+      } else if (req.creatorName != null && req.creatorName!.isNotEmpty) {
+        final creatorMatch = users.firstWhereOrNull(
+          (u) => u.fullName.toLowerCase() == req.creatorName!.toLowerCase(),
+        );
+        if (creatorMatch != null) {
+          final role = creatorMatch.roleName.toLowerCase();
+          final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
+          if (!isCreatorAdminOrTelecaller) return creatorMatch.id;
+        }
+      }
+    }
+    return null;
+  }
+
+  bool _isSalesPersonRole(String roleName) {
+    final r = roleName.toLowerCase().trim();
+    if (r.contains('admin') || r.contains('telecaller') || r.contains('super')) {
+      return false;
+    }
+    return r.contains('sales') ||
+        r.contains('executive') ||
+        r.contains('agent') ||
+        r.contains('advisor');
+  }
+
+  List<users_model.UserModel> _salesmenForLeadAssign({
+    required RequirementModel req,
+    required UserModel? currentUser,
+    required List<users_model.UserModel> users,
+    required String? currentAssignedTo,
+  }) {
+    final curRole = (currentUser?.role ?? '').toLowerCase();
+    final isTelecaller = curRole == 'telecaller';
+
+    var salesmen = users.where((u) {
+      if (currentAssignedTo != null && u.id == currentAssignedTo) return true;
+
+      if (isTelecaller) {
+        return _isSalesPersonRole(u.roleName);
+      }
+
+      final role = u.roleName.toLowerCase();
+      final isSales = role.contains('sales') ||
+          role.contains('executive') ||
+          role.contains('telecaller') ||
+          role == 'employee' ||
+          role.contains('agent') ||
+          role.contains('advisor');
+      if (!isSales) return false;
+
+      if (currentUser == null) return true;
+      if (curRole == 'super admin') return true;
+      if (curRole == 'admin') {
+        return u.adminId == currentUser.id || u.id == currentUser.id;
+      }
+      if (curRole.contains('sales')) {
+        final teamAdminId = currentUser.adminId;
+        if (teamAdminId != null && teamAdminId.isNotEmpty) {
+          return u.adminId == teamAdminId || u.id == teamAdminId;
+        }
+      }
+      return true;
+    }).toList();
+
+    if (currentAssignedTo != null &&
+        currentAssignedTo.isNotEmpty &&
+        !salesmen.any((u) => u.id == currentAssignedTo)) {
+      final name = (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty)
+          ? req.assigneeName!.trim()
+          : (_liveUserName(currentAssignedTo) ?? 'Assigned');
+      final assignedUser = users.firstWhereOrNull((u) => u.id == currentAssignedTo);
+      if (!isTelecaller || assignedUser == null || _isSalesPersonRole(assignedUser.roleName)) {
+        salesmen = [
+          users_model.UserModel(
+            id: currentAssignedTo,
+            roleId: '',
+            roleName: assignedUser?.roleName.isNotEmpty == true ? assignedUser!.roleName : 'Sales',
+            fullName: assignedUser?.fullName.isNotEmpty == true ? assignedUser!.fullName : name,
+            email: assignedUser?.email ?? '',
+            isActive: true,
+            adminId: assignedUser?.adminId,
+          ),
+          ...salesmen,
+        ];
+      }
+    }
+    return salesmen;
+  }
+
   Widget _buildAssignToDropdown(RequirementModel req) {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
-        if (state is UsersLoaded) {
-          final authState = context.read<AuthBloc>().state;
-          final currentUser = authState is Authenticated ? authState.user : null;
+        final authState = context.read<AuthBloc>().state;
+        final currentUser = authState is Authenticated ? authState.user : null;
+        final blocUsers = state is UsersLoaded ? state.users : <users_model.UserModel>[];
+        final users = _mergedAssignUsers(blocUsers);
+        final currentAssignedTo = _currentAssignedUserId(req, users);
+        final salesmen = _salesmenForLeadAssign(
+          req: req,
+          currentUser: currentUser,
+          users: users,
+          currentAssignedTo: currentAssignedTo,
+        );
 
-          String? currentAssignedTo;
-          final targetName = (req.assigneeName ?? req.assignedTo ?? '').trim().toLowerCase();
-          if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
-            final match = state.users.firstWhereOrNull((u) => u.id == req.assignedTo || (targetName.isNotEmpty && u.fullName.trim().toLowerCase() == targetName));
-            currentAssignedTo = match != null ? match.id : req.assignedTo;
-          } else if (req.assigneeName != null && req.assigneeName!.isNotEmpty) {
-            final match = state.users.firstWhereOrNull((u) => u.fullName.trim().toLowerCase() == req.assigneeName!.trim().toLowerCase());
-            if (match != null) currentAssignedTo = match.id;
-          } else if (req.assignedTo == null && req.createdBy != null && req.createdBy!.isNotEmpty) {
-            final creatorUser = state.users.firstWhereOrNull((u) => u.id == req.createdBy);
-            if (creatorUser != null) {
-              final role = creatorUser.roleName.toLowerCase();
-              final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
-              if (!isCreatorAdminOrTelecaller) {
-                currentAssignedTo = req.createdBy;
-              }
-            } else if (req.creatorName != null && req.creatorName!.isNotEmpty) {
-              final creatorMatch = state.users.firstWhereOrNull((u) => u.fullName.toLowerCase() == req.creatorName!.toLowerCase());
-              if (creatorMatch != null) {
-                final role = creatorMatch.roleName.toLowerCase();
-                final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
-                if (!isCreatorAdminOrTelecaller) {
-                  currentAssignedTo = creatorMatch.id;
-                }
-              }
-            }
-          }
+        if (state is UsersLoading && users.isEmpty && currentAssignedTo == null) {
+          return const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
 
-          final salesmen = state.users.where((u) {
-            final isAssigned = currentAssignedTo != null && u.id == currentAssignedTo;
-            if (isAssigned) return true;
-
-            final role = u.roleName.toLowerCase();
-            final isSales = role.contains('sales') || role.contains('executive') || role.contains('telecaller') || role == 'employee';
-            if (!isSales) return false;
-
-            if (currentUser != null) {
-              final curRole = currentUser.role.toLowerCase();
-              if (curRole == 'super admin') return true;
-
-              if (curRole == 'admin') {
-                return u.adminId == currentUser.id || u.id == currentUser.id;
-              }
-
-              if (curRole == 'telecaller' || curRole.contains('sales')) {
-                final teamAdminId = currentUser.adminId;
-                if (teamAdminId != null && teamAdminId.isNotEmpty) {
-                  return u.adminId == teamAdminId || u.id == teamAdminId;
-                }
-              }
-            }
-
-            return true;
-          }).toList();
-
-          final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
-          final dropdownValue = hasValue ? currentAssignedTo : null;
+        final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
+        final dropdownValue = hasValue ? currentAssignedTo : null;
           return Container(
             height: 36,
             constraints: const BoxConstraints(minWidth: 125, maxWidth: 160),
@@ -2516,12 +2857,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ),
             ),
           );
-        }
-        return const SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        );
       },
     );
   }
@@ -2529,63 +2864,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   Widget _buildMobileAssignToDropdown(RequirementModel req) {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
-        if (state is UsersLoaded) {
-          final authState = context.read<AuthBloc>().state;
-          final currentUser = authState is Authenticated ? authState.user : null;
+        final authState = context.read<AuthBloc>().state;
+        final currentUser = authState is Authenticated ? authState.user : null;
+        final blocUsers = state is UsersLoaded ? state.users : <users_model.UserModel>[];
+        final users = _mergedAssignUsers(blocUsers);
+        final currentAssignedTo = _currentAssignedUserId(req, users);
+        final salesmen = _salesmenForLeadAssign(
+          req: req,
+          currentUser: currentUser,
+          users: users,
+          currentAssignedTo: currentAssignedTo,
+        );
 
-          String? currentAssignedTo;
-          if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
-            currentAssignedTo = req.assignedTo;
-          } else if (req.assignedTo == null && req.createdBy != null && req.createdBy!.isNotEmpty) {
-            final creatorUser = state.users.firstWhereOrNull((u) => u.id == req.createdBy);
-            if (creatorUser != null) {
-              final role = creatorUser.roleName.toLowerCase();
-              final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
-              if (!isCreatorAdminOrTelecaller) {
-                currentAssignedTo = req.createdBy;
-              }
-            } else if (req.creatorName != null && req.creatorName!.isNotEmpty) {
-              final creatorMatch = state.users.firstWhereOrNull((u) => u.fullName.toLowerCase() == req.creatorName!.toLowerCase());
-              if (creatorMatch != null) {
-                final role = creatorMatch.roleName.toLowerCase();
-                final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
-                if (!isCreatorAdminOrTelecaller) {
-                  currentAssignedTo = creatorMatch.id;
-                }
-              }
-            }
-          }
+        if (state is UsersLoading && users.isEmpty && currentAssignedTo == null) {
+          return const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
 
-          final salesmen = state.users.where((u) {
-            final isAssigned = currentAssignedTo != null && u.id == currentAssignedTo;
-            if (isAssigned) return true;
-
-            final role = u.roleName.toLowerCase();
-            final isSales = role.contains('sales') || role.contains('executive') || role.contains('telecaller') || role == 'employee';
-            if (!isSales) return false;
-
-            if (currentUser != null) {
-              final curRole = currentUser.role.toLowerCase();
-              if (curRole == 'super admin') return true;
-
-              if (curRole == 'admin') {
-                return u.adminId == currentUser.id || u.id == currentUser.id;
-              }
-
-              if (curRole == 'telecaller' || curRole.contains('sales')) {
-                final teamAdminId = currentUser.adminId;
-                if (teamAdminId != null && teamAdminId.isNotEmpty) {
-                  return u.adminId == teamAdminId || u.id == teamAdminId;
-                }
-              }
-            }
-
-            return true;
-          }).toList();
-
-          final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
-          final dropdownValue = hasValue ? currentAssignedTo : null;
-          return Container(
+        final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
+        final dropdownValue = hasValue ? currentAssignedTo : null;
+        return Container(
             height: 32,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
@@ -2663,12 +2964,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ),
             ),
           );
-        }
-        return const SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        );
       },
     );
   }
@@ -2745,6 +3040,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
     // If terminal or closed state, it is not unhandled
     if (req.status == 'Won' || req.status == 'Closed') return false;
+    if (_isLeadRejected(req)) return false;
 
     return true;
   }
@@ -2766,6 +3062,33 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   bool _isLeadWon(RequirementModel req) {
     final status = req.status.trim().toLowerCase();
     return status == 'won' || status == 'closed';
+  }
+
+  bool _isLeadRejected(RequirementModel req) {
+    final status = req.status.trim();
+    if (status.isEmpty) return false;
+    final lower = status.toLowerCase();
+    if (lower == 'bin') return false;
+    return lower.startsWith('rejected');
+  }
+
+  DateTime? _rejectedAt(RequirementModel req) {
+    final meta = req.metaCustomFields;
+    if (meta == null) return null;
+    for (final key in ['rejected_at', 'rejectedAt', 'sales_handled_at']) {
+      final raw = meta[key];
+      if (raw == null) continue;
+      final parsed = DateTime.tryParse(raw.toString());
+      if (parsed != null) return parsed.toLocal();
+    }
+    return null;
+  }
+
+  DateTime _dateForLeadFilter(RequirementModel req) {
+    if (_activeMainTab == 'Rejected') {
+      return _rejectedAt(req) ?? req.createdAt.toLocal();
+    }
+    return req.createdAt.toLocal();
   }
 
   String _getTelecallerStatusLabel(RequirementModel req) {
@@ -2851,20 +3174,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         _isUserAssignee(r, currentUser) &&
         !_isUserCreator(r, currentUser) &&
         !_isLeadTransferredAway(r, currentUser) &&
-        r.status != 'Won' && r.status != 'Closed'
+        r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
     final addedCount = allLoadedReqs.where((r) =>
         _salesCanViewRequirement(r, currentUser) &&
         _isUserCreator(r, currentUser) &&
         !_isLeadTransferredAway(r, currentUser) &&
-        r.status != 'Won' && r.status != 'Closed'
+        r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
     final allCount = allLoadedReqs.where((r) =>
         _salesCanViewRequirement(r, currentUser) &&
         !_isLeadTransferredAway(r, currentUser) &&
-        r.status != 'Won' && r.status != 'Closed'
+        r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
     return Container(
@@ -3312,7 +3635,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
 
     final bool isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
-    final String currentStatus = (req.status == 'Assigned') ? 'Assigned' : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req));
+    final String currentStatus = _isLeadRejected(req)
+        ? getEffectiveStatus(req)
+        : ((req.status == 'Assigned')
+            ? 'Assigned'
+            : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req)));
     final statusColor = compact ? _getStatusColor(currentStatus) : CRMColors.primary;
     final bool hasPreviousFollowup = currentStatus == 'Follow-up' ||
         currentStatus == 'Re-Followup' ||
@@ -3911,22 +4238,44 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             
             final bool isUnhandledAssigned = _isUnhandledAssignedLead(r, currentUser);
             // Map legacy status strings to new pipeline statuses for backward compatibility
-            String mappedStatus = (r.status == 'Assigned') ? 'Assigned' : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(r));
+            String mappedStatus = _isLeadRejected(r)
+                ? getEffectiveStatus(r)
+                : ((r.status == 'Assigned')
+                    ? 'Assigned'
+                    : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(r)));
             if (mappedStatus == 'Active' || mappedStatus == 'Live') mappedStatus = 'Interested';
             if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
             if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
             if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
 
             final userFilterActive = _selectedUserFilterId != "All" && _selectedUserFilterId.isNotEmpty;
+            final bool viewAllRejected =
+                _activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser);
+
+            if (_activeMainTab == 'Rejected') {
+              if (!_isLeadRejected(r)) return false;
+            } else if (_activeMainTab == 'Leads' && _isLeadRejected(r)) {
+              return false;
+            }
 
             // Exclude Won requirements from the active Requirements view unless user explicitly selected "Won"
             // or is viewing a specific team member's complete lead set.
+            final bool unassignFilter =
+                !viewAllRejected &&
+                _selectedStatus == 'Unassign' &&
+                _canSeeUnassignStatusFilter(currentUser);
+
             if (_activeMainTab != 'Leads Added by Me' &&
                 !userFilterActive &&
                 _selectedStatus != 'Won' &&
+                !unassignFilter &&
                 mappedStatus == 'Won') return false;
 
-            final matchesStatus = userFilterActive
+            final matchesStatus = viewAllRejected
+                ? true
+                : unassignFilter
+                ? _isLeadUnassigned(r)
+                : (userFilterActive
                 ? (_selectedStatus == "All" ||
                     mappedStatus == _selectedStatus ||
                     r.status == _selectedStatus)
@@ -3934,12 +4283,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 mappedStatus == _selectedStatus ||
                 (!isUnhandledAssigned && r.status == _selectedStatus) ||
                 (!isUnhandledAssigned && _selectedStatus == 'Rejected' && r.status.startsWith('Rejected')) ||
-                (!isUnhandledAssigned && _selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted'))));
+                (!isUnhandledAssigned && _selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')))));
 
             final matchesDate = _matchesLeadDateFilter(r);
 
             bool matchesUser = true;
-            if (_activeMainTab != 'Leads Added by Me' && userFilterActive) {
+            if (!viewAllRejected && _activeMainTab != 'Leads Added by Me' && userFilterActive) {
               users_model.UserModel? selectedUser;
               try {
                 final usersState = context.read<UsersBloc>().state;
@@ -3979,8 +4328,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch && matchesDate && matchesReadiness && matchesUser;
           }).toList();
           
-          // Sort by recently updated/created (descending)
-          requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          // Sort by recently rejected first on Rejected tab; otherwise by created date.
+          if (_activeMainTab == 'Rejected') {
+            requirements.sort((a, b) {
+              final da = _rejectedAt(a) ?? a.createdAt;
+              final db = _rejectedAt(b) ?? b.createdAt;
+              return db.compareTo(da);
+            });
+          } else {
+            requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          }
         }
 
         final totalCount = requirements.length;
@@ -4014,8 +4371,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 _buildActionBar(requirements, currentUser),
                 CRMDataTable(
                   isLoading: isLoading,
-                  emptyTitle: 'No Requirements Found',
-                  emptyDescription: 'Try adjusting filters or create a new requirement pipeline.',
+                  emptyTitle: _activeMainTab == 'Rejected' ? 'No Rejected Leads' : 'No Requirements Found',
+                  emptyDescription: _activeMainTab == 'Rejected'
+                      ? 'Leads marked as Rejected will appear here.'
+                      : 'Try adjusting filters or create a new requirement pipeline.',
                   dataRowMinHeight: 88.0,
                   dataRowMaxHeight: 160.0,
                   columnSpacing: 10.0,
@@ -4531,13 +4890,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 Icon(Icons.folder_open_rounded, size: 48, color: CRMColors.textMuted),
                 const SizedBox(height: CRMSpacing.s),
                 Text(
-                  'No Requirements Found',
+                  _activeMainTab == 'Rejected' ? 'No Rejected Leads' : 'No Requirements Found',
                   style: CRMTypography.cardTitle.copyWith(color: CRMColors.textOf(context)),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: CRMSpacing.xxs),
                 Text(
-                  'Try adjusting filters or create a new requirement pipeline.',
+                  _activeMainTab == 'Rejected'
+                      ? 'Leads marked as Rejected will appear here.'
+                      : 'Try adjusting filters or create a new requirement pipeline.',
                   style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
                   textAlign: TextAlign.center,
                 ),
@@ -5539,6 +5900,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         });
         // My Won needs an unfiltered status fetch so Won rows are present.
         if (label == 'My Won' ||
+            label == 'Rejected' ||
             label == 'Leads' ||
             label == 'Requirements' ||
             label == 'Leads Added by Me') {
@@ -9724,8 +10086,12 @@ class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> 
 
 class _CRMPropertyMatchesDrawer extends StatefulWidget {
   final RequirementModel requirement;
+  final List<PropertyModel>? properties;
 
-  const _CRMPropertyMatchesDrawer({required this.requirement});
+  const _CRMPropertyMatchesDrawer({
+    required this.requirement,
+    this.properties,
+  });
 
   @override
   State<_CRMPropertyMatchesDrawer> createState() => _CRMPropertyMatchesDrawerState();
@@ -9862,47 +10228,50 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
         return;
       }
 
-      // 1. Authoritative Backend Matching
+      // 1. Authoritative Backend Matching, then local engine so valid
+      // Apartment / Flat-Apartment inventory is never dropped at the active threshold.
+      final Map<String, PropertyMatchResult> byId = {};
+      final threshold = MatchCriteriaManager().threshold;
       try {
         final serverResponse = await RequirementsRepository().getRequirementMatches(
           req.id,
-          minScore: MatchCriteriaManager().threshold,
+          minScore: threshold,
+          limit: 200,
         );
         final data = serverResponse['data'] as Map<String, dynamic>? ?? {};
         final rawMatches = data['matches'] as List? ?? [];
-        if (rawMatches.isNotEmpty || data.containsKey('matching_metadata')) {
-          final List<PropertyMatchResult> results = [];
-          for (final item in rawMatches) {
-            final pJson = item['property'] as Map<String, dynamic>? ?? {};
-            final prop = PropertyModel.fromJson(pJson);
-            results.add(PropertyMatchResult.fromServerJson(item as Map<String, dynamic>, prop));
-          }
-          setState(() {
-            _matchedProperties = results.map((r) => r.property).toList();
-            _matchResults = { for (var r in results) r.property.id: r };
-            _isLoading = false;
-          });
-          return;
+        for (final item in rawMatches) {
+          if (item is! Map) continue;
+          final pJson = item['property'] as Map<String, dynamic>? ?? {};
+          final prop = PropertyModel.fromJson(pJson);
+          byId[prop.id] = PropertyMatchResult.fromServerJson(
+            Map<String, dynamic>.from(item),
+            prop,
+          );
         }
       } catch (serverErr) {
         debugPrint("⚠️ [Backend Match Fallback] Falling back to local engine: $serverErr");
       }
 
-      // 2. Offline / Local fallback
-      final properties = await _propertiesRepository.getProperties();
-      final List<PropertyMatchResult> results = [];
+      final properties = (widget.properties != null && widget.properties!.isNotEmpty)
+          ? widget.properties!
+          : await _propertiesRepository.getProperties();
       for (final p in properties) {
         final res = PropertyRequirementMatcher.match(p, req);
-        if (res.matchPercentage >= MatchCriteriaManager().threshold) {
-          results.add(res);
+        if (res.matchPercentage >= threshold) {
+          final existing = byId[p.id];
+          if (existing == null || res.matchPercentage >= existing.matchPercentage) {
+            byId[p.id] = res;
+          }
         }
       }
 
-      results.sort((a, b) {
-        final cmp = b.matchPercentage.compareTo(a.matchPercentage);
-        if (cmp != 0) return cmp;
-        return a.property.price.compareTo(b.property.price);
-      });
+      final results = byId.values.toList()
+        ..sort((a, b) {
+          final cmp = b.matchPercentage.compareTo(a.matchPercentage);
+          if (cmp != 0) return cmp;
+          return a.property.price.compareTo(b.property.price);
+        });
 
       setState(() {
         _matchedProperties = results.map((r) => r.property).toList();

@@ -51,6 +51,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
   bool _areaFormIsModal = false;
   List<String> _pincodeAreaSuggestions = [];
   bool _showAreaSuggestions = false;
+  String? _pincodeLookupToken;
 
   // Search filters
   String _citySearchQuery = '';
@@ -131,79 +132,165 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
     );
   }
 
-  // Postal code API integration
-  void _onPincodeChanged() {
-    final pincode = _areaPincodeController.text.trim();
-    if (pincode.length == 6 && !_isFetchingPincode) {
-      _lookupPincode(pincode);
+  String _digitsOnlyPincode(String raw) =>
+      raw.replaceAll(RegExp(r'[^0-9]'), '');
+
+  bool _isExactPincode(String raw, String expected) =>
+      _digitsOnlyPincode(raw) == _digitsOnlyPincode(expected);
+
+  bool _isOtherCityAreaName(String areaName, String pincodeCityName) {
+    final name = areaName.trim().toLowerCase();
+    if (name.isEmpty) return true;
+    const nonLocalities = {
+      'gujarat',
+      'india',
+      'other area',
+      'n/a',
+      'na',
+      'all areas',
+    };
+    if (nonLocalities.contains(name)) return true;
+    final pinCity = pincodeCityName.trim().toLowerCase();
+    for (final city in _cities) {
+      final cityName = city.name.trim().toLowerCase();
+      if (cityName.isEmpty) continue;
+      if (pinCity.isNotEmpty && cityName == pinCity) continue;
+      if (name == cityName) return true;
     }
+    return false;
+  }
+
+  // Postal code API integration — only localities of the exact entered pincode.
+  void _onPincodeChanged() {
+    final pincode = _digitsOnlyPincode(_areaPincodeController.text);
+    if (pincode.length != 6) {
+      _pincodeLookupToken = null;
+      if (_showAreaSuggestions || _pincodeAreaSuggestions.isNotEmpty) {
+        setState(() {
+          _pincodeAreaSuggestions = [];
+          _showAreaSuggestions = false;
+        });
+      }
+      return;
+    }
+    if (_isFetchingPincode && _pincodeLookupToken == pincode) return;
+    if (_pincodeLookupToken == pincode && _pincodeAreaSuggestions.isNotEmpty) {
+      return;
+    }
+    _lookupPincode(pincode);
   }
 
   Future<void> _lookupPincode(String pincode) async {
+    final requestedPin = _digitsOnlyPincode(pincode);
+    if (requestedPin.length != 6) return;
+    _pincodeLookupToken = requestedPin;
     setState(() {
       _isFetchingPincode = true;
-      _pincodeAreaSuggestions.clear();
+      _pincodeAreaSuggestions = [];
       _showAreaSuggestions = false;
     });
     try {
       final dio = Dio();
-      final response = await dio.get('https://api.postalpincode.in/pincode/$pincode');
-      
-      if (response.statusCode == 200 && response.data is List && response.data.isNotEmpty) {
-        final data = response.data[0] as Map<String, dynamic>;
-        final status = data['Status']?.toString();
-        final postOffices = data['PostOffice'] as List?;
-        
-        if (status == 'Success' && postOffices != null && postOffices.isNotEmpty) {
-          final firstOffice = postOffices[0] as Map<String, dynamic>;
-          final districtName = firstOffice['District']?.toString() ?? '';
-          
-          LookupItem? matchedCity;
-          for (final city in _cities) {
-            if (city.name.toLowerCase() == districtName.toLowerCase()) {
-              matchedCity = city;
-              break;
-            }
-          }
-          
-          final Set<String> suggestionSet = {};
-          for (final po in postOffices) {
-            final name = po['Name']?.toString().trim();
-            if (name != null && name.isNotEmpty) {
+      final response = await dio.get('https://api.postalpincode.in/pincode/$requestedPin');
+      if (!mounted || _pincodeLookupToken != requestedPin) return;
+
+      final Set<String> suggestionSet = {};
+      String districtName = '';
+      LookupItem? matchedCity;
+
+      if (response.statusCode == 200 &&
+          response.data is List &&
+          (response.data as List).isNotEmpty) {
+        final data = (response.data as List).first;
+        if (data is Map) {
+          final status = data['Status']?.toString();
+          final postOffices = data['PostOffice'] as List?;
+          if (status == 'Success' && postOffices != null && postOffices.isNotEmpty) {
+            for (final po in postOffices) {
+              if (po is! Map) continue;
+              final officePin = _digitsOnlyPincode(po['Pincode']?.toString() ?? '');
+              if (officePin != requestedPin) continue;
+              final name = po['Name']?.toString().trim() ?? '';
+              if (name.isEmpty) continue;
               suggestionSet.add(name);
+              districtName = (po['District']?.toString() ?? districtName).trim();
             }
-          }
-          for (final a in _areas) {
-            if (a.pincode == pincode && a.name.trim().isNotEmpty) {
-              suggestionSet.add(a.name.trim());
-            }
-          }
-
-          final suggestionsList = suggestionSet.toList();
-
-          if (matchedCity != null) {
-            setState(() {
-              _areaSelectedCityId = matchedCity!.id;
-              _pincodeAreaSuggestions = suggestionsList;
-              _showAreaSuggestions = suggestionsList.isNotEmpty;
-              if (_areaNameController.text.isEmpty && suggestionsList.isNotEmpty) {
-                _areaNameController.text = suggestionsList.first;
-              }
-            });
-            _showSnackBar('City auto-resolved to: ${matchedCity.name} (${suggestionsList.length} areas found)');
-          } else if (districtName.isNotEmpty) {
-            setState(() {
-              _pincodeAreaSuggestions = suggestionsList;
-              _showAreaSuggestions = suggestionsList.isNotEmpty;
-            });
-            _showCityAutoAddDialog(districtName, postOffices);
           }
         }
       }
+
+      if (districtName.isNotEmpty) {
+        for (final city in _cities) {
+          if (city.name.trim().toLowerCase() == districtName.toLowerCase()) {
+            matchedCity = city;
+            break;
+          }
+        }
+      }
+
+      for (final a in _areas) {
+        if (!_isExactPincode(a.pincode, requestedPin)) continue;
+        final areaName = a.name.trim();
+        if (areaName.isEmpty) continue;
+        if (_isOtherCityAreaName(areaName, districtName)) continue;
+        if (matchedCity != null &&
+            a.cityId.isNotEmpty &&
+            a.cityId != matchedCity.id) {
+          continue;
+        }
+        suggestionSet.add(areaName);
+      }
+
+      final suggestionsList = suggestionSet.toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+      if (!mounted || _pincodeLookupToken != requestedPin) return;
+
+      if (matchedCity != null) {
+        setState(() {
+          _areaSelectedCityId = matchedCity!.id;
+          _pincodeAreaSuggestions = suggestionsList;
+          _showAreaSuggestions = suggestionsList.isNotEmpty;
+          if (_areaNameController.text.isEmpty && suggestionsList.isNotEmpty) {
+            _areaNameController.text = suggestionsList.first;
+          }
+        });
+        _showSnackBar(
+          'City auto-resolved to: ${matchedCity.name} (${suggestionsList.length} areas found)',
+        );
+      } else if (districtName.isNotEmpty) {
+        setState(() {
+          _pincodeAreaSuggestions = suggestionsList;
+          _showAreaSuggestions = suggestionsList.isNotEmpty;
+        });
+        final offices = (response.data is List && (response.data as List).isNotEmpty)
+            ? (((response.data as List).first as Map)['PostOffice'] as List? ?? [])
+            : [];
+        _showCityAutoAddDialog(districtName, offices);
+      } else {
+        setState(() {
+          _pincodeAreaSuggestions = suggestionsList;
+          _showAreaSuggestions = suggestionsList.isNotEmpty;
+        });
+      }
     } catch (e) {
       debugPrint("⚠️ [Pincode API Error] $e");
+      if (!mounted || _pincodeLookupToken != requestedPin) return;
+      final localOnly = _areas
+          .where((a) =>
+              _isExactPincode(a.pincode, requestedPin) &&
+              a.name.trim().isNotEmpty &&
+              !_isOtherCityAreaName(a.name, ''))
+          .map((a) => a.name.trim())
+          .toSet()
+          .toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      setState(() {
+        _pincodeAreaSuggestions = localOnly;
+        _showAreaSuggestions = localOnly.isNotEmpty;
+      });
     } finally {
-      if (mounted) {
+      if (mounted && _pincodeLookupToken == requestedPin) {
         setState(() => _isFetchingPincode = false);
       }
     }
@@ -382,6 +469,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       _editingArea = area;
       _pincodeAreaSuggestions.clear();
       _showAreaSuggestions = false;
+      _pincodeLookupToken = null;
       if (area != null) {
         _areaNameController.text = area.name;
         _areaPincodeController.text = area.pincode;

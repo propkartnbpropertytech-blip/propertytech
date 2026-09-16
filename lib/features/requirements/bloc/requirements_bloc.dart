@@ -14,7 +14,15 @@ class FetchRequirementsEvent extends RequirementsEvent {
   final String? propertyTypeId;
   final String? status;
   final String? listingTypeId;
-  FetchRequirementsEvent({this.search, this.configurationId, this.propertyTypeId, this.status, this.listingTypeId});
+  final bool refreshFromServer;
+  FetchRequirementsEvent({
+    this.search,
+    this.configurationId,
+    this.propertyTypeId,
+    this.status,
+    this.listingTypeId,
+    this.refreshFromServer = true,
+  });
 }
 
 class CreateRequirementEvent extends RequirementsEvent {
@@ -97,11 +105,15 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     on<DeleteRequirementEvent>(_onDeleteRequirement);
 
     _requirementsSubscription = RepositoryCoordinator().requirementsStream.listen((_) {
-      if (_lastFetchEvent != null) {
-        add(_lastFetchEvent!);
-      } else {
-        add(FetchRequirementsEvent());
-      }
+      final last = _lastFetchEvent;
+      add(FetchRequirementsEvent(
+        search: last?.search,
+        configurationId: last?.configurationId,
+        propertyTypeId: last?.propertyTypeId,
+        status: last?.status,
+        listingTypeId: last?.listingTypeId,
+        refreshFromServer: false,
+      ));
     });
   }
 
@@ -129,6 +141,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         propertyTypeId: event.propertyTypeId,
         status: event.status,
         listingTypeId: event.listingTypeId,
+        refreshFromServer: event.refreshFromServer,
       );
       emit(RequirementsLoaded(requirements: list, isSilentRefreshing: false));
     } catch (e) {

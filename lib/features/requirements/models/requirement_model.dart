@@ -333,9 +333,14 @@ class RequirementModel {
           : json['created_at'] != null
               ? DateTime.parse(json['created_at'])
               : DateTime.now(),
-      adminId: (json['admin_id'] ?? json['adminId']) as String?,
-      assignedTo: (json['assigned_to'] ?? json['assignedTo']) as String?,
-      organizationId: json['organization_id'] as String?,
+      adminId: (json['admin_id'] ?? json['adminId'])?.toString(),
+      assignedTo: () {
+        final v = json['assigned_to'] ?? json['assignedTo'];
+        if (v == null) return null;
+        final s = v.toString().trim();
+        return s.isEmpty ? null : s;
+      }(),
+      organizationId: json['organization_id']?.toString(),
       assigneeName: () {
         if (json['assigneeName'] != null) return json['assigneeName'] as String;
         if (json['assignee_name'] != null) return json['assignee_name'] as String;

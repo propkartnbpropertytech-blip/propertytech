@@ -44,6 +44,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   List<PropertyModel> _binProperties = [];
   List<RequirementModel> _binRequirements = [];
   final Map<String, user_settings_model.UserModel> _usersMap = {};
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   int _propertiesPerPage = 15;
   int _requirementsPerPage = 15;
@@ -61,10 +63,31 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   List<PropertyModel> get _visibleBinProperties {
-    if (_propertiesSubTab == 'Rent') {
-      return _binProperties.where(_isRentProperty).toList();
-    }
-    return _binProperties.where((p) => !_isRentProperty(p)).toList();
+    final byListing = _propertiesSubTab == 'Rent'
+        ? _binProperties.where(_isRentProperty).toList()
+        : _binProperties.where((p) => !_isRentProperty(p)).toList();
+    return byListing.where(_propertyMatchesSearch).toList();
+  }
+
+  bool _propertyMatchesSearch(PropertyModel p) {
+    final q = _searchQuery;
+    if (q.isEmpty) return true;
+    final haystack = [
+      p.propertyCode,
+      p.title,
+      p.ownerName,
+      p.ownerMobile,
+      p.areaName,
+      p.cityName,
+      p.address,
+      p.createdByName,
+      p.propertyTypeName,
+      p.configurationName ?? '',
+      p.listingTypeName,
+      CRMCurrencyFormatter.formatShort(p.price),
+      p.price.toString(),
+    ].join(' ').toLowerCase();
+    return haystack.contains(q);
   }
 
   bool _isRentRequirement(RequirementModel r) {
@@ -78,10 +101,33 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   List<RequirementModel> get _visibleBinRequirements {
-    if (_requirementsListingSubTab == 'Rent') {
-      return _binRequirements.where(_isRentRequirement).toList();
-    }
-    return _binRequirements.where((r) => !_isRentRequirement(r)).toList();
+    final byListing = _requirementsListingSubTab == 'Rent'
+        ? _binRequirements.where(_isRentRequirement).toList()
+        : _binRequirements.where((r) => !_isRentRequirement(r)).toList();
+    return byListing.where(_requirementMatchesSearch).toList();
+  }
+
+  bool _requirementMatchesSearch(RequirementModel r) {
+    final q = _searchQuery;
+    if (q.isEmpty) return true;
+    final salesperson = r.creatorName ?? r.assigneeName ?? '';
+    final mappedUser = r.assignedTo != null ? _usersMap[r.assignedTo]?.fullName ?? '' : '';
+    final haystack = [
+      r.clientName,
+      r.clientMobile,
+      r.propertyTypeName,
+      r.configurationName ?? '',
+      r.listingTypeName ?? '',
+      r.areaNames.join(' '),
+      salesperson,
+      mappedUser,
+      r.creatorMobile ?? '',
+      r.creatorEmail ?? '',
+      r.remarks ?? '',
+      CRMCurrencyFormatter.formatShort(r.minBudget),
+      CRMCurrencyFormatter.formatShort(r.maxBudget),
+    ].join(' ').toLowerCase();
+    return haystack.contains(q);
   }
 
   @override
@@ -89,6 +135,67 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     super.initState();
     _loadAutoDeleteDays();
     _fetchBinData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildBinSearchField({required bool isMobile}) {
+    final hint = _selectedTab == 'Properties'
+        ? 'Search code, property name, owner, area...'
+        : 'Search client name, mobile, specs, area, salesperson...';
+    return SizedBox(
+      width: double.infinity,
+      height: isMobile ? 42 : 38,
+      child: TextField(
+        controller: _searchController,
+        style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchQuery = '';
+                      _currentPropertiesPage = 1;
+                      _currentRequirementsPage = 1;
+                    });
+                  },
+                ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: CRMColors.primaryOf(context)),
+          ),
+          filled: true,
+          fillColor: CRMColors.cardBgOf(context),
+        ),
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value.trim().toLowerCase();
+            _currentPropertiesPage = 1;
+            _currentRequirementsPage = 1;
+          });
+        },
+      ),
+    );
   }
 
   Future<void> _loadAutoDeleteDays() async {
@@ -788,6 +895,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                 ],
               ),
             ],
+            const SizedBox(height: CRMSpacing.m),
+            _buildBinSearchField(isMobile: isMobile),
             const SizedBox(height: CRMSpacing.l),
             Builder(
               builder: (context) {
@@ -795,7 +904,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                     ? const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
                     : _selectedTab == 'Properties'
                         ? _visibleBinProperties.isEmpty
-                            ? _buildEmptyState('No deleted ${_propertiesSubTab.toLowerCase()} properties found in bin.')
+                            ? _buildEmptyState(_searchQuery.isEmpty
+                                ? 'No deleted ${_propertiesSubTab.toLowerCase()} properties found in bin.'
+                                : 'No properties match your search.')
                             : Builder(
                                 builder: (context) {
                                   final authState = context.read<AuthBloc>().state;
@@ -808,7 +919,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                   final targetProperties = _visibleBinProperties;
                                   final totalItems = targetProperties.length;
                                   final totalPages = (totalItems / _propertiesPerPage).ceil().clamp(1, double.infinity).toInt();
-                                  final startIndex = (_currentPropertiesPage - 1) * _propertiesPerPage;
+                                  final safePage = _currentPropertiesPage.clamp(1, totalPages);
+                                  final startIndex = (safePage - 1) * _propertiesPerPage;
                                   final endIndex = (startIndex + _propertiesPerPage).clamp(0, totalItems);
                                   final paginatedProperties = targetProperties.sublist(startIndex, endIndex);
 
@@ -893,16 +1005,18 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                       _buildPropertiesPagination(
                                         totalItems,
                                         totalPages,
-                                        _currentPropertiesPage,
+                                        safePage,
                                       ),
                                     ],
                                   );
                                 },
                               )
                         : _visibleBinRequirements.isEmpty
-                            ? _buildEmptyState(_requirementsSubTab == 'Bin'
+                            ? _buildEmptyState(_searchQuery.isNotEmpty
+                                ? 'No leads match your search.'
+                                : (_requirementsSubTab == 'Bin'
                                 ? 'No deleted ${_requirementsListingSubTab.toLowerCase()} leads found.'
-                                : 'No ${_requirementsListingSubTab.toLowerCase()} leads marked as "Not Interested".')
+                                : 'No ${_requirementsListingSubTab.toLowerCase()} leads marked as "Not Interested".'))
                             : Builder(
                                 builder: (context) {
                                   final authState = context.read<AuthBloc>().state;
@@ -918,7 +1032,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                   final targetRequirements = _visibleBinRequirements;
                                   final totalItems = targetRequirements.length;
                                   final totalPages = (totalItems / _requirementsPerPage).ceil().clamp(1, double.infinity).toInt();
-                                  final startIndex = (_currentRequirementsPage - 1) * _requirementsPerPage;
+                                  final safePage = _currentRequirementsPage.clamp(1, totalPages);
+                                  final startIndex = (safePage - 1) * _requirementsPerPage;
                                   final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalItems);
                                   final paginatedRequirements = targetRequirements.sublist(startIndex, endIndex);
 
@@ -1070,7 +1185,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                       _buildRequirementsPagination(
                                         totalItems,
                                         totalPages,
-                                        _currentRequirementsPage,
+                                        safePage,
                                       ),
                                     ],
                                   );
