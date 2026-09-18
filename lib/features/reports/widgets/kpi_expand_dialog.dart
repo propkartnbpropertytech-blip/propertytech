@@ -8,6 +8,7 @@ import '../bloc/reports_bloc.dart';
 import '../models/report_configuration.dart';
 import '../models/report_kpi_type.dart';
 import '../models/report_data.dart';
+import '../utils/telecaller_report_navigation.dart';
 import 'user_performance_summary_dialog.dart';
 
 class KpiExpandDialog extends StatelessWidget {
@@ -266,15 +267,11 @@ class KpiExpandDialog extends StatelessWidget {
                 subtitle: Text('Leads Managed: ${t.leadsCount} · Qualified: ${t.qualifiedCount} · Won: ${t.wonCount}', style: const TextStyle(fontSize: 11)),
                 trailing: ElevatedButton(
                   onPressed: () {
-                    final cfg = config ?? context.read<ReportsBloc>().state.config;
-                    UserPerformanceSummaryDialog.show(
+                    Navigator.of(context).pop();
+                    TelecallerReportNavigation.open(
                       context,
                       userId: t.userId,
                       userName: t.userName,
-                      role: 'Telecaller',
-                      config: cfg,
-                      allLeads: reportData.allLeads,
-                      allFollowups: reportData.allFollowups,
                     );
                   },
                   style: ElevatedButton.styleFrom(
@@ -282,7 +279,7 @@ class KpiExpandDialog extends StatelessWidget {
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text('View Summary', style: TextStyle(fontSize: 11)),
+                  child: const Text('View Report', style: TextStyle(fontSize: 11)),
                 ),
               );
             },

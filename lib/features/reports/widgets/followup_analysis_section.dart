@@ -6,10 +6,14 @@ import '../models/report_data.dart';
 
 class FollowupAnalysisSection extends StatefulWidget {
   final List<FollowupCategoryData> categories;
+  final String title;
+  final void Function(FollowupItemData item)? onLeadTap;
 
   const FollowupAnalysisSection({
     super.key,
     required this.categories,
+    this.title = 'Follow-up Analysis',
+    this.onLeadTap,
   });
 
   @override
@@ -43,13 +47,13 @@ class _FollowupAnalysisSectionState extends State<FollowupAnalysisSection> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
-          const Row(
+          Row(
             children: [
-              Icon(Icons.phone_callback_rounded, size: 18),
-              SizedBox(width: 8),
+              const Icon(Icons.phone_callback_rounded, size: 18),
+              const SizedBox(width: 8),
               Text(
-                'Follow-up Analysis',
-                style: TextStyle(
+                widget.title,
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                   letterSpacing: -0.2,
@@ -220,7 +224,11 @@ class _FollowupAnalysisSectionState extends State<FollowupAnalysisSection> {
                             IconButton(
                               icon: const Icon(Icons.chevron_right, size: 18),
                               onPressed: () {
-                                context.go('/requirements?search=${Uri.encodeComponent(item.leadName)}');
+                                if (widget.onLeadTap != null) {
+                                  widget.onLeadTap!(item);
+                                } else {
+                                  context.go('/requirements?search=${Uri.encodeComponent(item.leadName)}');
+                                }
                               },
                             ),
                           ],

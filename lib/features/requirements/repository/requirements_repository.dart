@@ -41,7 +41,7 @@ class RequirementsRepository {
     final isarReadMs = DateTime.now().difference(start).inMilliseconds;
 
     final parseStart = DateTime.now();
-    var requirements = localList.map((item) => item.toModel()).toList();
+    var requirements = localList.map((item) => _withRememberedMeta(item.toModel())).toList();
 
     // Apply RBAC role-based filtering on Requirements
     final currentUser = RoleGuard.currentUser;
@@ -163,7 +163,11 @@ class RequirementsRepository {
       final parseStart = DateTime.now();
       final data = response['data'] as Map<String, dynamic>? ?? {};
       final list = data['requirements'] as List? ?? [];
-      final freshList = list.map((item) => RequirementModel.fromJson(item)).toList();
+      final freshList = list.map((item) {
+        final model = RequirementModel.fromJson(item);
+        _rememberMeta(model);
+        return model;
+      }).toList();
       final jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
 
       final writeStart = DateTime.now();
@@ -259,22 +263,89 @@ class RequirementsRepository {
     }
   }
 
+  void _rememberMeta(RequirementModel req) {
+    RequirementLocalRepository.rememberMetaCustomFields(req.id, req.metaCustomFields);
+  }
+
+  RequirementModel _withRememberedMeta(RequirementModel req) {
+    final remembered = RequirementLocalRepository.metaCustomFieldsById[req.id];
+    if (remembered == null || remembered.isEmpty) return req;
+    return req.copyWith(metaCustomFields: {
+      ...remembered,
+      ...?req.metaCustomFields,
+    });
+  }
+
   RequirementModel _preserveLeadScope(RequirementModel submitted, RequirementModel incoming) {
     String? keep(String? next, String? fallback) {
       if (next != null && next.trim().isNotEmpty) return next;
       return fallback;
     }
 
-    return incoming.copyWith(
+    Map<String, dynamic>? mergedMeta;
+    if (incoming.metaCustomFields != null || submitted.metaCustomFields != null) {
+      mergedMeta = {
+        ...?incoming.metaCustomFields,
+        ...?submitted.metaCustomFields,
+      };
+    }
+
+    final submittedStatus = submitted.status.trim();
+    final incomingStatus = incoming.status.trim();
+    final preservedStatus = submittedStatus.isNotEmpty
+        ? submitted.status
+        : (incomingStatus.isNotEmpty ? incoming.status : submitted.status);
+
+    final merged = incoming.copyWith(
       adminId: keep(incoming.adminId, submitted.adminId),
       createdBy: keep(incoming.createdBy, submitted.createdBy),
       creatorName: keep(incoming.creatorName, submitted.creatorName),
       organizationId: keep(incoming.organizationId, submitted.organizationId),
       listingTypeId: keep(incoming.listingTypeId, submitted.listingTypeId),
       listingTypeName: keep(incoming.listingTypeName, submitted.listingTypeName),
-      assignedTo: keep(incoming.assignedTo, submitted.assignedTo),
-      assigneeName: keep(incoming.assigneeName, submitted.assigneeName),
+      assignedTo: submitted.assignedTo ?? incoming.assignedTo,
+      assigneeName: keep(submitted.assigneeName, incoming.assigneeName),
+      status: preservedStatus,
+      metaCustomFields: mergedMeta,
     );
+    _rememberMeta(merged);
+    return _withRememberedMeta(merged);
+  }
+
+  Future<RequirementModel> updateLeadStatus(RequirementModel req) async {
+    _rememberMeta(req);
+    final payload = <String, dynamic>{
+      'status': req.status,
+      if (req.metaCustomFields != null) 'meta_custom_fields': req.metaCustomFields,
+      if (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty)
+        'next_followup_date': req.nextFollowupDate,
+    };
+    try {
+      final response = await _requirementsService.updateRequirement(req.id, payload);
+      final data = response['data'] as Map<String, dynamic>? ?? {};
+      final reqJson = Map<String, dynamic>.from(data['requirement'] as Map? ?? {});
+      final fresh = reqJson.isEmpty ? req : RequirementModel.fromJson(reqJson);
+      final merged = _preserveLeadScope(req, fresh);
+
+      await _coordinator.requirementLocal.saveRequirements([merged.toLocal()]);
+      _coordinator.refreshRequirements();
+      return merged;
+    } catch (e) {
+      print("RequirementsRepository.updateLeadStatus error: $e");
+      await _coordinator.requirementLocal.saveRequirements([req.toLocal()]);
+
+      final outboxItem = OutboxLocal()
+        ..id = 'outbox_${DateTime.now().millisecondsSinceEpoch}'
+        ..endpoint = '/requirements/${req.id}'
+        ..method = 'PUT'
+        ..payloadJson = jsonEncode(payload)
+        ..createdAt = DateTime.now()
+        ..deviceId = 'device_crm_123';
+      await _coordinator.outboxLocal.queueRequest(outboxItem);
+
+      _coordinator.refreshRequirements();
+      return req;
+    }
   }
 
   Future<RequirementModel> updateRequirement(RequirementModel req) async {
@@ -286,6 +357,7 @@ class RequirementsRepository {
         reqJson['remarks'] = req.remarks!.trim();
       }
       final fresh = reqJson.isEmpty ? req : RequirementModel.fromJson(reqJson);
+      _rememberMeta(req);
       final merged = _preserveLeadScope(req, fresh);
 
       await _coordinator.requirementLocal.saveRequirements([merged.toLocal()]);
@@ -355,8 +427,17 @@ class RequirementsRepository {
     if (data.containsKey('assigned_to')) {
       match.assignedTo = data['assigned_to'] as String?;
     }
+    if (data.containsKey('assignee_name') && data['assignee_name'] != null) {
+      match.assigneeName = data['assignee_name'].toString();
+    }
     if (data.containsKey('status') && data['status'] != null) {
       match.status = data['status'].toString();
+    }
+    if (data['meta_custom_fields'] is Map) {
+      RequirementLocalRepository.rememberMetaCustomFields(
+        match.id,
+        Map<String, dynamic>.from(data['meta_custom_fields'] as Map),
+      );
     }
   }
 

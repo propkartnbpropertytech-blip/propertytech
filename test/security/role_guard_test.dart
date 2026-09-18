@@ -47,7 +47,7 @@ void main() {
       );
     });
 
-    test('Super Admin can manage Admin but not Super Admin', () {
+    test('Super Admin can manage Admin, Sales and Telecaller, but not Super Admin', () {
       expect(
         RoleGuard.validateUserMutation(
           callerRole: 'Super Admin',

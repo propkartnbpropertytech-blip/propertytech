@@ -10,6 +10,9 @@ class KpiCardWidget extends StatefulWidget {
   final Function(bool showCount, bool showPercentage)? onTogglesChanged;
   final bool showToggles;
   final VoidCallback onExpand;
+  final String? titleOverride;
+  final IconData? iconOverride;
+  final Color? colorOverride;
 
   const KpiCardWidget({
     super.key,
@@ -18,6 +21,9 @@ class KpiCardWidget extends StatefulWidget {
     this.onTogglesChanged,
     this.showToggles = false,
     required this.onExpand,
+    this.titleOverride,
+    this.iconOverride,
+    this.colorOverride,
   });
 
   @override
@@ -31,10 +37,12 @@ class _KpiCardWidgetState extends State<KpiCardWidget> {
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
     final kpiType = widget.config.type;
-    final accentColor = kpiType.defaultColor;
+    final accentColor = widget.colorOverride ?? kpiType.defaultColor;
     final count = widget.value?.formattedCount ?? '0';
     final percentage = widget.value?.formattedPercentage ?? '0.0%';
     final denominatorLabel = widget.value?.denominatorLabel ?? kpiType.denominatorExplanation;
+    final title = widget.titleOverride ?? kpiType.displayName;
+    final icon = widget.iconOverride ?? kpiType.icon;
 
     final showCount = widget.config.showCount;
     final showPercentage = widget.config.showPercentage;
@@ -93,7 +101,7 @@ class _KpiCardWidgetState extends State<KpiCardWidget> {
                     children: [
                       Expanded(
                         child: Text(
-                          kpiType.displayName,
+                          title,
                           style: TextStyle(
                             color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                             fontSize: 12.5,
@@ -111,7 +119,7 @@ class _KpiCardWidgetState extends State<KpiCardWidget> {
                           IconButton(
                             icon: const Icon(Icons.open_in_full_rounded, size: 14),
                             onPressed: widget.onExpand,
-                            tooltip: 'Expand ${kpiType.displayName} Details',
+                            tooltip: 'Expand $title Details',
                             visualDensity: VisualDensity.compact,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
@@ -127,7 +135,7 @@ class _KpiCardWidgetState extends State<KpiCardWidget> {
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
-                              kpiType.icon,
+                              icon,
                               color: accentColor,
                               size: 15,
                             ),

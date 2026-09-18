@@ -136,6 +136,10 @@ class ReportConfiguration extends Equatable {
   final ReportKpiType trendMetric;
   final TrendGranularity trendGranularity;
 
+  /// Session-only Telecaller Report subject. Not a global OBI filter.
+  final String? subjectTelecallerId;
+  final String? subjectTelecallerName;
+
   const ReportConfiguration({
     required this.dateRange,
     this.filters = const ReportFilterState.empty(),
@@ -153,6 +157,8 @@ class ReportConfiguration extends Equatable {
     this.customComparisonEnd,
     this.trendMetric = ReportKpiType.totalLeads,
     this.trendGranularity = TrendGranularity.daily,
+    this.subjectTelecallerId,
+    this.subjectTelecallerName,
   });
 
   /// Generate default configuration
@@ -201,6 +207,9 @@ class ReportConfiguration extends Equatable {
     DateTime? customComparisonEnd,
     ReportKpiType? trendMetric,
     TrendGranularity? trendGranularity,
+    String? subjectTelecallerId,
+    String? subjectTelecallerName,
+    bool clearSubjectTelecaller = false,
   }) {
     return ReportConfiguration(
       dateRange: dateRange ?? this.dateRange,
@@ -219,6 +228,12 @@ class ReportConfiguration extends Equatable {
       customComparisonEnd: customComparisonEnd ?? this.customComparisonEnd,
       trendMetric: trendMetric ?? this.trendMetric,
       trendGranularity: trendGranularity ?? this.trendGranularity,
+      subjectTelecallerId: clearSubjectTelecaller
+          ? null
+          : (subjectTelecallerId ?? this.subjectTelecallerId),
+      subjectTelecallerName: clearSubjectTelecaller
+          ? null
+          : (subjectTelecallerName ?? this.subjectTelecallerName),
     );
   }
 
@@ -255,5 +270,7 @@ class ReportConfiguration extends Equatable {
         customComparisonEnd,
         trendMetric,
         trendGranularity,
+        subjectTelecallerId,
+        subjectTelecallerName,
       ];
 }

@@ -14,6 +14,7 @@ class ReportGlobalFiltersBar extends StatelessWidget {
   final List<PropertyModel> properties;
   final ValueChanged<ReportFilterState> onFiltersChanged;
   final VoidCallback onResetFilters;
+  final bool hideUserFilters;
 
   const ReportGlobalFiltersBar({
     super.key,
@@ -25,6 +26,7 @@ class ReportGlobalFiltersBar extends StatelessWidget {
     required this.properties,
     required this.onFiltersChanged,
     required this.onResetFilters,
+    this.hideUserFilters = false,
   });
 
   @override
@@ -137,11 +139,11 @@ class ReportGlobalFiltersBar extends StatelessWidget {
                         _buildFilterChip('Source: ${filters.leadSource}', () {
                           onFiltersChanged(filters.copyWith(clearLeadSource: true));
                         }),
-                      if (filters.telecallerName != null)
+                      if (!hideUserFilters && filters.telecallerName != null)
                         _buildFilterChip('Telecaller: ${filters.telecallerName}', () {
                           onFiltersChanged(filters.copyWith(clearTelecaller: true));
                         }),
-                      if (filters.salesUserName != null)
+                      if (!hideUserFilters && filters.salesUserName != null)
                         _buildFilterChip('Sales: ${filters.salesUserName}', () {
                           onFiltersChanged(filters.copyWith(clearSalesUser: true));
                         }),
@@ -199,6 +201,7 @@ class ReportGlobalFiltersBar extends StatelessWidget {
         telecallers: telecallers,
         salesUsers: salesUsers,
         properties: properties,
+        hideUserFilters: hideUserFilters,
         onApply: (updated) {
           Navigator.of(sheetContext).pop();
           onFiltersChanged(updated);
@@ -221,6 +224,7 @@ class _ReportFilterSheet extends StatefulWidget {
   final List<PropertyModel> properties;
   final ValueChanged<ReportFilterState> onApply;
   final VoidCallback onReset;
+  final bool hideUserFilters;
 
   const _ReportFilterSheet({
     required this.initialFilters,
@@ -231,6 +235,7 @@ class _ReportFilterSheet extends StatefulWidget {
     required this.properties,
     required this.onApply,
     required this.onReset,
+    this.hideUserFilters = false,
   });
 
   @override
@@ -322,45 +327,47 @@ class _ReportFilterSheetState extends State<_ReportFilterSheet> {
                   ),
                   const SizedBox(height: 16),
 
-                  // 3. Telecaller Dropdown
-                  _buildUserDropdownSection(
-                    title: 'Telecaller',
-                    selectedId: _current.telecallerId,
-                    users: widget.telecallers,
-                    onChanged: (user) {
-                      setState(() {
-                        if (user == null) {
-                          _current = _current.copyWith(clearTelecaller: true);
-                        } else {
-                          _current = _current.copyWith(
-                            telecallerId: user.id,
-                            telecallerName: user.fullName,
-                          );
-                        }
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 16),
+                  if (!widget.hideUserFilters) ...[
+                    // 3. Telecaller Dropdown
+                    _buildUserDropdownSection(
+                      title: 'Telecaller',
+                      selectedId: _current.telecallerId,
+                      users: widget.telecallers,
+                      onChanged: (user) {
+                        setState(() {
+                          if (user == null) {
+                            _current = _current.copyWith(clearTelecaller: true);
+                          } else {
+                            _current = _current.copyWith(
+                              telecallerId: user.id,
+                              telecallerName: user.fullName,
+                            );
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
 
-                  // 4. Sales User Dropdown
-                  _buildUserDropdownSection(
-                    title: 'Sales User',
-                    selectedId: _current.salesUserId,
-                    users: widget.salesUsers,
-                    onChanged: (user) {
-                      setState(() {
-                        if (user == null) {
-                          _current = _current.copyWith(clearSalesUser: true);
-                        } else {
-                          _current = _current.copyWith(
-                            salesUserId: user.id,
-                            salesUserName: user.fullName,
-                          );
-                        }
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 16),
+                    // 4. Sales User Dropdown
+                    _buildUserDropdownSection(
+                      title: 'Sales User',
+                      selectedId: _current.salesUserId,
+                      users: widget.salesUsers,
+                      onChanged: (user) {
+                        setState(() {
+                          if (user == null) {
+                            _current = _current.copyWith(clearSalesUser: true);
+                          } else {
+                            _current = _current.copyWith(
+                              salesUserId: user.id,
+                              salesUserName: user.fullName,
+                            );
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   // 5. Property / Project Dropdown
                   _buildPropertyDropdownSection(),

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -15,14 +17,16 @@ import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/utils/budget_formatter.dart';
 import '../../properties/models/property_model.dart';
 import '../../properties/repository/properties_repository.dart';
+import '../../properties/services/properties_service.dart';
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
+import '../../requirements/services/requirements_service.dart';
 import '../bloc/users_bloc.dart';
 import '../models/user_model.dart';
 import '../utils/employee_activity.dart';
 import '../../../core/security/role_guard.dart';
 
-enum _LeadFocus { all, won, followup, overdue, visits, assigned, created }
+enum _LeadFocus { all, won, rejected, followup, overdue, visits, assigned, created }
 
 class EmployeeDetailScreen extends StatefulWidget {
   final String userId;
@@ -44,6 +48,8 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   String? _activityError;
   List<PropertyModel> _properties = [];
   List<RequirementModel> _requirements = [];
+  List<Map<String, dynamic>>? _followupRows;
+  List<Map<String, dynamic>>? _siteVisitRows;
   Map<String, dynamic>? _adminStats;
 
   String _listingFilter = 'All';
@@ -74,9 +80,11 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     });
     try {
       final results = await Future.wait([
-        PropertiesRepository().getProperties(),
-        RequirementsRepository().getRequirements(),
+        _fetchLiveProperties(),
+        _fetchLiveRequirements(),
       ]);
+      final followupRows = await _fetchFollowupRows();
+      final siteVisitRows = await _fetchSiteVisitRows();
       Map<String, dynamic>? adminStats;
       try {
         final response =
@@ -92,6 +100,8 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
       setState(() {
         _properties = results[0] as List<PropertyModel>;
         _requirements = results[1] as List<RequirementModel>;
+        _followupRows = followupRows;
+        _siteVisitRows = siteVisitRows;
         _adminStats = adminStats;
         _loadingActivity = false;
       });
@@ -101,6 +111,45 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         _activityError = 'Could not load employee activity.';
         _loadingActivity = false;
       });
+    }
+  }
+
+  Future<List<PropertyModel>> _fetchLiveProperties() async {
+    try {
+      final response = await PropertiesService().getProperties(
+        includeDeleted: false,
+      );
+      final data = response['data'] as Map<String, dynamic>? ?? {};
+      final list = data['properties'] as List? ?? [];
+      return list
+          .whereType<Map>()
+          .map((item) => PropertyModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    } catch (_) {
+      return PropertiesRepository().getProperties(
+        refreshFromServer: true,
+        includeDeleted: false,
+      );
+    }
+  }
+
+  Future<List<RequirementModel>> _fetchLiveRequirements() async {
+    try {
+      final response = await RequirementsService().getRequirements();
+      final data = response['data'] as Map<String, dynamic>? ?? {};
+      final list = data['requirements'] as List? ?? [];
+      return list
+          .whereType<Map>()
+          .map((item) => RequirementModel.fromJson(Map<String, dynamic>.from(item)))
+          .where((r) => r.status.trim().toLowerCase() != 'bin')
+          .toList();
+    } catch (_) {
+      final local = await RequirementsRepository().getRequirements(
+        refreshFromServer: true,
+      );
+      return local
+          .where((r) => r.status.trim().toLowerCase() != 'bin')
+          .toList();
     }
   }
 
@@ -146,6 +195,239 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         ),
       );
     }
+  }
+
+  Future<List<Map<String, dynamic>>?> _fetchFollowupRows() async {
+    try {
+      final response = await DioClient.dio.get('/followups');
+      final body = response.data;
+      if (body is Map && body['data'] is Map) {
+        final list = body['data']['followups'] as List? ?? [];
+        return list
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<List<Map<String, dynamic>>?> _fetchSiteVisitRows() async {
+    try {
+      final response = await DioClient.dio.get('/site-visits');
+      final body = response.data;
+      if (body is Map && body['data'] is Map) {
+        final list = body['data']['siteVisits'] as List? ??
+            body['data']['site_visits'] as List? ??
+            [];
+        return list
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  String? _actorNameFromRow(Map<String, dynamic> row) {
+    final creator = row['creator'];
+    if (creator is Map) {
+      final name = creator['full_name'] ?? creator['fullName'] ?? creator['name'];
+      if (name != null) return name.toString();
+    }
+    return (row['creator_name'] ?? row['creatorName'] ?? row['scheduled_by_name'])
+        ?.toString();
+  }
+
+  String _actorIdFromRow(Map<String, dynamic> row) {
+    for (final key in [
+      'created_by',
+      'createdBy',
+      'scheduled_by',
+      'scheduledBy',
+    ]) {
+      final value = (row[key] ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  bool _rowMatchesSalesUser(Map<String, dynamic> row, UserModel user) {
+    return EmployeeActivity.matchesActor(
+      user,
+      id: _actorIdFromRow(row),
+      name: _actorNameFromRow(row),
+    );
+  }
+
+  String? _requirementIdFromRow(Map<String, dynamic> row) {
+    final nested = row['requirement'];
+    if (nested is Map && nested['id'] != null) return nested['id'].toString();
+    final id = row['requirement_id'] ?? row['requirementId'];
+    return id?.toString();
+  }
+
+  String? _rowListingBucket(
+    Map<String, dynamic> row,
+    Map<String, String> listingByReqId,
+  ) {
+    final reqId = _requirementIdFromRow(row);
+    if (reqId != null && reqId.isNotEmpty) {
+      final mapped = listingByReqId[reqId];
+      if (mapped == 'Rent' || mapped == 'Re-Sale') return mapped;
+    }
+    final nested = row['requirement'];
+    final nestedMap = nested is Map ? nested : null;
+    final combined = (
+      '${nestedMap?['listing_type_name'] ?? nestedMap?['listingTypeName'] ?? ''} '
+      '${nestedMap?['listing_type_id'] ?? nestedMap?['listingTypeId'] ?? ''} '
+      '${row['listing_type_name'] ?? row['listingTypeName'] ?? row['listing_type'] ?? ''} '
+      '${row['listing_type_id'] ?? row['listingTypeId'] ?? ''}'
+    ).toLowerCase();
+    if (combined.contains('rent')) return 'Rent';
+    if (combined.contains('sale') || combined.contains('resale')) return 'Re-Sale';
+    return null;
+  }
+
+  bool _rowMatchesListing(
+    Map<String, dynamic> row,
+    Map<String, String> listingByReqId, {
+    String? listing,
+  }) {
+    final filter = listing ?? _listingFilter;
+    final bucket = _rowListingBucket(row, listingByReqId);
+    if (bucket == null) return false;
+    if (filter == 'All') return bucket == 'Rent' || bucket == 'Re-Sale';
+    return bucket == filter;
+  }
+
+  List<Map<String, dynamic>> get _followupList =>
+      _followupRows ?? const <Map<String, dynamic>>[];
+
+  List<Map<String, dynamic>> get _siteVisitList =>
+      _siteVisitRows ?? const <Map<String, dynamic>>[];
+
+  bool _rowOnCurrentSalesLead(Map<String, dynamic> row, UserModel user) {
+    final reqId = _requirementIdFromRow(row);
+    if (reqId == null || reqId.isEmpty) {
+      return _rowMatchesSalesUser(row, user);
+    }
+    for (final r in _requirements) {
+      if (r.id == reqId) {
+        if (EmployeeActivity.isWon(r) || EmployeeActivity.isRejected(r)) {
+          return false;
+        }
+        return EmployeeActivity.isSalesOwnedLead(r, user);
+      }
+    }
+    return false;
+  }
+
+  List<Map<String, dynamic>> _salesFollowups(
+    UserModel user,
+    Map<String, String> listingByReqId, {
+    bool currentLeadsOnly = false,
+    required String listing,
+  }) {
+    return _followupList.where((row) {
+      final status = (row['status'] ?? '').toString();
+      if (EmployeeActivity.isSiteVisitStatus(status)) return false;
+      if (!_rowMatchesListing(row, listingByReqId, listing: listing)) {
+        return false;
+      }
+      if (currentLeadsOnly) {
+        return _rowOnCurrentSalesLead(row, user);
+      }
+      return _rowMatchesSalesUser(row, user);
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _salesSiteVisits(
+    UserModel user,
+    Map<String, String> listingByReqId, {
+    bool currentLeadsOnly = false,
+    required String listing,
+  }) {
+    final fromVisits = _siteVisitList.where((row) {
+      if (!_rowMatchesListing(row, listingByReqId, listing: listing)) {
+        return false;
+      }
+      if (currentLeadsOnly) {
+        return _rowOnCurrentSalesLead(row, user);
+      }
+      return _rowMatchesSalesUser(row, user);
+    });
+    final fromFollowups = _followupList.where((row) {
+      final status = (row['status'] ?? '').toString();
+      if (!EmployeeActivity.isSiteVisitStatus(status)) return false;
+      if (!_rowMatchesListing(row, listingByReqId, listing: listing)) {
+        return false;
+      }
+      if (currentLeadsOnly) {
+        return _rowOnCurrentSalesLead(row, user);
+      }
+      return _rowMatchesSalesUser(row, user);
+    });
+    final seen = <String>{};
+    final merged = <Map<String, dynamic>>[];
+    for (final row in [...fromVisits, ...fromFollowups]) {
+      final key = (row['id'] ??
+              '${row['requirement_id']}-${row['visit_date'] ?? row['followup_date']}-${row['notes'] ?? row['remarks']}')
+          .toString();
+      if (!seen.add(key)) continue;
+      merged.add(row);
+    }
+    return merged;
+  }
+
+  int _pendingFollowupCount(List<Map<String, dynamic>> rows) {
+    return rows.where((row) {
+      final dt = _rowDate(row);
+      if (dt == null) return false;
+      return EmployeeActivity.isOpenFollowupStatus(
+            (row['status'] ?? '').toString(),
+          ) &&
+          EmployeeActivity.isDateOnOrAfterToday(dt);
+    }).length;
+  }
+
+  int _currentOverdueCount(List<Map<String, dynamic>> rows) {
+    return rows.where((row) {
+      final dt = _rowDate(row);
+      if (dt == null) return false;
+      return EmployeeActivity.isOpenFollowupStatus(
+            (row['status'] ?? '').toString(),
+          ) &&
+          EmployeeActivity.isDateBeforeToday(dt);
+    }).length;
+  }
+
+  int _totalOverdueCount(List<Map<String, dynamic>> rows) {
+    return rows.where((row) {
+      final dt = _rowDate(row);
+      if (dt == null) return false;
+      return EmployeeActivity.isDateBeforeToday(dt);
+    }).length;
+  }
+
+  int _openSiteVisitCount(List<Map<String, dynamic>> rows) {
+    return rows
+        .where(
+          (row) => EmployeeActivity.isOpenSiteVisitStatus(
+            (row['status'] ?? '').toString(),
+          ),
+        )
+        .length;
+  }
+
+  DateTime? _rowDate(Map<String, dynamic> row) {
+    return EmployeeActivity.tryParseDate(
+      (row['followup_date'] ??
+              row['followupDate'] ??
+              row['visit_date'] ??
+              row['visitDate'])
+          ?.toString(),
+    );
   }
 
   UserModel? _lastUser;
@@ -297,12 +579,24 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     final isMobile = MediaQuery.of(context).size.width < 700;
     final role = user.roleName.toLowerCase();
     final isAdminRole = role == 'admin' || role == 'super admin';
+    final isSalesRole = role == 'sales';
 
     final allProps = _properties
-        .where((p) => EmployeeActivity.belongsToProperty(p, user))
+        .where(
+          (p) => isSalesRole
+              ? EmployeeActivity.isPropertyAddedBy(p, user)
+              : EmployeeActivity.belongsToProperty(p, user),
+        )
         .toList();
     final allReqs = _requirements
-        .where((r) => EmployeeActivity.belongsToRequirement(r, user))
+        .where(
+          (r) {
+            if (r.status.trim().toLowerCase() == 'bin') return false;
+            return isSalesRole
+                ? EmployeeActivity.isSalesOwnedLead(r, user)
+                : EmployeeActivity.belongsToRequirement(r, user);
+          },
+        )
         .toList();
 
     var visibleProps = allProps;
@@ -321,12 +615,31 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
           .toList();
     }
 
+    final listingByReqId = <String, String>{
+      for (final r in _requirements)
+        r.id: EmployeeActivity.requirementListingBucket(r),
+    };
+
+    List<RequirementModel> reqsIn(String listing) {
+      if (listing == 'All') return allReqs;
+      return allReqs
+          .where(
+            (r) => EmployeeActivity.requirementListingBucket(r) == listing,
+          )
+          .toList();
+    }
+
+    final rentReqs = reqsIn('Rent');
+    final resaleReqs = reqsIn('Re-Sale');
+
     final focusedReqs = visibleReqs.where((r) {
       switch (_leadFocus) {
         case _LeadFocus.all:
           return true;
         case _LeadFocus.won:
           return EmployeeActivity.isWon(r);
+        case _LeadFocus.rejected:
+          return EmployeeActivity.isRejected(r);
         case _LeadFocus.followup:
           return EmployeeActivity.isPendingFollowup(r);
         case _LeadFocus.overdue:
@@ -340,20 +653,150 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
       }
     }).toList();
 
+    int assignedOf(List<RequirementModel> reqs) =>
+        reqs.where((r) => EmployeeActivity.isAssignedTo(r, user)).length;
+    int createdOf(List<RequirementModel> reqs) =>
+        reqs.where((r) =>
+            EmployeeActivity.isCreatedBy(r, user) &&
+            !EmployeeActivity.isRejected(r)).length;
+
+    final assignedRent = assignedOf(rentReqs);
+    final assignedResale = assignedOf(resaleReqs);
+    final createdRent = createdOf(rentReqs);
+    final createdResale = createdOf(resaleReqs);
+    final leadsRent = rentReqs.length;
+    final leadsResale = resaleReqs.length;
+
     final wonCount = visibleReqs.where(EmployeeActivity.isWon).length;
-    final pendingFollowups =
-        visibleReqs.where(EmployeeActivity.isPendingFollowup).length;
-    final overdueFollowups =
-        visibleReqs.where(EmployeeActivity.isOverdueFollowup).length;
-    final siteVisits = visibleReqs.where(EmployeeActivity.hasSiteVisit).length;
-    final assignedCount = visibleReqs
-        .where((r) => EmployeeActivity.isAssignedTo(r, user))
-        .length;
-    final createdCount = visibleReqs
-        .where((r) => EmployeeActivity.isCreatedBy(r, user))
-        .length;
+    final rejectedCount = visibleReqs.where(EmployeeActivity.isRejected).length;
+    final assignedCount = assignedOf(visibleReqs);
+    final createdCount = createdOf(visibleReqs);
     final conversion =
         visibleReqs.isEmpty ? 0.0 : (wonCount / visibleReqs.length) * 100;
+
+    var pendingFollowupsRent = 0;
+    var pendingFollowupsResale = 0;
+    var totalFollowupsRent = 0;
+    var totalFollowupsResale = 0;
+    var overdueFollowupsRent = 0;
+    var overdueFollowupsResale = 0;
+    var totalOverdueFollowupsRent = 0;
+    var totalOverdueFollowupsResale = 0;
+    var siteVisitsRent = 0;
+    var siteVisitsResale = 0;
+    var totalSiteVisitsRent = 0;
+    var totalSiteVisitsResale = 0;
+
+    if (isSalesRole && _followupRows != null) {
+      final followupsCurrentRent = _salesFollowups(
+        user,
+        listingByReqId,
+        currentLeadsOnly: true,
+        listing: 'Rent',
+      );
+      final followupsCurrentResale = _salesFollowups(
+        user,
+        listingByReqId,
+        currentLeadsOnly: true,
+        listing: 'Re-Sale',
+      );
+      final followupsTakenRent = _salesFollowups(
+        user,
+        listingByReqId,
+        listing: 'Rent',
+      );
+      final followupsTakenResale = _salesFollowups(
+        user,
+        listingByReqId,
+        listing: 'Re-Sale',
+      );
+      pendingFollowupsRent = _pendingFollowupCount(followupsCurrentRent);
+      pendingFollowupsResale = _pendingFollowupCount(followupsCurrentResale);
+      totalFollowupsRent = followupsTakenRent.length;
+      totalFollowupsResale = followupsTakenResale.length;
+      overdueFollowupsRent = _currentOverdueCount(followupsCurrentRent);
+      overdueFollowupsResale = _currentOverdueCount(followupsCurrentResale);
+      totalOverdueFollowupsRent = _totalOverdueCount(followupsTakenRent);
+      totalOverdueFollowupsResale = _totalOverdueCount(followupsTakenResale);
+    } else {
+      pendingFollowupsRent =
+          rentReqs.where(EmployeeActivity.isPendingFollowup).length;
+      pendingFollowupsResale =
+          resaleReqs.where(EmployeeActivity.isPendingFollowup).length;
+      overdueFollowupsRent =
+          rentReqs.where(EmployeeActivity.isOverdueFollowup).length;
+      overdueFollowupsResale =
+          resaleReqs.where(EmployeeActivity.isOverdueFollowup).length;
+      totalFollowupsRent = pendingFollowupsRent;
+      totalFollowupsResale = pendingFollowupsResale;
+      totalOverdueFollowupsRent = overdueFollowupsRent;
+      totalOverdueFollowupsResale = overdueFollowupsResale;
+    }
+
+    if (isSalesRole && (_siteVisitRows != null || _followupRows != null)) {
+      final visitsCurrentRent = _salesSiteVisits(
+        user,
+        listingByReqId,
+        currentLeadsOnly: true,
+        listing: 'Rent',
+      );
+      final visitsCurrentResale = _salesSiteVisits(
+        user,
+        listingByReqId,
+        currentLeadsOnly: true,
+        listing: 'Re-Sale',
+      );
+      final visitsTakenRent = _salesSiteVisits(
+        user,
+        listingByReqId,
+        listing: 'Rent',
+      );
+      final visitsTakenResale = _salesSiteVisits(
+        user,
+        listingByReqId,
+        listing: 'Re-Sale',
+      );
+      siteVisitsRent = _openSiteVisitCount(visitsCurrentRent);
+      siteVisitsResale = _openSiteVisitCount(visitsCurrentResale);
+      totalSiteVisitsRent = visitsTakenRent.length;
+      totalSiteVisitsResale = visitsTakenResale.length;
+    } else {
+      siteVisitsRent = rentReqs.where(EmployeeActivity.hasSiteVisit).length;
+      siteVisitsResale = resaleReqs.where(EmployeeActivity.hasSiteVisit).length;
+      totalSiteVisitsRent = siteVisitsRent;
+      totalSiteVisitsResale = siteVisitsResale;
+    }
+
+    final pendingFollowups = _listingFilter == 'Rent'
+        ? pendingFollowupsRent
+        : _listingFilter == 'Re-Sale'
+            ? pendingFollowupsResale
+            : pendingFollowupsRent + pendingFollowupsResale;
+    final totalFollowups = _listingFilter == 'Rent'
+        ? totalFollowupsRent
+        : _listingFilter == 'Re-Sale'
+            ? totalFollowupsResale
+            : totalFollowupsRent + totalFollowupsResale;
+    final overdueFollowups = _listingFilter == 'Rent'
+        ? overdueFollowupsRent
+        : _listingFilter == 'Re-Sale'
+            ? overdueFollowupsResale
+            : overdueFollowupsRent + overdueFollowupsResale;
+    final totalOverdueFollowups = _listingFilter == 'Rent'
+        ? totalOverdueFollowupsRent
+        : _listingFilter == 'Re-Sale'
+            ? totalOverdueFollowupsResale
+            : totalOverdueFollowupsRent + totalOverdueFollowupsResale;
+    final siteVisits = _listingFilter == 'Rent'
+        ? siteVisitsRent
+        : _listingFilter == 'Re-Sale'
+            ? siteVisitsResale
+            : siteVisitsRent + siteVisitsResale;
+    final totalSiteVisits = _listingFilter == 'Rent'
+        ? totalSiteVisitsRent
+        : _listingFilter == 'Re-Sale'
+            ? totalSiteVisitsResale
+            : totalSiteVisitsRent + totalSiteVisitsResale;
 
     var team = const <UserModel>[];
     if (usersState is UsersLoaded) {
@@ -552,12 +995,18 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                           benefit: 'Tap to view inventory they added',
                           onTap: () => _scrollTo(_propertiesKey),
                         ),
-                        CRMKPICard(
+                        _salesKpiCard(
                           title: 'LEADS',
                           value: visibleReqs.length.toString(),
                           icon: Icons.assignment_outlined,
                           iconColor: CRMColors.info,
-                          benefit: 'Tap to view assigned & created leads',
+                          benefit: isSalesRole && _listingFilter == 'All'
+                              ? 'Assigned + created  •  Hover for Rent / Re-Sale'
+                              : 'Tap to view assigned & created leads',
+                          hoverValue: isSalesRole && _listingFilter == 'All'
+                              ? _rentResaleLabel(leadsRent, leadsResale)
+                              : null,
+                          hoverBenefit: 'Rent $leadsRent  •  Re-Sale $leadsResale',
                           onTap: () {
                             setState(() => _leadFocus = _LeadFocus.all);
                             _scrollTo(_leadsKey);
@@ -575,34 +1024,97 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                             _scrollTo(_leadsKey);
                           },
                         ),
-                        CRMKPICard(
+                        if (isSalesRole)
+                          CRMKPICard(
+                            title: 'REJECTED CLIENT',
+                            value: rejectedCount.toString(),
+                            icon: Icons.person_off_outlined,
+                            iconColor: CRMColors.danger,
+                            benefit: 'Leads they marked rejected  •  Tap to filter',
+                            onTap: () {
+                              setState(() => _leadFocus = _LeadFocus.rejected);
+                              _scrollTo(_leadsKey);
+                            },
+                          ),
+                        _salesKpiCard(
                           title: 'FOLLOW-UPS',
                           value: pendingFollowups.toString(),
                           icon: Icons.event_available_rounded,
                           iconColor: const Color(0xFFF59E0B),
-                          benefit: 'Upcoming  •  Tap to open',
+                          benefit: isSalesRole
+                              ? (_listingFilter == 'All'
+                                  ? 'Current follow-ups  •  Hover for Rent / Re-Sale'
+                                  : 'Current follow-ups  •  Hover for total')
+                              : 'Upcoming  •  Tap to open',
+                          hoverValue: !isSalesRole
+                              ? null
+                              : _listingFilter == 'All'
+                                  ? _rentResaleLabel(
+                                      pendingFollowupsRent,
+                                      pendingFollowupsResale,
+                                    )
+                                  : totalFollowups.toString(),
+                          hoverBenefit: !isSalesRole
+                              ? null
+                              : _listingFilter == 'All'
+                                  ? 'Rent $pendingFollowupsRent  •  Re-Sale $pendingFollowupsResale'
+                                  : 'Total follow-ups taken: $totalFollowups',
                           onTap: () {
                             setState(() => _leadFocus = _LeadFocus.followup);
                             _scrollTo(_leadsKey);
                           },
                         ),
-                        CRMKPICard(
+                        _salesKpiCard(
                           title: 'OVERDUE',
                           value: overdueFollowups.toString(),
                           icon: Icons.event_busy_rounded,
                           iconColor: CRMColors.danger,
-                          benefit: 'Missed follow-ups  •  Tap to open',
+                          benefit: isSalesRole
+                              ? (_listingFilter == 'All'
+                                  ? 'Current overdue  •  Hover for Rent / Re-Sale'
+                                  : 'Current overdue  •  Hover for total')
+                              : 'Missed follow-ups  •  Tap to open',
+                          hoverValue: !isSalesRole
+                              ? null
+                              : _listingFilter == 'All'
+                                  ? _rentResaleLabel(
+                                      overdueFollowupsRent,
+                                      overdueFollowupsResale,
+                                    )
+                                  : totalOverdueFollowups.toString(),
+                          hoverBenefit: !isSalesRole
+                              ? null
+                              : _listingFilter == 'All'
+                                  ? 'Rent $overdueFollowupsRent  •  Re-Sale $overdueFollowupsResale'
+                                  : 'Total overdue follow-ups: $totalOverdueFollowups',
                           onTap: () {
                             setState(() => _leadFocus = _LeadFocus.overdue);
                             _scrollTo(_leadsKey);
                           },
                         ),
-                        CRMKPICard(
+                        _salesKpiCard(
                           title: 'SITE VISITS',
                           value: siteVisits.toString(),
                           icon: Icons.location_on_outlined,
                           iconColor: const Color(0xFF8B5CF6),
-                          benefit: 'Leads with visits  •  Tap to open',
+                          benefit: isSalesRole
+                              ? (_listingFilter == 'All'
+                                  ? 'Current site visits  •  Hover for Rent / Re-Sale'
+                                  : 'Current site visits  •  Hover for total')
+                              : 'Leads with visits  •  Tap to open',
+                          hoverValue: !isSalesRole
+                              ? null
+                              : _listingFilter == 'All'
+                                  ? _rentResaleLabel(
+                                      siteVisitsRent,
+                                      siteVisitsResale,
+                                    )
+                                  : totalSiteVisits.toString(),
+                          hoverBenefit: !isSalesRole
+                              ? null
+                              : _listingFilter == 'All'
+                                  ? 'Rent $siteVisitsRent  •  Re-Sale $siteVisitsResale'
+                                  : 'Total site visits: $totalSiteVisits',
                           onTap: () {
                             setState(() => _leadFocus = _LeadFocus.visits);
                             _scrollTo(_leadsKey);
@@ -614,23 +1126,37 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                     CRMResponsiveKpiRow(
                       minCardWidth: 150,
                       children: [
-                        CRMKPICard(
+                        _salesKpiCard(
                           title: 'ASSIGNED LEADS',
                           value: assignedCount.toString(),
                           icon: Icons.person_pin_circle_outlined,
                           iconColor: CRMColors.info,
-                          benefit: 'Currently on their plate',
+                          benefit: isSalesRole && _listingFilter == 'All'
+                              ? 'Currently on their plate  •  Hover for Rent / Re-Sale'
+                              : 'Currently on their plate',
+                          hoverValue: isSalesRole && _listingFilter == 'All'
+                              ? _rentResaleLabel(assignedRent, assignedResale)
+                              : null,
+                          hoverBenefit:
+                              'Rent $assignedRent  •  Re-Sale $assignedResale',
                           onTap: () {
                             setState(() => _leadFocus = _LeadFocus.assigned);
                             _scrollTo(_leadsKey);
                           },
                         ),
-                        CRMKPICard(
+                        _salesKpiCard(
                           title: 'CREATED LEADS',
                           value: createdCount.toString(),
                           icon: Icons.post_add_rounded,
                           iconColor: CRMColors.primaryOf(context),
-                          benefit: 'Leads they originated',
+                          benefit: isSalesRole && _listingFilter == 'All'
+                              ? 'Leads they originated  •  Hover for Rent / Re-Sale'
+                              : 'Leads they originated',
+                          hoverValue: isSalesRole && _listingFilter == 'All'
+                              ? _rentResaleLabel(createdRent, createdResale)
+                              : null,
+                          hoverBenefit:
+                              'Rent $createdRent  •  Re-Sale $createdResale',
                           onTap: () {
                             setState(() => _leadFocus = _LeadFocus.created);
                             _scrollTo(_leadsKey);
@@ -737,6 +1263,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                         formatFollowup: _formatFollowup,
                         onChangeFocus: (focus) =>
                             setState(() => _leadFocus = focus),
+                        showRejected: isSalesRole,
                         onOpenAll: () => context.push(
                           '/requirements?search=${Uri.encodeComponent(user.fullName)}',
                         ),
@@ -756,6 +1283,41 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  String _rentResaleLabel(int rent, int resale) =>
+      'Rent $rent  •  Re-Sale $resale';
+
+  Widget _salesKpiCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color iconColor,
+    required String benefit,
+    VoidCallback? onTap,
+    String? hoverValue,
+    String? hoverBenefit,
+  }) {
+    final front = CRMKPICard(
+      title: title,
+      value: value,
+      icon: icon,
+      iconColor: iconColor,
+      benefit: benefit,
+      onTap: onTap,
+    );
+    if (hoverValue == null || hoverValue.isEmpty) return front;
+    return _HoverFlipKpi(
+      front: front,
+      back: CRMKPICard(
+        title: title,
+        value: hoverValue,
+        icon: icon,
+        iconColor: iconColor,
+        benefit: hoverBenefit ?? benefit,
+        onTap: onTap,
+      ),
     );
   }
 
@@ -781,6 +1343,65 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _HoverFlipKpi extends StatefulWidget {
+  final Widget front;
+  final Widget back;
+
+  const _HoverFlipKpi({
+    required this.front,
+    required this.back,
+  });
+
+  @override
+  State<_HoverFlipKpi> createState() => _HoverFlipKpiState();
+}
+
+class _HoverFlipKpiState extends State<_HoverFlipKpi> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 280),
+        switchInCurve: Curves.easeInOut,
+        switchOutCurve: Curves.easeInOut,
+        layoutBuilder: (currentChild, previousChildren) {
+          return Stack(
+            alignment: Alignment.topLeft,
+            children: [
+              ...previousChildren,
+              if (currentChild != null) currentChild,
+            ],
+          );
+        },
+        transitionBuilder: (child, animation) {
+          final rotate = Tween<double>(begin: math.pi / 2, end: 0).animate(animation);
+          return AnimatedBuilder(
+            animation: rotate,
+            child: child,
+            builder: (context, child) {
+              return Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.001)
+                  ..rotateY(rotate.value),
+                child: child,
+              );
+            },
+          );
+        },
+        child: KeyedSubtree(
+          key: ValueKey(_hovered),
+          child: _hovered ? widget.back : widget.front,
+        ),
       ),
     );
   }
@@ -1118,6 +1739,7 @@ class _LeadsSection extends StatelessWidget {
   final bool isMobile;
   final String Function(String?) formatFollowup;
   final ValueChanged<_LeadFocus> onChangeFocus;
+  final bool showRejected;
   final VoidCallback onOpenAll;
 
   const _LeadsSection({
@@ -1127,6 +1749,7 @@ class _LeadsSection extends StatelessWidget {
     required this.isMobile,
     required this.formatFollowup,
     required this.onChangeFocus,
+    this.showRejected = false,
     required this.onOpenAll,
   });
 
@@ -1149,6 +1772,7 @@ class _LeadsSection extends StatelessWidget {
             children: [
               _focusChip(context, 'All', _LeadFocus.all),
               _focusChip(context, 'Won', _LeadFocus.won),
+              if (showRejected) _focusChip(context, 'Rejected', _LeadFocus.rejected),
               _focusChip(context, 'Follow-up', _LeadFocus.followup),
               _focusChip(context, 'Overdue', _LeadFocus.overdue),
               _focusChip(context, 'Site visits', _LeadFocus.visits),

@@ -7,6 +7,7 @@ import '../../requirements/models/requirement_model.dart';
 import '../models/report_configuration.dart';
 import '../models/report_data.dart';
 import '../services/report_data_engine.dart';
+import '../utils/telecaller_report_navigation.dart';
 
 class UserPerformanceSummaryDialog extends StatelessWidget {
   final UserPerformanceSummary summary;
@@ -350,10 +351,15 @@ class UserPerformanceSummaryDialog extends StatelessWidget {
                   ElevatedButton.icon(
                     onPressed: () {
                       Navigator.of(context).pop();
-                      final targetRoute = isTelecaller
-                          ? '/reports/leads/telecaller'
-                          : '/reports/leads/sales';
-                      context.go(targetRoute);
+                      if (isTelecaller) {
+                        TelecallerReportNavigation.open(
+                          context,
+                          userId: summary.userId,
+                          userName: summary.userName,
+                        );
+                      } else {
+                        context.go('/reports/leads/sales');
+                      }
                     },
                     icon: const Icon(Icons.arrow_forward, size: 16),
                     label: Text(

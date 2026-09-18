@@ -5,10 +5,12 @@ import 'lead_drilldown_dialog.dart';
 
 class ConversionFunnelSection extends StatelessWidget {
   final List<FunnelStageData> stages;
+  final String title;
 
   const ConversionFunnelSection({
     super.key,
     required this.stages,
+    this.title = 'Conversion Funnel',
   });
 
   @override
@@ -36,14 +38,14 @@ class ConversionFunnelSection extends StatelessWidget {
             spacing: 8,
             runSpacing: 6,
             children: [
-              const Row(
+              Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.filter_alt_outlined, size: 18),
-                  SizedBox(width: 8),
+                  const Icon(Icons.filter_alt_outlined, size: 18),
+                  const SizedBox(width: 8),
                   Text(
-                    'Conversion Funnel',
-                    style: TextStyle(
+                    title,
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: -0.2,

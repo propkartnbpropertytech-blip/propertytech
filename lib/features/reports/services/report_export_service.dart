@@ -9,14 +9,21 @@ import '../models/report_configuration.dart';
 import '../models/report_data.dart';
 
 class ReportExportService {
+  static const String defaultReportTitle = 'PropKart CRM - Overall Business Insight';
+  static const String defaultCsvTitle = 'PropKart CRM - Overall Business Insight Report';
+  static const String defaultFilenamePrefix = 'PropKart_Overall_Business_Insight';
+
   /// Build PDF Document
   static pw.Document buildPdfDocument({
     required ReportOverallData reportData,
     required ReportConfiguration config,
+    String? reportTitle,
+    String? subjectLabel,
   }) {
     final pdf = pw.Document();
     final dateStr = config.dateRange.formattedRange.replaceAll('–', '-').replaceAll('—', '-');
     final generatedAt = DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
+    final title = reportTitle ?? defaultReportTitle;
 
     // 1. Gather enabled KPIs
     final enabledKpis = config.sortedEnabledKpis;
@@ -35,7 +42,7 @@ class ReportExportService {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      'PropKart CRM - Overall Business Insight',
+                      title,
                       style: pw.TextStyle(
                         fontSize: 18,
                         fontWeight: pw.FontWeight.bold,
@@ -47,6 +54,15 @@ class ReportExportService {
                       'Reporting Period: $dateStr',
                       style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
                     ),
+                    if (subjectLabel != null && subjectLabel.isNotEmpty)
+                      pw.Text(
+                        subjectLabel,
+                        style: pw.TextStyle(
+                          fontSize: 11,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('0284C7'),
+                        ),
+                      ),
                   ],
                 ),
                 pw.Column(
@@ -399,10 +415,19 @@ class ReportExportService {
   static Future<void> exportPdf({
     required ReportOverallData reportData,
     required ReportConfiguration config,
+    String? reportTitle,
+    String? subjectLabel,
+    String? filenamePrefix,
   }) async {
-    final pdf = buildPdfDocument(reportData: reportData, config: config);
+    final pdf = buildPdfDocument(
+      reportData: reportData,
+      config: config,
+      reportTitle: reportTitle,
+      subjectLabel: subjectLabel,
+    );
     final bytes = await pdf.save();
-    final filename = 'PropKart_Overall_Business_Insight_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
+    final prefix = filenamePrefix ?? defaultFilenamePrefix;
+    final filename = '${prefix}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
     await FileDownloader.download(bytes, filename);
   }
 
@@ -410,12 +435,17 @@ class ReportExportService {
   static String generateCsvContent({
     required ReportOverallData reportData,
     required ReportConfiguration config,
+    String? reportTitle,
+    String? subjectLabel,
   }) {
     final buffer = StringBuffer();
 
     // Title & Context
-    buffer.writeln('"PropKart CRM - Overall Business Insight Report"');
+    buffer.writeln('"${reportTitle ?? defaultCsvTitle}"');
     buffer.writeln('"Period","${config.dateRange.formattedRange}"');
+    if (subjectLabel != null && subjectLabel.isNotEmpty) {
+      buffer.writeln('"Subject","$subjectLabel"');
+    }
     buffer.writeln('"Generated At","${DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now())}"');
     buffer.writeln();
 
@@ -505,10 +535,19 @@ class ReportExportService {
   static Future<void> exportCsv({
     required ReportOverallData reportData,
     required ReportConfiguration config,
+    String? reportTitle,
+    String? subjectLabel,
+    String? filenamePrefix,
   }) async {
-    final content = generateCsvContent(reportData: reportData, config: config);
+    final content = generateCsvContent(
+      reportData: reportData,
+      config: config,
+      reportTitle: reportTitle,
+      subjectLabel: subjectLabel,
+    );
     final bytes = utf8.encode(content);
-    final filename = 'PropKart_Business_Insight_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv';
+    final prefix = filenamePrefix ?? 'PropKart_Business_Insight';
+    final filename = '${prefix}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv';
     await FileDownloader.download(bytes, filename);
   }
 
@@ -516,13 +555,18 @@ class ReportExportService {
   static Excel buildExcelDocument({
     required ReportOverallData reportData,
     required ReportConfiguration config,
+    String? reportTitle,
+    String? subjectLabel,
   }) {
     final excel = Excel.createExcel();
 
     // 1. Summary Sheet
     final summarySheet = excel['Summary'];
-    summarySheet.appendRow([TextCellValue('PropKart CRM - Overall Business Insight Report')]);
+    summarySheet.appendRow([TextCellValue(reportTitle ?? defaultCsvTitle)]);
     summarySheet.appendRow([TextCellValue('Reporting Period:'), TextCellValue(config.dateRange.formattedRange)]);
+    if (subjectLabel != null && subjectLabel.isNotEmpty) {
+      summarySheet.appendRow([TextCellValue('Subject:'), TextCellValue(subjectLabel)]);
+    }
     summarySheet.appendRow([TextCellValue('Export Generated:'), TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()))]);
     if (config.filters.hasActiveFilters) {
       summarySheet.appendRow([TextCellValue('Active Filters:'), TextCellValue('${config.filters.activeFiltersCount} filters applied')]);
@@ -763,11 +807,20 @@ class ReportExportService {
   static Future<void> exportExcel({
     required ReportOverallData reportData,
     required ReportConfiguration config,
+    String? reportTitle,
+    String? subjectLabel,
+    String? filenamePrefix,
   }) async {
-    final excel = buildExcelDocument(reportData: reportData, config: config);
+    final excel = buildExcelDocument(
+      reportData: reportData,
+      config: config,
+      reportTitle: reportTitle,
+      subjectLabel: subjectLabel,
+    );
     final bytes = excel.save();
     if (bytes != null) {
-      final filename = 'PropKart_Overall_Business_Insight_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
+      final prefix = filenamePrefix ?? defaultFilenamePrefix;
+      final filename = '${prefix}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
       await FileDownloader.download(bytes, filename);
     }
   }
@@ -776,8 +829,16 @@ class ReportExportService {
   static Future<void> printReport({
     required ReportOverallData reportData,
     required ReportConfiguration config,
+    String? reportTitle,
+    String? subjectLabel,
+    String? filenamePrefix,
   }) async {
-    // Generate high-resolution PDF document and invoke browser or platform printing
-    await exportPdf(reportData: reportData, config: config);
+    await exportPdf(
+      reportData: reportData,
+      config: config,
+      reportTitle: reportTitle,
+      subjectLabel: subjectLabel,
+      filenamePrefix: filenamePrefix,
+    );
   }
 }

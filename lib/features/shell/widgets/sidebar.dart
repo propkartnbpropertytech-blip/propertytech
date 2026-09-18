@@ -499,10 +499,6 @@ class _ModernSidebarState extends State<ModernSidebar> {
                 setState(() {
                   _isCampaignExpanded = !_isCampaignExpanded;
                 });
-                if (_isCampaignExpanded && !isChildActive) {
-                  widget.onItemTapped?.call();
-                  context.go('/campaign/connections');
-                }
               },
               borderRadius: BorderRadius.circular(10),
               hoverColor:

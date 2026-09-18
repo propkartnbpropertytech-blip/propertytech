@@ -35,6 +35,11 @@ class UpdateRequirementEvent extends RequirementsEvent {
   UpdateRequirementEvent(this.requirement);
 }
 
+class PatchRequirementStatusEvent extends RequirementsEvent {
+  final RequirementModel requirement;
+  PatchRequirementStatusEvent(this.requirement);
+}
+
 class DeleteRequirementEvent extends RequirementsEvent {
   final String id;
   DeleteRequirementEvent(this.id);
@@ -102,6 +107,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     on<FetchRequirementsEvent>(_onFetchRequirements);
     on<CreateRequirementEvent>(_onCreateRequirement);
     on<UpdateRequirementEvent>(_onUpdateRequirement);
+    on<PatchRequirementStatusEvent>(_onPatchRequirementStatus);
     on<DeleteRequirementEvent>(_onDeleteRequirement);
 
     _requirementsSubscription = RepositoryCoordinator().requirementsStream.listen((_) {
@@ -204,6 +210,34 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
 
       emit(RequirementsSuccess(
         "Requirement updated successfully.",
+        requirement: updated,
+        requirements: next,
+      ));
+    } catch (e) {
+      emit(RequirementsError(e.toString()));
+    }
+  }
+
+  Future<void> _onPatchRequirementStatus(
+    PatchRequirementStatusEvent event,
+    Emitter<RequirementsState> emit,
+  ) async {
+    try {
+      final updated = await requirementsRepository.updateLeadStatus(event.requirement);
+
+      List<RequirementModel> next = [updated];
+      if (state is RequirementsLoaded) {
+        final current = state as RequirementsLoaded;
+        final patched = current.requirements.map((r) {
+          return r.id == updated.id ? updated : r;
+        }).toList();
+        final exists = current.requirements.any((r) => r.id == updated.id);
+        next = exists ? patched : [...current.requirements, updated];
+        emit(RequirementsLoaded(requirements: next));
+      }
+
+      emit(RequirementsSuccess(
+        "Status updated successfully.",
         requirement: updated,
         requirements: next,
       ));

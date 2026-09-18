@@ -27,6 +27,7 @@ import 'package:propkart/features/dashboard/services/dashboard_service.dart';
 import 'package:propkart/features/properties/repository/properties_repository.dart';
 import 'package:propkart/features/integration/services/integration_service.dart';
 import 'package:propkart/features/requirements/services/match_criteria_manager.dart';
+import 'package:propkart/features/settings/services/upload_limits_manager.dart';
 import '../utils/app_logger.dart';
 
 enum SyncState {
@@ -101,6 +102,7 @@ class SyncManager {
 
       // Ensure authoritative match criteria is loaded from backend DB for the team
       unawaited(MatchCriteriaManager().fetchFromBackend(silent: true));
+      unawaited(UploadLimitsManager().fetchFromBackend(silent: true));
 
       // Prewarm campaign leads so they are ready before navigating to Campaign tab
       try {

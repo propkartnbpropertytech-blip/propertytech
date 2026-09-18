@@ -15,6 +15,7 @@ import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/design_system/widgets/form/crm_video_picker.dart';
 import 'package:dio/dio.dart';
 import '../../settings/screens/location_config_screen.dart';
+import '../../settings/services/upload_limits_manager.dart';
 
 class AddEditPropertyScreen extends StatefulWidget {
   final PropertyMetadataModel metadata;
@@ -109,16 +110,23 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     _initializeForm();
     _priceController.addListener(_onPriceChanged);
     _remarksController.addListener(() => setState(() {}));
+    UploadLimitsManager().addListener(_onUploadLimitsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadPropertyNameSuggestions();
+      UploadLimitsManager().fetchFromBackend(silent: true);
       if (widget.property == null && CRMDraftRepository().hasDraft('property')) {
         _showRestoreDraftDialog();
       }
     });
   }
 
+  void _onUploadLimitsChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    UploadLimitsManager().removeListener(_onUploadLimitsChanged);
     _priceController.removeListener(_onPriceChanged);
     _titleFocusNode.dispose();
     _titleController.dispose();
@@ -1997,7 +2005,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 _propertyImages.addAll(newUrls);
               });
             },
-            maxImages: 10,
+            maxImages: UploadLimitsManager().maxImages,
             uploadEndpoint: '/properties/upload-media',
           ),
           const SizedBox(height: CRMSpacing.m),
@@ -2013,7 +2021,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 _propertyVideos.removeAt(index);
               });
             },
-            maxVideos: 2,
+            maxVideos: UploadLimitsManager().maxVideos,
             uploadEndpoint: '/properties/upload-media',
           ),
         ],

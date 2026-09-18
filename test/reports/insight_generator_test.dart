@@ -98,5 +98,42 @@ void main() {
       expect(topSales.title, 'Top Sales Closer: Bob Champion');
       expect(topSales.severity, InsightSeverity.success);
     });
+    test('Telecaller insights omit team rankings and skip empty datasets', () {
+      final empty = InsightGenerator.generateTelecallerInsights(
+        telecallerName: 'Rahul Sharma',
+        assignedCount: 0,
+        contactedCount: 0,
+        qualifiedCount: 0,
+        visitsScheduledCount: 0,
+        visitsDoneCount: 0,
+        wonCount: 0,
+        lostCount: 0,
+        callAttemptedCount: 0,
+        callPickedUpCount: 0,
+        callOpenCount: 0,
+        overdueFollowupsCount: 0,
+        growthItems: const [],
+      );
+      expect(empty, isEmpty);
+
+      final overdue = InsightGenerator.generateTelecallerInsights(
+        telecallerName: 'Rahul Sharma',
+        assignedCount: 10,
+        contactedCount: 8,
+        qualifiedCount: 4,
+        visitsScheduledCount: 3,
+        visitsDoneCount: 2,
+        wonCount: 1,
+        lostCount: 1,
+        callAttemptedCount: 10,
+        callPickedUpCount: 3,
+        callOpenCount: 7,
+        overdueFollowupsCount: 6,
+        growthItems: const [],
+      );
+      expect(overdue.any((i) => i.id == 'tele_insight_overdue_followups'), isTrue);
+      expect(overdue.any((i) => i.id == 'insight_top_sales'), isFalse);
+      expect(overdue.any((i) => i.id == 'insight_top_telecaller'), isFalse);
+    });
   });
 }

@@ -105,8 +105,7 @@ class ReportsSubshellNav extends StatelessWidget {
                     icon: Icons.headset_mic_outlined,
                     route: '/reports/leads/telecaller',
                     isActive: currentPath.contains('/telecaller'),
-                    isFunctional: false,
-                    badgeText: 'Stage 2',
+                    isFunctional: true,
                   ),
                   _buildSubTab(
                     context,

@@ -23,6 +23,7 @@ import '../../widgets/lead_source_analysis_section.dart';
 import '../../widgets/trend_analysis_section.dart';
 import '../../widgets/report_export_menu.dart';
 import '../../widgets/user_performance_summary_dialog.dart';
+import '../../utils/telecaller_report_navigation.dart';
 
 class OverallBusinessInsightScreen extends StatelessWidget {
   const OverallBusinessInsightScreen({super.key});
@@ -648,15 +649,23 @@ class _OverallBusinessInsightContent extends StatelessWidget {
                           telecallerRankings: reportData.telecallerRankings,
                           salesRankings: reportData.salesRankings,
                           onUserSelected: (member) {
-                            UserPerformanceSummaryDialog.show(
-                              context,
-                              userId: member.userId,
-                              userName: member.userName,
-                              role: member.role,
-                              config: config,
-                              allLeads: reportData.allLeads,
-                              allFollowups: reportData.allFollowups,
-                            );
+                            if (member.role.toLowerCase().contains('telecaller')) {
+                              TelecallerReportNavigation.open(
+                                context,
+                                userId: member.userId,
+                                userName: member.userName,
+                              );
+                            } else {
+                              UserPerformanceSummaryDialog.show(
+                                context,
+                                userId: member.userId,
+                                userName: member.userName,
+                                role: member.role,
+                                config: config,
+                                allLeads: reportData.allLeads,
+                                allFollowups: reportData.allFollowups,
+                              );
+                            }
                           },
                         ),
                         const SizedBox(height: CRMSpacing.l),

@@ -70,6 +70,24 @@ class FunnelStageData {
     required this.color,
     required this.leads,
   });
+
+  FunnelStageData copyWith({
+    String? stageName,
+    int? count,
+    double? stageConversionRate,
+    double? totalConversionRate,
+    Color? color,
+    List<RequirementModel>? leads,
+  }) {
+    return FunnelStageData(
+      stageName: stageName ?? this.stageName,
+      count: count ?? this.count,
+      stageConversionRate: stageConversionRate ?? this.stageConversionRate,
+      totalConversionRate: totalConversionRate ?? this.totalConversionRate,
+      color: color ?? this.color,
+      leads: leads ?? this.leads,
+    );
+  }
 }
 
 class FollowupItemData {
@@ -177,6 +195,9 @@ class LeadSourceData {
   final double percentage;
   final Color color;
   final List<RequirementModel> leads;
+  final int qualifiedCount;
+  final int siteVisitsCount;
+  final int wonCount;
 
   const LeadSourceData({
     required this.source,
@@ -184,6 +205,9 @@ class LeadSourceData {
     required this.percentage,
     required this.color,
     required this.leads,
+    this.qualifiedCount = 0,
+    this.siteVisitsCount = 0,
+    this.wonCount = 0,
   });
 }
 

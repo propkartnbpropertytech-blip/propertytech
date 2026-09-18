@@ -733,6 +733,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   final ScrollController _scrollController = ScrollController();
   String? _highlightedRequirementId;
   List<RequirementModel> _cachedRequirements = [];
+  final Map<String, RequirementModel> _localRequirementOverrides = {};
   String _salesLeadGroupFilter = 'assigned'; // 'assigned', 'added', 'all'
   final UsersRepository _usersRepository = UsersRepository();
   List<users_model.UserModel> _assignUsers = [];
@@ -1246,10 +1247,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (!isUnhandledAssigned && newStatus == req.status && newStatus != 'Re-Followup') return;
 
     final Map<String, dynamic> nextCustomFields = Map<String, dynamic>.from(req.metaCustomFields ?? {});
-    if (isUnhandledAssigned) {
+    if (currentUser?.role == 'Sales') {
       nextCustomFields['handled_by_sales'] = true;
-      nextCustomFields['telecaller_status'] = _getTelecallerStatusLabel(req);
-      nextCustomFields['sales_handled_at'] = DateTime.now().toIso8601String();
+      nextCustomFields['telecaller_status'] ??= _getTelecallerStatusLabel(req);
+      nextCustomFields['sales_handled_at'] ??= DateTime.now().toIso8601String();
     }
     if (newStatus.toLowerCase().startsWith('rejected')) {
       nextCustomFields['rejected_at'] = DateTime.now().toIso8601String();
@@ -1347,7 +1348,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           requirement: baseReq,
           onConfirmed: (List<PropertyModel> selectedProperties) async {
             context.read<RequirementsBloc>().add(
-              UpdateRequirementEvent(baseReq.copyWith(status: 'Won')),
+              PatchRequirementStatusEvent(baseReq.copyWith(status: 'Won')),
             );
 
             final selectedIds = selectedProperties.map((p) => p.id).toList();
@@ -1403,10 +1404,45 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       );
     } else {
       NotificationCenter.removeNotificationsForClient(req.clientName);
+      final updatedReq = baseReq.copyWith(status: newStatus);
+      _patchCachedRequirement(updatedReq);
       context.read<RequirementsBloc>().add(
-        UpdateRequirementEvent(baseReq.copyWith(status: newStatus)),
+        PatchRequirementStatusEvent(updatedReq),
       );
     }
+  }
+
+  void _patchCachedRequirement(RequirementModel updated) {
+    RequirementLocalRepository.rememberMetaCustomFields(updated.id, updated.metaCustomFields);
+    _localRequirementOverrides[updated.id] = updated;
+    _cachedRequirements = _withLocalRequirementOverrides(
+      _cachedRequirements.map((r) => r.id == updated.id ? updated : r).toList(),
+    );
+    if (mounted) {
+      setState(() {
+        _refreshFollowupsFuture();
+      });
+    }
+  }
+
+  List<RequirementModel> _withLocalRequirementOverrides(List<RequirementModel> source) {
+    if (_localRequirementOverrides.isEmpty) return source;
+    return source.map((r) {
+      final local = _localRequirementOverrides[r.id];
+      if (local == null) return r;
+      final localHandled = local.metaCustomFields?['handled_by_sales'];
+      final remoteHandled = r.metaCustomFields?['handled_by_sales'];
+      final localReassign = local.metaCustomFields?['reassigned_by'];
+      final remoteReassign = r.metaCustomFields?['reassigned_by'];
+      if (local.status == r.status &&
+          local.assignedTo == r.assignedTo &&
+          localHandled == remoteHandled &&
+          localReassign == remoteReassign) {
+        _localRequirementOverrides.remove(r.id);
+        return r;
+      }
+      return local;
+    }).toList();
   }
 
   void _showAddAnotherRequirementDialog(RequirementModel existing) {
@@ -1453,12 +1489,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  void _onRequirementEntered(RequirementModel req) {
+  void _onRequirementEntered(RequirementModel req, {bool scrollToTop = true}) {
     if (!mounted) return;
     setState(() {
       _highlightedRequirementId = req.id;
     });
-    if (_scrollController.hasClients) {
+    if (scrollToTop && _scrollController.hasClients) {
       _scrollController.animateTo(
         0,
         duration: const Duration(milliseconds: 400),
@@ -1482,7 +1518,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final currentUser = authState is Authenticated ? authState.user : null;
     final reqBlocState = context.watch<RequirementsBloc>().state;
     if (reqBlocState is RequirementsLoaded) {
-      _cachedRequirements = reqBlocState.requirements;
+      _cachedRequirements = _withLocalRequirementOverrides(reqBlocState.requirements);
     }
 
     return Scaffold(
@@ -1490,7 +1526,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       body: BlocListener<RequirementsBloc, RequirementsState>(
         listener: (context, state) {
           if (state is RequirementsLoaded) {
-            _cachedRequirements = state.requirements;
+            _cachedRequirements = _withLocalRequirementOverrides(state.requirements);
           }
           if (state is RequirementsSuccess) {
             final msg = _activeMainTab == 'My Won'
@@ -1503,13 +1539,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 behavior: SnackBarBehavior.floating,
               ),
             );
-            if (state.requirement != null) {
-              _onRequirementEntered(state.requirement!);
+            if (state.newlyAdded != null) {
+              _onRequirementEntered(state.newlyAdded!, scrollToTop: true);
+            } else if (state.requirement != null) {
+              _onRequirementEntered(state.requirement!, scrollToTop: false);
             } else {
               _triggerFetch();
             }
           } else if (state is RequirementsLoaded && state.newlyAdded != null) {
-            _onRequirementEntered(state.newlyAdded!);
+            _onRequirementEntered(state.newlyAdded!, scrollToTop: true);
           } else if (state is RequirementsError) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -2426,6 +2464,51 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return 'Propkart Admin';
   }
 
+  String? _getReassignedByName(RequirementModel req) {
+    final name = req.metaCustomFields?['reassigned_by_name']?.toString().trim();
+    if (name != null && name.isNotEmpty) return name;
+    return null;
+  }
+
+  String _getAddedByColumnName(RequirementModel req) {
+    return _getReassignedByName(req) ?? _getAddedByName(req);
+  }
+
+  String _getAddedByDisplayLine(RequirementModel req) {
+    final reassigned = _getReassignedByName(req);
+    if (reassigned != null) return 'Re-Assigned By: $reassigned';
+    return 'Added by: ${_getAddedByName(req)}';
+  }
+
+  bool _canInitiallyAssignLead(UserModel? user) {
+    return user != null &&
+        (user.role == 'Super Admin' || user.role == 'Admin' || user.role == 'Telecaller');
+  }
+
+  bool _canSalesReassignLead(UserModel? user) {
+    return user != null && user.role == 'Sales';
+  }
+
+  void _submitLeadAssignment(RequirementModel req, String? newSalesmanId, String? newSalesmanName) {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final Map<String, dynamic> nextCustomFields = Map<String, dynamic>.from(req.metaCustomFields ?? {});
+    if (currentUser?.role == 'Sales') {
+      nextCustomFields['original_added_by_name'] ??= _getAddedByName(req);
+      nextCustomFields['original_added_by'] ??= req.createdBy;
+      nextCustomFields['reassigned_by'] = currentUser!.id;
+      nextCustomFields['reassigned_by_name'] = currentUser.fullName;
+      nextCustomFields['reassigned_at'] = DateTime.now().toIso8601String();
+    }
+    final updated = req.copyWith(
+      assignedTo: newSalesmanId ?? '',
+      assigneeName: newSalesmanName ?? '',
+      metaCustomFields: nextCustomFields,
+    );
+    _patchCachedRequirement(updated);
+    context.read<RequirementsBloc>().add(UpdateRequirementEvent(updated));
+  }
+
   String _getSalesmanName(RequirementModel req, UserModel? currentUser) {
     if (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty) {
       return req.assigneeName!.trim();
@@ -2708,10 +2791,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         return u.adminId == currentUser.id || u.id == currentUser.id;
       }
       if (curRole.contains('sales')) {
-        final teamAdminId = currentUser.adminId;
-        if (teamAdminId != null && teamAdminId.isNotEmpty) {
-          return u.adminId == teamAdminId || u.id == teamAdminId;
-        }
+        return _isSalesPersonRole(u.roleName);
       }
       return true;
     }).toList();
@@ -2741,7 +2821,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return salesmen;
   }
 
-  Widget _buildAssignToDropdown(RequirementModel req) {
+  Widget _buildAssignToDropdown(RequirementModel req, {bool isReassign = false}) {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
         final authState = context.read<AuthBloc>().state;
@@ -2749,12 +2829,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         final blocUsers = state is UsersLoaded ? state.users : <users_model.UserModel>[];
         final users = _mergedAssignUsers(blocUsers);
         final currentAssignedTo = _currentAssignedUserId(req, users);
-        final salesmen = _salesmenForLeadAssign(
+        var salesmen = _salesmenForLeadAssign(
           req: req,
           currentUser: currentUser,
           users: users,
           currentAssignedTo: currentAssignedTo,
         );
+        if (isReassign) {
+          salesmen = salesmen
+              .where((u) => _isSalesPersonRole(u.roleName) || u.id == currentAssignedTo)
+              .toList();
+        }
 
         if (state is UsersLoading && users.isEmpty && currentAssignedTo == null) {
           return const SizedBox(
@@ -2791,7 +2876,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 isDense: true,
                 isExpanded: true,
                 hint: Text(
-                  'Assign to',
+                  isReassign ? 'Re-Assign' : 'Assign to',
                   style: CRMTypography.caption.copyWith(
                     color: CRMColors.textSecondaryOf(context),
                     fontWeight: FontWeight.w500,
@@ -2799,16 +2884,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 items: [
-                  DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text(
-                      'Unassigned',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.textSecondaryOf(context),
-                        fontStyle: FontStyle.italic,
+                  if (!isReassign || dropdownValue == null)
+                    DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(
+                        'Unassigned',
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                          fontStyle: FontStyle.italic,
+                        ),
                       ),
                     ),
-                  ),
                   ...salesmen.map((u) {
                     final isSelected = u.id == currentAssignedTo;
                     return DropdownMenuItem<String?>(
@@ -2830,15 +2916,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     final u = salesmen.where((s) => s.id == newSalesmanId).firstOrNull;
                     newSalesmanName = u?.fullName;
                   }
-                  
-                  context.read<RequirementsBloc>().add(
-                    UpdateRequirementEvent(
-                      req.copyWith(
-                        assignedTo: newSalesmanId ?? '',
-                        assigneeName: newSalesmanName ?? '',
-                      ),
-                    ),
-                  );
+                  _submitLeadAssignment(req, newSalesmanId, newSalesmanName);
                 },
                 icon: Container(
                   margin: const EdgeInsets.only(left: 4),
@@ -2861,7 +2939,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  Widget _buildMobileAssignToDropdown(RequirementModel req) {
+  Widget _buildMobileAssignToDropdown(RequirementModel req, {bool isReassign = false}) {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
         final authState = context.read<AuthBloc>().state;
@@ -2869,12 +2947,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         final blocUsers = state is UsersLoaded ? state.users : <users_model.UserModel>[];
         final users = _mergedAssignUsers(blocUsers);
         final currentAssignedTo = _currentAssignedUserId(req, users);
-        final salesmen = _salesmenForLeadAssign(
+        var salesmen = _salesmenForLeadAssign(
           req: req,
           currentUser: currentUser,
           users: users,
           currentAssignedTo: currentAssignedTo,
         );
+        if (isReassign) {
+          salesmen = salesmen
+              .where((u) => _isSalesPersonRole(u.roleName) || u.id == currentAssignedTo)
+              .toList();
+        }
 
         if (state is UsersLoading && users.isEmpty && currentAssignedTo == null) {
           return const SizedBox(
@@ -2903,18 +2986,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 isDense: true,
                 isExpanded: true,
                 hint: Text(
-                  'Assign to',
+                  isReassign ? 'Re-Assign' : 'Assign to',
                   style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
                   overflow: TextOverflow.ellipsis,
                 ),
                 items: [
-                  DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text(
-                      'Unassigned',
-                      style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                  if (!isReassign || dropdownValue == null)
+                    DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(
+                        'Unassigned',
+                        style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                      ),
                     ),
-                  ),
                   ...salesmen.map((u) {
                     final isSelected = u.id == currentAssignedTo;
                     return DropdownMenuItem<String?>(
@@ -2937,15 +3021,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
                     newSalesmanName = u.fullName;
                   }
-                  
-                  context.read<RequirementsBloc>().add(
-                    UpdateRequirementEvent(
-                      req.copyWith(
-                        assignedTo: newSalesmanId ?? '',
-                        assigneeName: newSalesmanName ?? '',
-                      ),
-                    ),
-                  );
+                  _submitLeadAssignment(req, newSalesmanId, newSalesmanName);
                 },
                 icon: Container(
                   margin: const EdgeInsets.only(left: 2),
@@ -3015,6 +3091,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   bool _salesCanViewRequirement(RequirementModel r, UserModel currentUser) {
+    if (_isLeadTransferredAway(r, currentUser)) return false;
     return _isUserCreator(r, currentUser) || _isUserAssignee(r, currentUser);
   }
 
@@ -3027,22 +3104,71 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final isCreator = _isUserCreator(req, currentUser);
     if (!isAssigned || isCreator) return false;
 
-    // Check if sales user has already handled the lead
+    // If the lead was re-assigned from another salesperson or staff, preserve status & follow-up
     final meta = req.metaCustomFields;
-    if (meta != null) {
-      if (meta['handled_by_sales'] == true || meta['handled_by_sales'] == 'true') {
-        return false;
-      }
-      if (meta['sales_handled_at'] != null) {
-        return false;
-      }
+    if (meta != null && (meta['reassigned_by'] != null || meta['reassigned_by_name'] != null)) {
+      return false;
     }
+
+    // If the lead already has a next follow-up date, preserve follow-up status & history
+    if (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty) {
+      return false;
+    }
+
+    // Check if sales user has already handled the lead
+    if (_salesHasHandledLead(req)) return false;
 
     // If terminal or closed state, it is not unhandled
     if (req.status == 'Won' || req.status == 'Closed') return false;
     if (_isLeadRejected(req)) return false;
 
+    // Once sales stores a pipeline status, show that status instead of
+    // forcing Not Started. Only mask typical telecaller leftover statuses.
+    final status = req.status.trim();
+    if (status == 'Not Started' ||
+        status == 'Follow-up' ||
+        status == 'Re-Followup' ||
+        status == 'Interested' ||
+        status == 'Active' ||
+        status == 'Live' ||
+        status == 'Site Visit' ||
+        status == 'Site Visit Done' ||
+        status == 'Site Visit Scheduled' ||
+        status == 'Negotiation') {
+      return false;
+    }
+    if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) {
+      return false;
+    }
+
     return true;
+  }
+
+  bool _salesHasHandledLead(RequirementModel req) {
+    final meta = {
+      ...?RequirementLocalRepository.metaCustomFieldsById[req.id],
+      ...?req.metaCustomFields,
+    };
+    if (meta.isEmpty) return false;
+    final handled = meta['handled_by_sales'];
+    if (handled == true ||
+        handled == 'true' ||
+        handled == 1 ||
+        handled == '1') {
+      return true;
+    }
+    if (meta['sales_handled_at'] != null &&
+        meta['sales_handled_at'].toString().trim().isNotEmpty) {
+      return true;
+    }
+    final telecallerStatus = meta['telecaller_status']?.toString().trim() ?? '';
+    if (telecallerStatus.isNotEmpty &&
+        req.status.trim() != telecallerStatus &&
+        req.status != 'Assigned' &&
+        req.status != 'New') {
+      return true;
+    }
+    return false;
   }
 
   bool _isLeadClosedOrTerminal(RequirementModel req) {
@@ -4149,15 +4275,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final bool isClosed = _isLeadClosedOrTerminal(req);
     final String? userNote = _getCleanNote(req);
     final bool hasNotes = userNote != null && userNote.isNotEmpty;
-    final bool showTelecallerBadge = _shouldShowTelecallerStatusBadge(req, currentUser);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _buildStatusControl(req, currentUser, compact: compact),
-        if (showTelecallerBadge)
-          _buildTelecallerStatusBadge(req, compact: compact),
         if (!isClosed) ...[
           const SizedBox(height: 4),
           Builder(
@@ -4199,9 +4322,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           current is RequirementsError,
       builder: (context, state) {
         if (state is RequirementsLoaded) {
-          _cachedRequirements = state.requirements;
+          _cachedRequirements = _withLocalRequirementOverrides(state.requirements);
         }
-        final rawLoadedList = state is RequirementsLoaded ? state.requirements : _cachedRequirements;
+        final rawLoadedList = _withLocalRequirementOverrides(
+          state is RequirementsLoaded ? state.requirements : _cachedRequirements,
+        );
         final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
         List<RequirementModel> requirements = [];
 
@@ -4306,7 +4431,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
               final remarks = (r.remarks ?? '').toLowerCase();
               final areas = r.areaNames.join(' ').toLowerCase();
-              
+
               bool matchesSalesman = false;
               if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
                 final creator = (r.creatorName ?? '').toLowerCase();
@@ -4327,8 +4452,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
             return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch && matchesDate && matchesReadiness && matchesUser;
           }).toList();
-          
-          // Sort by recently rejected first on Rejected tab; otherwise by created date.
+
           if (_activeMainTab == 'Rejected') {
             requirements.sort((a, b) {
               final da = _rejectedAt(a) ?? a.createdAt;
@@ -4340,41 +4464,624 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           }
         }
 
-        final totalCount = requirements.length;
-        final totalPages = (totalCount / _requirementsPerPage).ceil();
-        final currentPage = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);
+    final totalCount = requirements.length;
+    final totalPages = (totalCount / _requirementsPerPage).ceil();
+    final currentPage = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);
 
-        final startIndex = (currentPage - 1) * _requirementsPerPage;
-        final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalCount);
+    final startIndex = (currentPage - 1) * _requirementsPerPage;
+    final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalCount);
 
-        final pageItems = (startIndex < totalCount)
-            ? requirements.sublist(startIndex, endIndex)
-            : <RequirementModel>[];
+    final pageItems = (startIndex < totalCount)
+        ? requirements.sublist(startIndex, endIndex)
+        : <RequirementModel>[];
 
-        return LayoutBuilder(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 700;
+
+        if (isMobile || !_isTableView) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildActionBar(requirements, currentUser),
+              _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount),
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildActionBar(requirements, currentUser),
+            CRMDataTable(
+              isLoading: isLoading,
+              emptyTitle: _activeMainTab == 'Rejected' ? 'No Rejected Leads' : 'No Requirements Found',
+              emptyDescription: _activeMainTab == 'Rejected'
+                  ? 'Leads marked as Rejected will appear here.'
+                  : 'Try adjusting filters or create a new requirement pipeline.',
+              dataRowMinHeight: 88.0,
+              dataRowMaxHeight: 160.0,
+              columnSpacing: 10.0,
+              horizontalMargin: 12.0,
+              columns: [
+                const DataColumn(label: Text('Client')),
+                if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
+                  const DataColumn(label: Text('Added By')),
+                const DataColumn(label: Text('Assign to')),
+                const DataColumn(label: Text('Specs / Config')),
+                const DataColumn(label: Text('Budget Range')),
+                const DataColumn(label: Text('Target Area(s)')),
+                const DataColumn(label: Text('Status')),
+                const DataColumn(label: Text('Matches')),
+                const DataColumn(label: Text('Actions')),
+              ],
+              rows: pageItems.map((req) {
+                final qualityColor = req.requirementQuality == 'High'
+                    ? CRMColors.success
+                    : req.requirementQuality == 'Medium'
+                        ? CRMColors.warning
+                        : CRMColors.danger;
+
+                final isHighlighted = req.id == _highlightedRequirementId;
+                final bool isClosed = _isLeadClosedOrTerminal(req);
+                final bool isWon = _isLeadWon(req);
+
+                return DataRow(
+                  color: isHighlighted
+                      ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
+                      : (isClosed ? WidgetStateProperty.all(CRMColors.sidebarBgOf(context).withValues(alpha: 0.6)) : null),
+                  cells: [
+                    DataCell(
+                      SizedBox(
+                        width: 135,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            GestureDetector(
+                              onTap: () => _showRequirementDetailDrawer(req),
+                              child: Text(
+                                req.clientName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: CRMTypography.bodyMedium.copyWith(
+                                  color: CRMColors.primary,
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              req.clientMobile,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Added: ${DateFormat('dd/MM/yyyy').format(req.createdAt)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
+                            ),
+                            if (req.isMetaLead) ...[
+                              const SizedBox(height: 3),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1877F2).withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFF1877F2).withOpacity(0.35)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.campaign_rounded, size: 10, color: Color(0xFF1877F2)),
+                                    const SizedBox(width: 3),
+                                    Flexible(
+                                      child: Text(
+                                        req.metaCampaignDisplayName != null ? 'Meta: ${req.metaCampaignDisplayName}' : 'Meta Ads',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Color(0xFF1877F2),
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            if (req.matchingReadiness != 'Ready') ...[
+                              const SizedBox(height: 3),
+                              _buildNeedsMoreDetailsBadge(req, compact: true),
+                            ],
+                            Builder(
+                              builder: (context) {
+                                final telecallerKeyPoints = getTelecallerRemarks(req);
+                                if (telecallerKeyPoints == null || telecallerKeyPoints.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Tooltip(
+                                    message: 'Telecaller Key Points:\n$telecallerKeyPoints',
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0F766E).withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.35)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.speaker_notes_rounded, size: 10, color: Color(0xFF0F766E)),
+                                          const SizedBox(width: 3),
+                                          Flexible(
+                                            child: Text(
+                                              'Key Points: $telecallerKeyPoints',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Color(0xFF0F766E),
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            if (req.nextFollowupDate != null) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.alarm_rounded, size: 12, color: CRMColors.warning),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal()),
+                                    style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
+                      DataCell(
+                        Text(
+                          _getAddedByColumnName(req),
+                          style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    DataCell(
+                      isClosed
+                          ? Text(
+                              _getSalesmanName(req, currentUser),
+                              style: CRMTypography.caption.copyWith(
+                                color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            )
+                          : ((_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser))
+                              ? _buildAssignToDropdown(
+                                  req,
+                                  isReassign: _canSalesReassignLead(currentUser),
+                                )
+                              : _buildSalesAssignToLabel(req, currentUser)),
+                    ),
+                    DataCell(_buildSpecsConfigCell(req)),
+                    DataCell(
+                      Text(
+                        '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}',
+                        style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primaryOf(context)),
+                      ),
+                    ),
+                    DataCell(_buildTargetAreasCell(req)),
+                    DataCell(
+                      _buildStatusControlWithNotes(req, currentUser),
+                    ),
+
+                    DataCell(
+                      isClosed
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isWon
+                                    ? CRMColors.success.withValues(alpha: 0.12)
+                                    : CRMColors.danger.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: isWon
+                                      ? CRMColors.success.withValues(alpha: 0.3)
+                                      : CRMColors.danger.withValues(alpha: 0.25),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isWon ? Icons.verified_rounded : Icons.block_rounded,
+                                    size: 13,
+                                    color: isWon ? CRMColors.success : CRMColors.danger,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    isWon ? 'Deal Won' : 'Lead Closed',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: isWon ? CRMColors.success : CRMColors.danger,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : _RunMatchesButtonWithBadge(
+                              requirement: req,
+                              onPressed: () => _showMatchesDrawer(req),
+                              properties: _propertiesForMatches,
+                            ),
+                    ),
+                    DataCell(
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert_rounded),
+                        tooltip: 'More Actions',
+                        onSelected: (action) {
+                          if (action == 'add_another') {
+                            _showAddAnotherRequirementDialog(req);
+                          } else if (action == 'share') {
+                            _showSharePropertiesDialog(req);
+                          } else if (action == 'view_details') {
+                            _showRequirementDetailDrawer(req);
+                          } else if (action == 'edit') {
+                            _showAddEditDialog(req);
+                          } else if (action == 'delete') {
+                            _showDeleteConfirmDialog(req);
+                          } else if (action == 'upload_doc') {
+                            final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
+                            context.go(
+                              isRent ? '/rental-library' : '/resale-library',
+                              extra: {
+                                'autoOpenUpload': true,
+                                'clientName': req.clientName,
+                              },
+                            );
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'view_details',
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded, size: 18),
+                                SizedBox(width: 8),
+                                Text('View Details'),
+                              ],
+                            ),
+                          ),
+                          if (!isClosed && !_isLeadTransferredAway(req, currentUser))
+                            const PopupMenuItem(
+                              value: 'add_another',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.add_circle_outline_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Add Another'),
+                                ],
+                              ),
+                            ),
+                          if (!isClosed)
+                            const PopupMenuItem(
+                              value: 'share',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.share_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Share Properties'),
+                                ],
+                              ),
+                            ),
+                          if (isWon)
+                            const PopupMenuItem(
+                              value: 'upload_doc',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.upload_file_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Upload Document'),
+                                ],
+                              ),
+                            ),
+                          if (!isClosed && _hasEditAccess(req, currentUser)) ...[
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Edit'),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
+                                  SizedBox(width: 8),
+                                  Text('Delete', style: TextStyle(color: CRMColors.danger)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ],
+        );
+      },
+    );
+      },
+    );
+  }
+
+  Widget _buildWonSearchAndFiltersCard(List<RequirementModel> requirements) {
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+    String configDropdownLabel = 'BHK';
+    final selectedCat = _metadata?.categories.firstWhere(
+      (c) => c.id == _selectedCategoryId,
+      orElse: () => LookupItem(id: '', name: ''),
+    );
+    final catName = selectedCat?.name.toLowerCase() ?? '';
+    List<LookupItem> specLookupItems = [];
+
+    if (catName.contains('commercial')) {
+      configDropdownLabel = 'Property Type';
+      var filtered = _metadata?.types.where((t) => t.categoryId == _selectedCategoryId).toList() ?? [];
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types.where((t) {
+          final n = t.name.toLowerCase();
+          return n.contains('office') || n.contains('shop') || n.contains('showroom') || n.contains('commercial');
+        }).toList();
+      }
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types;
+      }
+      specLookupItems = filtered;
+    } else if (catName.contains('land') || catName.contains('plot')) {
+      configDropdownLabel = 'Property Type';
+      var filtered = _metadata?.types.where((t) => t.categoryId == _selectedCategoryId).toList() ?? [];
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types.where((t) {
+          final n = t.name.toLowerCase();
+          return n.contains('plot') || n.contains('land');
+        }).toList();
+      }
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types;
+      }
+      specLookupItems = filtered;
+    } else if (catName.contains('industrial')) {
+      configDropdownLabel = 'Property Type';
+      var filtered = _metadata?.types.where((t) => t.categoryId == _selectedCategoryId).toList() ?? [];
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types.where((t) {
+          final n = t.name.toLowerCase();
+          return n.contains('warehouse') || n.contains('shed') || n.contains('industrial');
+        }).toList();
+      }
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types;
+      }
+      specLookupItems = filtered;
+    } else {
+      configDropdownLabel = 'BHK';
+      var filtered = _metadata?.configurations.where((c) => _selectedCategoryId == null || c.categoryId == _selectedCategoryId).toList() ?? [];
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.configurations;
+      }
+      specLookupItems = filtered;
+    }
+
+    return CRMCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _wonSearchController,
+                  style: CRMTypography.body.copyWith(color: CRMColors.text),
+                  decoration: InputDecoration(
+                    hintText: 'Search won clients by name, mobile, specs...',
+                    hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMuted),
+                    prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMuted),
+                    filled: true,
+                    fillColor: CRMColors.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                      borderSide: BorderSide(color: CRMColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                      borderSide: BorderSide(color: CRMColors.border),
+                    ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: CRMSpacing.s),
+              CRMButton(
+                label: "Search",
+                onPressed: () => setState(() {}),
+              ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.m),
+          Wrap(
+            spacing: CRMSpacing.m,
+            runSpacing: CRMSpacing.s,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildDropdownFilter<String?>(
+                label: 'Category',
+                value: _selectedCategoryId,
+                items: [
+                  const DropdownMenuItem(value: null, child: Text("All Categories")),
+                  ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                ],
+                isMobile: isMobile,
+                onChanged: (val) {
+                  setState(() {
+                    _selectedCategoryId = val;
+                    _wonConfigurationIds.clear();
+                  });
+                },
+              ),
+              SizedBox(
+                width: isMobile ? double.infinity : 200,
+                child: CRMMultiSelectDropdown(
+                  label: configDropdownLabel,
+                  selectedIds: _wonConfigurationIds,
+                  items: specLookupItems,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              CRMButton(
+                label: "Clear Filters",
+                variant: CRMButtonVariant.outline,
+                onPressed: () {
+                  setState(() {
+                    _wonSearchController.clear();
+                    _wonConfigurationIds.clear();
+                    _wonCategoryId = null;
+                    _wonPropertyTypeId = null;
+                  });
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMyWonFiltersAndTable() {
+    final reqBlocState = context.read<RequirementsBloc>().state;
+    final isLoading = reqBlocState is RequirementsLoading;
+
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+
+    List<RequirementModel> requirements = _cachedRequirements;
+
+    requirements = requirements.where((r) => _isLeadWon(r)).toList();
+
+    if (currentUser != null && currentUser.role == 'Sales') {
+      requirements = requirements.where((r) => _salesCanViewRequirement(r, currentUser)).toList();
+    }
+
+    if (_selectedCategoryId != null && _selectedCategoryId!.isNotEmpty) {
+      requirements = requirements.where((r) => r.categoryId == _selectedCategoryId).toList();
+    }
+
+    final selectedCat = _metadata?.categories.firstWhereOrNull((c) => c.id == _selectedCategoryId);
+    final catName = selectedCat?.name.toLowerCase() ?? '';
+    final isPropertyTypeFilter = catName.contains('commercial') ||
+        catName.contains('land') ||
+        catName.contains('plot') ||
+        catName.contains('industrial');
+
+    if (_wonConfigurationIds.isNotEmpty) {
+      requirements = requirements.where((r) {
+        if (isPropertyTypeFilter) {
+          return _wonConfigurationIds.contains(r.propertyTypeId) ||
+              _wonConfigurationIds.any((id) => r.propertyTypeIds.contains(id));
+        } else {
+          return (r.configurationId != null && _wonConfigurationIds.contains(r.configurationId)) ||
+              _wonConfigurationIds.any((id) => r.configurationIds.contains(id));
+        }
+      }).toList();
+    }
+
+    final query = _wonSearchController.text.trim().toLowerCase();
+
+    if (query.isNotEmpty) {
+      requirements = requirements.where((r) {
+        final clientName = r.clientName.toLowerCase();
+        final clientMobile = r.clientMobile.toLowerCase();
+        final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
+        final remarks = (r.remarks ?? '').toLowerCase();
+        final areas = r.areaNames.join(' ').toLowerCase();
+
+        bool matchesSalesman = false;
+        if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
+          final creator = (r.creatorName ?? '').toLowerCase();
+          final assignee = (r.assigneeName ?? '').toLowerCase();
+          matchesSalesman = creator.contains(query) || assignee.contains(query);
+        }
+
+        return clientName.contains(query) ||
+            clientMobile.contains(query) ||
+            specs.contains(query) ||
+            remarks.contains(query) ||
+            areas.contains(query) ||
+            matchesSalesman;
+      }).toList();
+    }
+
+    requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final totalCount = requirements.length;
+    final totalPages = (totalCount / _requirementsPerPage).ceil();
+    final currentPage = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);
+
+    final startIndex = (currentPage - 1) * _requirementsPerPage;
+    final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalCount);
+
+    final pageItems = (startIndex < totalCount)
+        ? requirements.sublist(startIndex, endIndex)
+        : <RequirementModel>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildWonSearchAndFiltersCard(requirements),
+        const SizedBox(height: CRMSpacing.l),
+        LayoutBuilder(
           builder: (context, constraints) {
             final isMobile = constraints.maxWidth < 700;
 
             if (isMobile || !_isTableView) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildActionBar(requirements, currentUser),
-                  _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount),
-                ],
-              );
+              return _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount);
             }
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildActionBar(requirements, currentUser),
                 CRMDataTable(
                   isLoading: isLoading,
-                  emptyTitle: _activeMainTab == 'Rejected' ? 'No Rejected Leads' : 'No Requirements Found',
-                  emptyDescription: _activeMainTab == 'Rejected'
-                      ? 'Leads marked as Rejected will appear here.'
-                      : 'Try adjusting filters or create a new requirement pipeline.',
+                  emptyTitle: 'No Won Requirements Found',
+                  emptyDescription: 'Requirements marked as Won or Closed will appear here.',
                   dataRowMinHeight: 88.0,
                   dataRowMaxHeight: 160.0,
                   columnSpacing: 10.0,
@@ -4392,20 +5099,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     const DataColumn(label: Text('Actions')),
                   ],
                   rows: pageItems.map((req) {
-                    final qualityColor = req.requirementQuality == 'High'
-                        ? CRMColors.success
-                        : req.requirementQuality == 'Medium'
-                            ? CRMColors.warning
-                            : CRMColors.danger;
-
                     final isHighlighted = req.id == _highlightedRequirementId;
                     final bool isClosed = _isLeadClosedOrTerminal(req);
                     final bool isWon = _isLeadWon(req);
-
                     return DataRow(
                       color: isHighlighted
                           ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
-                          : (isClosed ? WidgetStateProperty.all(CRMColors.sidebarBgOf(context).withValues(alpha: 0.6)) : null),
+                          : WidgetStateProperty.all(CRMColors.sidebarBgOf(context).withValues(alpha: 0.6)),
                       cells: [
                         DataCell(
                           SizedBox(
@@ -4441,95 +5141,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
                                 ),
-                                if (req.isMetaLead) ...[
-                                  const SizedBox(height: 3),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF1877F2).withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: const Color(0xFF1877F2).withOpacity(0.35)),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.campaign_rounded, size: 10, color: Color(0xFF1877F2)),
-                                        const SizedBox(width: 3),
-                                        Flexible(
-                                          child: Text(
-                                            req.metaCampaignDisplayName != null ? 'Meta: ${req.metaCampaignDisplayName}' : 'Meta Ads',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: Color(0xFF1877F2),
-                                              fontSize: 9.5,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                if (req.matchingReadiness != 'Ready') ...[
-                                  const SizedBox(height: 3),
-                                  _buildNeedsMoreDetailsBadge(req, compact: true),
-                                ],
-                                Builder(
-                                  builder: (context) {
-                                    final telecallerKeyPoints = getTelecallerRemarks(req);
-                                    if (telecallerKeyPoints == null || telecallerKeyPoints.isEmpty) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return Padding(
-                                      padding: const EdgeInsets.only(top: 3),
-                                      child: Tooltip(
-                                        message: 'Telecaller Key Points:\n$telecallerKeyPoints',
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF0F766E).withValues(alpha: 0.12),
-                                            borderRadius: BorderRadius.circular(4),
-                                            border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.35)),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.speaker_notes_rounded, size: 10, color: Color(0xFF0F766E)),
-                                              const SizedBox(width: 3),
-                                              Flexible(
-                                                child: Text(
-                                                  'Key Points: $telecallerKeyPoints',
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: Color(0xFF0F766E),
-                                                    fontSize: 9.5,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                if (req.nextFollowupDate != null) ...[
-                                  const SizedBox(height: 2),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.alarm_rounded, size: 12, color: CRMColors.warning),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal()),
-                                        style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 11),
-                                      ),
-                                    ],
-                                  ),
-                                ],
                               ],
                             ),
                           ),
@@ -4537,22 +5148,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                           DataCell(
                             Text(
-                              _getAddedByName(req),
+                              _getAddedByColumnName(req),
                               style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ),
                         DataCell(
-                          isClosed
-                              ? Text(
-                                  _getSalesmanName(req, currentUser),
-                                  style: CRMTypography.caption.copyWith(
-                                    color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                )
-                              : (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')
-                                  ? _buildAssignToDropdown(req)
-                                  : _buildSalesAssignToLabel(req, currentUser)),
+                          Text(
+                            _getSalesmanName(req, currentUser),
+                            style: CRMTypography.caption.copyWith(
+                              color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                         DataCell(_buildSpecsConfigCell(req)),
                         DataCell(
@@ -4565,7 +5172,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         DataCell(
                           _buildStatusControlWithNotes(req, currentUser),
                         ),
-
                         DataCell(
                           isClosed
                               ? Container(
@@ -4713,8 +5319,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ],
             );
           },
-        );
-      },
+        ),
+      ],
     );
   }
 
@@ -5386,7 +5992,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           Icon(Icons.person_add_alt_1_outlined, size: 13, color: CRMColors.textMutedOf(context)),
                           const SizedBox(width: 4),
                           Text(
-                            'Added by: ${_getAddedByName(req)}',
+                            _getAddedByDisplayLine(req),
                             style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -5418,7 +6024,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         children: [
                           Icon(Icons.person_outline_rounded, size: 13, color: CRMColors.textMutedOf(context)),
                           const SizedBox(width: 4),
-                          if (!isClosed && currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
+                          if (!isClosed && currentUser != null && (_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser)))
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -5427,8 +6033,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5, fontWeight: FontWeight.w600),
                                 ),
                                 SizedBox(
-                                  width: 120,
-                                  child: _buildMobileAssignToDropdown(req),
+                                  width: 130,
+                                  child: _buildMobileAssignToDropdown(
+                                    req,
+                                    isReassign: _canSalesReassignLead(currentUser),
+                                  ),
                                 ),
                               ],
                             )
@@ -6413,6 +7022,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _showEditFollowupDialog(context, f);
         } else if (status == 'Re-scheduled') {
           _openFollowupStepper(req, 'Site Visit Scheduled');
+        } else if (status == 'Interested' || status.startsWith('Rejected')) {
+          _changeStatus(req, status);
         } else {
           _openFollowupStepper(req, status);
         }
@@ -6923,7 +7534,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               }
 
               final dashboardData = snapshot.data?[0] as DashboardData?;
-              final reqsList = snapshot.data?[1] as List<RequirementModel>? ?? [];
+              final reqsList = _withLocalRequirementOverrides(
+                snapshot.data?[1] as List<RequirementModel>? ?? [],
+              );
 
               final serverFollowups = dashboardData?.followups ?? [];
               final localFollowups = FollowupLocalRepository.inMemory.values.map((fl) => fl.toModel()).toList();
@@ -8693,435 +9306,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
     showCRMRequirementDrawer(context, req);
   }
-
-
-
-  Widget _buildMyWonFiltersAndTable() {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 700;
-
-    final selectedCat = _metadata?.categories.firstWhereOrNull((c) => c.id == _wonCategoryId);
-    final isResidential = selectedCat?.name.toLowerCase().contains('residential') ?? false;
-
-    // Filtered types and configs for My Won
-    final filteredTypes = _metadata != null
-        ? _metadata!.types.where((t) => t.categoryId == _wonCategoryId).toList()
-        : <LookupItem>[];
-
-    final filteredConfigs = _metadata != null
-        ? _metadata!.configurations.where((c) {
-            final configName = c.name.toLowerCase();
-            if (isResidential) {
-              return !configName.contains('office') &&
-                  !configName.contains('shop') &&
-                  !configName.contains('showroom') &&
-                  !configName.contains('plot') &&
-                  !configName.contains('warehouse') &&
-                  !configName.contains('shed') &&
-                  !configName.contains('industrial');
-            }
-            return false;
-          }).toList()
-        : <LookupItem>[];
-
-    final filterCard = CRMCard(
-      child: Padding(
-        padding: const EdgeInsets.all(CRMSpacing.m),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Search field
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _wonSearchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search by client name, mobile, specs, remarks...',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
-                      filled: true,
-                      fillColor: CRMColors.background,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                        borderSide: BorderSide(color: CRMColors.border),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                        borderSide: BorderSide(color: CRMColors.border),
-                      ),
-                    ),
-                    onChanged: (val) {
-                      setState(() {});
-                    },
-                  ),
-                ),
-                const SizedBox(width: CRMSpacing.s),
-                CRMButton(
-                  label: "Search",
-                  onPressed: () {
-                    setState(() {});
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: CRMSpacing.m),
-
-            // Category dropdown filter and dependent configuration/type filters
-            Wrap(
-              spacing: CRMSpacing.m,
-              runSpacing: CRMSpacing.s,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                // Category dropdown filter
-                _buildDropdownFilter<String?>(
-                  label: 'Category',
-                  value: _wonCategoryId,
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text("All Categories")),
-                    ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
-                  ],
-                  isMobile: isMobile,
-                  onChanged: (val) {
-                    setState(() {
-                      _wonCategoryId = val;
-                      _wonPropertyTypeId = null;
-                      _wonConfigurationIds.clear();
-                      _currentPage = 1;
-                    });
-                  },
-                ),
-
-                // Category-dependent configuration or property type filters
-                if (_wonCategoryId != null) ...[
-                  if (isResidential)
-                    SizedBox(
-                      width: isMobile ? double.infinity : 200,
-                      child: CRMMultiSelectDropdown(
-                        label: 'BHK',
-                        selectedIds: _wonConfigurationIds,
-                        items: filteredConfigs,
-                        onChanged: (vals) {
-                          setState(() {
-                            _currentPage = 1;
-                          });
-                        },
-                      ),
-                    )
-                  else
-                    SizedBox(
-                      width: isMobile ? double.infinity : 200,
-                      child: _buildDropdownFilter<String?>(
-                        label: 'Property Type',
-                        value: _wonPropertyTypeId,
-                        items: [
-                          const DropdownMenuItem(value: null, child: Text("All Types")),
-                          ...filteredTypes.map((t) => DropdownMenuItem(value: t.id, child: Text(t.name))),
-                        ],
-                        isMobile: isMobile,
-                        onChanged: (val) {
-                          setState(() {
-                            _wonPropertyTypeId = val;
-                            _currentPage = 1;
-                          });
-                        },
-                      ),
-                    ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-
-    final table = BlocBuilder<RequirementsBloc, RequirementsState>(
-      builder: (context, state) {
-        final authState = context.read<AuthBloc>().state;
-        UserModel? currentUser;
-        if (authState is Authenticated) {
-          currentUser = authState.user;
-        }
-
-        if (state is RequirementsLoaded) {
-          _cachedRequirements = state.requirements;
-        }
-        final rawLoadedList = state is RequirementsLoaded ? state.requirements : _cachedRequirements;
-        final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
-        List<RequirementModel> requirements = [];
-
-        if (rawLoadedList.isNotEmpty) {
-          requirements = rawLoadedList.where((r) {
-            if (currentUser != null && currentUser.role == 'Sales') {
-              if (!_salesCanViewRequirement(r, currentUser)) {
-                return false;
-              }
-            }
-
-            final matchesListingType = getListingTypeLabel(r) == _activeListingTab;
-            
-            // Category filter
-            final matchesCategory = _wonCategoryId == null || r.categoryId == _wonCategoryId;
-
-            // Property Type filter
-            final matchesPropertyType = _wonPropertyTypeId == null || r.propertyTypeId == _wonPropertyTypeId;
-
-            // Configuration filter
-            final matchesConfig = _wonConfigurationIds.isEmpty ||
-                _wonConfigurationIds.contains(r.configurationId) ||
-                r.configurationIds.any((id) => _wonConfigurationIds.contains(id));
-
-            // Search query filter
-            bool matchesSearch = true;
-            final query = _wonSearchController.text.trim().toLowerCase();
-            if (query.isNotEmpty) {
-              final name = r.clientName.toLowerCase();
-              final mobile = r.clientMobile.toLowerCase();
-              final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
-              final remarks = (r.remarks ?? '').toLowerCase();
-              final areas = r.areaNames.join(' ').toLowerCase();
-
-              bool matchesSalesman = false;
-              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
-                final creator = (r.creatorName ?? '').toLowerCase();
-                final assignee = (r.assigneeName ?? '').toLowerCase();
-                matchesSalesman = creator.contains(query) || assignee.contains(query);
-              }
-
-              matchesSearch = name.contains(query) ||
-                  mobile.contains(query) ||
-                  specs.contains(query) ||
-                  remarks.contains(query) ||
-                  areas.contains(query) ||
-                  matchesSalesman;
-            }
-
-            // Strictly filter for Won status
-            String mappedStatus = r.status;
-            if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
-            
-            final matchesStatus = mappedStatus == 'Won';
-
-            return matchesListingType && matchesStatus && matchesCategory && matchesPropertyType && matchesConfig && matchesSearch;
-          }).toList();
-          
-          requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        }
-
-        final totalCount = requirements.length;
-        final totalPages = (totalCount / _requirementsPerPage).ceil();
-        final currentPage = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);
-        final startIndex = (currentPage - 1) * _requirementsPerPage;
-        final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalCount);
-        final pageItems = (startIndex < totalCount) ? requirements.sublist(startIndex, endIndex) : <RequirementModel>[];
-
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final isMobileLayout = constraints.maxWidth < 700;
-
-            if (isMobileLayout) {
-              return _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount);
-            }
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                CRMDataTable(
-                  isLoading: isLoading,
-                  emptyTitle: 'No Won Requirements',
-                  emptyDescription: 'Requirements marked as "Won" will appear here.',
-                  dataRowMinHeight: 56.0,
-                  dataRowMaxHeight: 72.0,
-                  columnSpacing: 10.0,
-                  horizontalMargin: 12.0,
-                  columns: [
-                    const DataColumn(label: Text('Client')),
-                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
-                      const DataColumn(label: Text('Added By')),
-                    const DataColumn(label: Text('Assign to')),
-                    const DataColumn(label: Text('Specs / Config')),
-                    const DataColumn(label: Text('Budget Range')),
-                    const DataColumn(label: Text('Target Area(s)')),
-                    const DataColumn(label: Text('Status')),
-                    const DataColumn(label: Text('Matches')),
-                    const DataColumn(label: Text('Actions')),
-                  ],
-                  rows: pageItems.map((req) {
-                    final isHighlighted = req.id == _highlightedRequirementId;
-                    return DataRow(
-                      color: isHighlighted
-                          ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
-                          : WidgetStateProperty.all(CRMColors.sidebarBgOf(context).withValues(alpha: 0.5)),
-                      cells: [
-                        DataCell(
-                          SizedBox(
-                            width: 135,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                GestureDetector(
-                                  onTap: () => _showRequirementDetailDrawer(req),
-                                  child: Text(
-                                    req.clientName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: CRMTypography.bodyMedium.copyWith(
-                                      color: CRMColors.primaryOf(context),
-                                      fontWeight: FontWeight.bold,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  req.clientMobile,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Added: ${DateFormat('dd/MM/yyyy').format(req.createdAt)}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
-                          DataCell(
-                            Text(
-                              _getAddedByName(req),
-                              style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        DataCell(
-                          Text(
-                            _getSalesmanName(req, currentUser),
-                            style: CRMTypography.caption.copyWith(
-                              color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        DataCell(_buildSpecsConfigCell(req)),
-                        DataCell(
-                          Text(
-                            '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}',
-                            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primaryOf(context)),
-                          ),
-                        ),
-                        DataCell(_buildTargetAreasCell(req)),
-                        DataCell(
-                          _buildStatusControl(req, currentUser),
-                        ),
-
-                        DataCell(
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: CRMColors.success.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: CRMColors.success.withValues(alpha: 0.3)),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.verified_rounded, size: 13, color: CRMColors.success),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Deal Won',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: CRMColors.success,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        DataCell(
-                          PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert_rounded),
-                            tooltip: 'More Actions',
-                            onSelected: (action) {
-                              if (action == 'view_details') {
-                                _showRequirementDetailDrawer(req);
-                              } else if (action == 'delete') {
-                                _showDeleteConfirmDialog(req);
-                              } else if (action == 'upload_doc') {
-                                final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
-                                context.go(
-                                  isRent ? '/rental-library' : '/resale-library',
-                                  extra: {
-                                    'autoOpenUpload': true,
-                                    'clientName': req.clientName,
-                                  },
-                                );
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(
-                                value: 'view_details',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.info_outline_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('View Details'),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'upload_doc',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.upload_file_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('Upload Document'),
-                                  ],
-                                ),
-                              ),
-                              if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
-                                      SizedBox(width: 8),
-                                      Text('Delete', style: TextStyle(color: CRMColors.danger)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: CRMSpacing.m),
-                _buildPagination(totalCount, totalPages, currentPage),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        filterCard,
-        const SizedBox(height: CRMSpacing.l),
-        table,
-      ],
-    );
-  }
 }
 
 class RequirementStepperDialog extends StatefulWidget {
@@ -9263,7 +9447,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) ? widget.requirement.remarks : remarks,
           metaCustomFields: nextCustomFields,
         );
-        final saved = await requirementsRepository.updateRequirement(updatedReq);
+        final saved = await requirementsRepository.updateLeadStatus(updatedReq);
         final finalReq = saved.copyWith(
           nextFollowupDate: (saved.nextFollowupDate != null && saved.nextFollowupDate!.isNotEmpty) ? saved.nextFollowupDate : isoDateStr,
           remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty)
@@ -9343,7 +9527,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) ? widget.requirement.remarks : remarks,
           metaCustomFields: nextCustomFields,
         );
-        final saved = await requirementsRepository.updateRequirement(updatedReq);
+        final saved = await requirementsRepository.updateLeadStatus(updatedReq);
         final finalReq = saved.copyWith(
           nextFollowupDate: (saved.nextFollowupDate != null && saved.nextFollowupDate!.isNotEmpty) ? saved.nextFollowupDate : isoDateStr,
           remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty)
@@ -11981,13 +12165,100 @@ class _FollowupActionButton extends StatelessWidget {
   });
 
   void _showMenuAt(BuildContext context, Offset globalPos) {
-    final RenderBox? overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (overlay == null) return;
+    final RenderBox? overlayBox = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlayBox == null) return;
 
     final RelativeRect position = RelativeRect.fromRect(
       Rect.fromLTWH(globalPos.dx - 60, globalPos.dy - 46, 140, 40),
-      Offset.zero & overlay.size,
+      Offset.zero & overlayBox.size,
     );
+
+    OverlayEntry? rejectionOverlay;
+
+    void removeRejectionOverlay() {
+      rejectionOverlay?.remove();
+      rejectionOverlay = null;
+    }
+
+    void showRejectionOverlay(BuildContext itemContext) {
+      if (rejectionOverlay != null) return;
+      final RenderBox? renderBox = itemContext.findRenderObject() as RenderBox?;
+      if (renderBox == null) return;
+
+      final Offset itemGlobalOffset = renderBox.localToGlobal(Offset.zero);
+      final overlay = Overlay.of(itemContext);
+      final size = MediaQuery.of(itemContext).size;
+      double left = (itemGlobalOffset.dx - 192).clamp(10.0, size.width - 200.0);
+      double top = (itemGlobalOffset.dy - 120).clamp(40.0, size.height - 380.0);
+
+      const reasons = [
+        'Not Answering',
+        'No Requirement',
+        'Budget Mismatch',
+        'Locality Mismatch',
+        'Broker',
+        'Already rented',
+        'Want Ready-To-Move',
+        'Negotiation Failed',
+        'Others',
+      ];
+
+      rejectionOverlay = OverlayEntry(
+        builder: (overlayContext) {
+          return Positioned(
+            left: left,
+            top: top,
+            child: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(8),
+              color: CRMColors.cardBgOf(context),
+              child: Container(
+                width: 190,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                decoration: BoxDecoration(
+                  color: CRMColors.cardBgOf(context),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.12),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: reasons.map((reason) {
+                    return InkWell(
+                      onTap: () {
+                        removeRejectionOverlay();
+                        Navigator.of(context, rootNavigator: true).maybePop();
+                        onSelect(reqModel, 'Rejected ($reason)');
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            reason,
+                            style: TextStyle(
+                              color: CRMColors.textOf(context),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+      overlay.insert(rejectionOverlay!);
+    }
 
     showMenu<String>(
       context: context,
@@ -12047,52 +12318,121 @@ class _FollowupActionButton extends StatelessWidget {
               PopupMenuItem<String>(
                 value: 'Edit Followup',
                 height: 38,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.edit_calendar_rounded,
-                      size: 16,
-                      color: CRMColors.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Edit Followup',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: CRMColors.textOf(context),
-                        fontSize: 13,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.edit_calendar_rounded,
+                        size: 16,
+                        color: CRMColors.primary,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        'Edit Followup',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               PopupMenuItem<String>(
                 value: 'Re-Followup',
                 height: 38,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.update_rounded,
-                      size: 16,
-                      color: CRMColors.warning,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Re-Followup',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: CRMColors.textOf(context),
-                        fontSize: 13,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.update_rounded,
+                        size: 16,
+                        color: CRMColors.warning,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        'Re-Followup',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'Interested',
+                height: 38,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.thumb_up_alt_outlined,
+                        size: 16,
+                        color: CRMColors.success,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Interested',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'Rejected',
+                height: 38,
+                child: Builder(
+                  builder: (itemContext) {
+                    return MouseRegion(
+                      onEnter: (_) => showRejectionOverlay(itemContext),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.cancel_outlined,
+                            size: 16,
+                            color: CRMColors.danger,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Rejected',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: CRMColors.danger,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 16,
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
     ).then((val) {
-      if (val != null) {
+      removeRejectionOverlay();
+      if (val != null && val != 'Rejected') {
         onSelect(reqModel, val);
       }
     });
@@ -12118,7 +12458,7 @@ class _FollowupActionButton extends StatelessWidget {
     if (isRe) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => onSelect(reqModel, 'Re-Followup'),
+        onTapDown: (details) => _showMenuAt(context, details.globalPosition),
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           child: Container(

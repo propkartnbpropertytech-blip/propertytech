@@ -8,12 +8,18 @@ class LeadSourceAnalysisSection extends StatelessWidget {
   final bool isVisible;
   final List<LeadSourceData> leadSources;
   final ValueChanged<bool> onToggleVisibility;
+  final String title;
+  final bool showVisibilityToggle;
+  final bool showOutcomeBreakdown;
 
   const LeadSourceAnalysisSection({
     super.key,
     required this.isVisible,
     required this.leadSources,
     required this.onToggleVisibility,
+    this.title = 'Lead Source Distribution',
+    this.showVisibilityToggle = true,
+    this.showOutcomeBreakdown = false,
   });
 
   @override
@@ -43,39 +49,42 @@ class LeadSourceAnalysisSection extends StatelessWidget {
                 children: [
                   const Icon(Icons.pie_chart_outline_rounded, size: 20),
                   const SizedBox(width: 8),
-                  const Text(
-                    'Lead Source Distribution',
-                    style: TextStyle(
+                  Text(
+                    title,
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: -0.2,
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isVisible
-                          ? const Color(0xFF16A34A).withValues(alpha: 0.12)
-                          : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      isVisible ? 'ON' : 'OFF',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: isVisible ? const Color(0xFF16A34A) : Colors.grey,
+                  if (showVisibilityToggle) ...[
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isVisible
+                            ? const Color(0xFF16A34A).withValues(alpha: 0.12)
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        isVisible ? 'ON' : 'OFF',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isVisible ? const Color(0xFF16A34A) : Colors.grey,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
-              Switch(
-                value: isVisible,
-                activeThumbColor: primaryColor,
-                onChanged: onToggleVisibility,
-              ),
+              if (showVisibilityToggle)
+                Switch(
+                  value: isVisible,
+                  activeThumbColor: primaryColor,
+                  onChanged: onToggleVisibility,
+                ),
             ],
           ),
 
@@ -205,6 +214,19 @@ class LeadSourceAnalysisSection extends StatelessWidget {
                                 );
                               },
                             ),
+                            if (showOutcomeBreakdown &&
+                                (src.qualifiedCount > 0 || src.siteVisitsCount > 0 || src.wonCount > 0)) ...[
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: [
+                                  _buildOutcomeChip('Qualified', src.qualifiedCount, const Color(0xFF0D9488), isDark),
+                                  _buildOutcomeChip('Site Visits', src.siteVisitsCount, const Color(0xFF7C3AED), isDark),
+                                  _buildOutcomeChip('Won', src.wonCount, const Color(0xFF16A34A), isDark),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -214,6 +236,24 @@ class LeadSourceAnalysisSection extends StatelessWidget {
               ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildOutcomeChip(String label, int count, Color color, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.18 : 0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '$label $count',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
       ),
     );
   }

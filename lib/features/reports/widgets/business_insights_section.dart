@@ -4,10 +4,12 @@ import '../models/business_insight.dart';
 
 class BusinessInsightsSection extends StatelessWidget {
   final List<BusinessInsightItem> insights;
+  final String title;
 
   const BusinessInsightsSection({
     super.key,
     required this.insights,
+    this.title = 'Business Intelligence Insights & Alerts',
   });
 
   @override
@@ -38,15 +40,15 @@ class BusinessInsightsSection extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              const Row(
+              Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.lightbulb_outline_rounded, size: 20),
-                  SizedBox(width: 8),
+                  const Icon(Icons.lightbulb_outline_rounded, size: 20),
+                  const SizedBox(width: 8),
                   Flexible(
                     child: Text(
-                      'Business Intelligence Insights & Alerts',
-                      style: TextStyle(
+                      title,
+                      style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         letterSpacing: -0.2,

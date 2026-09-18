@@ -74,16 +74,100 @@ class EmployeeActivity {
     return r.rawSiteVisits != null && r.rawSiteVisits!.isNotEmpty;
   }
 
+  static bool _looksLikeUserId(String value) {
+    final v = value.trim();
+    return v.contains('-') && v.length >= 32;
+  }
+
+  static bool isPropertyAddedBy(PropertyModel p, UserModel user) {
+    final createdBy = p.createdBy.trim();
+    if (createdBy == user.id) return true;
+    if (createdBy.isEmpty) {
+      return _namesMatch(p.createdByName, user.fullName);
+    }
+    if (_looksLikeUserId(createdBy)) return false;
+    return _namesMatch(createdBy, user.fullName) ||
+        _namesMatch(p.createdByName, user.fullName);
+  }
+
+  static bool isSalesOwnedLead(RequirementModel r, UserModel user) {
+    return isAssignedTo(r, user) || isCreatedBy(r, user);
+  }
+
+  static bool isRejected(RequirementModel r) {
+    final lower = r.status.trim().toLowerCase();
+    if (lower.isEmpty || lower == 'bin') return false;
+    return lower.startsWith('rejected');
+  }
+
   static bool isAssignedTo(RequirementModel r, UserModel user) {
-    return (r.assignedTo ?? '') == user.id ||
-        _namesMatch(r.assignedTo, user.fullName) ||
-        _namesMatch(r.assigneeName, user.fullName);
+    final assigned = (r.assignedTo ?? '').trim();
+    if (assigned.isEmpty || assigned.toLowerCase() == 'unassigned') {
+      return false;
+    }
+    if (assigned == user.id) return true;
+    if (_namesMatch(assigned, user.fullName)) return true;
+    if (_looksLikeUserId(assigned)) return false;
+    return _namesMatch(r.assigneeName, user.fullName);
   }
 
   static bool isCreatedBy(RequirementModel r, UserModel user) {
     return (r.createdBy ?? '') == user.id ||
         _namesMatch(r.createdBy, user.fullName) ||
         _namesMatch(r.creatorName, user.fullName);
+  }
+
+  static bool matchesActor(UserModel user, {String? id, String? name}) {
+    final actorId = (id ?? '').trim();
+    if (actorId.isNotEmpty && actorId == user.id) return true;
+    return _namesMatch(name, user.fullName);
+  }
+
+  static bool isOpenFollowupStatus(String status) {
+    final s = status.trim().toLowerCase();
+    if (s.isEmpty) return true;
+    if (isSiteVisitStatus(s)) return false;
+    return s == 'pending' || s == 'rescheduled';
+  }
+
+  static bool isSiteVisitStatus(String status) {
+    final s = status.trim().toLowerCase();
+    return s.contains('site visit') ||
+        s.contains('site-visit') ||
+        s.contains('sitevisit');
+  }
+
+  static bool isOpenSiteVisitStatus(String status) {
+    final s = status.trim().toLowerCase();
+    if (s.isEmpty) return true;
+    if (s == 'completed' ||
+        s == 'cancelled' ||
+        s == 'canceled' ||
+        s == 'noshow' ||
+        s == 'no show' ||
+        s == 'done') {
+      return false;
+    }
+    return true;
+  }
+
+  static DateTime? tryParseDate(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  static bool isDateOnOrAfterToday(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(dt.year, dt.month, dt.day);
+    return !day.isBefore(today);
+  }
+
+  static bool isDateBeforeToday(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(dt.year, dt.month, dt.day);
+    return day.isBefore(today);
   }
 
   static bool isTeamMemberOf(UserModel member, UserModel manager) {

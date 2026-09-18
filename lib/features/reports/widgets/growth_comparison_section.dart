@@ -14,6 +14,7 @@ class GrowthComparisonSection extends StatelessWidget {
   final ValueChanged<bool> onToggleVisibility;
   final ValueChanged<GrowthComparisonPeriod> onPeriodChanged;
   final void Function(DateTime start, DateTime end)? onCustomDatesChanged;
+  final bool showVisibilityToggle;
 
   const GrowthComparisonSection({
     super.key,
@@ -25,6 +26,7 @@ class GrowthComparisonSection extends StatelessWidget {
     required this.onToggleVisibility,
     required this.onPeriodChanged,
     this.onCustomDatesChanged,
+    this.showVisibilityToggle = true,
   });
 
   @override
@@ -61,31 +63,34 @@ class GrowthComparisonSection extends StatelessWidget {
                       letterSpacing: -0.2,
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isVisible
-                          ? const Color(0xFF16A34A).withValues(alpha: 0.12)
-                          : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      isVisible ? 'ON' : 'OFF',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: isVisible ? const Color(0xFF16A34A) : Colors.grey,
+                  if (showVisibilityToggle) ...[
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isVisible
+                            ? const Color(0xFF16A34A).withValues(alpha: 0.12)
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        isVisible ? 'ON' : 'OFF',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isVisible ? const Color(0xFF16A34A) : Colors.grey,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
-              Switch(
-                value: isVisible,
-                activeThumbColor: primaryColor,
-                onChanged: onToggleVisibility,
-              ),
+              if (showVisibilityToggle)
+                Switch(
+                  value: isVisible,
+                  activeThumbColor: primaryColor,
+                  onChanged: onToggleVisibility,
+                ),
             ],
           ),
 

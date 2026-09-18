@@ -345,7 +345,7 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Supports multiple image selection (Max 10)',
+                      'Supports multiple image selection (Max ${widget.maxImages})',
                       style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
                     ),
                   ],

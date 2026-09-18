@@ -72,8 +72,7 @@ void main() {
       );
     });
 
-    test('Super Admin can manage Admin, but not Sales/Telecaller directly', () {
-      // Manage Admin
+    test('Super Admin can manage Admin, Sales and Telecaller', () {
       expect(
         RoleGuard.validateUserMutation(
           callerRole: 'Super Admin',
@@ -83,24 +82,22 @@ void main() {
         isNull,
       );
 
-      // Manage Sales
       expect(
         RoleGuard.validateUserMutation(
           callerRole: 'Super Admin',
           targetRoleName: 'Sales',
           isDelete: false,
         ),
-        isNotNull,
+        isNull,
       );
 
-      // Manage Telecaller
       expect(
         RoleGuard.validateUserMutation(
           callerRole: 'Super Admin',
           targetRoleName: 'Telecaller',
           isDelete: false,
         ),
-        isNotNull,
+        isNull,
       );
     });
   });

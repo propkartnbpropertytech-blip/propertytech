@@ -213,13 +213,29 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
       if (_cachedRoles.isEmpty) {
         _cachedRoles = await _usersRepository.getRoles();
       }
-      final denial = RoleGuard.validateUserMutation(
+      UserModel? existing;
+      for (final u in _cachedUsers) {
+        if (u.id == event.id) {
+          existing = u;
+          break;
+        }
+      }
+      final currentRoleName = existing?.roleName;
+      final newRoleName = _resolveTargetRoleName(event.userData) ?? currentRoleName;
+      final currentDenial = currentRoleName == null
+          ? null
+          : RoleGuard.validateUserMutation(
+              callerRole: _callerRole,
+              targetRoleName: currentRoleName,
+              isDelete: false,
+            );
+      final newDenial = RoleGuard.validateUserMutation(
         callerRole: _callerRole,
-        targetRoleName: _resolveTargetRoleName(event.userData),
+        targetRoleName: newRoleName,
         isDelete: false,
       );
-      if (denial != null) {
-        emit(UsersError(message: denial));
+      if (currentDenial != null || newDenial != null) {
+        emit(UsersError(message: currentDenial ?? newDenial!));
         emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
         return;
       }
@@ -256,8 +272,20 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
     Emitter<UsersState> emit,
   ) async {
     try {
-      if (!RoleGuard.canManageEmployees(_callerRole)) {
-        emit(const UsersError(message: 'You do not have permission to manage employees.'));
+      UserModel? existing;
+      for (final u in _cachedUsers) {
+        if (u.id == event.id) {
+          existing = u;
+          break;
+        }
+      }
+      final denial = RoleGuard.validateUserMutation(
+        callerRole: _callerRole,
+        targetRoleName: existing?.roleName,
+        isDelete: true,
+      );
+      if (denial != null) {
+        emit(UsersError(message: denial));
         emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
         return;
       }

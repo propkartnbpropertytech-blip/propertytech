@@ -144,9 +144,7 @@ class RoleGuard {
 
     final caller = (callerRole ?? '').toLowerCase();
     if (caller == 'super admin') {
-      if (target != 'admin') {
-        return 'Super Admin can only manage Admin users.';
-      }
+      return null;
     } else if (caller == 'admin') {
       if (target != 'sales' && target != 'telecaller') {
         return 'Admins can only manage Sales and Telecaller users.';

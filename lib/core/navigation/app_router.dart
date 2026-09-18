@@ -43,7 +43,7 @@ import '../../features/campaign/screens/connections_screen.dart';
 import '../../features/campaign/screens/campaign_leads_screen.dart';
 import '../../features/reports/screens/reports_shell.dart';
 import '../../features/reports/screens/leads/overall_business_insight_screen.dart';
-import '../../features/reports/screens/leads/telecaller_report_placeholder.dart';
+import '../../features/reports/screens/leads/telecaller_report_screen.dart';
 import '../../features/reports/screens/leads/sales_report_placeholder.dart';
 import '../../features/reports/screens/leads/lead_metrics_screen.dart';
 import '../../features/reports/screens/properties/properties_coming_soon_screen.dart';
@@ -383,7 +383,10 @@ class AppRouter {
                 path: '/reports/leads/telecaller',
                 pageBuilder: (context, state) => crmFadeSlidePage(
                   key: state.pageKey,
-                  child: const TelecallerReportPlaceholderScreen(),
+                  child: TelecallerReportScreen(
+                    initialTelecallerId: state.uri.queryParameters['userId'],
+                    initialTelecallerName: state.uri.queryParameters['userName'],
+                  ),
                 ),
               ),
               GoRoute(

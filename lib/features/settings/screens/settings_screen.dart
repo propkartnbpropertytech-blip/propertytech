@@ -16,6 +16,7 @@ import '../../auth/bloc/auth_bloc.dart';
 import 'sync_debug_screen.dart';
 import '../widgets/permission_matrix_card.dart';
 import '../../requirements/services/match_criteria_manager.dart';
+import '../services/upload_limits_manager.dart';
 import '../../../core/storage/isar_service.dart';
 import '../../../core/constants/app_constants.dart';
 
@@ -31,12 +32,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isLoading = false;
   String _activeSection = 'profile';
   double _selectedMatchThreshold = MatchCriteriaManager().threshold.toDouble();
+  double _selectedMaxImages = UploadLimitsManager().maxImages.toDouble();
+  double _selectedMaxVideos = UploadLimitsManager().maxVideos.toDouble();
+  bool _uploadLimitsDirty = false;
+  bool _isSavingUploadLimits = false;
 
   @override
   void initState() {
     super.initState();
     ThemeManager().addListener(_onThemeChanged);
     MatchCriteriaManager().addListener(_onCriteriaChanged);
+    UploadLimitsManager().addListener(_onUploadLimitsChanged);
+    UploadLimitsManager().fetchFromBackend(silent: true);
   }
 
   void _onThemeChanged() {
@@ -51,10 +58,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  void _onUploadLimitsChanged() {
+    if (!mounted || _uploadLimitsDirty) return;
+    setState(() {
+      _selectedMaxImages = UploadLimitsManager().maxImages.toDouble();
+      _selectedMaxVideos = UploadLimitsManager().maxVideos.toDouble();
+    });
+  }
+
+  void _resetUploadLimitDraft() {
+    _uploadLimitsDirty = false;
+    _selectedMaxImages = UploadLimitsManager().maxImages.toDouble();
+    _selectedMaxVideos = UploadLimitsManager().maxVideos.toDouble();
+  }
+
+  void _setActiveSection(String id) {
+    if (_activeSection == id) return;
+    setState(() {
+      if (_activeSection == 'upload_limits' || id == 'upload_limits') {
+        _resetUploadLimitDraft();
+      }
+      _activeSection = id;
+    });
+    if (id == 'upload_limits') {
+      UploadLimitsManager().fetchFromBackend(silent: true);
+    }
+  }
+
   @override
   void dispose() {
     ThemeManager().removeListener(_onThemeChanged);
     MatchCriteriaManager().removeListener(_onCriteriaChanged);
+    UploadLimitsManager().removeListener(_onUploadLimitsChanged);
     super.dispose();
   }
 
@@ -1327,6 +1362,267 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _persistUploadLimits() async {
+    if (_isSavingUploadLimits) return;
+    final manager = UploadLimitsManager();
+    final images = _selectedMaxImages.round().clamp(0, 100);
+    final videos = _selectedMaxVideos.round().clamp(0, 20);
+    setState(() => _isSavingUploadLimits = true);
+    final saved = await manager.setLimits(maxImages: images, maxVideos: videos);
+    if (!mounted) return;
+    setState(() {
+      _isSavingUploadLimits = false;
+      if (saved) _uploadLimitsDirty = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          saved
+              ? 'Upload limits saved: $images images, $videos videos. Applied to Add Property.'
+              : 'Failed to save upload limits. Please try again.',
+        ),
+        backgroundColor: saved ? CRMColors.primary : CRMColors.danger,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  SliderThemeData _uploadLimitSliderTheme() {
+    return SliderTheme.of(context).copyWith(
+      activeTrackColor: CRMColors.primary,
+      inactiveTrackColor: CRMColors.primary.withValues(alpha: 0.15),
+      thumbColor: CRMColors.primary,
+      overlayColor: CRMColors.primary.withValues(alpha: 0.2),
+      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+      trackHeight: 6,
+      valueIndicatorColor: CRMColors.primary,
+      valueIndicatorTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+    );
+  }
+
+  Widget _buildLimitTickLabels(List<String> labels) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          for (final label in labels)
+            Text(
+              label,
+              style: CRMTypography.caption.copyWith(
+                fontSize: 11,
+                color: CRMColors.textSecondaryOf(context),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUploadLimitsSection() {
+    final imageCount = _selectedMaxImages.round().clamp(0, 100);
+    final videoCount = _selectedMaxVideos.round().clamp(0, 20);
+
+    return CRMCard(
+      elevated: true,
+      title: 'Property Upload Limits',
+      subtitle: 'Set the maximum number of images and videos allowed when adding a property. Click Save Changes to store the selected range in the database.',
+      headerAction: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: CRMColors.primary.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: CRMColors.primary.withValues(alpha: 0.4)),
+        ),
+        child: Text(
+          '$imageCount images / $videoCount videos',
+          style: TextStyle(
+            color: CRMColors.primary,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: CRMSpacing.m),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(CRMSpacing.m),
+              decoration: BoxDecoration(
+                color: CRMColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+                border: Border.all(color: CRMColors.primary.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: CRMColors.primary.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.tune_rounded, color: CRMColors.primary, size: 22),
+                  ),
+                  const SizedBox(width: CRMSpacing.m),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Range selection only',
+                          style: CRMTypography.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: CRMColors.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Move the sliders to preview limits. Values are saved to the database only when you click Save Changes, then applied in Add Property.',
+                          style: CRMTypography.caption.copyWith(
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: CRMSpacing.l),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Images (0–100)',
+                      style: CRMTypography.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: CRMColors.textOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Default: 30 images. Applies to Add Property after Save Changes.',
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  '$imageCount',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: CRMColors.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: CRMSpacing.s),
+            SliderTheme(
+              data: _uploadLimitSliderTheme(),
+              child: Slider(
+                value: _selectedMaxImages.clamp(0.0, 100.0),
+                min: 0,
+                max: 100,
+                divisions: 100,
+                label: '$imageCount',
+                onChanged: (val) {
+                  setState(() {
+                    _selectedMaxImages = val.roundToDouble();
+                    _uploadLimitsDirty = true;
+                  });
+                },
+              ),
+            ),
+            _buildLimitTickLabels(const ['0', '25', '50', '75', '100']),
+            const SizedBox(height: CRMSpacing.l),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Videos (0–20)',
+                      style: CRMTypography.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: CRMColors.textOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Default: 5 videos. Applies to Add Property after Save Changes.',
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  '$videoCount',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: CRMColors.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: CRMSpacing.s),
+            SliderTheme(
+              data: _uploadLimitSliderTheme(),
+              child: Slider(
+                value: _selectedMaxVideos.clamp(0.0, 20.0),
+                min: 0,
+                max: 20,
+                divisions: 20,
+                label: '$videoCount',
+                onChanged: (val) {
+                  setState(() {
+                    _selectedMaxVideos = val.roundToDouble();
+                    _uploadLimitsDirty = true;
+                  });
+                },
+              ),
+            ),
+            _buildLimitTickLabels(const ['0', '5', '10', '15', '20']),
+            const SizedBox(height: CRMSpacing.l),
+            const Divider(),
+            const SizedBox(height: CRMSpacing.m),
+            ElevatedButton.icon(
+              onPressed: _isSavingUploadLimits ? null : _persistUploadLimits,
+              icon: _isSavingUploadLimits
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.check_circle_rounded, size: 18),
+              label: const Text('Save Changes'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: CRMColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
@@ -1353,6 +1649,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const _SettingsNavItem(id: 'locations', label: 'Locations', icon: Icons.location_city_outlined),
       if (isAdminOrSuperAdmin)
         const _SettingsNavItem(id: 'match_criteria', label: 'Run Match Criteria', icon: Icons.bolt_rounded),
+      if (isAdminOrSuperAdmin)
+        const _SettingsNavItem(id: 'upload_limits', label: 'Upload Limits', icon: Icons.photo_library_outlined),
       if (isSuperAdmin)
         const _SettingsNavItem(id: 'permissions', label: 'Permission Matrix', icon: Icons.admin_panel_settings_rounded),
       if (isSuperAdmin)
@@ -1362,7 +1660,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (!sections.any((s) => s.id == _activeSection)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _activeSection = 'profile');
+        if (mounted) _setActiveSection('profile');
       });
     }
 
@@ -1376,6 +1674,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return _buildLocationConfigCard();
         case 'match_criteria':
           return _buildRunMatchCriteriaSection();
+        case 'upload_limits':
+          return _buildUploadLimitsSection();
         case 'permissions':
           if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
           return const PermissionMatrixCard();
@@ -1424,7 +1724,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 return ChoiceChip(
                                   label: Text(item.label),
                                   selected: selected,
-                                  onSelected: (_) => setState(() => _activeSection = item.id),
+                                  onSelected: (_) => _setActiveSection(item.id),
                                   selectedColor: CRMColors.primary.withValues(alpha: 0.12),
                                   labelStyle: CRMTypography.captionBold.copyWith(
                                     color: selected ? CRMColors.primary : CRMColors.textSecondaryOf(context),
@@ -1477,7 +1777,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildSettingsNavTile(_SettingsNavItem item) {
     final selected = item.id == _activeSection;
     return InkWell(
-      onTap: () => setState(() => _activeSection = item.id),
+      onTap: () => _setActiveSection(item.id),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),

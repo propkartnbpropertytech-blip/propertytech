@@ -13,6 +13,10 @@ class TrendAnalysisSection extends StatelessWidget {
   final ValueChanged<bool> onToggleVisibility;
   final ValueChanged<ReportKpiType> onMetricChanged;
   final ValueChanged<TrendGranularity> onGranularityChanged;
+  final String title;
+  final bool showVisibilityToggle;
+  final List<ReportKpiType>? metrics;
+  final Map<ReportKpiType, String>? metricLabels;
 
   const TrendAnalysisSection({
     super.key,
@@ -23,6 +27,10 @@ class TrendAnalysisSection extends StatelessWidget {
     required this.onToggleVisibility,
     required this.onMetricChanged,
     required this.onGranularityChanged,
+    this.title = 'Trend Analysis',
+    this.showVisibilityToggle = true,
+    this.metrics,
+    this.metricLabels,
   });
 
   @override
@@ -30,17 +38,20 @@ class TrendAnalysisSection extends StatelessWidget {
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
 
-    const availableMetrics = [
-      ReportKpiType.totalLeads,
-      ReportKpiType.leadsContacted,
-      ReportKpiType.leadQualificationRate,
-      ReportKpiType.siteVisitsScheduled,
-      ReportKpiType.siteVisitsDone,
-      ReportKpiType.convertedToWon,
-      ReportKpiType.callAttempted,
-      ReportKpiType.callPickedUp,
-      ReportKpiType.lostUnsuccessful,
-    ];
+    final availableMetrics = metrics ??
+        const [
+          ReportKpiType.totalLeads,
+          ReportKpiType.leadsContacted,
+          ReportKpiType.leadQualificationRate,
+          ReportKpiType.siteVisitsScheduled,
+          ReportKpiType.siteVisitsDone,
+          ReportKpiType.convertedToWon,
+          ReportKpiType.callAttempted,
+          ReportKpiType.callPickedUp,
+          ReportKpiType.lostUnsuccessful,
+        ];
+
+    String labelFor(ReportKpiType type) => metricLabels?[type] ?? type.displayName;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -63,39 +74,42 @@ class TrendAnalysisSection extends StatelessWidget {
                 children: [
                   const Icon(Icons.show_chart_rounded, size: 20),
                   const SizedBox(width: 8),
-                  const Text(
-                    'Trend Analysis',
-                    style: TextStyle(
+                  Text(
+                    title,
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: -0.2,
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isVisible
-                          ? const Color(0xFF16A34A).withValues(alpha: 0.12)
-                          : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      isVisible ? 'ON' : 'OFF',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: isVisible ? const Color(0xFF16A34A) : Colors.grey,
+                  if (showVisibilityToggle) ...[
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isVisible
+                            ? const Color(0xFF16A34A).withValues(alpha: 0.12)
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        isVisible ? 'ON' : 'OFF',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isVisible ? const Color(0xFF16A34A) : Colors.grey,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
-              Switch(
-                value: isVisible,
-                activeThumbColor: primaryColor,
-                onChanged: onToggleVisibility,
-              ),
+              if (showVisibilityToggle)
+                Switch(
+                  value: isVisible,
+                  activeThumbColor: primaryColor,
+                  onChanged: onToggleVisibility,
+                ),
             ],
           ),
 
@@ -127,7 +141,7 @@ class TrendAnalysisSection extends StatelessWidget {
                       items: availableMetrics.map((m) {
                         return DropdownMenuItem(
                           value: m,
-                          child: Text(m.displayName),
+                          child: Text(labelFor(m)),
                         );
                       }).toList(),
                       onChanged: (val) {

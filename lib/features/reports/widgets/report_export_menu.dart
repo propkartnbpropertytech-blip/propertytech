@@ -7,11 +7,19 @@ import '../services/report_export_service.dart';
 class ReportExportMenu extends StatefulWidget {
   final ReportOverallData reportData;
   final ReportConfiguration config;
+  final String? reportTitle;
+  final String? subjectLabel;
+  final String? filenamePrefix;
+  final String tooltip;
 
   const ReportExportMenu({
     super.key,
     required this.reportData,
     required this.config,
+    this.reportTitle,
+    this.subjectLabel,
+    this.filenamePrefix,
+    this.tooltip = 'Export Business Report',
   });
 
   @override
@@ -38,7 +46,7 @@ class _ReportExportMenuState extends State<ReportExportMenu> {
 
     return PopupMenuButton<String>(
       onSelected: _handleExport,
-      tooltip: 'Export Business Report',
+      tooltip: widget.tooltip,
       offset: const Offset(0, 40),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       itemBuilder: (context) => [
@@ -123,19 +131,43 @@ class _ReportExportMenuState extends State<ReportExportMenu> {
     try {
       switch (type) {
         case 'pdf':
-          await ReportExportService.exportPdf(reportData: widget.reportData, config: widget.config);
+          await ReportExportService.exportPdf(
+            reportData: widget.reportData,
+            config: widget.config,
+            reportTitle: widget.reportTitle,
+            subjectLabel: widget.subjectLabel,
+            filenamePrefix: widget.filenamePrefix,
+          );
           _showSnackbar('PDF Report generated and downloaded.');
           break;
         case 'excel':
-          await ReportExportService.exportExcel(reportData: widget.reportData, config: widget.config);
+          await ReportExportService.exportExcel(
+            reportData: widget.reportData,
+            config: widget.config,
+            reportTitle: widget.reportTitle,
+            subjectLabel: widget.subjectLabel,
+            filenamePrefix: widget.filenamePrefix,
+          );
           _showSnackbar('Excel Report generated and downloaded.');
           break;
         case 'csv':
-          await ReportExportService.exportCsv(reportData: widget.reportData, config: widget.config);
+          await ReportExportService.exportCsv(
+            reportData: widget.reportData,
+            config: widget.config,
+            reportTitle: widget.reportTitle,
+            subjectLabel: widget.subjectLabel,
+            filenamePrefix: widget.filenamePrefix,
+          );
           _showSnackbar('CSV Report generated and downloaded.');
           break;
         case 'print':
-          await ReportExportService.printReport(reportData: widget.reportData, config: widget.config);
+          await ReportExportService.printReport(
+            reportData: widget.reportData,
+            config: widget.config,
+            reportTitle: widget.reportTitle,
+            subjectLabel: widget.subjectLabel,
+            filenamePrefix: widget.filenamePrefix,
+          );
           _showSnackbar('Print document prepared.');
           break;
       }

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../models/report_data.dart';
+import '../utils/telecaller_report_navigation.dart';
 
 class TeamRankingSection extends StatefulWidget {
   final List<TeamMemberRanking> telecallerRankings;
@@ -242,9 +243,14 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
                               onTap: () {
                                 if (widget.onUserSelected != null) {
                                   widget.onUserSelected!(m);
+                                } else if (_activeTab == 0) {
+                                  TelecallerReportNavigation.open(
+                                    context,
+                                    userId: m.userId,
+                                    userName: m.userName,
+                                  );
                                 } else {
-                                  final target = _activeTab == 0 ? '/reports/leads/telecaller' : '/reports/leads/sales';
-                                  context.go(target);
+                                  context.go('/reports/leads/sales');
                                 }
                               },
                               child: Text(
@@ -324,9 +330,14 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
                   onTap: () {
                     if (widget.onUserSelected != null) {
                       widget.onUserSelected!(m);
+                    } else if (_activeTab == 0) {
+                      TelecallerReportNavigation.open(
+                        context,
+                        userId: m.userId,
+                        userName: m.userName,
+                      );
                     } else {
-                      final target = _activeTab == 0 ? '/reports/leads/telecaller' : '/reports/leads/sales';
-                      context.go(target);
+                      context.go('/reports/leads/sales');
                     }
                   },
                   child: Text(

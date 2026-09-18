@@ -125,3 +125,16 @@ class UpdateTrendConfigEvent extends ReportsEvent {
   @override
   List<Object?> get props => [metric, granularity];
 }
+
+class SelectTelecallerSubjectEvent extends ReportsEvent {
+  final String? userId;
+  final String? userName;
+
+  const SelectTelecallerSubjectEvent({
+    this.userId,
+    this.userName,
+  });
+
+  @override
+  List<Object?> get props => [userId, userName];
+}

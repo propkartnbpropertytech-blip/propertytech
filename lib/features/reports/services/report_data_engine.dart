@@ -27,10 +27,15 @@ class ReportDataEngine {
       return _matchesFilters(lead, config.filters);
     }).toList();
 
-    // 2. Filter Followups by Date Range
-    final filteredFollowups = allFollowups.where((f) {
+    // 2. Filter Followups by Date Range (and optional user scope)
+    var filteredFollowups = allFollowups.where((f) {
       return config.dateRange.contains(f.createdAt) || config.dateRange.contains(f.followupDate);
     }).toList();
+    filteredFollowups = _scopeFollowups(
+      followups: filteredFollowups,
+      filters: config.filters,
+      matchingLeads: filteredLeads,
+    );
 
     // 3. Extract Active Telecallers and Sales Users
     final telecallers = allUsers.where((u) => u.roleName.toLowerCase() == 'telecaller').toList();
@@ -425,6 +430,9 @@ class ReportDataEngine {
           percentage: sPct,
           color: sourcePalette[colorIdx % sourcePalette.length],
           leads: leads,
+          qualifiedCount: leads.where(_isQualified).length,
+          siteVisitsCount: leads.where((l) => _isVisitScheduled(l) || _isVisitDone(l)).length,
+          wonCount: leads.where(_isWon).length,
         ),
       );
       colorIdx++;
@@ -442,7 +450,14 @@ class ReportDataEngine {
       // Filter leads with global filters within comparison date range
       final globalFilteredAllLeads = _applyGlobalFilters(allLeads, config.filters);
       previousLeads = globalFilteredAllLeads.where((l) => comparisonRange.contains(l.createdAt)).toList();
-      final previousFollowups = allFollowups.where((f) => comparisonRange.contains(f.createdAt)).toList();
+      var previousFollowups = allFollowups.where((f) {
+        return comparisonRange.contains(f.createdAt) || comparisonRange.contains(f.followupDate);
+      }).toList();
+      previousFollowups = _scopeFollowups(
+        followups: previousFollowups,
+        filters: config.filters,
+        matchingLeads: previousLeads,
+      );
 
       final prevContacted = previousLeads.where((l) => _isContacted(l)).length;
       final prevQualified = previousLeads.where((l) => _isQualified(l)).length;
@@ -1038,5 +1053,123 @@ class ReportDataEngine {
       callOpen: callOpen,
       lostLeads: lost,
     );
+  }
+
+  /// Individual Telecaller report: same business rules as Overall Business Insight,
+  /// scoped to one telecaller without mutating the team-level dashboard filters.
+  static ReportOverallData computeTelecallerReport({
+    required String telecallerId,
+    required String telecallerName,
+    required ReportConfiguration config,
+    required List<RequirementModel> allLeads,
+    required List<UserModel> allUsers,
+    required List<PropertyModel> allProperties,
+    required List<FollowupLocal> allFollowups,
+    required List<String> systemStatuses,
+  }) {
+    final scopedConfig = config.copyWith(
+      filters: config.filters.copyWith(
+        telecallerId: telecallerId,
+        telecallerName: telecallerName,
+      ),
+      showGrowthComparison: true,
+      showLeadSourceAnalysis: true,
+      showTrendAnalysis: true,
+      showLeadStatusPipeline: true,
+      showConversionFunnel: true,
+      showFollowupAnalysis: true,
+      showBusinessInsights: true,
+      showTeamRanking: false,
+    );
+
+    final data = computeReport(
+      allLeads: allLeads,
+      allUsers: allUsers,
+      allProperties: allProperties,
+      allFollowups: allFollowups,
+      systemStatuses: systemStatuses,
+      config: scopedConfig,
+    );
+
+    final remappedFunnel = data.funnelStages.map((stage) {
+      if (stage.stageName == 'Total Leads') {
+        return stage.copyWith(stageName: 'Assigned Leads');
+      }
+      return stage;
+    }).toList();
+
+    final remappedGrowth = data.growthComparisonItems.map((item) {
+      if (item.kpiType == ReportKpiType.totalLeads) {
+        return GrowthComparisonItem(
+          kpiType: item.kpiType,
+          metricName: 'Leads Assigned',
+          currentCount: item.currentCount,
+          previousCount: item.previousCount,
+          difference: item.difference,
+          growthPercentage: item.growthPercentage,
+          isPositive: item.isPositive,
+        );
+      }
+      return item;
+    }).toList();
+
+    final overdueCount = data.followupCategories
+        .where((c) => c.categoryName.toLowerCase().contains('overdue'))
+        .fold<int>(0, (sum, c) => sum + c.count);
+
+    final insights = InsightGenerator.generateTelecallerInsights(
+      telecallerName: telecallerName,
+      assignedCount: data.kpiValues[ReportKpiType.totalLeads]?.count ?? 0,
+      contactedCount: data.kpiValues[ReportKpiType.leadsContacted]?.count ?? 0,
+      qualifiedCount: data.kpiValues[ReportKpiType.leadQualificationRate]?.count ?? 0,
+      visitsScheduledCount: data.kpiValues[ReportKpiType.siteVisitsScheduled]?.count ?? 0,
+      visitsDoneCount: data.kpiValues[ReportKpiType.siteVisitsDone]?.count ?? 0,
+      wonCount: data.kpiValues[ReportKpiType.convertedToWon]?.count ?? 0,
+      lostCount: data.kpiValues[ReportKpiType.lostUnsuccessful]?.count ?? 0,
+      callAttemptedCount: data.kpiValues[ReportKpiType.callAttempted]?.count ?? 0,
+      callPickedUpCount: data.kpiValues[ReportKpiType.callPickedUp]?.count ?? 0,
+      callOpenCount: data.kpiValues[ReportKpiType.callOpen]?.count ?? 0,
+      overdueFollowupsCount: overdueCount,
+      growthItems: remappedGrowth,
+    );
+
+    return ReportOverallData(
+      kpiValues: data.kpiValues,
+      pipelineStages: data.pipelineStages.where((s) => s.count > 0).toList(),
+      funnelStages: remappedFunnel,
+      followupCategories: data.followupCategories,
+      telecallerRankings: const [],
+      salesRankings: const [],
+      insights: insights,
+      growthComparisonItems: remappedGrowth,
+      leadSources: data.leadSources,
+      trendPoints: data.trendPoints,
+      filteredLeads: data.filteredLeads,
+      availableStatuses: data.availableStatuses,
+      availableSources: data.availableSources,
+      availableTelecallers: data.availableTelecallers,
+      availableSalesUsers: data.availableSalesUsers,
+      availableProperties: data.availableProperties,
+      allLeads: data.allLeads,
+      allFollowups: data.allFollowups,
+    );
+  }
+
+  static List<FollowupLocal> _scopeFollowups({
+    required List<FollowupLocal> followups,
+    required ReportFilterState filters,
+    required List<RequirementModel> matchingLeads,
+  }) {
+    final hasTelecaller = filters.telecallerId != null && filters.telecallerId!.isNotEmpty;
+    final hasSales = filters.salesUserId != null && filters.salesUserId!.isNotEmpty;
+    if (!hasTelecaller && !hasSales) return followups;
+
+    final leadIds = matchingLeads.map((l) => l.id).toSet();
+    return followups.where((f) {
+      if (f.requirementId != null && leadIds.contains(f.requirementId)) return true;
+      if (hasTelecaller && f.createdBy == filters.telecallerId) return true;
+      if (hasSales && f.createdBy == filters.salesUserId) return true;
+      return false;
+    }).toList();
   }
 }

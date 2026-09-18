@@ -5,10 +5,12 @@ import 'lead_drilldown_dialog.dart';
 
 class LeadStatusPipelineSection extends StatelessWidget {
   final List<PipelineStageData> stages;
+  final String title;
 
   const LeadStatusPipelineSection({
     super.key,
     required this.stages,
+    this.title = 'Lead Status Pipeline',
   });
 
   @override
@@ -36,13 +38,13 @@ class LeadStatusPipelineSection extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.account_tree_outlined, size: 18),
-                  SizedBox(width: 8),
+                  const Icon(Icons.account_tree_outlined, size: 18),
+                  const SizedBox(width: 8),
                   Text(
-                    'Lead Status Pipeline',
-                    style: TextStyle(
+                    title,
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: -0.2,

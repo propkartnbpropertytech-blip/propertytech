@@ -262,6 +262,15 @@ class RequirementLocalRepository {
   Isar get _isar => IsarService().isar;
 
   static final Map<String, RequirementLocal> inMemory = {};
+  static final Map<String, Map<String, dynamic>> metaCustomFieldsById = {};
+
+  static void rememberMetaCustomFields(String id, Map<String, dynamic>? meta) {
+    if (id.trim().isEmpty || meta == null || meta.isEmpty) return;
+    metaCustomFieldsById[id] = {
+      ...?metaCustomFieldsById[id],
+      ...meta,
+    };
+  }
 
   Future<RequirementLocal?> getRequirementById(String id) async {
     if (kIsWeb) {
@@ -369,6 +378,12 @@ class RequirementLocalRepository {
             ..assignedTo = map['assignedTo']
             ..nextFollowupDate = map['nextFollowupDate'];
           inMemory[r.id] = r;
+          if (map['metaCustomFields'] is Map) {
+            rememberMetaCustomFields(
+              r.id,
+              Map<String, dynamic>.from(map['metaCustomFields'] as Map),
+            );
+          }
         }
         print("Loaded ${inMemory.length} requirements from local storage cache.");
       }
@@ -412,6 +427,8 @@ class RequirementLocalRepository {
         'createdBy': item.createdBy,
         'assignedTo': item.assignedTo,
         'nextFollowupDate': item.nextFollowupDate,
+        if (metaCustomFieldsById[item.id] != null)
+          'metaCustomFields': metaCustomFieldsById[item.id],
       })).toList();
       await prefs.setStringList('cached_requirements', jsonList);
     } catch (e) {

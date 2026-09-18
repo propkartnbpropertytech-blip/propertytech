@@ -24,6 +24,7 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
     on<ToggleKpiMetricEvent>(_onToggleKpiMetric);
     on<UpdateComparisonConfigEvent>(_onUpdateComparisonConfig);
     on<UpdateTrendConfigEvent>(_onUpdateTrendConfig);
+    on<SelectTelecallerSubjectEvent>(_onSelectTelecallerSubject);
 
     // Reactive subscription to local data changes
     _requirementsSub = RepositoryCoordinator().requirementsStream.listen((_) {
@@ -192,6 +193,34 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
       trendGranularity: event.granularity,
     );
     await _recomputeWithConfig(updatedConfig, emit);
+  }
+
+  void _onSelectTelecallerSubject(
+    SelectTelecallerSubjectEvent event,
+    Emitter<ReportsState> emit,
+  ) {
+    final updatedConfig = state.config.copyWith(
+      subjectTelecallerId: event.userId,
+      subjectTelecallerName: event.userName,
+      clearSubjectTelecaller: event.userId == null || event.userId!.isEmpty,
+    );
+
+    if (state is ReportsLoaded) {
+      emit(ReportsLoaded(config: updatedConfig, data: (state as ReportsLoaded).data));
+    } else if (state is ReportsLoading) {
+      emit(ReportsLoading(
+        config: updatedConfig,
+        previousData: (state as ReportsLoading).previousData,
+      ));
+    } else if (state is ReportsError) {
+      emit(ReportsError(
+        config: updatedConfig,
+        message: (state as ReportsError).message,
+        previousData: (state as ReportsError).previousData,
+      ));
+    } else {
+      emit(ReportsInitial(config: updatedConfig));
+    }
   }
 
   Future<void> _recomputeWithConfig(

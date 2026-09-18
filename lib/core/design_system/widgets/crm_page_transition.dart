@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../tokens/app_motion.dart';
 
-/// Light fade for shell routes — keep short to avoid mobile lag/stuck feel.
+/// Smooth pop-in for shell routes opened from the sidebar.
 CustomTransitionPage<T> crmFadeSlidePage<T>({
   required LocalKey key,
   required Widget child,
@@ -12,14 +12,27 @@ CustomTransitionPage<T> crmFadeSlidePage<T>({
     key: key,
     name: name,
     child: child,
-    transitionDuration: CRMMotion.fast,
+    transitionDuration: CRMMotion.medium,
     reverseTransitionDuration: CRMMotion.fast,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       final curved = CurvedAnimation(
         parent: animation,
-        curve: Curves.easeOutCubic,
+        curve: const Cubic(0.22, 1.0, 0.36, 1.0),
       );
-      return FadeTransition(opacity: curved, child: child);
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.03),
+            end: Offset.zero,
+          ).animate(curved),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
+            alignment: Alignment.center,
+            child: child,
+          ),
+        ),
+      );
     },
   );
 }
