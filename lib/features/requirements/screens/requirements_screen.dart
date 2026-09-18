@@ -2059,26 +2059,138 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return null;
   }
 
+  bool _isRequirementVisibleToUser(RequirementModel req, UserModel? currentUser) {
+    if (currentUser == null) return false;
+    final role = currentUser.role;
+
+    if (role == 'Super Admin') return true;
+
+    if (role == 'Sales') {
+      if (_isLeadTransferredAway(req, currentUser)) return false;
+      return _salesCanViewRequirement(req, currentUser);
+    }
+
+    if (role == 'Admin') {
+      if (req.adminId != null && req.adminId!.isNotEmpty && req.adminId == currentUser.id) return true;
+      if (req.createdBy == currentUser.id) return true;
+      if (req.organizationId != null && currentUser.organizationId != null && req.organizationId == currentUser.organizationId) return true;
+      try {
+        final usersState = context.read<UsersBloc>().state;
+        if (usersState is UsersLoaded) {
+          final isManagedUserLead = usersState.users.any((u) =>
+              (u.adminId == currentUser.id || u.id == currentUser.id) &&
+              TeamUserVisibility.requirementBelongsToUser(req, u));
+          if (isManagedUserLead) return true;
+        }
+      } catch (_) {}
+      return true;
+    }
+
+    if (role == 'Telecaller') {
+      if (currentUser.adminId != null && currentUser.adminId!.isNotEmpty && req.adminId == currentUser.adminId) return true;
+      if (req.createdBy == currentUser.id) return true;
+      return true;
+    }
+
+    return true;
+  }
+
   int _getLeadDateFilterCount(List<RequirementModel> baseList, LeadDateFilterPreset preset) {
     final selectedUser = _selectedUserForDateCounts();
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
+
     return baseList.where((req) {
+      if (!_isRequirementVisibleToUser(req, currentUser)) return false;
+
       final matchesListingType = getListingTypeLabel(req) == _activeListingTab;
       if (!matchesListingType) return false;
+
       if (_activeMainTab == 'Rejected') {
         if (!_isLeadRejected(req)) return false;
-        if (currentUser != null && currentUser.role == 'Sales' && !_salesCanViewRequirement(req, currentUser)) {
-          return false;
+      } else if (_activeMainTab == 'Leads Added by Me') {
+        if (currentUser == null || !_isUserCreator(req, currentUser)) return false;
+      } else if (_activeMainTab == 'My Won') {
+        if (!_isLeadWon(req)) return false;
+      } else {
+        if (_isLeadRejected(req)) return false;
+        if (_selectedStatus != 'Won' && _isLeadWon(req)) return false;
+        if (currentUser != null && currentUser.role == 'Sales') {
+          if (_salesLeadGroupFilter == 'assigned' && (!_isUserAssignee(req, currentUser) || _isUserCreator(req, currentUser))) {
+            return false;
+          }
+          if (_salesLeadGroupFilter == 'added' && !_isUserCreator(req, currentUser)) {
+            return false;
+          }
         }
       }
-      if (_activeMainTab == 'Leads Added by Me') {
-        if (currentUser == null || !_isUserCreator(req, currentUser)) return false;
-      } else if (selectedUser != null &&
+
+      if (selectedUser != null &&
           !(_activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser)) &&
           !TeamUserVisibility.requirementBelongsToUser(req, selectedUser)) {
         return false;
       }
+
+      if (_selectedCategoryId != null && req.categoryId != _selectedCategoryId) {
+        return false;
+      }
+
+      if (_selectedConfigIds.isNotEmpty) {
+        final matchesSpec = _selectedConfigIds.contains(req.configurationId) ||
+            _selectedConfigIds.contains(req.propertyTypeId) ||
+            req.configurationIds.any((id) => _selectedConfigIds.contains(id)) ||
+            req.propertyTypeIds.any((id) => _selectedConfigIds.contains(id));
+        if (!matchesSpec) return false;
+      }
+
+      if (_selectedStatus != 'All') {
+        if (_selectedStatus == 'Unassign') {
+          if (!_isLeadUnassigned(req)) return false;
+        } else {
+          final isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
+          String mappedStatus = _isLeadRejected(req)
+              ? getEffectiveStatus(req)
+              : ((req.status == 'Assigned')
+                  ? 'Assigned'
+                  : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req)));
+          if (mappedStatus == 'Active' || mappedStatus == 'Live') mappedStatus = 'Interested';
+          if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
+          if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
+          if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
+
+          if (mappedStatus != _selectedStatus && req.status != _selectedStatus) {
+            final matchesCallAttempted = _selectedStatus == 'Call Attempted' &&
+                (req.status.startsWith('Call Attempted') || req.status.startsWith('Call attempted'));
+            final matchesRejected = _selectedStatus == 'Rejected' && req.status.startsWith('Rejected');
+            if (!matchesCallAttempted && !matchesRejected) return false;
+          }
+        }
+      }
+
+      final query = _searchController.text.trim().toLowerCase();
+      if (query.isNotEmpty) {
+        final clientName = req.clientName.toLowerCase();
+        final clientMobile = req.clientMobile.toLowerCase();
+        final specs = '${req.propertyTypeName} ${req.configurationName ?? ""} ${req.listingTypeName ?? ""} ${req.categoryName ?? ""}'.toLowerCase();
+        final remarks = (req.remarks ?? '').toLowerCase();
+        final areas = req.areaNames.join(' ').toLowerCase();
+
+        bool matchesSalesman = false;
+        if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
+          final creator = (req.creatorName ?? '').toLowerCase();
+          final assignee = (req.assigneeName ?? '').toLowerCase();
+          matchesSalesman = creator.contains(query) || assignee.contains(query);
+        }
+
+        final matchesSearch = clientName.contains(query) ||
+            clientMobile.contains(query) ||
+            specs.contains(query) ||
+            remarks.contains(query) ||
+            areas.contains(query) ||
+            matchesSalesman;
+        if (!matchesSearch) return false;
+      }
+
       return _matchesLeadDateFilterWithPreset(req, preset);
     }).length;
   }
@@ -3340,7 +3452,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildSalesLeadGroupSelector(UserModel currentUser, List<RequirementModel> allLoadedReqs) {
-    final assignedCount = allLoadedReqs.where((r) =>
+    final activeTabReqs = allLoadedReqs.where((r) => getListingTypeLabel(r) == _activeListingTab).toList();
+
+    final assignedCount = activeTabReqs.where((r) =>
         _salesCanViewRequirement(r, currentUser) &&
         _isUserAssignee(r, currentUser) &&
         !_isUserCreator(r, currentUser) &&
@@ -3348,14 +3462,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
-    final addedCount = allLoadedReqs.where((r) =>
+    final addedCount = activeTabReqs.where((r) =>
         _salesCanViewRequirement(r, currentUser) &&
         _isUserCreator(r, currentUser) &&
         !_isLeadTransferredAway(r, currentUser) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
-    final allCount = allLoadedReqs.where((r) =>
+    final allCount = activeTabReqs.where((r) =>
         _salesCanViewRequirement(r, currentUser) &&
         !_isLeadTransferredAway(r, currentUser) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
