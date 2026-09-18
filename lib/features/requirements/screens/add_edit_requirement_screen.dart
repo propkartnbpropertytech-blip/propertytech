@@ -190,6 +190,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           if (_selectedTypeIds.isEmpty && req.propertyTypeId != null && req.propertyTypeId!.isNotEmpty) {
             _selectedTypeIds.add(req.propertyTypeId!);
           }
+          _canonicalizeSelectedPropertyTypes(_getFilteredTypes());
           _selectedConfigId = req.configurationId;
           _selectedConfigIds.addAll(req.configurationIds);
           if (_selectedConfigIds.isEmpty && req.configurationId != null) {
@@ -503,6 +504,58 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
         .toList();
   }
 
+  bool _isApartmentOrFlatLabel(String raw) {
+    final n = raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    if (n.isEmpty) return false;
+    if (n.contains('apartment') || n.contains('flat')) return true;
+    final tokens = n.split(' ');
+    return tokens.contains('apt') || tokens.contains('apts') || tokens.contains('flats');
+  }
+
+  void _canonicalizeSelectedPropertyTypes(List<LookupItem> filteredTypes) {
+    if (_selectedTypeIds.isEmpty &&
+        _selectedTypeId != null &&
+        _selectedTypeId!.trim().isNotEmpty) {
+      _selectedTypeIds.add(_selectedTypeId!);
+    }
+    if (filteredTypes.isEmpty) {
+      _selectedTypeIds.clear();
+      _selectedTypeId = null;
+      return;
+    }
+
+    LookupItem? flatType;
+    for (final t in filteredTypes) {
+      if (t.name.toLowerCase().trim() == 'flat' || _isApartmentOrFlatLabel(t.name)) {
+        flatType = t;
+        break;
+      }
+    }
+
+    final next = <String>[];
+    for (final id in List<String>.from(_selectedTypeIds)) {
+      if (filteredTypes.any((t) => t.id == id)) {
+        if (!next.contains(id)) next.add(id);
+        continue;
+      }
+      LookupItem? original;
+      for (final t in _types) {
+        if (t.id == id) {
+          original = t;
+          break;
+        }
+      }
+      if (original != null && _isApartmentOrFlatLabel(original.name) && flatType != null) {
+        if (!next.contains(flatType.id)) next.add(flatType.id);
+      }
+    }
+
+    _selectedTypeIds
+      ..clear()
+      ..addAll(next);
+    _selectedTypeId = _selectedTypeIds.isNotEmpty ? _selectedTypeIds.first : null;
+  }
+
   List<LookupItem> _getFilteredConfigs() {
     if (_selectedCategoryId == null) return [];
     return _configurations.where((c) => c.categoryId == _selectedCategoryId).toList();
@@ -762,9 +815,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     final bool isMobile = screenWidth < 700;
 
     final filteredTypes = _getFilteredTypes();
-    if (_selectedTypeId != null && !filteredTypes.any((t) => t.id == _selectedTypeId)) {
-      _selectedTypeId = filteredTypes.isNotEmpty ? filteredTypes.first.id : null;
-    }
+    _canonicalizeSelectedPropertyTypes(filteredTypes);
     final filteredConfigs = _getFilteredConfigs();
     _selectedConfigIds.retainWhere((id) => filteredConfigs.any((c) => c.id == id));
     if (_selectedConfigId != null && !filteredConfigs.any((c) => c.id == _selectedConfigId)) {

@@ -1794,16 +1794,8 @@ class IntegrationService extends ChangeNotifier {
     }
 
     final user = RoleGuard.currentUser;
-    final category = metadata.categories.isNotEmpty ? metadata.categories.first : null;
-    final typesForCategory = metadata.types
-        .where((t) => category == null || t.categoryId == category.id)
-        .where((t) => t.name.toLowerCase() != 'apartment')
-        .toList();
-    final defaultType = typesForCategory.isNotEmpty
-        ? typesForCategory.first
-        : (metadata.types.isNotEmpty ? metadata.types.first : null);
-    final defaultListing = metadata.listingTypes.isNotEmpty ? metadata.listingTypes.first : null;
-    if (category == null || defaultType == null) {
+    final fallbackCategory = metadata.categories.isNotEmpty ? metadata.categories.first : null;
+    if (fallbackCategory == null) {
       throw Exception(
         'Property lookups are not loaded yet. Open the Leads page once so cities and categories load, then sync again.',
       );
@@ -1867,12 +1859,64 @@ class IntegrationService extends ChangeNotifier {
         existingPhones.add(normalizedMobile);
       }
 
-      final resolvedCategory = primaryProperty != null && primaryProperty.categoryId.isNotEmpty
-          ? LookupItem(id: primaryProperty.categoryId, name: primaryProperty.categoryName)
-          : category;
-      final resolvedType = primaryProperty != null && primaryProperty.propertyTypeId.isNotEmpty
-          ? LookupItem(id: primaryProperty.propertyTypeId, name: primaryProperty.propertyTypeName, categoryId: primaryProperty.categoryId)
-          : defaultType;
+      final defaultListing = metadata.listingTypes.isNotEmpty ? metadata.listingTypes.first : null;
+      final typeNeedle = _leadPropertyTypeNeedle(lead, mapped);
+      final categoryNeedle = _leadCategoryNeedle(lead, mapped);
+
+      LookupItem resolvedCategory = _matchCategoryFromRequirement(
+            metadata.categories,
+            categoryNeedle,
+            typeNeedle,
+          ) ??
+          (primaryProperty != null && primaryProperty.categoryId.isNotEmpty
+              ? LookupItem(id: primaryProperty.categoryId, name: primaryProperty.categoryName)
+              : fallbackCategory);
+
+      final typesForCategory = metadata.types
+          .where((t) => t.categoryId == resolvedCategory.id)
+          .where((t) => t.name.toLowerCase() != 'apartment')
+          .toList();
+      LookupItem? defaultType = typesForCategory.isNotEmpty ? typesForCategory.first : null;
+      if (defaultType == null) {
+        for (final t in metadata.types) {
+          if (t.name.toLowerCase() != 'apartment') {
+            defaultType = t;
+            break;
+          }
+        }
+      }
+
+      final matchedType = _matchPropertyTypeFromRequirement(
+        metadata.types,
+        typeNeedle,
+        categoryId: resolvedCategory.id,
+      );
+      LookupItem? resolvedType = matchedType ??
+          (primaryProperty != null &&
+                  primaryProperty.propertyTypeId.isNotEmpty &&
+                  (primaryProperty.categoryId.isEmpty || primaryProperty.categoryId == resolvedCategory.id)
+              ? LookupItem(
+                  id: primaryProperty.propertyTypeId,
+                  name: primaryProperty.propertyTypeName,
+                  categoryId: primaryProperty.categoryId,
+                )
+              : defaultType);
+
+      if (resolvedType != null && resolvedType.name.toLowerCase() == 'apartment') {
+        resolvedType = _matchPropertyTypeFromRequirement(
+              metadata.types,
+              'flat',
+              categoryId: resolvedCategory.id,
+            ) ??
+            resolvedType;
+      }
+
+      if (resolvedType == null) {
+        throw Exception(
+          'Property lookups are not loaded yet. Open the Leads page once so cities and categories load, then sync again.',
+        );
+      }
+
       final resolvedListing = primaryProperty != null && primaryProperty.listingTypeId.isNotEmpty
           ? LookupItem(id: primaryProperty.listingTypeId, name: primaryProperty.listingTypeName)
           : defaultListing;
@@ -2881,6 +2925,124 @@ function onFormSubmit(e) {
 
   double _parseBudget(String raw) {
     return parseBudgetRange(raw).targetBudget;
+  }
+
+  bool _isApartmentOrFlatLabel(String raw) {
+    final n = raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    if (n.isEmpty) return false;
+    if (n.contains('apartment') || n.contains('flat')) return true;
+    final tokens = n.split(' ');
+    return tokens.contains('apt') || tokens.contains('apts') || tokens.contains('flats');
+  }
+
+  String _leadPropertyTypeNeedle(IntegrationLeadModel lead, Map<String, String> mapped) {
+    const keys = [
+      'Property Type',
+      'Type of Property',
+      'Type',
+      'what_type_of_property_are_you_looking_to_rent_out?',
+      'what_type_of_property_are_you_looking_to_rent_out',
+      'what_type_of_home_are_you_looking_for?',
+      'property_type',
+      'typeofproperty',
+    ];
+    for (final key in keys) {
+      final value = lead.getStringValue(key);
+      if (value.trim().isNotEmpty) return value.trim();
+    }
+    for (final entry in lead.rawJson.entries) {
+      final key = entry.key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+      if (key.contains('propertytype') || key.contains('typeofproperty') || key.contains('typeofhome')) {
+        final value = entry.value?.toString().trim() ?? '';
+        if (value.isNotEmpty) return value;
+      }
+    }
+    return mapped['configuration'] ?? '';
+  }
+
+  String _leadCategoryNeedle(IntegrationLeadModel lead, Map<String, String> mapped) {
+    const keys = [
+      'Category',
+      'Property Category',
+      'Requirement Category',
+      'category',
+    ];
+    for (final key in keys) {
+      final value = lead.getStringValue(key);
+      if (value.trim().isNotEmpty) return value.trim();
+    }
+    for (final entry in lead.rawJson.entries) {
+      final key = entry.key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+      if (key == 'category' || key.contains('propertycategory')) {
+        final value = entry.value?.toString().trim() ?? '';
+        if (value.isNotEmpty) return value;
+      }
+    }
+    return '';
+  }
+
+  LookupItem? _matchCategoryFromRequirement(
+    List<LookupItem> categories,
+    String categoryNeedle,
+    String typeNeedle,
+  ) {
+    final direct = _matchLookup(categories, categoryNeedle);
+    if (direct != null) return direct;
+
+    final haystack = '${categoryNeedle.toLowerCase()} ${typeNeedle.toLowerCase()}';
+    if (haystack.contains('commercial') ||
+        haystack.contains('office') ||
+        haystack.contains('shop') ||
+        haystack.contains('showroom') ||
+        haystack.contains('industrial')) {
+      return _matchLookup(categories, 'commercial') ??
+          categories.cast<LookupItem?>().firstWhere(
+            (c) => (c!.name.toLowerCase().contains('commercial') || c.name.toLowerCase().contains('industrial')),
+            orElse: () => null,
+          );
+    }
+    if (haystack.contains('plot') || haystack.contains('land')) {
+      return _matchLookup(categories, 'land') ??
+          categories.cast<LookupItem?>().firstWhere(
+            (c) => (c!.name.toLowerCase().contains('land') || c.name.toLowerCase().contains('plot')),
+            orElse: () => null,
+          );
+    }
+    if (haystack.contains('residential') ||
+        haystack.contains('flat') ||
+        haystack.contains('apartment') ||
+        haystack.contains('villa') ||
+        haystack.contains('bhk')) {
+      return _matchLookup(categories, 'residential') ??
+          categories.cast<LookupItem?>().firstWhere(
+            (c) => c!.name.toLowerCase().contains('residential'),
+            orElse: () => null,
+          );
+    }
+    return null;
+  }
+
+  LookupItem? _matchPropertyTypeFromRequirement(
+    List<LookupItem> types,
+    String needle, {
+    String? categoryId,
+  }) {
+    if (needle.trim().isEmpty) return null;
+    final scoped = types.where((t) {
+      if (t.name.toLowerCase() == 'apartment') return false;
+      if (categoryId != null && t.categoryId != null && t.categoryId != categoryId) return false;
+      return true;
+    }).toList();
+
+    if (_isApartmentOrFlatLabel(needle)) {
+      for (final t in scoped) {
+        if (t.name.toLowerCase().trim() == 'flat' || _isApartmentOrFlatLabel(t.name)) {
+          return t;
+        }
+      }
+    }
+
+    return _matchLookup(scoped, needle) ?? _matchLookup(scoped, needle, categoryId: categoryId);
   }
 
   LookupItem? _matchLookup(List<LookupItem> items, String needle, {String? categoryId}) {

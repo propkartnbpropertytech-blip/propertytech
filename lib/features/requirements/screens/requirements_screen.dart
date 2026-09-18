@@ -324,6 +324,42 @@ class PropertyRequirementMatcher {
     return false;
   }
 
+  static bool _hasRequirementCategory(RequirementModel req) {
+    return req.categoryId.trim().isNotEmpty || req.categoryName.trim().isNotEmpty;
+  }
+
+  static bool _hasRequirementPropertyType(RequirementModel req) {
+    return req.propertyTypeId.trim().isNotEmpty ||
+        req.propertyTypeIds.isNotEmpty ||
+        req.propertyTypeName.trim().isNotEmpty;
+  }
+
+  static bool categoriesCompatible(RequirementModel req, PropertyModel p) {
+    if (!_hasRequirementCategory(req)) return true;
+    if (req.categoryId.trim().isNotEmpty &&
+        p.categoryId.trim().isNotEmpty &&
+        req.categoryId.trim() == p.categoryId.trim()) {
+      return true;
+    }
+    final reqCat = _normalizeTypeLabel(req.categoryName);
+    final propCat = _normalizeTypeLabel(p.categoryName);
+    return reqCat.isNotEmpty && propCat.isNotEmpty && reqCat == propCat;
+  }
+
+  static bool isEligibleByCategoryAndType(PropertyModel p, RequirementModel req) {
+    if (!categoriesCompatible(req, p)) return false;
+    if (!_hasRequirementPropertyType(req)) return true;
+    return propertyTypesCompatible(
+      reqTypeName: req.propertyTypeName,
+      propTypeName: p.propertyTypeName,
+      reqTypeId: req.propertyTypeId,
+      propTypeId: p.propertyTypeId,
+      reqTypeIds: req.propertyTypeIds,
+      reqCategory: req.categoryName,
+      propCategory: p.categoryName,
+    );
+  }
+
   static bool isAllAreas(RequirementModel req) {
     if (req.areaIds.isEmpty && req.areaNames.isEmpty) return true;
     for (final a in req.areaNames) {
@@ -444,6 +480,15 @@ class PropertyRequirementMatcher {
         matchPercentage: 0,
         matchedCriteria: [],
         unmatchedPreferences: ['Property is not available ($statusName)'],
+      );
+    }
+
+    if (!isEligibleByCategoryAndType(p, req)) {
+      return PropertyMatchResult(
+        property: p,
+        matchPercentage: 0,
+        matchedCriteria: [],
+        unmatchedPreferences: ['Category or property type does not match the client requirement'],
       );
     }
 
@@ -8357,6 +8402,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     for (final item in rawMatches) {
                       final pJson = item['property'] as Map<String, dynamic>? ?? {};
                       final prop = PropertyModel.fromJson(pJson);
+                      if (!PropertyRequirementMatcher.isEligibleByCategoryAndType(prop, req)) continue;
                       results.add(PropertyMatchResult.fromServerJson(item as Map<String, dynamic>, prop));
                     }
                   }
@@ -10428,6 +10474,7 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
           if (item is! Map) continue;
           final pJson = item['property'] as Map<String, dynamic>? ?? {};
           final prop = PropertyModel.fromJson(pJson);
+          if (!PropertyRequirementMatcher.isEligibleByCategoryAndType(prop, req)) continue;
           byId[prop.id] = PropertyMatchResult.fromServerJson(
             Map<String, dynamic>.from(item),
             prop,
