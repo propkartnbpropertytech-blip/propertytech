@@ -82,12 +82,10 @@ class EmployeeActivity {
   static bool isPropertyAddedBy(PropertyModel p, UserModel user) {
     final createdBy = p.createdBy.trim();
     if (createdBy == user.id) return true;
-    if (createdBy.isEmpty) {
-      return _namesMatch(p.createdByName, user.fullName);
-    }
-    if (_looksLikeUserId(createdBy)) return false;
-    return _namesMatch(createdBy, user.fullName) ||
-        _namesMatch(p.createdByName, user.fullName);
+    if (user.email.isNotEmpty && _namesMatch(createdBy, user.email)) return true;
+    if (_namesMatch(createdBy, user.fullName)) return true;
+    if (_namesMatch(p.createdByName, user.fullName)) return true;
+    return false;
   }
 
   static bool isSalesOwnedLead(RequirementModel r, UserModel user) {
