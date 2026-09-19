@@ -1535,7 +1535,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       String statusName,
       PropertyMetadataModel? metadata) async {
     try {
-      metadata ??= context.read<PropertiesBloc>().metadata;
+      if (metadata == null) {
+        final blocState = context.read<PropertiesBloc>().state;
+        if (blocState is PropertiesLoaded) {
+          metadata = blocState.metadata;
+        }
+        metadata ??= _cachedMetadata;
+      }
 
       if (statusName == 'Available') {
         final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
