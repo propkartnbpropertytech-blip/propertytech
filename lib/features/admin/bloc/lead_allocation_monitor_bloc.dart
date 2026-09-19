@@ -53,6 +53,13 @@ class AllocateOldLeadsRequested extends LeadAllocationMonitorEvent {
   List<Object?> get props => [limit];
 }
 
+class ToggleAllocationEngineRequested extends LeadAllocationMonitorEvent {
+  final bool enabled;
+  const ToggleAllocationEngineRequested({required this.enabled});
+  @override
+  List<Object?> get props => [enabled];
+}
+
 class LeadAllocationMonitorState extends Equatable {
   final bool loading;
   final String? error;
@@ -126,6 +133,24 @@ class LeadAllocationMonitorBloc
           info: 'Successfully allocated $assigned old untouched leads.',
           data: state.data,
         ));
+        add(LeadAllocationMonitorRequested());
+      } catch (e) {
+        emit(LeadAllocationMonitorState(error: e.toString(), data: state.data, loading: false));
+      }
+    });
+    on<ToggleAllocationEngineRequested>((event, emit) async {
+      final updatedData = Map<String, dynamic>.from(state.data);
+      updatedData['engineEnabled'] = event.enabled;
+      emit(LeadAllocationMonitorState(
+        data: updatedData,
+        loading: false,
+        info: event.enabled ? 'Enabling allocation engine...' : 'Pausing allocation engine...',
+      ));
+      try {
+        await DioClient.dio.post(
+          ApiConstants.adminAllocationEngineToggle,
+          data: {'enabled': event.enabled},
+        );
         add(LeadAllocationMonitorRequested());
       } catch (e) {
         emit(LeadAllocationMonitorState(error: e.toString(), data: state.data, loading: false));
@@ -213,6 +238,59 @@ class _LeadAllocationMonitorView extends StatelessWidget {
                   ),
                   Row(
                     children: [
+                      Builder(
+                        builder: (ctx) {
+                          final bool isEngineOn = state.data['engineEnabled'] ?? true;
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: (isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
+                                width: 1.2,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isEngineOn ? Icons.check_circle : Icons.pause_circle_outline,
+                                  size: 16,
+                                  color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  isEngineOn ? 'Engine: Active' : 'Engine: Paused',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                SizedBox(
+                                  height: 22,
+                                  width: 34,
+                                  child: FittedBox(
+                                    fit: BoxFit.fill,
+                                    child: Switch(
+                                      value: isEngineOn,
+                                      activeThumbColor: const Color(0xFF16A34A),
+                                      onChanged: (val) {
+                                        context.read<LeadAllocationMonitorBloc>().add(
+                                          ToggleAllocationEngineRequested(enabled: val),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 8),
                       OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.orange.shade800,

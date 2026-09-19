@@ -29,6 +29,8 @@ class ApiConstants {
   static const telecallerCallbacks = "/telecaller/callbacks";
   static const telecallerCnr = "/telecaller/cnr";
   static const adminAllocationMonitor = "/admin/allocation-monitor";
+  static const adminAllocationEngineToggle = "/admin/allocation-engine/toggle";
+  static const adminAllocationEngineStatus = "/admin/allocation-engine/status";
   static const adminReassignLead = "/admin/reassign-lead";
   static const adminAllocateOldLeads = "/admin/allocate-old-leads";
   static const adminTokenExpiration = "/admin/token-expiration";
