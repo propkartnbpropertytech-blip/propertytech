@@ -1,7 +1,8 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../security/role_guard.dart';
+import '../storage/secure_storage.dart';
 
 /// High-throughput, non-blocking telemetry and audit event ingestion service.
 /// Batches telemetry events in-memory and flushes periodically or on size thresholds.
@@ -230,6 +231,13 @@ class AuditTelemetryService {
   /// Flush in-memory queue to backend API
   Future<void> flush() async {
     if (_isFlushing || _queue.isEmpty) return;
+
+    final token = await SecureStorage().getToken();
+    if (token == null || token.isEmpty) {
+      // Don't attempt to flush audit events when unauthenticated
+      return;
+    }
+
     _isFlushing = true;
 
     final batch = List<Map<String, dynamic>>.from(_queue);

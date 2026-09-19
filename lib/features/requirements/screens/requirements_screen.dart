@@ -54,6 +54,7 @@ import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/telemetry/audit_dwell_tracker.dart';
 import '../../../core/utils/team_user_visibility.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/design_system/widgets/app_status_snackbar.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color kWhatsAppGreen = Color(0xFF25D366);
@@ -131,6 +132,47 @@ DateTime? _parseFollowupDateTime(dynamic raw) {
 
 Widget _buildNeedsMoreDetailsBadge(RequirementModel req, {bool compact = false}) {
     if (req.matchingReadiness == 'Ready') return const SizedBox.shrink();
+
+    if (req.hasUnmappedArea) {
+      final unmappedLocality = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : 'Unmapped';
+      return Tooltip(
+        message: 'Unmapped Locality: "$unmappedLocality" does not match any registered area in CRM. Run match engine cannot fetch properties without a valid area.',
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 5 : 7,
+            vertical: compact ? 1.5 : 2.5,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEF3C7),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: const Color(0xFFF59E0B)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.warning_amber_rounded,
+                size: 11,
+                color: Color(0xFFD97706),
+              ),
+              const SizedBox(width: 3),
+              Flexible(
+                child: Text(
+                  'Unmapped Locality',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: const Color(0xFF92400E),
+                    fontSize: compact ? 9.5 : 10.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     final missing = <String>[];
     if (req.minBudget <= 0 && req.maxBudget <= 0) missing.add('Budget');
@@ -361,21 +403,7 @@ class PropertyRequirementMatcher {
   }
 
   static bool isAllAreas(RequirementModel req) {
-    if (req.areaIds.isEmpty && req.areaNames.isEmpty) return true;
-    for (final a in req.areaNames) {
-      final l = a.trim().toLowerCase();
-      if (l.isEmpty ||
-          l == 'all areas' ||
-          l == 'all' ||
-          l == 'any area' ||
-          l == 'any' ||
-          l == 'anywhere' ||
-          l == 'entire city' ||
-          l == 'all localities') {
-        return true;
-      }
-    }
-    return false;
+    return req.isAllAreas;
   }
 
   static bool _isAnyConfigurationLabel(String? raw) {
@@ -457,6 +485,13 @@ class PropertyRequirementMatcher {
     }
     return false;
   }
+
+  static const Set<String> _westAhmedabadLocalities = {
+    'bodakdev', 'satellite', 'vastrapur', 'thaltej', 'prahladnagar',
+    'bopal', 'southbopal', 'shela', 'shilaj', 'ambli', 'makarba', 'vejalpur',
+    'jodhpur', 'jodhpurcharrasta', 'anandnagar', 'memnagar', 'sciencecity',
+    'sindhubhavan', 'sola', 'shyamal', 'azadsociety', 'bhadaj'
+  };
 
   static bool _namesReferToSameLocality(String a, String aClean, String b, String bClean) {
     if (a.isEmpty || b.isEmpty) return false;
@@ -567,6 +602,20 @@ class PropertyRequirementMatcher {
               isZoneMatch = true;
               found = true;
               zoneLabel = sub.trim();
+              break;
+            }
+            if (trimmed == pArea || trimmedClean == pAreaClean || pArea.contains(trimmed) || trimmed.contains(pArea)) {
+              found = true;
+              break;
+            }
+            if ((trimmedClean.contains('westahmedabad') || trimmedClean.contains('westamdavad')) && _westAhmedabadLocalities.contains(pAreaClean)) {
+              isZoneMatch = true;
+              found = true;
+              break;
+            }
+            if ((trimmedClean.contains('bothlocations') || trimmedClean.contains('bothlocation') || trimmedClean == 'both') &&
+                (pAreaClean.contains('gota') || pAreaClean.contains('vaishno'))) {
+              found = true;
               break;
             }
           }
@@ -1148,7 +1197,22 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _triggerFetch();
   }
 
-  void _showAddEditDialog([RequirementModel? req]) async {
+  void _showAddEditDialog([
+    RequirementModel? req,
+    int initialStep = 0,
+    bool allowTelecallerEdit = false,
+  ]) async {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    if (!allowTelecallerEdit && req?.hasUnmappedArea != true && RoleGuard.isTelecaller(currentUser?.role)) {
+      AppStatusSnackBar.show(
+        context,
+        message: 'Telecallers have read-only pipeline tracking access.',
+        isSuccess: false,
+      );
+      return;
+    }
+
     String? currentListingTypeId;
     if (_metadata != null && _metadata!.listingTypes.isNotEmpty) {
       try {
@@ -1165,6 +1229,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         requirement: req,
         initialListingTypeId: currentListingTypeId,
         initialListingTab: _activeListingTab,
+        initialStep: initialStep,
         onSaved: () {
           _triggerFetch();
         },
@@ -1176,6 +1241,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _showDeleteConfirmDialog(RequirementModel req) {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    if (RoleGuard.isTelecaller(currentUser?.role)) {
+      AppStatusSnackBar.show(
+        context,
+        message: 'Telecallers cannot delete pipeline leads.',
+        isSuccess: false,
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -1219,10 +1295,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       useRootNavigator: true,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) {
+      builder: (bottomSheetContext) {
         return _CRMPropertyMatchesDrawer(
           requirement: req,
           properties: _propertiesForMatches,
+          onEditRequirement: (r) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showAddEditDialog(r, 3, true);
+            });
+          },
         );
       },
     );
@@ -1286,6 +1367,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _removeNotesPopover();
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
+    if (RoleGuard.isTelecaller(currentUser?.role)) {
+      AppStatusSnackBar.show(
+        context,
+        message: 'Telecallers have read-only tracking access on this page.',
+        isSuccess: false,
+      );
+      return;
+    }
     if (_isLeadTransferredAway(req, currentUser)) return;
 
     final bool isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
@@ -1523,7 +1612,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         "Requirement Code: ${req.requirementCode}\n"
         "Specs: ${req.propertyTypeName} (${req.configurationName ?? 'N/A'})\n"
         "Budget: ${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}\n"
-        "Target Areas: ${req.areaNames.join(', ')}";
+        "Target Areas: ${req.displayAreasText}";
         
     Clipboard.setData(ClipboardData(text: shareText));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1577,12 +1666,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             final msg = _activeMainTab == 'My Won'
                 ? '${state.message} (My Won only shows Won items.)'
                 : state.message;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(msg),
-                backgroundColor: CRMColors.success,
-                behavior: SnackBarBehavior.floating,
-              ),
+            AppStatusSnackBar.show(
+              context,
+              message: msg,
+              isSuccess: true,
             );
             if (state.newlyAdded != null) {
               _onRequirementEntered(state.newlyAdded!, scrollToTop: true);
@@ -1594,12 +1681,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           } else if (state is RequirementsLoaded && state.newlyAdded != null) {
             _onRequirementEntered(state.newlyAdded!, scrollToTop: true);
           } else if (state is RequirementsError) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Error: ${state.message}"),
-                backgroundColor: CRMColors.danger,
-                behavior: SnackBarBehavior.floating,
-              ),
+            AppStatusSnackBar.show(
+              context,
+              message: "Error: ${state.message}",
+              isSuccess: false,
             );
           }
         },
@@ -1718,17 +1803,23 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       ),
     );
 
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final bool isTelecaller = RoleGuard.isTelecaller(currentUser?.role);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CRMPageHeader(
-          title: 'Leads',
-          trailing: CRMButton(
-            label: 'Add Lead',
-            prefixIcon: Icons.add_rounded,
-            height: 40,
-            onPressed: () => _showAddEditDialog(),
-          ),
+          title: isTelecaller ? 'All Leads (Track)' : 'Leads',
+          trailing: isTelecaller
+              ? null
+              : CRMButton(
+                  label: 'Add Lead',
+                  prefixIcon: Icons.add_rounded,
+                  height: 40,
+                  onPressed: () => _showAddEditDialog(),
+                ),
         ),
         const SizedBox(height: CRMSpacing.s),
         listingToggle,
@@ -2674,23 +2765,46 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildTargetAreasCell(RequirementModel req) {
-    final areasText = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : 'Any Area';
+    final areasText = req.displayAreasText;
     final listingLabel = getListingTypeLabel(req);
     final isRent = listingLabel == 'Rent';
 
-    final tooltipMessage = 'Target Area(s):\n$areasText';
+    final tooltipMessage = req.hasUnmappedArea
+        ? '⚠️ Unmapped Locality: "$areasText"\nThis locality does not match any registered area in CRM.\nMatch engine cannot fetch properties without a valid area.'
+        : 'Target Area(s):\n$areasText';
+
+    final cellContent = Row(
+      children: [
+        if (req.hasUnmappedArea) ...[
+          const Icon(Icons.warning_amber_rounded, size: 13, color: CRMColors.warning),
+          const SizedBox(width: 3),
+        ],
+        Expanded(
+          child: Text(
+            areasText,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: CRMTypography.body.copyWith(
+              color: req.hasUnmappedArea ? CRMColors.warning : CRMColors.textSecondary,
+              fontWeight: req.hasUnmappedArea ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+      ],
+    );
 
     return SizedBox(
       width: 125,
       child: _buildCustomTooltip(
         message: tooltipMessage,
         isRent: isRent,
-        child: Text(
-          areasText,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
-        ),
+        child: req.hasUnmappedArea
+            ? InkWell(
+                onTap: () => _showAddEditDialog(req, 3, true),
+                borderRadius: BorderRadius.circular(4),
+                child: cellContent,
+              )
+            : cellContent,
       ),
     );
   }
@@ -3116,7 +3230,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       return _isUserCreator(r, currentUser) || r.adminId == currentUser.id;
     }
     if (currentUser.role == 'Telecaller') {
-      return _isUserCreator(r, currentUser) || r.adminId == currentUser.adminId;
+      return false;
     }
     if (currentUser.role == 'Sales') {
       if (_isLeadTransferredAway(r, currentUser)) return false;
@@ -3275,7 +3389,21 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   bool _shouldShowTelecallerStatusBadge(RequirementModel req, UserModel? currentUser) {
-    if (currentUser == null || currentUser.role != 'Sales') return false;
+    if (currentUser == null) return false;
+    final role = currentUser.role.trim().toLowerCase();
+    final isAdmin = role == 'admin' || role == 'super admin';
+    final isSales = role == 'sales' || role.contains('sales');
+
+    if (!isAdmin && !isSales) return false;
+
+    final hasTelecallerInfo = (req.metaCustomFields != null && req.metaCustomFields!['telecaller_status'] != null) ||
+        (req.remarks != null && req.remarks!.contains('[Telecaller Key Points]')) ||
+        (req.creatorName != null && req.creatorName!.toLowerCase().contains('telecaller'));
+
+    if (isAdmin) {
+      return hasTelecallerInfo || _isUnhandledAssignedLead(req, currentUser);
+    }
+
     if (_isLeadTransferredAway(req, currentUser)) return false;
 
     final isAssigned = _isUserAssignee(req, currentUser);
@@ -3283,8 +3411,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (!isAssigned || isCreator) return false;
 
     // Show if unhandled OR if handled with telecaller_status recorded
-    return _isUnhandledAssignedLead(req, currentUser) ||
-        (req.metaCustomFields != null && req.metaCustomFields!['telecaller_status'] != null);
+    return _isUnhandledAssignedLead(req, currentUser) || hasTelecallerInfo;
   }
 
   Widget _buildTelecallerStatusBadge(RequirementModel req, {bool compact = false}) {
@@ -3833,6 +3960,43 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       } else if (currentStatus.contains('-')) {
         subReason = currentStatus.split('-').last.trim();
       }
+    }
+
+    final bool isTelecaller = RoleGuard.isTelecaller(currentUser?.role);
+    if (isTelecaller) {
+      return Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? CRMSpacing.xs : CRMSpacing.s,
+          vertical: compact ? CRMSpacing.xxs : CRMSpacing.xxs,
+        ),
+        decoration: BoxDecoration(
+          color: statusColor.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+          border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              mainLabel,
+              style: CRMTypography.captionBold.copyWith(
+                color: statusColor,
+                fontSize: compact ? 11 : 12,
+              ),
+            ),
+            if (subReason != null && subReason.isNotEmpty)
+              Text(
+                subReason,
+                style: CRMTypography.caption.copyWith(
+                  color: statusColor.withOpacity(0.85),
+                  fontSize: compact ? 9.5 : 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+          ],
+        ),
+      );
     }
 
     return GestureDetector(
@@ -5198,18 +5362,24 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             ),
                           ),
                         DataCell(
-                          Text(
-                            _getSalesmanName(req, currentUser),
-                            style: CRMTypography.caption.copyWith(
-                              color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          isClosed
+                              ? Text(
+                                  _getSalesmanName(req, currentUser),
+                                  style: CRMTypography.caption.copyWith(
+                                    color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )
+                              : (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || _canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser))
+                                  ? _buildAssignToDropdown(req)
+                                  : _buildSalesAssignToLabel(req, currentUser)),
                         ),
                         DataCell(_buildSpecsConfigCell(req)),
                         DataCell(
                           Text(
-                            '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}',
+                            (req.minBudget > 0 || req.maxBudget > 0)
+                                ? '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}'
+                                : 'On Request',
                             style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primaryOf(context)),
                           ),
                         ),
@@ -5224,39 +5394,35 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   decoration: BoxDecoration(
                                     color: isWon
                                         ? CRMColors.success.withValues(alpha: 0.12)
-                                        : CRMColors.danger.withValues(alpha: 0.08),
+                                        : CRMColors.danger.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(6),
                                     border: Border.all(
                                       color: isWon
                                           ? CRMColors.success.withValues(alpha: 0.3)
-                                          : CRMColors.danger.withValues(alpha: 0.25),
+                                          : CRMColors.danger.withValues(alpha: 0.3),
                                     ),
                                   ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(
-                                        isWon ? Icons.verified_rounded : Icons.block_rounded,
-                                        size: 13,
+                                        isWon ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                                        size: 14,
                                         color: isWon ? CRMColors.success : CRMColors.danger,
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        isWon ? 'Deal Won' : 'Lead Closed',
+                                        isWon ? 'Won Deal' : 'Lost / Rejected',
                                         style: TextStyle(
+                                          color: isWon ? CRMColors.success : CRMColors.danger,
                                           fontSize: 11,
                                           fontWeight: FontWeight.bold,
-                                          color: isWon ? CRMColors.success : CRMColors.danger,
                                         ),
                                       ),
                                     ],
                                   ),
                                 )
-                              : _RunMatchesButtonWithBadge(
-                                  requirement: req,
-                                  onPressed: () => _showMatchesDrawer(req),
-                                  properties: _propertiesForMatches,
-                                ),
+                              : const SizedBox.shrink(),
                         ),
                         DataCell(
                           PopupMenuButton<String>(
@@ -5295,7 +5461,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   ],
                                 ),
                               ),
-                              if (!isClosed && !_isLeadTransferredAway(req, currentUser))
+                              if (!isClosed && !_isLeadTransferredAway(req, currentUser) && !RoleGuard.isTelecaller(currentUser?.role))
                                 const PopupMenuItem(
                                   value: 'add_another',
                                   child: Row(
@@ -5639,10 +5805,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ),
           ),
         ...requirements.map((req) {
-          final String budgetText = '₹${BudgetFormatter.format(req.minBudget)} - ₹${BudgetFormatter.format(req.maxBudget)}';
+          final String budgetText = (req.minBudget > 0 || req.maxBudget > 0)
+              ? '₹${BudgetFormatter.format(req.minBudget)} - ₹${BudgetFormatter.format(req.maxBudget)}'
+              : 'Budget on Request';
           final String dateText = DateFormat("dd MMM ''yy, h:mm a").format(req.createdAt.toLocal());
-          final String specsText = '${req.propertyTypeName} (${req.configurationName ?? "Any Config"})';
-          final String areasText = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : 'All Areas';
+          final String specsText = '${req.propertyTypeName} (${(req.configurationName != null && req.configurationName!.isNotEmpty) ? req.configurationName : "Any Config"})';
+          final String areasText = req.displayAreasText;
           final String listingType = getListingTypeLabel(req);
           final bool isSelected = _selectedRequirementIds.contains(req.id);
           final bool isHighlighted = req.id == _highlightedRequirementId;
@@ -5779,7 +5947,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               ],
                             ),
                           ),
-                          if (!isClosed && !_isLeadTransferredAway(req, currentUser))
+                          if (!isClosed && !_isLeadTransferredAway(req, currentUser) && !RoleGuard.isTelecaller(currentUser?.role))
                             const PopupMenuItem(
                               value: 'add_another',
                               child: Row(
@@ -6069,7 +6237,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         children: [
                           Icon(Icons.person_outline_rounded, size: 13, color: CRMColors.textMutedOf(context)),
                           const SizedBox(width: 4),
-                          if (!isClosed && currentUser != null && (_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser)))
+                          if (!isClosed && currentUser != null && (_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser) || currentUser.role == 'Super Admin' || currentUser.role == 'Admin'))
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -6130,13 +6298,48 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                         ),
                                       ),
                                       const SizedBox(height: 2),
-                                      Text(
-                                        areasText,
-                                        style: TextStyle(
-                                          color: CRMColors.textOf(context),
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              areasText,
+                                              style: TextStyle(
+                                                color: req.hasUnmappedArea ? const Color(0xFFD97706) : CRMColors.textOf(context),
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                          if (req.hasUnmappedArea) ...[
+                                            const SizedBox(width: 6),
+                                            Tooltip(
+                                              message: 'This locality does not match any registered area in CRM. Click to edit and assign CRM area.',
+                                              child: InkWell(
+                                                onTap: () => _showAddEditDialog(req, 3, true),
+                                                borderRadius: BorderRadius.circular(4),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFFEF3C7),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: const Color(0xFFF59E0B)),
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.warning_amber_rounded, size: 10, color: Color(0xFFD97706)),
+                                                      SizedBox(width: 3),
+                                                      Text(
+                                                        'Unmapped Area',
+                                                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -6462,7 +6665,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         req.listingTypeName ?? '',
         BudgetFormatter.format(req.minBudget),
         BudgetFormatter.format(req.maxBudget),
-        req.areaNames.join('; '),
+        req.displayAreasText,
         req.status,
         req.nextFollowupDate != null && req.nextFollowupDate!.isNotEmpty
             ? DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal())
@@ -8111,9 +8314,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         final budgetText = reqModel != null
                             ? '${BudgetFormatter.format(reqModel.minBudget)} - ${BudgetFormatter.format(reqModel.maxBudget)}'
                             : '';
-                        final areasText = reqModel != null && reqModel.areaNames.isNotEmpty
-                            ? reqModel.areaNames.join(', ')
-                            : 'Any Area';
+                        final areasText = reqModel?.displayAreasText ?? 'All Areas';
 
                         final tooltipMsg = reqModel != null
                             ? 'Client: ${f.clientName}\nRequirement: $configText\nBudget: $budgetText\nAreas: $areasText'
@@ -9345,12 +9546,441 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         'client_name': req.clientName,
         'client_mobile': req.clientMobile,
         'category': req.categoryName,
-        'areas': req.areaNames.join(', '),
+        'areas': req.displayAreasText,
         'min_budget': req.minBudget,
         'max_budget': req.maxBudget,
       },
     );
     showCRMRequirementDrawer(context, req);
+  }
+
+  Widget _buildMyWonFiltersAndTableStash() {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobile = screenWidth < 700;
+
+    final selectedCat = _metadata?.categories.firstWhereOrNull((c) => c.id == _wonCategoryId);
+    final isResidential = selectedCat?.name.toLowerCase().contains('residential') ?? false;
+
+    // Filtered types and configs for My Won
+    final filteredTypes = _metadata != null
+        ? _metadata!.types.where((t) => t.categoryId == _wonCategoryId).toList()
+        : <LookupItem>[];
+
+    final filteredConfigs = _metadata != null
+        ? _metadata!.configurations.where((c) {
+            final configName = c.name.toLowerCase();
+            if (isResidential) {
+              return !configName.contains('office') &&
+                  !configName.contains('shop') &&
+                  !configName.contains('showroom') &&
+                  !configName.contains('plot') &&
+                  !configName.contains('warehouse') &&
+                  !configName.contains('shed') &&
+                  !configName.contains('industrial');
+            }
+            return false;
+          }).toList()
+        : <LookupItem>[];
+
+    final filterCard = CRMCard(
+      child: Padding(
+        padding: const EdgeInsets.all(CRMSpacing.m),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Search field
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _wonSearchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search by client name, mobile, specs, remarks...',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
+                      filled: true,
+                      fillColor: CRMColors.background,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                        borderSide: BorderSide(color: CRMColors.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                        borderSide: BorderSide(color: CRMColors.border),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      setState(() {});
+                    },
+                  ),
+                ),
+                const SizedBox(width: CRMSpacing.s),
+                CRMButton(
+                  label: "Search",
+                  onPressed: () {
+                    setState(() {});
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: CRMSpacing.m),
+
+            // Category dropdown filter and dependent configuration/type filters
+            Wrap(
+              spacing: CRMSpacing.m,
+              runSpacing: CRMSpacing.s,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                // Category dropdown filter
+                _buildDropdownFilter<String?>(
+                  label: 'Category',
+                  value: _wonCategoryId,
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text("All Categories")),
+                    ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                  ],
+                  isMobile: isMobile,
+                  onChanged: (val) {
+                    setState(() {
+                      _wonCategoryId = val;
+                      _wonPropertyTypeId = null;
+                      _wonConfigurationIds.clear();
+                      _currentPage = 1;
+                    });
+                  },
+                ),
+
+                // Category-dependent configuration or property type filters
+                if (_wonCategoryId != null) ...[
+                  if (isResidential)
+                    SizedBox(
+                      width: isMobile ? double.infinity : 200,
+                      child: CRMMultiSelectDropdown(
+                        label: 'BHK',
+                        selectedIds: _wonConfigurationIds,
+                        items: filteredConfigs,
+                        onChanged: (vals) {
+                          setState(() {
+                            _currentPage = 1;
+                          });
+                        },
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      width: isMobile ? double.infinity : 200,
+                      child: _buildDropdownFilter<String?>(
+                        label: 'Property Type',
+                        value: _wonPropertyTypeId,
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text("All Types")),
+                          ...filteredTypes.map((t) => DropdownMenuItem(value: t.id, child: Text(t.name))),
+                        ],
+                        isMobile: isMobile,
+                        onChanged: (val) {
+                          setState(() {
+                            _wonPropertyTypeId = val;
+                            _currentPage = 1;
+                          });
+                        },
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final table = BlocBuilder<RequirementsBloc, RequirementsState>(
+      builder: (context, state) {
+        final authState = context.read<AuthBloc>().state;
+        UserModel? currentUser;
+        if (authState is Authenticated) {
+          currentUser = authState.user;
+        }
+
+        if (state is RequirementsLoaded) {
+          _cachedRequirements = state.requirements;
+        }
+        final rawLoadedList = state is RequirementsLoaded ? state.requirements : _cachedRequirements;
+        final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
+        List<RequirementModel> requirements = [];
+
+        if (rawLoadedList.isNotEmpty) {
+          requirements = rawLoadedList.where((r) {
+            if (currentUser != null && currentUser.role == 'Sales') {
+              if (!_salesCanViewRequirement(r, currentUser)) {
+                return false;
+              }
+            }
+
+            final matchesListingType = getListingTypeLabel(r) == _activeListingTab;
+            
+            // Category filter
+            final matchesCategory = _wonCategoryId == null || r.categoryId == _wonCategoryId;
+
+            // Property Type filter
+            final matchesPropertyType = _wonPropertyTypeId == null || r.propertyTypeId == _wonPropertyTypeId;
+
+            // Configuration filter
+            final matchesConfig = _wonConfigurationIds.isEmpty ||
+                _wonConfigurationIds.contains(r.configurationId) ||
+                r.configurationIds.any((id) => _wonConfigurationIds.contains(id));
+
+            // Search query filter
+            bool matchesSearch = true;
+            final query = _wonSearchController.text.trim().toLowerCase();
+            if (query.isNotEmpty) {
+              final name = r.clientName.toLowerCase();
+              final mobile = r.clientMobile.toLowerCase();
+              final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
+              final remarks = (r.remarks ?? '').toLowerCase();
+              final areas = r.areaNames.join(' ').toLowerCase();
+
+              bool matchesSalesman = false;
+              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
+                final creator = (r.creatorName ?? '').toLowerCase();
+                final assignee = (r.assigneeName ?? '').toLowerCase();
+                matchesSalesman = creator.contains(query) || assignee.contains(query);
+              }
+
+              matchesSearch = name.contains(query) ||
+                  mobile.contains(query) ||
+                  specs.contains(query) ||
+                  remarks.contains(query) ||
+                  areas.contains(query) ||
+                  matchesSalesman;
+            }
+
+            // Strictly filter for Won status
+            String mappedStatus = r.status;
+            if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
+            
+            final matchesStatus = mappedStatus == 'Won';
+
+            return matchesListingType && matchesStatus && matchesCategory && matchesPropertyType && matchesConfig && matchesSearch;
+          }).toList();
+          
+          requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        }
+
+        final totalCount = requirements.length;
+        final totalPages = (totalCount / _requirementsPerPage).ceil();
+        final currentPage = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);
+        final startIndex = (currentPage - 1) * _requirementsPerPage;
+        final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalCount);
+        final pageItems = (startIndex < totalCount) ? requirements.sublist(startIndex, endIndex) : <RequirementModel>[];
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobileLayout = constraints.maxWidth < 700;
+
+            if (isMobileLayout) {
+              return _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount);
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                CRMDataTable(
+                  isLoading: isLoading,
+                  emptyTitle: 'No Won Requirements',
+                  emptyDescription: 'Requirements marked as "Won" will appear here.',
+                  dataRowMinHeight: 56.0,
+                  dataRowMaxHeight: 72.0,
+                  columnSpacing: 10.0,
+                  horizontalMargin: 12.0,
+                  columns: [
+                    const DataColumn(label: Text('Client')),
+                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
+                      const DataColumn(label: Text('Added By')),
+                    const DataColumn(label: Text('Assign to')),
+                    const DataColumn(label: Text('Specs / Config')),
+                    const DataColumn(label: Text('Budget Range')),
+                    const DataColumn(label: Text('Target Area(s)')),
+                    const DataColumn(label: Text('Status')),
+                    const DataColumn(label: Text('Matches')),
+                    const DataColumn(label: Text('Actions')),
+                  ],
+                  rows: pageItems.map((req) {
+                    final isHighlighted = req.id == _highlightedRequirementId;
+                    return DataRow(
+                      color: isHighlighted
+                          ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
+                          : WidgetStateProperty.all(CRMColors.sidebarBgOf(context).withValues(alpha: 0.5)),
+                      cells: [
+                        DataCell(
+                          SizedBox(
+                            width: 135,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                GestureDetector(
+                                  onTap: () => _showRequirementDetailDrawer(req),
+                                  child: Text(
+                                    req.clientName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: CRMTypography.bodyMedium.copyWith(
+                                      color: CRMColors.primaryOf(context),
+                                      fontWeight: FontWeight.bold,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  req.clientMobile,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Added: ${DateFormat('dd/MM/yyyy').format(req.createdAt)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
+                          DataCell(
+                            Text(
+                              _getAddedByName(req),
+                              style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        DataCell(
+                          Text(
+                            _getSalesmanName(req, currentUser),
+                            style: CRMTypography.caption.copyWith(
+                              color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        DataCell(_buildSpecsConfigCell(req)),
+                        DataCell(
+                          Text(
+                            (req.minBudget > 0 || req.maxBudget > 0)
+                                ? '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}'
+                                : 'On Request',
+                            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primaryOf(context)),
+                          ),
+                        ),
+                        DataCell(_buildTargetAreasCell(req)),
+                        DataCell(
+                          _buildStatusControl(req, currentUser),
+                        ),
+
+                        DataCell(
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: CRMColors.success.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: CRMColors.success.withValues(alpha: 0.3)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.verified_rounded, size: 13, color: CRMColors.success),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Deal Won',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: CRMColors.success,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert_rounded),
+                            tooltip: 'More Actions',
+                            onSelected: (action) {
+                              if (action == 'view_details') {
+                                _showRequirementDetailDrawer(req);
+                              } else if (action == 'delete') {
+                                _showDeleteConfirmDialog(req);
+                              } else if (action == 'upload_doc') {
+                                final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
+                                context.go(
+                                  isRent ? '/rental-library' : '/resale-library',
+                                  extra: {
+                                    'autoOpenUpload': true,
+                                    'clientName': req.clientName,
+                                  },
+                                );
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'view_details',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.info_outline_rounded, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('View Details'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'upload_doc',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.upload_file_rounded, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('Upload Document'),
+                                  ],
+                                ),
+                              ),
+                              if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
+                                      SizedBox(width: 8),
+                                      Text('Delete', style: TextStyle(color: CRMColors.danger)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: CRMSpacing.m),
+                _buildPagination(totalCount, totalPages, currentPage),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        filterCard,
+        const SizedBox(height: CRMSpacing.l),
+        table,
+      ],
+    );
   }
 }
 
@@ -10270,6 +10900,49 @@ class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> 
       );
     }
 
+    if (widget.requirement.hasUnmappedArea) {
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          button,
+          Positioned(
+            top: widget.isMobileIconOnly ? -4 : -6,
+            right: widget.isMobileIconOnly ? -4 : -6,
+            child: Tooltip(
+              message: 'Locality is not mapped to CRM. Match engine cannot fetch properties.',
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: Text(
+                    '⚠️',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.bold,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     if (_matchCount == null) {
       return button;
     }
@@ -10317,10 +10990,12 @@ class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> 
 class _CRMPropertyMatchesDrawer extends StatefulWidget {
   final RequirementModel requirement;
   final List<PropertyModel>? properties;
+  final void Function(RequirementModel req)? onEditRequirement;
 
   const _CRMPropertyMatchesDrawer({
     required this.requirement,
     this.properties,
+    this.onEditRequirement,
   });
 
   @override
@@ -10333,6 +11008,8 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
   List<PropertyModel> _matchedProperties = [];
   Map<String, PropertyMatchResult> _matchResults = {};
   bool _includePhotos = true;
+  String? _unmappedError;
+  bool _isAutoMapping = false;
 
   Color _getMatchScoreColor(int pct) {
     if (pct >= 80) return const Color(0xFF10B981);
@@ -10430,6 +11107,49 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
     return _RequirementsScreenState._isRequirementPropertyMatchAsync(p, req);
   }
 
+  Future<void> _autoMapGotaAndVaishnodevi() async {
+    setState(() => _isAutoMapping = true);
+    try {
+      const gotaId = '7024abff-e4ff-4e19-a2f2-486cf13c7844';
+      const vaishnoId = 'a65fe177-6d11-48b9-9c4a-dabefebdd862';
+
+      await RequirementsRepository().updateRequirementFields(widget.requirement.id, {
+        'area_id': gotaId,
+        'area_ids': [gotaId, vaishnoId],
+        'meta_custom_fields': {
+          ...(widget.requirement.metaCustomFields ?? {}),
+          'match_engine_status': 'READY',
+        },
+      });
+
+      RequirementsRepository().invalidateCache();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFF0F766E),
+            content: Text('Requirement successfully mapped to Gota & Vaishnodevi! Re-running match engine...'),
+          ),
+        );
+        setState(() {
+          _isAutoMapping = false;
+          _unmappedError = null;
+          _isLoading = true;
+        });
+        _loadAndFilterMatches();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isAutoMapping = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red.shade700,
+            content: Text('Auto-map failed: $e'),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _loadAndFilterMatches() async {
     try {
       final req = widget.requirement;
@@ -10470,6 +11190,18 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
         );
         final data = serverResponse['data'] as Map<String, dynamic>? ?? {};
         final rawMatches = data['matches'] as List? ?? [];
+        final metadata = data['matching_metadata'] as Map<String, dynamic>? ?? {};
+
+        if (metadata['status'] == 'UNMAPPED_LOCATION' || metadata['has_unmapped_area'] == true) {
+          setState(() {
+            _unmappedError = metadata['error']?.toString() ?? metadata['note']?.toString() ?? "Locality does not match any registered area in CRM.";
+            _matchedProperties = [];
+            _matchResults = {};
+            _isLoading = false;
+          });
+          return;
+        }
+
         for (final item in rawMatches) {
           if (item is! Map) continue;
           final pJson = item['property'] as Map<String, dynamic>? ?? {};
@@ -10482,6 +11214,16 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
         }
       } catch (serverErr) {
         debugPrint("⚠️ [Backend Match Fallback] Falling back to local engine: $serverErr");
+      }
+
+      if (req.hasUnmappedArea) {
+        setState(() {
+          _unmappedError = "Locality does not match any registered area in CRM. Run match engine cannot fetch properties.";
+          _matchedProperties = [];
+          _matchResults = {};
+          _isLoading = false;
+        });
+        return;
       }
 
       final properties = (widget.properties != null && widget.properties!.isNotEmpty)
@@ -10557,6 +11299,79 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
+          if (!isWonReq && (widget.requirement.hasUnmappedArea || _unmappedError != null))
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 4),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFF59E0B)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Match Engine Notice: Unmapped Locality Detail',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF92400E),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _unmappedError ??
+                        'The locality "${widget.requirement.areaNames.isNotEmpty ? widget.requirement.areaNames.join(', ') : 'Unmapped'}" does not match any registered area in CRM. Run match engine is not able to fetch properties without a valid area.',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      if (widget.requirement.areaNames.any((a) => a.toLowerCase().contains('both')))
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFD97706),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          icon: _isAutoMapping
+                              ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.bolt_rounded, size: 16),
+                          label: const Text('⚡ Auto-Map to Gota & Vaishnodevi'),
+                          onPressed: _isAutoMapping ? null : _autoMapGotaAndVaishnodevi,
+                        ),
+                      if (widget.onEditRequirement != null)
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF92400E),
+                            side: const BorderSide(color: Color(0xFFD97706)),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                          icon: const Icon(Icons.edit_location_alt_rounded, size: 16),
+                          label: const Text('Edit Requirement Areas'),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            widget.onEditRequirement!(widget.requirement);
+                          },
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           if (!isWonReq && PropertyRequirementMatcher.isAllAreas(widget.requirement))
             Container(
               margin: const EdgeInsets.only(top: 8, bottom: 2),
@@ -10628,11 +11443,30 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
               padding: const EdgeInsets.symmetric(vertical: 40.0),
               child: Column(
                 children: [
-                  Icon(Icons.search_off_rounded, size: 48, color: CRMColors.textMuted),
+                  Icon(
+                    (widget.requirement.hasUnmappedArea || _unmappedError != null)
+                        ? Icons.wrong_location_rounded
+                        : Icons.search_off_rounded,
+                    size: 48,
+                    color: (widget.requirement.hasUnmappedArea || _unmappedError != null)
+                        ? const Color(0xFFD97706)
+                        : CRMColors.textMuted,
+                  ),
                   const SizedBox(height: CRMSpacing.s),
-                  Text("No Active Matches Found", style: CRMTypography.cardTitle),
+                  Text(
+                    (widget.requirement.hasUnmappedArea || _unmappedError != null)
+                        ? "Match Engine Unable to Fetch Properties"
+                        : "No Active Matches Found",
+                    style: CRMTypography.cardTitle,
+                  ),
                   const SizedBox(height: 4),
-                  Text("No database properties currently fit these filters.", style: CRMTypography.body.copyWith(color: CRMColors.textSecondary)),
+                  Text(
+                    (widget.requirement.hasUnmappedArea || _unmappedError != null)
+                        ? "Locality detail is not mapped to CRM. Please assign valid CRM areas above to find matching properties."
+                        : "No database properties currently fit these filters.",
+                    textAlign: TextAlign.center,
+                    style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
+                  ),
                 ],
               ),
             )
@@ -10957,7 +11791,7 @@ void showCRMRequirementDrawer(BuildContext context, RequirementModel req) {
       'client_name': req.clientName,
       'client_mobile': req.clientMobile,
       'category': req.categoryName,
-      'areas': req.areaNames.join(', '),
+      'areas': req.displayAreasText,
       'min_budget': req.minBudget,
       'max_budget': req.maxBudget,
     },
@@ -11329,8 +12163,8 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         _buildChipDetailRow(
                                           "Target Areas",
                                           Icons.location_on_rounded,
-                                          req.areaNames,
-                                          emptyLabel: "Any Area",
+                                          req.isAllAreas ? const ['All Areas'] : req.areaNames,
+                                          emptyLabel: "All Areas",
                                         ),
                                         if (furnishingName.isNotEmpty)
                                           _buildDetailRow("Furnishing", furnishingName, Icons.chair_rounded),
@@ -11467,8 +12301,8 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         _buildChipDetailRow(
                                           "Target Areas",
                                           Icons.location_on_rounded,
-                                          req.areaNames,
-                                          emptyLabel: "Any Area",
+                                          req.isAllAreas ? const ['All Areas'] : req.areaNames,
+                                          emptyLabel: "All Areas",
                                         ),
                                         if (furnishingName.isNotEmpty)
                                           _buildDetailRow("Furnishing", furnishingName, Icons.chair_rounded),

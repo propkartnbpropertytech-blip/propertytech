@@ -50,6 +50,7 @@ class RequirementModel {
   final String? metaAdName;
   final Map<String, dynamic>? metaCustomFields;
   final String? leadQuality;
+  final String? assignedTelecallerId;
 
   RequirementModel({
     required this.id,
@@ -101,6 +102,7 @@ class RequirementModel {
     this.metaAdName,
     this.metaCustomFields,
     this.leadQuality,
+    this.assignedTelecallerId,
   });
 
   bool get isMetaLead => metaLeadId != null && metaLeadId!.isNotEmpty;
@@ -191,6 +193,57 @@ class RequirementModel {
       }
     }
 
+    // Fallback: If configurationName is empty, extract from meta_custom_fields
+    if (configName == null || configName.isEmpty || configName == 'Any Config') {
+      final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
+      if (meta is Map) {
+        for (final key in [
+          'what_type_of_property_are_you_looking_to_rent?',
+          'what_type_of_property_are_you_looking_to_rent_out?',
+          'what_type_of_home_are_you_looking_for?',
+          'What Type Of Home Are You Looking For?',
+          'what_type_of_property_you_are_looking_to_rent_out?',
+          'what_type_of_property_are_you_looking_for?',
+          'bhk',
+          'BHK',
+          'configuration',
+          'Configuration',
+          'room_config',
+          'Unit Type',
+          'type_of_property',
+        ]) {
+          final val = meta[key]?.toString().trim();
+          if (val != null && val.isNotEmpty && val.toLowerCase() != 'not_decided_yet') {
+            final lower = val.toLowerCase();
+            if (lower.contains('1_bhk') || lower.contains('1 bhk')) {
+              configName = '1 BHK';
+            } else if (lower.contains('2_bhk') || lower.contains('2 bhk')) {
+              configName = '2 BHK';
+            } else if (lower.contains('3_bhk') || lower.contains('3 bhk')) {
+              configName = '3 BHK';
+            } else if (lower.contains('4_bhk') || lower.contains('4 bhk')) {
+              configName = '4 BHK';
+            } else if (lower.contains('5_bhk') || lower.contains('5 bhk')) {
+              configName = '5 BHK';
+            } else if (lower.contains('1_rk') || lower.contains('1 rk')) {
+              configName = '1 RK';
+            } else if (lower.contains('penthouse')) {
+              configName = 'Penthouse';
+            } else if (lower.contains('villa')) {
+              configName = 'Villa';
+            } else if (lower.contains('commercial') || lower.contains('office')) {
+              configName = 'Office';
+            } else {
+              configName = val.replaceAll('_', ' ').split(' ').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
+            }
+            if (configName.isNotEmpty) {
+              break;
+            }
+          }
+        }
+      }
+    }
+
     // Handle listing type name from joined object
     String? listingName;
     if (json['listingTypeName'] != null) {
@@ -226,12 +279,17 @@ class RequirementModel {
       final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
       if (meta is Map) {
         for (final key in [
+          'which_location_are_you_looking_for?',
           'which_area_are_you_looking_for?',
+          'Which Area Are You Looking For?',
           'where_is_your_property_located?',
+          'what_is_the_complete_address_of_your_property?',
           'preferred_area',
           'Preferred Area',
           'Preferred Location',
           'preferred_location',
+          'locality',
+          'Locality',
           'location',
           'Location',
           'area',
@@ -240,7 +298,7 @@ class RequirementModel {
           final val = meta[key]?.toString().trim();
           if (val != null && val.isNotEmpty) {
             final lower = val.toLowerCase();
-            if (!lower.contains('any_suitable') && !lower.contains('any suitable') && lower != 'any' && lower != 'all' && lower != 'anywhere') {
+            if (!lower.contains('any_suitable') && !lower.contains('any suitable') && lower != 'any' && lower != 'all' && lower != 'anywhere' && lower != 'ahmedabad' && lower != 'gujarat' && lower != 'other_area') {
               final formatted = val
                   .replaceAll('_', ' ')
                   .split(' ')
@@ -303,6 +361,65 @@ class RequirementModel {
       }
     }
 
+    double computedMin = (json['minBudget'] ?? json['budget_from'] as num?)?.toDouble() ?? 0.0;
+    double computedMax = (json['maxBudget'] ?? json['budget_to'] as num?)?.toDouble() ?? 0.0;
+    if (computedMin == 0.0 && computedMax == 0.0) {
+      final baseBgt = (json['budget'] as num?)?.toDouble() ?? 0.0;
+      if (baseBgt > 0) {
+        computedMin = baseBgt * 0.85;
+        computedMax = baseBgt * 1.15;
+      } else {
+        final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
+        if (meta is Map) {
+          for (final key in [
+            'what_is_your_preferred_monthly_rent_budget?',
+            'what_is_your_monthly_rental_budget?',
+            'What Is Your Monthly Rental Budget?',
+            'what_is_your_expected_monthly_rent?',
+            'expected_monthly_rent',
+            'budget',
+            'Budget',
+          ]) {
+            final val = meta[key]?.toString().trim();
+            if (val != null && val.isNotEmpty) {
+              final clean = val.replaceAll('_', ' ').replaceAll(RegExp(r'[–—]'), '-');
+              final matches = RegExp(r'\d+(?:,\d+)*(?:\.\d+)?\s*(?:cr|crore|lakh|lac|l|k|thousand)?', caseSensitive: false).allMatches(clean);
+              final nums = <double>[];
+              for (final m in matches) {
+                final str = m.group(0)!.replaceAll(',', '').trim().toLowerCase();
+                double? n;
+                if (str.endsWith('cr') || str.endsWith('crore')) {
+                  final v = double.tryParse(str.replaceAll(RegExp(r'crore|cr'), ''));
+                  if (v != null) n = v * 10000000;
+                } else if (str.endsWith('l') || str.endsWith('lakh') || str.endsWith('lac')) {
+                  final v = double.tryParse(str.replaceAll(RegExp(r'lakh|lac|l'), ''));
+                  if (v != null) n = v * 100000;
+                } else if (str.endsWith('k') || str.endsWith('thousand')) {
+                  final v = double.tryParse(str.replaceAll(RegExp(r'thousand|k'), ''));
+                  if (v != null) n = v * 1000;
+                } else {
+                  n = double.tryParse(str);
+                }
+                if (n != null && n > 0) nums.add(n);
+              }
+              if (nums.length >= 2) {
+                computedMin = nums[0] < nums[1] ? nums[0] : nums[1];
+                computedMax = nums[0] > nums[1] ? nums[0] : nums[1];
+                if (computedMin < 1000 && computedMax >= 1000) computedMin *= 1000;
+                break;
+              } else if (nums.length == 1) {
+                var v = nums[0];
+                if (v < 1000 && (clean.toLowerCase().contains('k') || clean.toLowerCase().contains('thousand'))) v *= 1000;
+                computedMin = v * 0.85;
+                computedMax = v * 1.15;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
     return RequirementModel(
       id: json['id'] ?? '',
       clientName: json['clientName'] ?? json['customer_name'] ?? '',
@@ -315,8 +432,8 @@ class RequirementModel {
       configurationName: configName,
       listingTypeId: json['listingTypeId'] ?? json['listing_type_id'],
       listingTypeName: listingName,
-      minBudget: (json['minBudget'] ?? json['budget_from'] as num?)?.toDouble() ?? 0.0,
-      maxBudget: (json['maxBudget'] ?? json['budget_to'] as num?)?.toDouble() ?? 0.0,
+      minBudget: computedMin,
+      maxBudget: computedMax,
       minArea: (json['minArea'] ?? json['min_area'] as num?)?.toDouble(),
       maxArea: (json['maxArea'] ?? json['max_area'] as num?)?.toDouble(),
       areaIds: aIds,
@@ -401,6 +518,19 @@ class RequirementModel {
               ? Map<String, dynamic>.from(json['metaCustomFields'] as Map)
               : null,
       leadQuality: (json['lead_quality'] ?? json['leadQuality'])?.toString(),
+      assignedTelecallerId: (json['assigned_telecaller_id'] ??
+              json['assignedTelecallerId'] ??
+              (json['meta_custom_fields'] is Map
+                  ? (json['meta_custom_fields']['assigned_telecaller_id'] ??
+                      json['meta_custom_fields']['telecaller_id'] ??
+                      json['meta_custom_fields']['telecaller_by'])
+                  : null) ??
+              (json['metaCustomFields'] is Map
+                  ? (json['metaCustomFields']['assigned_telecaller_id'] ??
+                      json['metaCustomFields']['telecaller_id'] ??
+                      json['metaCustomFields']['telecaller_by'])
+                  : null))
+          ?.toString(),
     );
   }
 
@@ -453,6 +583,8 @@ class RequirementModel {
       'meta_ad_name': metaAdName,
       'meta_custom_fields': metaCustomFields,
       'lead_quality': leadQuality,
+      'assigned_telecaller_id': assignedTelecallerId,
+      'assignedTelecallerId': assignedTelecallerId,
     };
   }
 
@@ -588,8 +720,26 @@ class RequirementModel {
     return '';
   }
 
+  bool get hasUnmappedArea {
+    if (isAllAreas) return false;
+    final status = (metaCustomFields?['match_engine_status'] ?? '').toString().toUpperCase();
+    if (status == 'UNMAPPED_LOCATION') return true;
+    if (areaIds.isEmpty && areaNames.isNotEmpty) {
+      return true;
+    }
+    return false;
+  }
+
   bool get isAllAreas {
     if (areaIds.isEmpty && areaNames.isEmpty) return true;
+    if (metaCustomFields != null &&
+        (metaCustomFields!['is_all_areas'] == true ||
+            metaCustomFields!['is_all_areas'] == 'true' ||
+            metaCustomFields!['all_areas'] == true ||
+            metaCustomFields!['all_areas'] == 'true')) {
+      return true;
+    }
+    if (areaNames.length >= 10 || areaIds.length >= 10) return true;
     return areaNames.any((a) {
       final l = a.trim().toLowerCase();
       return l.isEmpty ||
@@ -603,11 +753,20 @@ class RequirementModel {
     });
   }
 
+  String get displayAreasText {
+    if (isAllAreas) return 'All Areas';
+    if (areaNames.isNotEmpty) return areaNames.join(', ');
+    return 'All Areas';
+  }
+
   String get matchingReadiness {
+    if (hasUnmappedArea) {
+      return 'Unmapped Area';
+    }
     final hasCategory = categoryId.trim().isNotEmpty || categoryName.trim().isNotEmpty || propertyTypeName.trim().isNotEmpty;
     final hasConfig = (configurationId != null && configurationId!.trim().isNotEmpty) || configurationIds.isNotEmpty || (configurationName != null && configurationName!.trim().isNotEmpty);
     final hasBudget = minBudget > 0 || maxBudget > 0;
-    final hasArea = isAllAreas || areaIds.isNotEmpty || areaNames.isNotEmpty;
+    final hasArea = isAllAreas || areaIds.isNotEmpty;
 
     if (hasCategory && hasConfig && hasBudget && hasArea) {
       return 'Ready';
@@ -681,6 +840,7 @@ class RequirementModel {
     String? metaAdName,
     Map<String, dynamic>? metaCustomFields,
     String? leadQuality,
+    String? assignedTelecallerId,
   }) {
     return RequirementModel(
       id: id ?? this.id,
@@ -732,6 +892,7 @@ class RequirementModel {
       metaAdName: metaAdName ?? this.metaAdName,
       metaCustomFields: metaCustomFields ?? this.metaCustomFields,
       leadQuality: leadQuality ?? this.leadQuality,
+      assignedTelecallerId: assignedTelecallerId ?? this.assignedTelecallerId,
     );
   }
 }

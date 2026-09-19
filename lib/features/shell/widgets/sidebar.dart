@@ -127,11 +127,42 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         route: '/properties',
                         isActive: currentPath.startsWith('/properties'),
                       ),
+                    if (RoleGuard.isTelecaller(widget.userRole) &&
+                        (RoleGuard.canViewPage(widget.userRole, '/telecaller/leads') ||
+                         RoleGuard.canViewPage(widget.userRole, '/campaign')))
+                      _buildNavItem(
+                        context,
+                        title: 'My Calling Leads',
+                        icon: Icons.phone_in_talk_outlined,
+                        route: '/campaign/leads',
+                        isActive: currentPath.startsWith('/campaign/leads') ||
+                                  currentPath.startsWith('/telecaller/leads'),
+                      ),
+                    if (RoleGuard.isTelecaller(widget.userRole) &&
+                        RoleGuard.canViewPage(widget.userRole, '/telecaller/callbacks'))
+                      _buildNavItem(
+                        context,
+                        title: 'Callbacks',
+                        icon: Icons.event_repeat,
+                        route: '/telecaller/callbacks',
+                        isActive: currentPath.startsWith('/telecaller/callbacks'),
+                      ),
+                    if (RoleGuard.isTelecaller(widget.userRole) &&
+                        RoleGuard.canViewPage(widget.userRole, '/telecaller/cnr'))
+                      _buildNavItem(
+                        context,
+                        title: 'CNR / Retry',
+                        icon: Icons.phone_missed_outlined,
+                        route: '/telecaller/cnr',
+                        isActive: currentPath.startsWith('/telecaller/cnr'),
+                      ),
                     if (widget.userRole.isEmpty ||
                         RoleGuard.canViewPage(widget.userRole, '/requirements'))
                       _buildNavItem(
                         context,
-                        title: 'Leads',
+                        title: RoleGuard.isTelecaller(widget.userRole)
+                            ? 'All Leads (Track)'
+                            : 'Leads',
                         icon: Icons.assignment_outlined,
                         route: '/requirements',
                         isActive: currentPath.startsWith('/requirements'),
@@ -157,14 +188,25 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         route: '/reports/leads/overall-business-insight',
                         isActive: currentPath.startsWith('/reports'),
                       ),
-                    if (widget.userRole.isEmpty ||
+                    if (!RoleGuard.isTelecaller(widget.userRole) &&
+                        (widget.userRole.isEmpty ||
                         (RoleGuard.canAccessCampaign(widget.userRole) &&
-                         RoleGuard.canViewPage(widget.userRole, '/campaign')))
+                         RoleGuard.canViewPage(widget.userRole, '/campaign'))))
                       _buildCampaignTreeItem(
                         context,
                         isDark: isDark,
                         primaryColor: primaryColor,
                         primaryHoverColor: primaryHoverColor,
+                      ),
+                    if ((RoleGuard.isAdmin(widget.userRole) ||
+                            RoleGuard.isSuperAdmin(widget.userRole)) &&
+                        RoleGuard.canViewPage(widget.userRole, '/admin/lead-allocation'))
+                      _buildNavItem(
+                        context,
+                        title: 'Lead Allocation',
+                        icon: Icons.hub_outlined,
+                        route: '/admin/lead-allocation',
+                        isActive: currentPath.startsWith('/admin/lead-allocation'),
                       ),
                     if (widget.userRole.isEmpty ||
                         RoleGuard.canViewPage(widget.userRole, '/library'))
@@ -427,7 +469,10 @@ class _ModernSidebarState extends State<ModernSidebar> {
         widget.currentPath.startsWith('/integration');
     final isConnectionsActive =
         widget.currentPath.startsWith('/campaign/connections');
-    final isLeadsActive = widget.currentPath.startsWith('/campaign/leads');
+    final isMetaActive = widget.currentPath.startsWith('/campaign/meta');
+    final isHousingActive = widget.currentPath.startsWith('/campaign/housing');
+    final isLeadsActive = isMetaActive || isHousingActive ||
+        widget.currentPath.startsWith('/campaign/leads');
 
     if (widget.isCollapsed) {
       return Padding(
@@ -600,10 +645,21 @@ class _ModernSidebarState extends State<ModernSidebar> {
                     const SizedBox(height: 2),
                     _buildSubNavItem(
                       context,
-                      title: 'Leads',
-                      icon: Icons.table_chart_outlined,
-                      route: '/campaign/leads',
-                      isActive: isLeadsActive,
+                      title: 'Meta',
+                      icon: Icons.campaign_outlined,
+                      route: '/campaign/meta',
+                      isActive: isMetaActive,
+                      isDark: isDark,
+                      primaryColor: primaryColor,
+                      primaryHoverColor: primaryHoverColor,
+                    ),
+                    const SizedBox(height: 2),
+                    _buildSubNavItem(
+                      context,
+                      title: 'Housing',
+                      icon: Icons.apartment_outlined,
+                      route: '/campaign/housing',
+                      isActive: isHousingActive,
                       isDark: isDark,
                       primaryColor: primaryColor,
                       primaryHoverColor: primaryHoverColor,

@@ -23,6 +23,11 @@ class IntegrationLeadModel {
   final CrmMatchInfo? crmMatch;
   final String? assignedTo;
   final String? assignedToName;
+  final String? assignedTelecallerId;
+  final String? assignedTelecallerName;
+  final String? allocationStatus;
+  final bool isOldUntouched;
+  final DateTime? telecallerAssignedAt;
   final String? transferRemarks;
   final DateTime? interactedAt;
   final String? interactedBy;
@@ -55,6 +60,11 @@ class IntegrationLeadModel {
     this.crmMatch,
     this.assignedTo,
     this.assignedToName,
+    this.assignedTelecallerId,
+    this.assignedTelecallerName,
+    this.allocationStatus,
+    this.isOldUntouched = false,
+    this.telecallerAssignedAt,
     this.transferRemarks,
     this.interactedAt,
     this.interactedBy,
@@ -584,6 +594,11 @@ class IntegrationLeadModel {
     CrmMatchInfo? crmMatch,
     String? assignedTo,
     String? assignedToName,
+    String? assignedTelecallerId,
+    String? assignedTelecallerName,
+    String? allocationStatus,
+    bool? isOldUntouched,
+    DateTime? telecallerAssignedAt,
     String? transferRemarks,
     DateTime? interactedAt,
     String? interactedBy,
@@ -618,6 +633,11 @@ class IntegrationLeadModel {
       crmMatch: crmMatch ?? this.crmMatch,
       assignedTo: assignedTo ?? this.assignedTo,
       assignedToName: assignedToName ?? this.assignedToName,
+      assignedTelecallerId: assignedTelecallerId ?? this.assignedTelecallerId,
+      assignedTelecallerName: assignedTelecallerName ?? this.assignedTelecallerName,
+      allocationStatus: allocationStatus ?? this.allocationStatus,
+      isOldUntouched: isOldUntouched ?? this.isOldUntouched,
+      telecallerAssignedAt: telecallerAssignedAt ?? this.telecallerAssignedAt,
       transferRemarks: transferRemarks ?? this.transferRemarks,
       interactedAt: interactedAt ?? this.interactedAt,
       interactedBy: interactedBy ?? this.interactedBy,
@@ -647,6 +667,11 @@ class IntegrationLeadModel {
       'crm_match': crmMatch?.toJson(),
       'assigned_to': assignedTo,
       'assigned_to_name': assignedToName,
+      'assigned_telecaller_id': assignedTelecallerId,
+      'assigned_telecaller_name': assignedTelecallerName,
+      'allocation_status': allocationStatus,
+      'is_old_untouched': isOldUntouched,
+      'telecaller_assigned_at': telecallerAssignedAt?.toIso8601String(),
       'transfer_remarks': transferRemarks,
       'interacted_at': interactedAt?.toIso8601String(),
       'interacted_by': interactedBy,
@@ -685,6 +710,22 @@ class IntegrationLeadModel {
         raw['_assigned_to_name']?.toString() ??
         json['assigned_user']?['full_name']?.toString() ??
         transferObj?['assigned_to_name']?.toString();
+
+    final telecallerIdVal = json['assigned_telecaller_id']?.toString() ??
+        raw['_assigned_telecaller_id']?.toString();
+    final telecallerNameVal = json['assigned_telecaller_name']?.toString() ??
+        json['telecaller']?['full_name']?.toString() ??
+        raw['_assigned_telecaller_name']?.toString();
+    final allocStatusVal = json['allocation_status']?.toString() ??
+        raw['_allocation_status']?.toString();
+    final isOldVal = json['is_old_untouched'] == true ||
+        raw['_is_old_untouched'] == true;
+    final telecallerAssignedRaw = json['telecaller_assigned_at'] ??
+        raw['_telecaller_assigned_at'];
+    final telecallerAssignedVal = telecallerAssignedRaw != null
+        ? DateTime.tryParse(telecallerAssignedRaw.toString())
+        : null;
+
     final transferRemarksVal = json['transfer_remarks']?.toString() ??
         raw['_transfer_remarks']?.toString() ??
         transferObj?['remarks']?.toString();
@@ -724,6 +765,11 @@ class IntegrationLeadModel {
           : null,
       assignedTo: assignedToVal,
       assignedToName: assignedNameVal,
+      assignedTelecallerId: telecallerIdVal,
+      assignedTelecallerName: telecallerNameVal,
+      allocationStatus: allocStatusVal,
+      isOldUntouched: isOldVal,
+      telecallerAssignedAt: telecallerAssignedVal,
       transferRemarks: transferRemarksVal,
       interactedAt: interactedAtVal,
       interactedBy: interactedByVal,

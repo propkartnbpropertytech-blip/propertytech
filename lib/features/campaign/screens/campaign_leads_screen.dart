@@ -8,6 +8,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:excel/excel.dart' as xl;
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/api/dio_client.dart';
+import '../../../core/config/app_env.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/security/role_guard.dart';
@@ -32,7 +34,9 @@ import '../../team_messages/services/team_messages_service.dart';
 import '../../../core/utils/team_user_visibility.dart';
 
 class CampaignLeadsScreen extends StatefulWidget {
-  const CampaignLeadsScreen({super.key});
+  final String? initialSource;
+  final String? lockSource;
+  const CampaignLeadsScreen({super.key, this.initialSource, this.lockSource});
 
   @override
   State<CampaignLeadsScreen> createState() => _CampaignLeadsScreenState();
@@ -80,11 +84,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.lockSource != null && widget.lockSource!.isNotEmpty) {
+      _selectedSourceFilter = widget.lockSource!;
+    } else if (widget.initialSource != null && widget.initialSource!.isNotEmpty) {
+      _selectedSourceFilter = widget.initialSource!;
+    }
     _service.addListener(_onServiceUpdate);
     _service.watchCampaignUi();
     // Warm up leads immediately from storage and sync in background
     _service.ensureLoaded();
-    unawaited(_service.fetchServerLeads(silent: true));
+    unawaited(_bootstrapLockedSource());
     unawaited(_service.fetchHealthAlerts());
     unawaited(_preloadFilterUsers());
   }
@@ -150,6 +159,34 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     }
 
     return users.where((u) => u.isActive).toList();
+  }
+
+  @override
+  void didUpdateWidget(CampaignLeadsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.lockSource != oldWidget.lockSource && widget.lockSource != null) {
+      setState(() {
+        _selectedSourceFilter = widget.lockSource!;
+        _currentPage = 1;
+      });
+    } else if (widget.initialSource != oldWidget.initialSource && widget.initialSource != null) {
+      setState(() {
+        _selectedSourceFilter = widget.initialSource!;
+        _currentPage = 1;
+      });
+    }
+  }
+
+  Future<void> _bootstrapLockedSource() async {
+    final locked = widget.lockSource ?? '';
+    if (locked.toUpperCase().contains('HOUSING')) {
+      await _service.syncHousingLeads();
+      return;
+    }
+    await _service.fetchServerLeads(
+      silent: true,
+      source: locked.isEmpty ? null : locked,
+    );
   }
 
   Future<void> _preloadFilterUsers() async {
@@ -373,22 +410,27 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       }
     }
 
+    final sourceFilter = widget.lockSource ?? _selectedSourceFilter;
+    final scopedLeads = currentLeads
+        .where((l) => IntegrationService.matchesCampaignSource(l.source, sourceFilter))
+        .toList();
+
     List<IntegrationLeadModel> list;
     final selectedUser = selectedFilterUser;
     if (userFilterActive && selectedUser != null && _viewMode == 'active') {
-      list = currentLeads
+      list = scopedLeads
           .where((l) =>
               l.leadType == _selectedSection &&
               TeamUserVisibility.campaignLeadBelongsToUser(l, selectedUser))
           .toList();
     } else {
       list = _viewMode == 'not_interested'
-          ? currentLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList()
+          ? scopedLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList()
           : (_viewMode == 'archive_listed' || _viewMode == 'listed'
-              ? currentLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList()
+              ? scopedLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList()
               : (_viewMode == 'archive_requirements'
-                  ? currentLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won')).toList()
-                  : currentLeads.where((l) {
+                  ? scopedLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won')).toList()
+                  : scopedLeads.where((l) {
                       if (l.leadType != _selectedSection) return false;
                       return !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned');
                     }).toList()));
@@ -428,11 +470,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _cachedDupLeads = d;
     _cachedImportedCount = imp;
     _cachedInterestedCount = interested;
-
-    // Filter by Source
-    if (_selectedSourceFilter != 'All') {
-      list = list.where((l) => l.source == _selectedSourceFilter).toList();
-    }
 
     // Filter by Duplicate status
     if (_selectedDuplicateFilter == 'Duplicates Only') {
@@ -559,7 +596,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     int listedCount = 0;
     int archivedReqCount = 0;
 
-    for (final l in currentLeads) {
+    for (final l in scopedLeads) {
       final isProp = l.leadType == 'Property Listing';
       final isReq = l.leadType == 'Requirement';
       final isSelectedSec = l.leadType == _selectedSection;
@@ -631,6 +668,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     _cachedAllDetectedHeaders = _service.getDetectedHeaders(leadsSubset: list, section: _selectedSection);
     _cachedVisibleHeaders = _service.getActiveVisibleHeaders(leadsSubset: list, section: _selectedSection);
+  }
+
+  List<IntegrationLeadModel> get _scopedLeads {
+    final filter = widget.lockSource ?? _selectedSourceFilter;
+    return _service.leads.where((l) => IntegrationService.matchesCampaignSource(l.source, filter)).toList();
   }
 
   List<IntegrationLeadModel> get _filteredLeads {
@@ -760,7 +802,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               children: [
                 // Page Header
                 CampaignSubshellHeader(
-                  activeTab: 'leads',
+                  activeTab: (widget.lockSource ?? _selectedSourceFilter).toUpperCase().contains('HOUSING')
+                      ? 'housing'
+                      : ((widget.lockSource ?? _selectedSourceFilter).toUpperCase().contains('META') ? 'meta' : 'connections'),
                   trailing: _buildHeaderActions(context),
                 ),
 
@@ -798,10 +842,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   const SizedBox(height: CRMSpacing.m),
                 ],
 
-                // KPI Analytics Cards (Compact)
-                _buildKpiMetricsRow(context, totalLeads, uniqueLeads, dupLeads, importedCount),
-
-                const SizedBox(height: CRMSpacing.m),
+                if (widget.lockSource == null) ...[
+                  _buildKpiMetricsRow(context, totalLeads, uniqueLeads, dupLeads, importedCount),
+                  const SizedBox(height: CRMSpacing.m),
+                ],
 
                 // Batch Actions Bar when checkboxes are selected
                 if (_selectedLeadIds.isNotEmpty) ...[
@@ -828,6 +872,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   Widget _buildHeaderActions(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 700;
+    final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
 
     final refreshButton = CRMButton(
       label: _service.isFetchingServerLeads ? 'Refreshing...' : 'Refresh Leads',
@@ -838,7 +883,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       onPressed: _service.isFetchingServerLeads
           ? null
           : () async {
-              await _service.syncMetaLeads();
+              if (!isTelecaller) {
+                final locked = widget.lockSource ?? '';
+                if (locked.toUpperCase().contains('HOUSING')) {
+                  await _service.syncHousingLeads();
+                } else {
+                  await _service.syncMetaLeads();
+                }
+              }
               final count = await _service.fetchServerLeads();
               if (mounted) {
                 context.read<CampaignLeadsBloc>().add(const FetchCampaignLeadsEvent(silent: true));
@@ -846,7 +898,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   SnackBar(
                     content: Text(
                       count > 0
-                          ? 'Synced with Meta! $count leads up to date.'
+                          ? 'Campaign leads up to date ($count leads).'
                           : 'Campaign leads are up to date.',
                     ),
                   ),
@@ -855,6 +907,36 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             },
     );
 
+    final exportExcelButton = CRMButton(
+      label: 'Export Excel',
+      prefixIcon: Icons.table_view_rounded,
+      variant: CRMButtonVariant.outline,
+      height: 36,
+      onPressed: () => _exportCurrentSpreadsheetToExcel(context),
+    );
+
+    if (isTelecaller) {
+      if (isMobile) {
+        return Row(
+          children: [
+            Expanded(child: refreshButton),
+            const SizedBox(width: 8),
+            Expanded(child: exportExcelButton),
+          ],
+        );
+      }
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          refreshButton,
+          exportExcelButton,
+        ],
+      );
+    }
+
     final syncSheetButton = CRMButton(
       label: _isSyncingSheet ? 'Syncing...' : (isMobile ? 'Sync Sheet' : 'Sync Google Sheet'),
       prefixIcon: Icons.sync_rounded,
@@ -862,14 +944,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       height: 36,
       isLoading: _isSyncingSheet,
       onPressed: _isSyncingSheet ? null : () => _syncGoogleSheet(context),
-    );
-
-    final exportExcelButton = CRMButton(
-      label: 'Export Excel',
-      prefixIcon: Icons.table_view_rounded,
-      variant: CRMButtonVariant.outline,
-      height: 36,
-      onPressed: () => _exportCurrentSpreadsheetToExcel(context),
     );
 
     final moreButton = PopupMenuButton<String>(
@@ -942,6 +1016,24 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ),
     );
 
+    if (widget.lockSource != null) {
+      if (isMobile) {
+        return Row(
+          children: [
+            Expanded(child: refreshButton),
+            const SizedBox(width: 8),
+            Expanded(child: exportExcelButton),
+          ],
+        );
+      }
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
+        children: [refreshButton, exportExcelButton],
+      );
+    }
+
     if (isMobile) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -997,7 +1089,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   Widget _buildViewSelector(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 750;
+    final isMobile = screenWidth < 900;
 
     final tabs = [
       _buildViewTabItem(
@@ -1279,6 +1371,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       badgeBorder = const Color(0xFFEF4444).withValues(alpha: 0.45);
       textColor = const Color(0xFFEF4444);
       icon = Icons.thumb_down_alt_rounded;
+    } else if (lead.assignedTelecallerName?.isNotEmpty == true) {
+      badgeBg = const Color(0xFF0284C7).withValues(alpha: 0.12);
+      badgeBorder = const Color(0xFF38BDF8).withValues(alpha: 0.50);
+      textColor = const Color(0xFF0369A1);
+      icon = Icons.support_agent_rounded;
     } else {
       badgeBg = CRMColors.primaryOf(context).withValues(alpha: 0.10);
       badgeBorder = CRMColors.borderOf(context);
@@ -1290,9 +1387,21 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if ((status == 'Follow up' || status == 'Follow-up') && lead.followupScheduledAt != null) {
       label = 'Follow up (${DateFormat('d MMM, h:mm a').format(lead.followupScheduledAt!)})';
     } else if (status == 'CNR') {
-      label = 'CNR';
+      label = lead.assignedTelecallerName?.isNotEmpty == true ? 'CNR (${lead.assignedTelecallerName})' : 'CNR';
     } else if (status == 'Assigned' && lead.assignedToName?.isNotEmpty == true) {
       label = 'Assigned (${lead.assignedToName})';
+    } else if (lead.assignedTelecallerName?.isNotEmpty == true) {
+      if (lead.allocationStatus == 'ASSIGNED_TO_TELECALLER') {
+        label = 'Allocated: ${lead.assignedTelecallerName}';
+      } else if (lead.allocationStatus == 'IN_CALL') {
+        label = 'In Call (${lead.assignedTelecallerName})';
+      } else if (lead.allocationStatus == 'CALLBACK') {
+        label = 'Callback (${lead.assignedTelecallerName})';
+      } else if (lead.allocationStatus == 'HANDED_TO_SALES') {
+        label = 'Handed to Sales (${lead.assignedToName ?? lead.assignedTelecallerName})';
+      } else {
+        label = 'Allocated: ${lead.assignedTelecallerName}';
+      }
     }
 
     final popup = PopupMenuButton<String>(
@@ -1490,32 +1599,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ],
           ),
         ),
-        PopupMenuItem(
-          value: 'CNR',
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(Icons.phone_missed_rounded, size: 16, color: Color(0xFFD97706)),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('CNR (Call Not Received)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFFD97706)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text('Mark lead as interacted', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
         if (_selectedSection != 'Property Listing')
         PopupMenuItem(
           value: 'Transfer',
@@ -1650,32 +1733,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
           ),
         ],
-        PopupMenuItem(
-          value: 'Interested',
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(Icons.star_rounded, size: 16, color: Color(0xFF10B981)),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Interested', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF10B981)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text('Ready to move to Leads page', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
         PopupMenuItem(
           value: 'Not interested',
           child: Row(
@@ -2035,6 +2092,39 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
           ],
           const SizedBox(width: 6),
+        ] else if (lead.assignedTelecallerName?.isNotEmpty == true) ...[
+          Tooltip(
+            message: 'Allocated to Telecaller: ${lead.assignedTelecallerName}\nStatus: ${lead.allocationStatus ?? "ASSIGNED"}',
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.support_agent_rounded, size: 14, color: Color(0xFF0284C7)),
+                  const SizedBox(width: 4),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 110),
+                    child: Text(
+                      lead.assignedTelecallerName!,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0284C7),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
         ] else if (isCnr) ...[
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2094,19 +2184,39 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     );
   }
 
-  Future<void> _showTransferDialog(BuildContext context, IntegrationLeadModel lead) async {
-    List<users_model.UserModel> activeUsers = _cachedUsers ?? [];
-    if (activeUsers.isEmpty) {
-      try {
-        activeUsers = await _loadUsersForLeadAssign();
-        _cachedUsers = activeUsers;
-      } catch (e) {
-        debugPrint('[TransferDialog] Error fetching users: $e');
+  Future<List<Map<String, dynamic>>> _fetchSalesUsersForTransfer() async {
+    try {
+      final res = await DioClient.dio.get('/telecaller/sales-users');
+      final list = List<dynamic>.from(res.data['data'] ?? []);
+      if (list.isNotEmpty) {
+        return list.map((u) => Map<String, dynamic>.from(u as Map)).toList();
       }
+    } catch (e) {
+      debugPrint('[TransferDialog] /telecaller/sales-users fetch error: $e');
     }
 
-    if (!context.mounted) return;
+    // Fallback to /users
+    try {
+      final allUsers = await _usersRepository.getUsers();
+      final salesUsers = allUsers.where((u) {
+        final r = u.roleName.toLowerCase();
+        return r.contains('sales') || r.contains('agent') || r.contains('advisor');
+      }).toList();
+      final pool = salesUsers.isNotEmpty ? salesUsers : allUsers.where((u) => u.isActive).toList();
+      return pool.map((u) => {
+        'id': u.id,
+        'full_name': u.fullName,
+        'email': u.email,
+        'role_name': u.roleName,
+      }).toList();
+    } catch (e) {
+      debugPrint('[TransferDialog] /users fetch error: $e');
+    }
 
+    return [];
+  }
+
+  Future<void> _showTransferDialog(BuildContext context, IntegrationLeadModel lead) async {
     final clientName = lead.getStringValue('full_name').isNotEmpty
         ? lead.getStringValue('full_name')
         : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Lead');
@@ -2114,15 +2224,22 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         ? lead.getStringValue('phone_number')
         : lead.getStringValue('phone');
 
-    final assignableUsers = _salesUsersFrom(activeUsers);
-
-    String selectedStatus = lead.campaignStatus == 'CNR' ? 'CNR' : 'Picked Up';
-    String? selectedUserId = (lead.assignedTo?.isNotEmpty == true && assignableUsers.any((u) => u.id == lead.assignedTo))
-        ? lead.assignedTo
-        : (assignableUsers.isNotEmpty ? assignableUsers.first.id : null);
+    String selectedStatus = lead.campaignStatus == 'CNR'
+        ? 'CNR'
+        : (lead.campaignStatus == 'Follow up' || lead.campaignStatus == 'Follow-up' ? 'Callback' : 'Picked Up');
     final remarksController = TextEditingController(text: lead.transferRemarks ?? '');
+    DateTime selectedCallbackDate = lead.followupScheduledAt ?? DateTime.now().add(const Duration(days: 1));
+    TimeOfDay selectedCallbackTime = lead.followupScheduledAt != null
+        ? TimeOfDay.fromDateTime(lead.followupScheduledAt!)
+        : const TimeOfDay(hour: 11, minute: 0);
+    final callbackRemarksController = TextEditingController(text: lead.followupRemarks ?? '');
     String? remarksError;
     bool isSubmitting = false;
+
+    List<Map<String, dynamic>> assignableUsers = [];
+    bool isLoadingUsers = true;
+    String? selectedUserId = lead.assignedTo;
+    bool didInitiateFetch = false;
 
     await showDialog(
       context: context,
@@ -2130,6 +2247,21 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+          if (!didInitiateFetch) {
+            didInitiateFetch = true;
+            _fetchSalesUsersForTransfer().then((users) {
+              if (dialogCtx.mounted) {
+                setDialogState(() {
+                  assignableUsers = users;
+                  isLoadingUsers = false;
+                  if (selectedUserId == null || !assignableUsers.any((u) => u['id'] == selectedUserId)) {
+                    selectedUserId = assignableUsers.isNotEmpty ? assignableUsers.first['id'] as String? : null;
+                  }
+                });
+              }
+            });
+          }
 
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -2153,7 +2285,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text(
-                        'Transfer Lead',
+                        'Update Call Outcome',
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 2),
@@ -2168,7 +2300,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ],
             ),
             content: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
+              constraints: const BoxConstraints(maxWidth: 520),
               child: SizedBox(
                 width: double.maxFinite,
                 child: SingleChildScrollView(
@@ -2176,7 +2308,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 1. Two Choice Question Cards: Call picked up ? or CNR
+                      // Three Choice Question Cards: Picked Up, Callback, CNR
                       Text(
                         'Call Outcome *',
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
@@ -2191,7 +2323,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               borderRadius: BorderRadius.circular(10),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                 decoration: BoxDecoration(
                                   color: selectedStatus == 'Picked Up'
                                       ? const Color(0xFF10B981).withValues(alpha: 0.12)
@@ -2208,25 +2340,25 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                   children: [
                                     Icon(
                                       Icons.phone_in_talk_rounded,
-                                      size: 20,
+                                      size: 18,
                                       color: selectedStatus == 'Picked Up' ? const Color(0xFF10B981) : Colors.grey,
                                     ),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 6),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            'Call picked up ?',
+                                            'Picked Up',
                                             style: TextStyle(
-                                              fontSize: 13,
+                                              fontSize: 12,
                                               fontWeight: FontWeight.bold,
                                               color: selectedStatus == 'Picked Up' ? const Color(0xFF10B981) : null,
                                             ),
                                           ),
                                           Text(
-                                            'Answered & discuss',
-                                            style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(ctx)),
+                                            'Assign to sales',
+                                            style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
                                           ),
                                         ],
                                       ),
@@ -2236,15 +2368,68 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          // Choice 2: CNR
+                          const SizedBox(width: 8),
+                          // Choice 2: Callback
+                          Expanded(
+                            child: InkWell(
+                              onTap: isSubmitting ? null : () => setDialogState(() => selectedStatus = 'Callback'),
+                              borderRadius: BorderRadius.circular(10),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: selectedStatus == 'Callback'
+                                      ? const Color(0xFF3B82F6).withValues(alpha: 0.12)
+                                      : CRMColors.surfaceElevatedOf(ctx),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: selectedStatus == 'Callback'
+                                        ? const Color(0xFF3B82F6)
+                                        : CRMColors.borderOf(ctx),
+                                    width: selectedStatus == 'Callback' ? 1.8 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.event_repeat_rounded,
+                                      size: 18,
+                                      color: selectedStatus == 'Callback' ? const Color(0xFF3B82F6) : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Callback',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: selectedStatus == 'Callback' ? const Color(0xFF3B82F6) : null,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Schedule call',
+                                            style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Choice 3: CNR
                           Expanded(
                             child: InkWell(
                               onTap: isSubmitting ? null : () => setDialogState(() => selectedStatus = 'CNR'),
                               borderRadius: BorderRadius.circular(10),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                 decoration: BoxDecoration(
                                   color: selectedStatus == 'CNR'
                                       ? const Color(0xFFD97706).withValues(alpha: 0.12)
@@ -2261,10 +2446,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                   children: [
                                     Icon(
                                       Icons.phone_missed_rounded,
-                                      size: 20,
+                                      size: 18,
                                       color: selectedStatus == 'CNR' ? const Color(0xFFD97706) : Colors.grey,
                                     ),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 6),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2272,14 +2457,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                           Text(
                                             'CNR',
                                             style: TextStyle(
-                                              fontSize: 13,
+                                              fontSize: 12,
                                               fontWeight: FontWeight.bold,
                                               color: selectedStatus == 'CNR' ? const Color(0xFFD97706) : null,
                                             ),
                                           ),
                                           Text(
-                                            'Call not received',
-                                            style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(ctx)),
+                                            'Not received',
+                                            style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
                                           ),
                                         ],
                                       ),
@@ -2325,6 +2510,155 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                       ),
                                     ),
                                   ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      // On Callback: Date & Time Picker + Discussion Notes
+                      if (selectedStatus == 'Callback') ...[
+                        Text(
+                          'Callback Date & Time *',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            // Date Picker
+                            Expanded(
+                              flex: 3,
+                              child: InkWell(
+                                onTap: isSubmitting
+                                    ? null
+                                    : () async {
+                                        final picked = await showDatePicker(
+                                          context: ctx,
+                                          initialDate: selectedCallbackDate,
+                                          firstDate: DateTime.now().subtract(const Duration(days: 7)),
+                                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                                        );
+                                        if (picked != null) {
+                                          setDialogState(() => selectedCallbackDate = picked);
+                                        }
+                                      },
+                                borderRadius: BorderRadius.circular(10),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.surfaceElevatedOf(ctx),
+                                    border: Border.all(color: CRMColors.borderOf(ctx)),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.event_rounded, size: 18, color: Color(0xFF3B82F6)),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          DateFormat('EEE, d MMM yyyy').format(selectedCallbackDate),
+                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Time Picker
+                            Expanded(
+                              flex: 2,
+                              child: InkWell(
+                                onTap: isSubmitting
+                                    ? null
+                                    : () async {
+                                        final picked = await showTimePicker(
+                                          context: ctx,
+                                          initialTime: selectedCallbackTime,
+                                        );
+                                        if (picked != null) {
+                                          setDialogState(() => selectedCallbackTime = picked);
+                                        }
+                                      },
+                                borderRadius: BorderRadius.circular(10),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.surfaceElevatedOf(ctx),
+                                    border: Border.all(color: CRMColors.borderOf(ctx)),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.access_time_rounded, size: 18, color: Color(0xFF3B82F6)),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          selectedCallbackTime.format(ctx),
+                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Callback Discussion Notes (Remarks)',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: callbackRemarksController,
+                          maxLines: 3,
+                          enabled: !isSubmitting,
+                          decoration: InputDecoration(
+                            hintText: 'Enter discussion notes, preferred callback timing, client requirements...',
+                            hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                            filled: true,
+                            fillColor: CRMColors.surfaceElevatedOf(ctx),
+                            contentPadding: const EdgeInsets.all(12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: CRMColors.primaryOf(ctx), width: 1.5),
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF3B82F6).withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF3B82F6)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Lead status will become Follow up and move to your Callbacks tab/page with scheduled reminder timing.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark ? Colors.grey.shade300 : const Color(0xFF1E40AF),
+                                  ),
                                 ),
                               ),
                             ],
@@ -2386,58 +2720,73 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         ),
                         const SizedBox(height: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           decoration: BoxDecoration(
                             color: CRMColors.surfaceElevatedOf(ctx),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: CRMColors.borderOf(ctx)),
                           ),
-                          child: assignableUsers.isEmpty
+                          child: isLoadingUsers
                               ? const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 12),
-                                  child: Text(
-                                    'No sales users available to assign.',
-                                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      ),
+                                      SizedBox(width: 10),
+                                      Text('Loading sales team from database...', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                                    ],
                                   ),
                                 )
-                              : DropdownButtonHideUnderline(
-                                  child: DropdownButton<String>(
-                                    value: assignableUsers.any((u) => u.id == selectedUserId) ? selectedUserId : null,
-                                    isExpanded: true,
-                                    hint: const Text('Select Sales User to Assign', style: TextStyle(fontSize: 13)),
-                                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                                    items: assignableUsers.map((u) {
-                                      return DropdownMenuItem<String>(
-                                        value: u.id,
-                                        child: Row(
-                                          children: [
-                                            CircleAvatar(
-                                              radius: 12,
-                                              backgroundColor: CRMColors.primaryOf(ctx).withValues(alpha: 0.15),
-                                              child: Text(
-                                                u.fullName.isNotEmpty ? u.fullName[0].toUpperCase() : 'U',
-                                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primaryOf(ctx)),
-                                              ),
+                              : (assignableUsers.isEmpty
+                                  ? const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 12),
+                                      child: Text('No active sales users found in your organization.', style: TextStyle(fontSize: 13, color: Colors.orange)),
+                                    )
+                                  : DropdownButtonHideUnderline(
+                                      child: DropdownButton<String>(
+                                        value: assignableUsers.any((u) => u['id'] == selectedUserId) ? selectedUserId : null,
+                                        isExpanded: true,
+                                        hint: const Text('Select Sales User to Assign', style: TextStyle(fontSize: 13)),
+                                        icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                                        items: assignableUsers.map((u) {
+                                          final uId = u['id']?.toString() ?? '';
+                                          final uName = u['full_name']?.toString() ?? 'User';
+                                          final uRole = u['role_name']?.toString() ?? 'Sales';
+                                          return DropdownMenuItem<String>(
+                                            value: uId,
+                                            child: Row(
+                                              children: [
+                                                CircleAvatar(
+                                                  radius: 12,
+                                                  backgroundColor: CRMColors.primaryOf(ctx).withValues(alpha: 0.15),
+                                                  child: Text(
+                                                    uName.isNotEmpty ? uName[0].toUpperCase() : 'U',
+                                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primaryOf(ctx)),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    '$uName ($uRole)',
+                                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                '${u.fullName} (${u.roleName})',
-                                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
-                                    onChanged: isSubmitting
-                                        ? null
-                                        : (val) {
-                                            setDialogState(() => selectedUserId = val);
-                                          },
-                                  ),
-                                ),
+                                          );
+                                        }).toList(),
+                                        onChanged: isSubmitting
+                                            ? null
+                                            : (val) {
+                                                setDialogState(() => selectedUserId = val);
+                                              },
+                                      ),
+                                    )),
                         ),
                         const SizedBox(height: 12),
                         Container(
@@ -2476,7 +2825,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: selectedStatus == 'CNR' ? const Color(0xFFD97706) : CRMColors.primaryOf(ctx),
+                  backgroundColor: selectedStatus == 'CNR'
+                      ? const Color(0xFFD97706)
+                      : (selectedStatus == 'Callback'
+                          ? const Color(0xFF3B82F6)
+                          : const Color(0xFF10B981)),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -2484,6 +2837,53 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 onPressed: isSubmitting
                     ? null
                     : () async {
+                        if (selectedStatus == 'Callback') {
+                          final scheduledDateTime = DateTime(
+                            selectedCallbackDate.year,
+                            selectedCallbackDate.month,
+                            selectedCallbackDate.day,
+                            selectedCallbackTime.hour,
+                            selectedCallbackTime.minute,
+                          );
+
+                          setDialogState(() => isSubmitting = true);
+                          Navigator.pop(dialogCtx);
+                          setState(() {
+                            _cachedFilteredLeads = null;
+                          });
+
+                          try {
+                            final ok = await _service.scheduleFollowup(
+                              lead.id,
+                              scheduledDateTime,
+                              callbackRemarksController.text.trim(),
+                            );
+                            if (!context.mounted) return;
+                            setState(() {
+                              _cachedFilteredLeads = null;
+                            });
+                            unawaited(_loadFollowups());
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(ok
+                                    ? 'Callback scheduled for ${DateFormat('dd MMM, hh:mm a').format(scheduledDateTime)}!'
+                                    : 'Failed to schedule callback.'),
+                                backgroundColor: ok ? const Color(0xFF3B82F6) : const Color(0xFFEF4444),
+                              ),
+                            );
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to schedule callback: $e'),
+                                  backgroundColor: const Color(0xFFEF4444),
+                                ),
+                              );
+                            }
+                          }
+                          return;
+                        }
+
                         if (selectedStatus == 'Picked Up') {
                           if (remarksController.text.trim().isEmpty) {
                             setDialogState(() {
@@ -2510,19 +2910,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
                         setDialogState(() => isSubmitting = true);
 
-                        final targetUserName = assignableUsers
-                            .firstWhere(
-                              (u) => u.id == selectedUserId,
-                              orElse: () => const users_model.UserModel(
-                                id: '',
-                                roleId: '',
-                                roleName: '',
-                                fullName: '',
-                                email: '',
-                                isActive: false,
-                              ),
-                            )
-                            .fullName;
+                        final targetUser = assignableUsers.firstWhere(
+                          (u) => u['id'] == selectedUserId,
+                          orElse: () => {'full_name': 'Sales User'},
+                        );
+                        final targetUserName = (targetUser['full_name'] as String?) ?? 'Sales User';
 
                         // Pop dialog immediately so user is never stuck in loading
                         Navigator.pop(dialogCtx);
@@ -2537,6 +2929,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             assignedTo: selectedStatus == 'Picked Up' ? selectedUserId : null,
                             assignedToName: selectedStatus == 'Picked Up' ? targetUserName : null,
                             remarks: remarksController.text.trim(),
+                          );
+                          IntegrationService().notifyOutcomeRecorded(
+                            lead.id,
+                            outcome: selectedStatus == 'Picked Up' ? 'PICKED_UP' : (selectedStatus == 'Callback' ? 'CALLBACK' : 'CNR'),
+                            remarks: remarksController.text.trim(),
+                            salesUserId: selectedStatus == 'Picked Up' ? selectedUserId : null,
+                            assignedToName: selectedStatus == 'Picked Up' ? targetUserName : null,
                           );
                           if (!context.mounted) return;
                           setState(() {
@@ -2578,7 +2977,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : Text(
-                        selectedStatus == 'CNR' ? 'Confirm CNR' : 'Assign & Transfer Lead',
+                        selectedStatus == 'CNR'
+                            ? 'Confirm CNR'
+                            : (selectedStatus == 'Callback'
+                                ? 'Schedule Callback'
+                                : 'Assign & Transfer Lead'),
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
               ),
@@ -2590,7 +2993,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   Future<void> _moveInterestedToCrm(BuildContext context) async {
-    final interestedLeads = _service.leads.where((l) =>
+    final interestedLeads = _scopedLeads.where((l) =>
         l.leadType == _selectedSection &&
         l.campaignStatus == 'Interested' &&
         l.importStatus != 'Imported').toList();
@@ -2852,7 +3255,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     // If items empty or incomplete, incorporate leads in memory that have scheduled followups
     final leadFollowupIds = allItems.map((f) => f.leadId).toSet();
-    for (final lead in _service.leads) {
+    for (final lead in _scopedLeads) {
       if ((lead.campaignStatus == 'Follow up' || lead.campaignStatus == 'Follow-up') &&
           !leadFollowupIds.contains(lead.id)) {
         final name = lead.getStringValue('full_name').isNotEmpty
@@ -3571,7 +3974,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   Widget _buildNotInterestedView(BuildContext context) {
-    final notInterestedLeads = _service.leads
+    final notInterestedLeads = _scopedLeads
         .where((l) => isNotInterestedStatus(l.campaignStatus))
         .toList();
 
@@ -4721,41 +5124,44 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
             const SizedBox(width: CRMSpacing.s),
 
-            // Bulk Delete (Database Sync with Warning)
-            SizedBox(
-              height: 36,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.delete_forever_rounded, size: 16),
-                label: Text('Delete ($count)'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: CRMColors.danger,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-                onPressed: () => _confirmBatchDeleteDialog(context),
-              ),
-            ),
-            const SizedBox(width: CRMSpacing.s),
-
-            // Bulk Merge (if 2+ selected)
-            if (count >= 2) ...[
+            if (!RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) ...[
+              // Bulk Delete (Database Sync with Warning)
               SizedBox(
                 height: 36,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.merge_type_rounded, size: 16),
-                  label: const Text('Merge Selected'),
-                  style: OutlinedButton.styleFrom(
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.delete_forever_rounded, size: 16),
+                  label: Text('Delete ($count)'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: CRMColors.danger,
+                    foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
                     padding: const EdgeInsets.symmetric(horizontal: 14),
                     textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
-                  onPressed: () => _showMergeSelectedLeadsDialog(context),
+                  onPressed: () => _confirmBatchDeleteDialog(context),
                 ),
               ),
               const SizedBox(width: CRMSpacing.s),
+
+              // Bulk Merge (if 2+ selected)
+              if (count >= 2) ...[
+                SizedBox(
+                  height: 36,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.merge_type_rounded, size: 16),
+                    label: const Text('Merge Selected'),
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    onPressed: () => _showMergeSelectedLeadsDialog(context),
+                  ),
+                ),
+                const SizedBox(width: CRMSpacing.s),
+              ],
             ],
+
 
             // Bulk Quality Status Menu
             PopupMenuButton<String>(
@@ -4876,6 +5282,38 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     );
   }
 
+  Widget _buildSourceBadge(String rawSource) {
+    final s = rawSource.isEmpty ? 'Meta Ads' : rawSource;
+    final upper = s.toUpperCase();
+    final Color badgeColor;
+    if (upper.contains('HOUSING')) {
+      badgeColor = const Color(0xFF6C5CE7);
+    } else if (upper.contains('META')) {
+      badgeColor = CRMColors.terracotta;
+    } else if (upper.contains('SHEET')) {
+      badgeColor = CRMColors.sage;
+    } else {
+      badgeColor = const Color(0xFF0984E3);
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: badgeColor.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: badgeColor.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        s,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: badgeColor,
+        ),
+      ),
+    );
+  }
+
   Widget _buildMobileLeadCard(
     BuildContext context,
     IntegrationLeadModel lead,
@@ -4955,28 +5393,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ),
               const SizedBox(width: 6),
               // Source Badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: (lead.source.isEmpty || lead.source == 'Meta Ads')
-                      ? CRMColors.terracotta.withValues(alpha: 0.15)
-                      : CRMColors.sage.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: (lead.source.isEmpty || lead.source == 'Meta Ads')
-                        ? CRMColors.terracotta.withValues(alpha: 0.4)
-                        : CRMColors.sage.withValues(alpha: 0.4),
-                  ),
-                ),
-                child: Text(
-                  lead.source.isEmpty ? 'Meta Ads' : lead.source,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: (lead.source.isEmpty || lead.source == 'Meta Ads') ? CRMColors.terracotta : CRMColors.sage,
-                  ),
-                ),
-              ),
+              _buildSourceBadge(lead.source),
               if (lead.enquiryCount > 1) ...[
                 const SizedBox(width: 4),
                 Container(
@@ -5544,13 +5961,20 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          isExpanded: isMobile,
-          value: _selectedSourceFilter,
+          isExpanded: true,
+          value: (_selectedSourceFilter.toUpperCase().contains('HOUSING'))
+              ? 'Housing.com'
+              : (_selectedSourceFilter.toUpperCase().contains('META')
+                  ? 'Meta Ads'
+                  : (_selectedSourceFilter == 'Google Sheets'
+                      ? 'Google Sheets'
+                      : (_selectedSourceFilter == 'Webhook API' ? 'Webhook API' : 'All'))),
           items: const [
             DropdownMenuItem(value: 'All', child: Text('All Sources')),
-            DropdownMenuItem(value: 'Meta Ads', child: Text('Meta Ads ')),
-            DropdownMenuItem(value: 'Google Sheets', child: Text('Google Sheets ')),
-            DropdownMenuItem(value: 'Webhook API', child: Text('Webhook API ')),
+            DropdownMenuItem(value: 'Meta Ads', child: Text('Meta Ads')),
+            DropdownMenuItem(value: 'Housing.com', child: Text('Housing.com')),
+            DropdownMenuItem(value: 'Google Sheets', child: Text('Google Sheets')),
+            DropdownMenuItem(value: 'Webhook API', child: Text('Webhook API')),
           ],
           onChanged: (val) {
             if (val != null) {
@@ -5626,7 +6050,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          isExpanded: isMobile,
+          isExpanded: true,
           value: _selectedDuplicateFilter,
           items: const [
             DropdownMenuItem(value: 'All', child: Text('Show All Leads')),
@@ -5655,19 +6079,23 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             : 'Exact Google Sheet column sequence with drag-and-place reordering, Excel-style filtration & sorting.',
         headerAction: isMobile
             ? moreToolsButton
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  reorderColumnsButton,
-                  const SizedBox(width: CRMSpacing.s),
-                  columnsButton,
-                  const SizedBox(width: CRMSpacing.s),
-                  exportExcelButton,
-                  const SizedBox(width: CRMSpacing.s),
-                  addHeaderButton,
-                  const SizedBox(width: CRMSpacing.s),
-                  moreToolsButton,
-                ],
+            : FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    reorderColumnsButton,
+                    const SizedBox(width: CRMSpacing.s),
+                    columnsButton,
+                    const SizedBox(width: CRMSpacing.s),
+                    exportExcelButton,
+                    const SizedBox(width: CRMSpacing.s),
+                    addHeaderButton,
+                    const SizedBox(width: CRMSpacing.s),
+                    moreToolsButton,
+                  ],
+                ),
               ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -5692,7 +6120,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               const SizedBox(height: CRMSpacing.s),
               searchInput,
               const SizedBox(height: CRMSpacing.s),
-              sourceDropdown,
+              if (widget.lockSource == null) sourceDropdown,
               if (TeamUserVisibility.canUseFilter(currentRole)) ...[
                 const SizedBox(height: CRMSpacing.s),
                 userDropdown,
@@ -5703,14 +6131,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               Row(
                 children: [
                   Expanded(flex: 3, child: searchInput),
-                  const SizedBox(width: CRMSpacing.m),
-                  sourceDropdown,
+                  if (widget.lockSource == null) ...[
+                    const SizedBox(width: CRMSpacing.m),
+                    Flexible(child: sourceDropdown),
+                  ],
                   if (TeamUserVisibility.canUseFilter(currentRole)) ...[
                     const SizedBox(width: CRMSpacing.m),
-                    userDropdown,
+                    Flexible(child: userDropdown),
                   ],
                   const SizedBox(width: CRMSpacing.m),
-                  duplicateDropdown,
+                  Flexible(child: duplicateDropdown),
                 ],
               ),
             ],
@@ -5875,28 +6305,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: (lead.source.isEmpty || lead.source == 'Meta Ads')
-                                          ? CRMColors.terracotta.withValues(alpha: 0.15)
-                                          : CRMColors.sage.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: (lead.source.isEmpty || lead.source == 'Meta Ads')
-                                            ? CRMColors.terracotta.withValues(alpha: 0.4)
-                                            : CRMColors.sage.withValues(alpha: 0.4),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      lead.source.isEmpty ? 'Meta Ads' : lead.source,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: (lead.source.isEmpty || lead.source == 'Meta Ads') ? CRMColors.terracotta : CRMColors.sage,
-                                      ),
-                                    ),
-                                  ),
+                                  _buildSourceBadge(lead.source),
                                   if (lead.enquiryCount > 1) ...[
                                     const SizedBox(width: 6),
                                     Tooltip(
@@ -6372,7 +6781,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ElevatedButton.icon(
             onPressed: () {
               Navigator.of(ctx).pop();
-              launchUrl(Uri.parse('https://api-propkart.nbpropertytech.com/api/v1/health'));
+              launchUrl(Uri.parse('${AppEnv.apiBaseUrl}/health'));
             },
             icon: const Icon(Icons.open_in_new_rounded, size: 14),
             label: const Text('Open Health Portal'),
@@ -6582,8 +6991,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }) {
     final distinctValueCounts = <String, int>{};
     final sectionLeads = _viewMode == 'not_interested'
-        ? _service.leads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList()
-        : _service.leads.where((l) => l.leadType == _selectedSection && !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned')).toList();
+        ? _scopedLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList()
+        : _scopedLeads.where((l) => l.leadType == _selectedSection && !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned')).toList();
 
     for (final lead in sectionLeads) {
       String val;

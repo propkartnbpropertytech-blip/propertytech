@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/theme/theme_presets.dart';
+import '../../../core/security/role_guard.dart';
 import '../../auth/bloc/auth_bloc.dart';
+import '../../telecaller/widgets/telecaller_availability_toggle.dart';
 
 class ModernTopBar extends StatefulWidget {
   final VoidCallback onToggleSidebar;
@@ -835,6 +837,11 @@ class _ModernTopBarState extends State<ModernTopBar> {
             child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Telecaller 2-State Availability Switch (ACTIVE / INACTIVE)
+              if (RoleGuard.isTelecaller(widget.userRole)) ...[
+                TelecallerAvailabilityToggle(compact: isMobile),
+                const SizedBox(width: 8),
+              ],
               if (!isMobile) ...[
                 SizedBox(
                   width: 38,

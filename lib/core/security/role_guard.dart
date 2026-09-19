@@ -10,8 +10,13 @@ class RoleGuard {
 
   static bool isAdmin(String? role) {
     final r = (role ?? '').toLowerCase();
-    return r == 'admin' || r == 'super admin' || r == 'telecaller';
+    return r == 'admin' || r == 'super admin';
   }
+
+  static bool isTelecaller(String? role) =>
+      (role ?? '').toLowerCase() == 'telecaller';
+
+  static bool isSales(String? role) => (role ?? '').toLowerCase() == 'sales';
 
   /// General permission evaluator
   static bool hasPermission(String? role, String key) {
@@ -79,6 +84,10 @@ class RoleGuard {
     '/campaign',
     '/campaign/connections',
     '/campaign/leads',
+    '/telecaller/leads',
+    '/telecaller/callbacks',
+    '/telecaller/cnr',
+    '/admin/lead-allocation',
     '/reports',
     '/reports/leads/overall-business-insight',
     '/reports/leads/telecaller',

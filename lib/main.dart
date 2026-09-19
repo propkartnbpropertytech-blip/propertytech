@@ -41,6 +41,7 @@ void main() async {
 
   Future<void> bootstrap() async {
     WidgetsFlutterBinding.ensureInitialized();
+    ApiConstants.assertConfig();
     initWindowsVideoPlayer();
     try {
       await PushNotificationService.initialize();
@@ -80,15 +81,34 @@ void main() async {
     runApp(MyApp(authRepository: authRepository));
   }
 
-  if (ApiConstants.sentryDsn != 'YOUR_SENTRY_DSN') {
+  final sentryDsn = ApiConstants.sentryDsn.trim();
+  final enableSentry = !kDebugMode &&
+      sentryDsn.isNotEmpty &&
+      sentryDsn != 'YOUR_SENTRY_DSN';
+
+  if (enableSentry) {
     await SentryFlutter.init(
       (options) {
-        options.dsn = ApiConstants.sentryDsn;
-        // Full 1.0 sampling adds measurable overhead on real devices.
-        options.tracesSampleRate = kReleaseMode ? 0.15 : 0.4;
+        options.dsn = sentryDsn;
+        options.tracesSampleRate = kReleaseMode ? 0.15 : 0.2;
         // ignore: experimental_member_use
-        options.profilesSampleRate = kReleaseMode ? 0.05 : 0.2;
+        options.profilesSampleRate = kReleaseMode ? 0.05 : 0.1;
         options.environment = kReleaseMode ? 'production' : 'development';
+        options.beforeSend = (event, hint) {
+          final blob = [
+            event.message?.formatted,
+            event.throwable?.toString(),
+            ...(event.exceptions ?? const []).map((e) => '${e.type} ${e.value}'),
+          ].whereType<String>().join(' ').toLowerCase();
+          // Layout overflows fire every frame in Flutter web; never ship them.
+          if (blob.contains('overflowed') ||
+              blob.contains('renderflex') ||
+              blob.contains('rate limit') ||
+              blob.contains('429')) {
+            return null;
+          }
+          return event;
+        };
       },
       appRunner: bootstrap,
     );
@@ -225,7 +245,7 @@ class _MyAppState extends State<MyApp> {
           BlocProvider(
             create: (context) => CampaignLeadsBloc(
               integrationService: IntegrationService(),
-            )..add(const FetchCampaignLeadsEvent()),
+            ),
           ),
         ],
         child: ListenableBuilder(

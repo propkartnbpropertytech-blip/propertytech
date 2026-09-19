@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/storage/secure_storage.dart';
 import '../../integration/models/integration_lead_model.dart';
 import '../../integration/services/integration_service.dart';
 
@@ -287,6 +288,13 @@ class CampaignLeadsBloc extends Bloc<CampaignLeadsEvent, CampaignLeadsState> {
     Emitter<CampaignLeadsState> emit,
   ) async {
     if (_isFetchingServer) return;
+
+    final token = await SecureStorage().getToken();
+    if (token == null || token.isEmpty) {
+      // User is not authenticated yet. Do not fire unauthenticated requests.
+      return;
+    }
+
     _isFetchingServer = true;
 
     if (!event.silent && state.status != CampaignLeadsStatus.success) {
@@ -321,6 +329,12 @@ class CampaignLeadsBloc extends Bloc<CampaignLeadsEvent, CampaignLeadsState> {
     PollCampaignLeadsPingEvent event,
     Emitter<CampaignLeadsState> emit,
   ) async {
+    final token = await SecureStorage().getToken();
+    if (token == null || token.isEmpty) {
+      // Skip background ping when unauthenticated.
+      return;
+    }
+
     emit(state.copyWith(isPinging: true));
 
     try {

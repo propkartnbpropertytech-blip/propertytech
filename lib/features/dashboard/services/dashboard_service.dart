@@ -35,6 +35,30 @@ class DashboardService {
     }
   }
 
+  /// Fetch PostgreSQL-authoritative overall KPI report from /api/v1/reports/overall
+  Future<Map<String, dynamic>> getAuthoritativeReportMetrics({
+    String? startDate,
+    String? endDate,
+    String? source,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/reports/overall',
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (source != null) 'source': source,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return response.data['data'] as Map<String, dynamic>;
+      }
+      return {};
+    } catch (_) {
+      return {};
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getDashboardNotes() async {
     try {
       final response = await _apiClient.get('/dashboard/notes');

@@ -58,6 +58,32 @@ class SecureStorage {
     return inMemoryRefreshToken ?? await _storage.read(key: _refreshTokenKey);
   }
 
+  static const _sessionLoginTimeKey = 'session_login_time';
+  static const _tokenExpirationHoursKey = 'token_expiration_hours';
+  static const _lastActivityTimeKey = 'last_activity_time';
+
+  Future<void> saveSessionLoginTime(DateTime time) async {
+    await _storage.write(key: _sessionLoginTimeKey, value: time.millisecondsSinceEpoch.toString());
+  }
+
+  Future<DateTime?> getSessionLoginTime() async {
+    final str = await _storage.read(key: _sessionLoginTimeKey);
+    if (str == null) return null;
+    final ms = int.tryParse(str);
+    if (ms == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> saveSessionExpirationHours(int hours) async {
+    await _storage.write(key: _tokenExpirationHoursKey, value: hours.toString());
+  }
+
+  Future<int> getSessionExpirationHours() async {
+    final str = await _storage.read(key: _tokenExpirationHoursKey);
+    if (str == null) return 8; // Default 8 hours
+    return int.tryParse(str) ?? 8;
+  }
+
   Future<void> deleteToken() async {
     inMemoryToken = null;
     inMemoryRefreshToken = null;
@@ -65,21 +91,33 @@ class SecureStorage {
     await _storage.delete(key: _tokenKey);
     await _storage.delete(key: _refreshTokenKey);
     await _storage.delete(key: _webSessionHintKey);
-    await _storage.delete(key: 'last_activity_time');
+    await _storage.delete(key: _lastActivityTimeKey);
+    await _storage.delete(key: _sessionLoginTimeKey);
   }
 
   Future<void> updateLastActivity() async {
     final now = DateTime.now().millisecondsSinceEpoch.toString();
-    await _storage.write(key: 'last_activity_time', value: now);
+    await _storage.write(key: _lastActivityTimeKey, value: now);
+  }
+
+  Future<bool> isSessionExpired({int? maxDurationHours}) async {
+    final loginTime = await getSessionLoginTime();
+    // If no login time is recorded yet (e.g. fresh in-flight login), NEVER consider expired!
+    if (loginTime == null) return false;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final elapsed = now - loginTime.millisecondsSinceEpoch;
+
+    // Safety guard: if login was within the last 2 minutes, it is physically impossible to be expired.
+    // This completely prevents the "2-time login" bug!
+    if (elapsed < 120 * 1000) return false;
+
+    final hours = maxDurationHours ?? await getSessionExpirationHours();
+    final maxDurationMs = hours * 3600 * 1000;
+    return elapsed >= maxDurationMs;
   }
 
   Future<bool> isSessionExpiredDueToInactivity() async {
-    final lastTimeStr = await _storage.read(key: 'last_activity_time');
-    if (lastTimeStr == null) return false;
-    final lastTime = int.tryParse(lastTimeStr);
-    if (lastTime == null) return false;
-    final diff = DateTime.now().millisecondsSinceEpoch - lastTime;
-    // 9 hours in milliseconds = 9 * 60 * 60 * 1000 = 32,400,000 ms
-    return diff > 32400000;
+    return isSessionExpired();
   }
 }

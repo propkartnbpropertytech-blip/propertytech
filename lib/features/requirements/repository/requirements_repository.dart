@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:propkart/features/requirements/models/requirement_model.dart';
 import 'package:propkart/features/requirements/services/requirements_service.dart';
 import 'package:propkart/core/storage/repository_coordinator.dart';
@@ -65,7 +65,13 @@ class RequirementsRepository {
           final sameAdminTeam = supervisorId != null &&
               supervisorId.isNotEmpty &&
               (r.adminId == supervisorId || r.createdBy == supervisorId);
-          return isCreator || sameAdminTeam;
+          final isTaggedTelecaller = (r.assignedTelecallerId != null && r.assignedTelecallerId == currentUser.id) ||
+              (r.metaCustomFields != null &&
+                (r.metaCustomFields!['telecaller_id'] == currentUser.id ||
+                 r.metaCustomFields!['assigned_telecaller_id'] == currentUser.id ||
+                 r.metaCustomFields!['telecaller_by'] == currentUser.id ||
+                 (r.metaCustomFields!['telecaller_by'] != null && uName.isNotEmpty && r.metaCustomFields!['telecaller_by'].toString().trim().toLowerCase() == uName)));
+          return isCreator || sameAdminTeam || isTaggedTelecaller;
         }).toList();
       } else if (role != 'Super Admin') {
         // Sales: own leads (including ones transferred away) plus leads assigned to them.

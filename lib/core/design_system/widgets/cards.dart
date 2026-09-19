@@ -88,7 +88,13 @@ class CRMCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (headerAction != null) headerAction!,
+                  if (headerAction != null)
+                    Flexible(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: headerAction!,
+                      ),
+                    ),
                 ],
               ),
             ),
