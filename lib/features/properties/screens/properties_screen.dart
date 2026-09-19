@@ -1534,173 +1534,195 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       PropertyModel p,
       String statusName,
       PropertyMetadataModel? metadata) async {
-    if (statusName == 'Available') {
-      final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
-      final isCurrentlyRentedOrSold =
-          currentStatus.contains('rented') || currentStatus.contains('sold');
+    try {
+      metadata ??= context.read<PropertiesBloc>().metadata;
 
-      if (isCurrentlyRentedOrSold) {
-        final clientName =
-            await PropertyDealClientStore.getClientName(p.id, property: p);
-        final bool hasClient =
-            clientName != null && clientName.trim().isNotEmpty;
+      if (statusName == 'Available') {
+        final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
+        final isCurrentlyRentedOrSold =
+            currentStatus.contains('rented') || currentStatus.contains('sold');
 
-        if (!context.mounted) return;
+        if (isCurrentlyRentedOrSold) {
+          final clientName =
+              await PropertyDealClientStore.getClientName(p.id, property: p);
+          final bool hasClient =
+              clientName != null && clientName.trim().isNotEmpty;
 
-        final bool? confirm = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            backgroundColor: CRMColors.cardBgOf(context),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-            ),
-            title: Text(
-              "Confirm Status Change",
-              style: CRMTypography.sectionTitle.copyWith(
-                color: CRMColors.textOf(context),
+          if (!context.mounted) return;
+
+          final bool? confirm = await showDialog<bool>(
+            context: context,
+            barrierDismissible: true,
+            builder: (dialogContext) => AlertDialog(
+              backgroundColor: CRMColors.cardBgOf(context),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.m),
               ),
-            ),
-            content: Text.rich(
-              TextSpan(
-                style: CRMTypography.body.copyWith(
-                  color: CRMColors.textSecondaryOf(context),
-                  height: 1.5,
+              title: Text(
+                "Confirm Status Change",
+                style: CRMTypography.sectionTitle.copyWith(
+                  color: CRMColors.textOf(context),
                 ),
-                children: hasClient
-                    ? [
-                        const TextSpan(
-                            text: "This property is currently assigned to client "),
-                        TextSpan(
-                          text: "'$clientName'",
-                          style: TextStyle(
-                            color: CRMColors.primaryOf(context),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        TextSpan(
-                          text: " (${p.propertyStatusName}).\n\n",
-                          style: TextStyle(
-                            color: CRMColors.textOf(context),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const TextSpan(
-                          text: "Are you sure you want to change its status to ",
-                        ),
-                        TextSpan(
-                          text: "Available",
-                          style: const TextStyle(
-                            color: CRMColors.success,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const TextSpan(text: "?"),
-                      ]
-                    : [
-                        const TextSpan(
-                          text:
-                              "Are you sure you want to change the status of this property from ",
-                        ),
-                        TextSpan(
-                          text: p.propertyStatusName ?? 'Rented Out',
-                          style: TextStyle(
-                            color: CRMColors.textOf(context),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const TextSpan(text: " to "),
-                        TextSpan(
-                          text: "Available",
-                          style: const TextStyle(
-                            color: CRMColors.success,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const TextSpan(text: "?"),
-                      ],
               ),
+              content: Text.rich(
+                TextSpan(
+                  style: CRMTypography.body.copyWith(
+                    color: CRMColors.textSecondaryOf(context),
+                    height: 1.5,
+                  ),
+                  children: hasClient
+                      ? [
+                          const TextSpan(
+                              text: "This property is currently assigned to client "),
+                          TextSpan(
+                            text: "'$clientName'",
+                            style: TextStyle(
+                              color: CRMColors.primaryOf(context),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          TextSpan(
+                            text: " (${p.propertyStatusName}).\n\n",
+                            style: TextStyle(
+                              color: CRMColors.textOf(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const TextSpan(
+                            text: "Are you sure you want to change its status to ",
+                          ),
+                          TextSpan(
+                            text: "Available",
+                            style: const TextStyle(
+                              color: CRMColors.success,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const TextSpan(text: "?"),
+                        ]
+                      : [
+                          const TextSpan(
+                            text:
+                                "Are you sure you want to change the status of this property from ",
+                          ),
+                          TextSpan(
+                            text: p.propertyStatusName ?? 'Rented Out',
+                            style: TextStyle(
+                              color: CRMColors.textOf(context),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const TextSpan(text: " to "),
+                          TextSpan(
+                            text: "Available",
+                            style: const TextStyle(
+                              color: CRMColors.success,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const TextSpan(text: "?"),
+                        ],
+                ),
+              ),
+              actions: [
+                CRMButton(
+                  label: "Cancel",
+                  variant: CRMButtonVariant.outline,
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                ),
+                const SizedBox(width: CRMSpacing.xs),
+                CRMButton(
+                  label: "Yes",
+                  variant: CRMButtonVariant.primary,
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                ),
+              ],
             ),
-            actions: [
-              CRMButton(
-                label: "Cancel",
-                variant: CRMButtonVariant.outline,
-                onPressed: () => Navigator.pop(dialogContext, false),
-              ),
-              const SizedBox(width: CRMSpacing.xs),
-              CRMButton(
-                label: "Yes",
-                variant: CRMButtonVariant.primary,
-                onPressed: () => Navigator.pop(dialogContext, true),
-              ),
-            ],
-          ),
-        );
+          );
 
-        if (confirm != true) return;
+          if (confirm != true) return;
 
-        await PropertyDealClientStore.removeClientName(p.id);
+          await PropertyDealClientStore.removeClientName(p.id);
+        }
       }
-    }
 
-    if (statusName == 'To Be Available') {
-      if (!context.mounted) return;
-      final DateTime? pickedDate = await showDatePicker(
-        context: context,
-        initialDate: DateTime.now().add(const Duration(days: 1)),
-        firstDate: DateTime.now(),
-        lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
-        helpText: 'Select Available Date',
-      );
-      if (pickedDate == null) return;
+      if (statusName == 'To Be Available') {
+        if (!context.mounted) return;
+        final DateTime? pickedDate = await showDatePicker(
+          context: context,
+          initialDate: DateTime.now().add(const Duration(days: 1)),
+          firstDate: DateTime.now(),
+          lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+          helpText: 'Select Available Date',
+        );
+        if (pickedDate == null) return;
+
+        LookupItem? targetLookup;
+        if (metadata != null) {
+          for (final s in metadata.statuses) {
+            if (s.name.toLowerCase().contains('to be available')) {
+              targetLookup = s;
+              break;
+            }
+          }
+        }
+        final statusId =
+            targetLookup?.id ?? '05a73434-e99b-425b-99b2-1825d529ac35';
+        if (context.mounted) {
+          context.read<PropertiesBloc>().add(
+                UpdatePropertyEvent(
+                  p.id,
+                  {
+                    'property_status_id': statusId,
+                    'possession_date':
+                        pickedDate.toIso8601String().substring(0, 10),
+                  },
+                  activeTab: _activeTab,
+                ),
+              );
+        }
+        return;
+      }
 
       LookupItem? targetLookup;
       if (metadata != null) {
         for (final s in metadata.statuses) {
-          if (s.name.toLowerCase().contains('to be available')) {
+          if (s.name.toLowerCase().replaceAll(' ', '') ==
+              statusName.toLowerCase().replaceAll(' ', '')) {
             targetLookup = s;
             break;
           }
         }
       }
-      final statusId =
-          targetLookup?.id ?? '05a73434-e99b-425b-99b2-1825d529ac35';
+      String statusId = targetLookup?.id ?? '';
+      if (statusId.isEmpty) {
+        final lower = statusName.toLowerCase().replaceAll(' ', '');
+        if (lower == 'available') {
+          statusId = '09521e45-e731-4517-8129-1866f0991ee8';
+        } else if (lower.contains('rented')) {
+          statusId = '7c1d9611-8cad-4058-a9fa-3d68b8adb6f6';
+        } else if (lower.contains('sold')) {
+          statusId = '33fa8cf3-910d-4f0b-9142-8862974311ab';
+        } else if (lower.contains('tobeavailable')) {
+          statusId = '05a73434-e99b-425b-99b2-1825d529ac35';
+        } else {
+          statusId = statusName;
+        }
+      }
+
       if (context.mounted) {
         context.read<PropertiesBloc>().add(
               UpdatePropertyEvent(
                 p.id,
                 {
                   'property_status_id': statusId,
-                  'possession_date':
-                      pickedDate.toIso8601String().substring(0, 10),
                 },
                 activeTab: _activeTab,
               ),
             );
       }
-      return;
-    }
-
-    LookupItem? targetLookup;
-    if (metadata != null) {
-      for (final s in metadata.statuses) {
-        if (s.name.toLowerCase().replaceAll(' ', '') ==
-            statusName.toLowerCase().replaceAll(' ', '')) {
-          targetLookup = s;
-          break;
-        }
-      }
-    }
-    final statusId = targetLookup?.id ?? statusName;
-    if (context.mounted) {
-      context.read<PropertiesBloc>().add(
-            UpdatePropertyEvent(
-              p.id,
-              {
-                'property_status_id': statusId,
-              },
-              activeTab: _activeTab,
-            ),
-          );
+    } catch (e, stack) {
+      debugPrint("Error changing property status: $e\n$stack");
     }
   }
 
@@ -3481,173 +3503,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           DataCell(
                             PopupMenuButton<String>(
                               tooltip: 'Change Status',
-                              onSelected: (String statusName) async {
-                                if (statusName == 'Available') {
-                                  final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
-                                  final isCurrentlyRentedOrSold = currentStatus.contains('rented') || currentStatus.contains('sold');
-
-                                  if (isCurrentlyRentedOrSold) {
-                                    final clientName = await PropertyDealClientStore.getClientName(p.id, property: p);
-                                    final bool hasClient = clientName != null && clientName.trim().isNotEmpty;
-
-                                    final bool? confirm = await showDialog<bool>(
-                                      context: context,
-                                      builder: (dialogContext) => AlertDialog(
-                                        backgroundColor: CRMColors.cardBgOf(context),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-                                        ),
-                                        title: Text(
-                                          "Confirm Status Change",
-                                          style: CRMTypography.sectionTitle.copyWith(
-                                            color: CRMColors.textOf(context),
-                                          ),
-                                        ),
-                                         content: Text.rich(
-                                           TextSpan(
-                                             style: CRMTypography.body.copyWith(
-                                               color: CRMColors.textSecondaryOf(context),
-                                               height: 1.5,
-                                             ),
-                                             children: hasClient
-                                                 ? [
-                                                     const TextSpan(text: "This property is currently assigned to client "),
-                                                     TextSpan(
-                                                       text: "'$clientName'",
-                                                       style: TextStyle(
-                                                         color: CRMColors.primaryOf(context),
-                                                         fontWeight: FontWeight.bold,
-                                                       ),
-                                                     ),
-                                                     TextSpan(
-                                                       text: " (${p.propertyStatusName}).\n\n",
-                                                       style: TextStyle(
-                                                         color: CRMColors.textOf(context),
-                                                         fontWeight: FontWeight.w600,
-                                                       ),
-                                                     ),
-                                                     const TextSpan(
-                                                       text: "Are you sure you want to change its status to ",
-                                                     ),
-                                                     TextSpan(
-                                                       text: "Available",
-                                                       style: const TextStyle(
-                                                         color: CRMColors.success,
-                                                         fontWeight: FontWeight.bold,
-                                                       ),
-                                                     ),
-                                                     const TextSpan(text: "?"),
-                                                   ]
-                                                 : [
-                                                     const TextSpan(
-                                                       text: "Are you sure you want to change the status of this property from ",
-                                                     ),
-                                                     TextSpan(
-                                                       text: p.propertyStatusName ?? 'Rented Out',
-                                                       style: TextStyle(
-                                                         color: CRMColors.textOf(context),
-                                                         fontWeight: FontWeight.bold,
-                                                       ),
-                                                     ),
-                                                     const TextSpan(text: " to "),
-                                                     TextSpan(
-                                                       text: "Available",
-                                                       style: const TextStyle(
-                                                         color: CRMColors.success,
-                                                         fontWeight: FontWeight.bold,
-                                                       ),
-                                                     ),
-                                                     const TextSpan(text: "?"),
-                                                   ],
-                                           ),
-                                         ),
-                                        actions: [
-                                          CRMButton(
-                                            label: "Cancel",
-                                            variant: CRMButtonVariant.outline,
-                                            onPressed: () => Navigator.pop(dialogContext, false),
-                                          ),
-                                          const SizedBox(width: CRMSpacing.xs),
-                                          CRMButton(
-                                            label: "Yes",
-                                            variant: CRMButtonVariant.primary,
-                                            onPressed: () => Navigator.pop(dialogContext, true),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-
-                                    if (confirm != true) return;
-
-                                    await PropertyDealClientStore.removeClientName(p.id);
-                                  }
-                                }
-
-                                if (statusName == 'To Be Available') {
-                                  final DateTime? pickedDate =
-                                      await showDatePicker(
-                                    context: context,
-                                    initialDate: DateTime.now()
-                                        .add(const Duration(days: 1)),
-                                    firstDate: DateTime.now(),
-                                    lastDate: DateTime.now()
-                                        .add(const Duration(days: 365 * 5)),
-                                    helpText: 'Select Available Date',
-                                  );
-                                  if (pickedDate == null) return;
-
-                                  LookupItem? targetLookup;
-                                  if (metadata != null) {
-                                    for (final s in metadata.statuses) {
-                                      if (s.name
-                                          .toLowerCase()
-                                          .contains('to be available')) {
-                                        targetLookup = s;
-                                        break;
-                                      }
-                                    }
-                                  }
-                                  final statusId = targetLookup?.id ??
-                                      '05a73434-e99b-425b-99b2-1825d529ac35';
-                                  if (context.mounted) {
-                                    context.read<PropertiesBloc>().add(
-                                          UpdatePropertyEvent(
-                                            p.id,
-                                            {
-                                              'property_status_id': statusId,
-                                              'possession_date': pickedDate
-                                                  .toIso8601String()
-                                                  .substring(0, 10),
-                                            },
-                                            activeTab: _activeTab,
-                                          ),
-                                        );
-                                  }
-                                  return;
-                                }
-
-                                LookupItem? targetLookup;
-                                if (metadata != null) {
-                                  for (final s in metadata.statuses) {
-                                    if (s.name
-                                            .toLowerCase()
-                                            .replaceAll(' ', '') ==
-                                        statusName
-                                            .toLowerCase()
-                                            .replaceAll(' ', '')) {
-                                      targetLookup = s;
-                                      break;
-                                    }
-                                  }
-                                }
-                                final statusId = targetLookup?.id ?? statusName;
-                                context.read<PropertiesBloc>().add(
-                                      UpdatePropertyEvent(
-                                        p.id,
-                                        {'property_status_id': statusId},
-                                        activeTab: _activeTab,
-                                      ),
-                                    );
+                              onSelected: (String statusName) {
+                                _onPropertyStatusChanged(
+                                    context, p, statusName, metadata);
                               },
                               itemBuilder: (BuildContext context) {
                                 final isRent = p.listingTypeName
