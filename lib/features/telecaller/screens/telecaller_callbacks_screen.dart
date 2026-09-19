@@ -184,7 +184,7 @@ class _TelecallerCallbacksView extends StatelessWidget {
                 Builder(
                   builder: (context) {
                     final item = Map<String, dynamic>.from(raw as Map);
-                    final leadId = item['lead_id']?.toString() ?? '';
+                    final leadId = (item['lead_id'] ?? item['id'])?.toString() ?? '';
                     final phone = (item['mobile'] ?? '').toString();
                     final clientName = (item['client_name'] ?? 'Callback Client').toString();
                     final scheduledAtRaw = item['scheduled_at']?.toString() ?? '';
@@ -210,6 +210,7 @@ class _TelecallerCallbacksView extends StatelessWidget {
                             context,
                             leadId: leadId,
                             fallbackData: item,
+                            fallbackLead: item['lead'] is Map ? Map<String, dynamic>.from(item['lead'] as Map) : null,
                             onOutcomeUpdated: () {
                               context.read<TelecallerCallbacksBloc>().add(TelecallerCallbacksRequested());
                             },

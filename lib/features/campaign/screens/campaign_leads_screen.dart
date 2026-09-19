@@ -2009,6 +2009,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
                   final success = await _service.scheduleFollowup(lead.id, scheduledDateTime, remarks);
                   if (mounted) {
+                    if (success) {
+                      _service.notifyOutcomeRecorded(
+                        lead.id,
+                        outcome: 'CALLBACK',
+                        remarks: remarks,
+                        callbackAt: scheduledDateTime.toUtc().toIso8601String(),
+                      );
+                    }
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
@@ -2020,6 +2028,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       ),
                     );
                     _loadFollowups();
+                    unawaited(_service.fetchServerLeads(resetWithServer: true));
                   }
                 },
               ),
@@ -2877,6 +2886,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               _cachedFilteredLeads = null;
                             });
                             unawaited(_loadFollowups());
+                            unawaited(_service.fetchServerLeads(resetWithServer: true));
+                            _service.notifyOutcomeRecorded(
+                              lead.id,
+                              outcome: 'CALLBACK',
+                              remarks: callbackRemarksController.text.trim(),
+                              callbackAt: scheduledDateTime.toUtc().toIso8601String(),
+                            );
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(ok
