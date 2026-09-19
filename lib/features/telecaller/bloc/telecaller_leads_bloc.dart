@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:propkart/features/requirements/repository/requirements_repository.dart';
+import '../../integration/services/integration_service.dart';
 import '../data/telecaller_repository.dart';
 
 abstract class TelecallerLeadsEvent extends Equatable {
@@ -75,12 +76,23 @@ class TelecallerLeadsBloc extends Bloc<TelecallerLeadsEvent, TelecallerLeadsStat
   TelecallerLeadsBloc({TelecallerRepository? repository})
       : _repository = repository ?? TelecallerRepository(),
         super(const TelecallerLeadsState(loading: true)) {
+    _leadEventsSub = IntegrationService.leadEvents.stream.listen((_) {
+      add(TelecallerLeadsRequested());
+    });
+
     on<TelecallerLeadsRequested>(_onLoad);
     on<TelecallerStartCallRequested>(_onStart);
     on<TelecallerOutcomeRequested>(_onOutcome);
   }
 
   final TelecallerRepository _repository;
+  StreamSubscription? _leadEventsSub;
+
+  @override
+  Future<void> close() {
+    _leadEventsSub?.cancel();
+    return super.close();
+  }
 
   Future<void> _onLoad(
     TelecallerLeadsRequested event,
@@ -132,6 +144,13 @@ class TelecallerLeadsBloc extends Bloc<TelecallerLeadsEvent, TelecallerLeadsStat
       if (event.outcome == 'PICKED_UP') {
         unawaited(RequirementsRepository().getRequirements(refreshFromServer: true));
       }
+      IntegrationService().notifyOutcomeRecorded(
+        event.leadId,
+        outcome: event.outcome,
+        remarks: event.remarks,
+        salesUserId: event.salesUserId,
+        callbackAt: event.callbackAt,
+      );
       add(TelecallerLeadsRequested());
     } catch (e) {
       emit(state.copyWith(error: e.toString(), clearInfo: true));

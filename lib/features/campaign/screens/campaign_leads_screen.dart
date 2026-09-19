@@ -1414,12 +1414,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           _showTransferDialog(context, lead);
         } else if (newStatus == 'CNR') {
           final result = await _service.transferLead(lead.id, status: 'CNR');
+          _service.notifyOutcomeRecorded(
+            lead.id,
+            outcome: 'CNR',
+            remarks: 'Marked as CNR',
+          );
           if (mounted) {
             setState(() {
               _cachedFilteredLeads = null;
             });
             final ok = result['success'] == true;
             unawaited(_loadFollowups());
+            unawaited(_service.fetchServerLeads(resetWithServer: true));
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
@@ -1433,6 +1439,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           }
         } else if (newStatus == 'Property Listed') {
           await _service.updateLeadCampaignStatus(lead.id, 'Property Listed');
+          unawaited(_service.fetchServerLeads(resetWithServer: true));
           if (mounted) {
             setState(() {
               _cachedFilteredLeads = null;
@@ -1459,6 +1466,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           }
         } else if (newStatus == 'Archive Requirement') {
           await _service.updateLeadCampaignStatus(lead.id, 'Archived');
+          unawaited(_service.fetchServerLeads(resetWithServer: true));
           if (mounted) {
             setState(() {
               _cachedFilteredLeads = null;
@@ -1485,6 +1493,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           }
         } else if (newStatus == 'Wrong Lead Property Listing') {
           final ok = await _service.reclassifyLead(lead.id, 'Property Listing');
+          unawaited(_service.fetchServerLeads(resetWithServer: true));
           if (mounted) {
             setState(() {
               _cachedFilteredLeads = null;
@@ -1510,6 +1519,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           }
         } else if (newStatus == 'Wrong Lead Requirement') {
           final ok = await _service.reclassifyLead(lead.id, 'Requirement');
+          unawaited(_service.fetchServerLeads(resetWithServer: true));
           if (mounted) {
             setState(() {
               _cachedFilteredLeads = null;
@@ -1535,6 +1545,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           }
         } else if (newStatus == 'Interested') {
           await _service.updateLeadCampaignStatus(lead.id, 'Interested');
+          unawaited(_service.fetchServerLeads(resetWithServer: true));
           if (mounted) {
             setState(() {
               _cachedFilteredLeads = null;
@@ -1549,6 +1560,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           }
         } else if (newStatus == 'Not interested') {
           await _service.updateLeadCampaignStatus(lead.id, 'Not interested');
+          unawaited(_service.fetchServerLeads(resetWithServer: true));
           if (mounted) {
             setState(() {
               _cachedFilteredLeads = null;
@@ -2092,6 +2104,33 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
           ],
           const SizedBox(width: 6),
+        ] else if (isCnr) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.45)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.phone_missed_rounded, size: 13, color: Color(0xFFD97706)),
+                const SizedBox(width: 4),
+                Text(
+                  lead.assignedTelecallerName?.isNotEmpty == true
+                      ? 'CNR (${lead.assignedTelecallerName})'
+                      : 'CNR (Interacted)',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFD97706),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
         ] else if (lead.assignedTelecallerName?.isNotEmpty == true) ...[
           Tooltip(
             message: 'Allocated to Telecaller: ${lead.assignedTelecallerName}\nStatus: ${lead.allocationStatus ?? "ASSIGNED"}',
@@ -2122,31 +2161,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(width: 6),
-        ] else if (isCnr) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.45)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.phone_missed_rounded, size: 13, color: Color(0xFFD97706)),
-                SizedBox(width: 4),
-                Text(
-                  'CNR (Interacted)',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFFD97706),
-                  ),
-                ),
-              ],
             ),
           ),
           const SizedBox(width: 6),

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../integration/services/integration_service.dart';
 import '../data/telecaller_repository.dart';
 
 abstract class TelecallerListEvent extends Equatable {
@@ -52,6 +54,10 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
   TelecallerCallbacksBloc({TelecallerRepository? repository})
       : _repository = repository ?? TelecallerRepository(),
         super(const TelecallerListState(loading: true)) {
+    _leadEventsSub = IntegrationService.leadEvents.stream.listen((_) {
+      add(const TelecallerCallbacksRequested());
+    });
+
     on<TelecallerCallbacksRequested>((event, emit) async {
       emit(TelecallerListState(loading: true, items: state.items));
       try {
@@ -77,12 +83,23 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
   }
 
   final TelecallerRepository _repository;
+  StreamSubscription? _leadEventsSub;
+
+  @override
+  Future<void> close() {
+    _leadEventsSub?.cancel();
+    return super.close();
+  }
 }
 
 class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
   TelecallerCnrBloc({TelecallerRepository? repository})
       : _repository = repository ?? TelecallerRepository(),
         super(const TelecallerListState(loading: true)) {
+    _leadEventsSub = IntegrationService.leadEvents.stream.listen((_) {
+      add(const TelecallerCnrRequested());
+    });
+
     on<TelecallerCnrRequested>((event, emit) async {
       emit(TelecallerListState(loading: true, items: state.items));
       try {
@@ -108,4 +125,11 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
   }
 
   final TelecallerRepository _repository;
+  StreamSubscription? _leadEventsSub;
+
+  @override
+  Future<void> close() {
+    _leadEventsSub?.cancel();
+    return super.close();
+  }
 }

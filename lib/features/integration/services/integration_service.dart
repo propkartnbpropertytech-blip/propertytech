@@ -49,6 +49,9 @@ class IntegrationService extends ChangeNotifier {
   String get _propHeaderOrderPrefsKey => 'campaign_prop_header_order_v1_$_orgScope';
   String get _reqHeaderOrderPrefsKey => 'campaign_req_header_order_v1_$_orgScope';
 
+  static final StreamController<Map<String, dynamic>> leadEvents =
+      StreamController<Map<String, dynamic>>.broadcast();
+
   final ApiClient _apiClient = ApiClient();
   final RequirementsRepository _requirementsRepository = RequirementsRepository();
   final PropertiesRepository _propertiesRepository = PropertiesRepository();
@@ -1107,6 +1110,10 @@ class IntegrationService extends ChangeNotifier {
               final isFollowup = status == 'Follow up' || status == 'Follow-up';
               _leads[leadIdx] = updatedLead.copyWith(
                 campaignStatus: status,
+                assignedTelecallerId: updatedLead.assignedTelecallerId ?? _leads[leadIdx].assignedTelecallerId,
+                assignedTelecallerName: updatedLead.assignedTelecallerName ?? _leads[leadIdx].assignedTelecallerName,
+                assignedTo: updatedLead.assignedTo ?? _leads[leadIdx].assignedTo,
+                assignedToName: updatedLead.assignedToName ?? _leads[leadIdx].assignedToName,
                 followupScheduledAt: isFollowup ? updatedLead.followupScheduledAt : null,
                 followupStatus: isFollowup ? updatedLead.followupStatus : 'Completed',
                 clearFollowup: !isFollowup,
@@ -1116,6 +1123,8 @@ class IntegrationService extends ChangeNotifier {
             }
           } catch (_) {}
         }
+        leadEvents.add({'leadId': leadId, 'status': status, 'type': 'STATUS_UPDATED'});
+        unawaited(fetchServerLeads(resetWithServer: true));
         return true;
       }
 
@@ -1150,6 +1159,12 @@ class IntegrationService extends ChangeNotifier {
 
       final scheduledOk = res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
       if (scheduledOk) {
+        notifyOutcomeRecorded(
+          leadId,
+          outcome: 'CALLBACK',
+          remarks: remarks,
+          callbackAt: scheduledAt.toUtc().toIso8601String(),
+        );
         final lead = idx != -1 ? _leads[idx] : null;
         final name = lead != null
             ? (lead.getStringValue('Client Name').isNotEmpty
@@ -1304,6 +1319,8 @@ class IntegrationService extends ChangeNotifier {
               allocationStatus: finalAllocationStatus,
               assignedTo: (isCnr || isCallback) ? _leads[leadIdx].assignedTo : (assignedTo ?? updatedLead.assignedTo),
               assignedToName: (isCnr || isCallback) ? _leads[leadIdx].assignedToName : (assignedToName ?? updatedLead.assignedToName),
+              assignedTelecallerId: updatedLead.assignedTelecallerId ?? _leads[leadIdx].assignedTelecallerId,
+              assignedTelecallerName: updatedLead.assignedTelecallerName ?? _leads[leadIdx].assignedTelecallerName,
               transferRemarks: remarks ?? updatedLead.transferRemarks,
               importStatus: (isCnr || isCallback) ? _leads[leadIdx].importStatus : 'Imported',
               clearFollowup: !isCallback,
@@ -1313,6 +1330,13 @@ class IntegrationService extends ChangeNotifier {
           }
         } catch (_) {}
       }
+      leadEvents.add({
+        'leadId': leadId,
+        'status': finalStatus,
+        'allocationStatus': finalAllocationStatus,
+        'type': 'TRANSFER_COMPLETED'
+      });
+      unawaited(fetchServerLeads(resetWithServer: true));
       return {'success': true, 'message': data['message'] ?? 'Lead transferred successfully'};
     } catch (e) {
       debugPrint('[IntegrationService] Error transferring lead $leadId: $e');
@@ -1366,6 +1390,13 @@ class IntegrationService extends ChangeNotifier {
       notifyListeners();
       unawaited(_persistLeads());
     }
+
+    // Broadcast event across all blocs and screens
+    leadEvents.add({
+      'leadId': leadId,
+      'outcome': normOutcome,
+      'type': 'OUTCOME_RECORDED'
+    });
 
     // Background sync with server to ensure 100% database parity
     unawaited(fetchServerLeads(resetWithServer: true));
