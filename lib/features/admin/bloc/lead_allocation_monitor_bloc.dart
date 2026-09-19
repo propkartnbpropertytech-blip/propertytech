@@ -129,8 +129,11 @@ class LeadAllocationMonitorBloc
         );
         final data = res.data['data'];
         final assigned = data?['count'] ?? data?['allocatedCount'] ?? data?['assignedCount'] ?? (data?['allocated'] as List?)?.length ?? 0;
+        final message = data?['message'] ?? (assigned > 0
+            ? 'Successfully allocated $assigned old untouched leads.'
+            : 'No leads allocated: all active telecallers are at maximum capacity (0 free slots available).');
         emit(LeadAllocationMonitorState(
-          info: 'Successfully allocated $assigned old untouched leads.',
+          info: message,
           data: state.data,
         ));
         add(LeadAllocationMonitorRequested());
