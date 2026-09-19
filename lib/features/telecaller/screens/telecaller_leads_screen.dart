@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -245,14 +246,21 @@ class _TelecallerLeadsView extends StatelessWidget {
                   ),
               ],
             ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                'Status: ${lead['allocation_status'] ?? ''} · Attempts: ${lead['call_attempt_count'] ?? 0}'
-                '${phone.isNotEmpty ? " · $phone" : ""}'
-                '${campaign.isNotEmpty ? " · $campaign" : ""}',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-              ),
+            subtitle: Builder(
+              builder: (context) {
+                final allocStatus = (lead['allocation_status'] ?? '').toString();
+                final rawAttempts = int.tryParse((lead['call_attempt_count'] ?? 0).toString()) ?? 0;
+                final leadAttempts = (allocStatus == 'CNR' || allocStatus == 'CALLBACK') ? math.max(rawAttempts, 1) : rawAttempts;
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Status: $allocStatus · Attempts: $leadAttempts'
+                    '${phone.isNotEmpty ? " · $phone" : ""}'
+                    '${campaign.isNotEmpty ? " · $campaign" : ""}',
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                  ),
+                );
+              },
             ),
             trailing: Wrap(
               spacing: 8,
@@ -301,7 +309,8 @@ class _TelecallerLeadsView extends StatelessWidget {
     final adName = (lead['ad_name'] ?? raw['Ad Name'] ?? raw['ad_name'] ?? '').toString().trim();
     final formName = (raw['form_name'] ?? raw['Form Name'] ?? '').toString().trim();
     final status = (lead['allocation_status'] ?? 'ASSIGNED_TO_TELECALLER').toString();
-    final attempts = lead['call_attempt_count'] ?? 0;
+    final rawAttempts = int.tryParse((lead['call_attempt_count'] ?? 0).toString()) ?? 0;
+    final attempts = (status == 'CNR' || status == 'CALLBACK') ? math.max(rawAttempts, 1) : rawAttempts;
     final assignedAt = lead['telecaller_assigned_at']?.toString().split('.').first.replaceFirst('T', ' ') ?? '';
     final receivedAt = (lead['received_at'] ?? lead['created_at'])?.toString().split('.').first.replaceFirst('T', ' ') ?? '';
 

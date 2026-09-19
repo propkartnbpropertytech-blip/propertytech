@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -490,7 +491,16 @@ class _CnrCardState extends State<_CnrCard> {
     final raw = widget.lead['raw_json'];
     final name = raw is Map ? (raw['full_name'] ?? widget.lead['sanitized_phone']) : widget.lead['sanitized_phone'];
     final phone = (widget.lead['sanitized_phone'] ?? '').toString();
-    final attempts = widget.lead['call_attempt_count'] ?? 0;
+
+    int historyMax = 0;
+    for (final h in _history) {
+      if (h is Map && h['attempt_number'] != null) {
+        final num = int.tryParse(h['attempt_number'].toString()) ?? 0;
+        if (num > historyMax) historyMax = num;
+      }
+    }
+    final leadAttempts = int.tryParse((widget.lead['call_attempt_count'] ?? 0).toString()) ?? 0;
+    final attempts = [leadAttempts, historyMax, _history.length, 1].reduce(math.max);
 
     return Card(
       elevation: 0,
