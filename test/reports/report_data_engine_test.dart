@@ -157,7 +157,7 @@ void main() {
           ..clientName = 'Charlie Client'
           ..mobile = '9876543210'
           ..createdBy = 'sales_1'
-          ..followupDate = now.add(const Duration(hours: 4))
+          ..followupDate = DateTime(now.year, now.month, now.day, 12, 0)
           ..createdAt = now
           ..status = 'pending',
         FollowupLocal()

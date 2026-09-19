@@ -110,7 +110,14 @@ class DashboardRepository {
     int rentalSiteVisits = 0;
     int resaleSiteVisits = 0;
     for (final item in localReqs) {
-      if (item.status == 'Bin') continue;
+      final statusLower = (item.status ?? '').trim().toLowerCase();
+      if (statusLower == 'bin' ||
+          statusLower == 'dead' ||
+          statusLower == 'suspended' ||
+          statusLower == 'not interested' ||
+          statusLower.startsWith('rejected')) {
+        continue;
+      }
 
       final name = item.listingTypeName ?? '';
       final id = item.listingTypeId ?? '';

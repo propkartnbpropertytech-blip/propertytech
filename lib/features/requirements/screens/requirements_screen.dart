@@ -4501,13 +4501,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               if (!_salesCanViewRequirement(r, currentUser)) {
                 return false;
               }
-              if (_salesLeadGroupFilter == 'assigned') {
-                if (!(_isUserAssignee(r, currentUser) && !_isUserCreator(r, currentUser))) {
-                  return false;
-                }
-              } else if (_salesLeadGroupFilter == 'added') {
-                if (!_isUserCreator(r, currentUser)) {
-                  return false;
+              if (_activeMainTab == 'Leads') {
+                if (_salesLeadGroupFilter == 'assigned') {
+                  if (!(_isUserAssignee(r, currentUser) && !_isUserCreator(r, currentUser))) {
+                    return false;
+                  }
+                } else if (_salesLeadGroupFilter == 'added') {
+                  if (!_isUserCreator(r, currentUser)) {
+                    return false;
+                  }
                 }
               }
             }
@@ -7696,6 +7698,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final reqsList = _withLocalRequirementOverrides(
                 snapshot.data?[1] as List<RequirementModel>? ?? [],
               );
+              final authState = context.read<AuthBloc>().state;
+              final currentUser = authState is Authenticated ? authState.user : null;
 
               final serverFollowups = dashboardData?.followups ?? [];
               final localFollowups = FollowupLocalRepository.inMemory.values.map((fl) => fl.toModel()).toList();
@@ -7825,6 +7829,21 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 }
 
                 for (final f in siteVisitsMap.values) {
+                  final req = reqsList.firstWhereOrNull((r) =>
+                      (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+                      (f.mobile.isNotEmpty && r.clientMobile.isNotEmpty && isSameMobile(r.clientMobile, f.mobile)) ||
+                      (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+
+                  if (req != null && currentUser != null && currentUser.role == 'Sales') {
+                    final currentUserName = currentUser.fullName.trim().toLowerCase();
+                    final isAssignedToUser = (req.assignedTo != null && (req.assignedTo == currentUser.id || (currentUserName.isNotEmpty && req.assignedTo!.trim().toLowerCase() == currentUserName))) ||
+                        (req.assigneeName != null && currentUserName.isNotEmpty && req.assigneeName!.trim().toLowerCase() == currentUserName);
+                    final isUnassignedCreatedByUser = (req.assignedTo == null || req.assignedTo!.trim().isEmpty || req.assignedTo!.trim().toLowerCase() == 'unassigned') &&
+                        (req.createdBy == currentUser.id || (req.creatorName != null && currentUserName.isNotEmpty && req.creatorName!.trim().toLowerCase() == currentUserName));
+
+                    if (!isAssignedToUser && !isUnassignedCreatedByUser) continue;
+                  }
+
                   allClientsFollowups.add(f);
                   DateTime? parsed = _parseFollowupDateTime(f.followupDate);
                   if (parsed == null) continue;
@@ -7872,6 +7891,42 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   }
                 }
 
+                // Ensure all requirements in reqsList with Follow-up/Re-Followup status are included
+                for (final req in reqsList) {
+                  final reqStatus = req.status;
+                  if (!isFollowupStatus(reqStatus)) continue;
+                  if (getListingTypeLabel(req) != _activeListingTab) continue;
+
+                  if (!latestReqFollowupsMap.containsKey(req.id)) {
+                    final matchingFollowups = followups.where((f) =>
+                        (f.requirementId != null && f.requirementId!.isNotEmpty && req.id == f.requirementId) ||
+                        (f.mobile.isNotEmpty && req.clientMobile.isNotEmpty && isSameMobile(req.clientMobile, f.mobile)) ||
+                        (f.clientName.isNotEmpty && req.clientName.trim().toLowerCase() == req.clientName.trim().toLowerCase())
+                    ).toList();
+
+                    final matchingF = matchingFollowups.firstOrNull;
+
+                    final dateStr = (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty)
+                        ? req.nextFollowupDate!
+                        : (matchingF?.followupDate ?? req.createdAt.toIso8601String());
+                    final notesStr = (matchingF?.notes != null && matchingF!.notes!.trim().isNotEmpty)
+                        ? matchingF.notes!
+                        : (req.remarks != null && req.remarks!.trim().isNotEmpty ? req.remarks! : 'Follow-up scheduled');
+
+                    latestReqFollowupsMap[req.id] = DashboardFollowup(
+                      id: matchingF?.id ?? 'fu_${req.id}',
+                      clientName: req.clientName,
+                      mobile: req.clientMobile,
+                      followupDate: dateStr,
+                      notes: notesStr,
+                      status: reqStatus,
+                      propertyTitle: matchingF?.propertyTitle,
+                      requirementCustomerName: req.clientName,
+                      requirementId: req.id,
+                    );
+                  }
+                }
+
                 for (final f in latestReqFollowupsMap.values) {
                   final req = reqsList.firstWhereOrNull((r) =>
                       (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
@@ -7883,6 +7938,23 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   final reqStatus = req.status;
                   // ONLY ALLOW FOLLOW-UP OR RE-FOLLOWUP STATUS
                   if (!isFollowupStatus(reqStatus)) continue;
+
+                  if (currentUser != null && currentUser.role == 'Telecaller') {
+                    final creatorName = (f.creatorName ?? '').trim().toLowerCase();
+                    final currentUserName = currentUser.fullName.trim().toLowerCase();
+                    final matchesCreator = creatorName.isNotEmpty && creatorName == currentUserName;
+                    final matchesReqCreator = req.createdBy == currentUser.id ||
+                        (req.creatorName ?? '').trim().toLowerCase() == currentUserName;
+                    if (!matchesCreator && !matchesReqCreator) continue;
+                  } else if (currentUser != null && currentUser.role == 'Sales') {
+                    final currentUserName = currentUser.fullName.trim().toLowerCase();
+                    final isAssignedToUser = (req.assignedTo != null && (req.assignedTo == currentUser.id || (currentUserName.isNotEmpty && req.assignedTo!.trim().toLowerCase() == currentUserName))) ||
+                        (req.assigneeName != null && currentUserName.isNotEmpty && req.assigneeName!.trim().toLowerCase() == currentUserName);
+                    final isUnassignedCreatedByUser = (req.assignedTo == null || req.assignedTo!.trim().isEmpty || req.assignedTo!.trim().toLowerCase() == 'unassigned') &&
+                        (req.createdBy == currentUser.id || (req.creatorName != null && currentUserName.isNotEmpty && req.creatorName!.trim().toLowerCase() == currentUserName));
+
+                    if (!isAssignedToUser && !isUnassignedCreatedByUser) continue;
+                  }
 
                   if (getListingTypeLabel(req) != _activeListingTab) continue;
 
@@ -7968,8 +8040,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final startIndex = (currentPage - 1) * _followupsPerPage;
               final endIndex = (startIndex + _followupsPerPage).clamp(0, totalCount);
 
-              final authState = context.watch<AuthBloc>().state;
-              final currentUser = authState is Authenticated ? authState.user : null;
               final isHighRole = currentUser != null &&
                   (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
               final isAdminOrSuperAdmin = currentUser != null &&
@@ -12431,47 +12501,115 @@ class _FollowupActionButton extends StatelessWidget {
               PopupMenuItem<String>(
                 value: 'Edit Site Visit',
                 height: 38,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.edit_calendar_rounded,
-                      size: 16,
-                      color: CRMColors.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Edit Site Visit',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: CRMColors.textOf(context),
-                        fontSize: 13,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.edit_calendar_rounded,
+                        size: 16,
+                        color: CRMColors.primary,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        'Edit Site Visit',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               PopupMenuItem<String>(
                 value: 'Re-scheduled',
                 height: 38,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.update_rounded,
-                      size: 16,
-                      color: CRMColors.warning,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Re-scheduled',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: CRMColors.textOf(context),
-                        fontSize: 13,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.update_rounded,
+                        size: 16,
+                        color: CRMColors.warning,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        'Re-scheduled',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'Interested',
+                height: 38,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.thumb_up_alt_outlined,
+                        size: 16,
+                        color: CRMColors.success,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Interested',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'Rejected',
+                height: 38,
+                child: Builder(
+                  builder: (itemContext) {
+                    return MouseRegion(
+                      onEnter: (_) => showRejectionOverlay(itemContext),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.cancel_outlined,
+                            size: 16,
+                            color: CRMColors.danger,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Rejected',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: CRMColors.danger,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 16,
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             ]

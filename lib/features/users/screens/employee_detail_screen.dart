@@ -323,6 +323,19 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     return false;
   }
 
+  bool _rowBelongsToSalesUser(Map<String, dynamic> row, UserModel user) {
+    if (_rowMatchesSalesUser(row, user)) return true;
+    final reqId = _requirementIdFromRow(row);
+    if (reqId != null && reqId.isNotEmpty) {
+      for (final r in _requirements) {
+        if (r.id == reqId) {
+          return EmployeeActivity.isSalesOwnedLead(r, user);
+        }
+      }
+    }
+    return false;
+  }
+
   List<Map<String, dynamic>> _salesFollowups(
     UserModel user,
     Map<String, String> listingByReqId, {
@@ -338,7 +351,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
       if (currentLeadsOnly) {
         return _rowOnCurrentSalesLead(row, user);
       }
-      return _rowMatchesSalesUser(row, user);
+      return _rowBelongsToSalesUser(row, user);
     }).toList();
   }
 
@@ -355,7 +368,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
       if (currentLeadsOnly) {
         return _rowOnCurrentSalesLead(row, user);
       }
-      return _rowMatchesSalesUser(row, user);
+      return _rowBelongsToSalesUser(row, user);
     });
     final fromFollowups = _followupList.where((row) {
       final status = (row['status'] ?? '').toString();
@@ -366,7 +379,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
       if (currentLeadsOnly) {
         return _rowOnCurrentSalesLead(row, user);
       }
-      return _rowMatchesSalesUser(row, user);
+      return _rowBelongsToSalesUser(row, user);
     });
     final seen = <String>{};
     final merged = <Map<String, dynamic>>[];
@@ -580,6 +593,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     final role = user.roleName.toLowerCase();
     final isAdminRole = role == 'admin' || role == 'super admin';
     final isSalesRole = role == 'sales';
+    final isTelecallerRole = role == 'telecaller';
 
     final allProps = _properties
         .where(
@@ -632,6 +646,17 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     final rentReqs = reqsIn('Rent');
     final resaleReqs = reqsIn('Re-Sale');
 
+    bool isFollowupStatus(String statusStr) {
+      final s = statusStr.trim().toLowerCase();
+      return s == 'follow-up' || s == 'followup' || s == 're-followup' || s == 'refollowup' || s == 'pending';
+    }
+
+    bool isSiteVisitStatus(String statusStr) {
+      final s = statusStr.trim().toLowerCase();
+      if (s.contains('done')) return false;
+      return s.contains('site visit') || s.contains('sitevisit') || s == 'sv' || s.startsWith('site visit');
+    }
+
     final focusedReqs = visibleReqs.where((r) {
       switch (_leadFocus) {
         case _LeadFocus.all:
@@ -641,65 +666,124 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         case _LeadFocus.rejected:
           return EmployeeActivity.isRejected(r);
         case _LeadFocus.followup:
-          return EmployeeActivity.isPendingFollowup(r);
+          if (EmployeeActivity.isWon(r) || EmployeeActivity.isRejected(r)) return false;
+          if (isTelecallerRole && !EmployeeActivity.isCreatedBy(r, user)) return false;
+          return isFollowupStatus(r.status);
         case _LeadFocus.overdue:
-          return EmployeeActivity.isOverdueFollowup(r);
+          if (EmployeeActivity.isWon(r) || EmployeeActivity.isRejected(r)) return false;
+          if (isTelecallerRole && !EmployeeActivity.isCreatedBy(r, user)) return false;
+          return isFollowupStatus(r.status) && EmployeeActivity.isOverdueFollowup(r);
         case _LeadFocus.visits:
-          return EmployeeActivity.hasSiteVisit(r);
+          if (EmployeeActivity.isWon(r) || EmployeeActivity.isRejected(r)) return false;
+          if (isTelecallerRole && !EmployeeActivity.isCreatedBy(r, user)) return false;
+          return isSiteVisitStatus(r.status);
         case _LeadFocus.assigned:
-          return EmployeeActivity.isAssignedTo(r, user);
+          if (isTelecallerRole) {
+            return (r.createdBy == user.id || EmployeeActivity.isCreatedBy(r, user)) &&
+                r.assignedTo != null &&
+                r.assignedTo!.trim().isNotEmpty &&
+                r.assignedTo != user.id &&
+                !EmployeeActivity.isWon(r) &&
+                !EmployeeActivity.isRejected(r);
+          }
+          return EmployeeActivity.isAssignedTo(r, user) &&
+              !EmployeeActivity.isCreatedBy(r, user) &&
+              !EmployeeActivity.isWon(r) &&
+              !EmployeeActivity.isRejected(r);
         case _LeadFocus.created:
-          return EmployeeActivity.isCreatedBy(r, user);
+          return EmployeeActivity.isCreatedBy(r, user) &&
+              !EmployeeActivity.isWon(r) &&
+              !EmployeeActivity.isRejected(r);
       }
     }).toList();
 
-    int assignedOf(List<RequirementModel> reqs) =>
-        reqs.where((r) => EmployeeActivity.isAssignedTo(r, user)).length;
-    int createdOf(List<RequirementModel> reqs) =>
-        reqs.where((r) =>
-            EmployeeActivity.isCreatedBy(r, user) &&
-            !EmployeeActivity.isRejected(r)).length;
+    int assignedOf(List<RequirementModel> reqs) {
+      if (isTelecallerRole) {
+        return reqs.where((r) =>
+            (r.createdBy == user.id || EmployeeActivity.isCreatedBy(r, user)) &&
+            r.assignedTo != null &&
+            r.assignedTo!.trim().isNotEmpty &&
+            r.assignedTo != user.id).length;
+      }
+      return reqs.where((r) =>
+          EmployeeActivity.isAssignedTo(r, user) &&
+          !EmployeeActivity.isCreatedBy(r, user) &&
+          !EmployeeActivity.isWon(r) &&
+          !EmployeeActivity.isRejected(r)).length;
+    }
+
+    int createdOf(List<RequirementModel> reqs) {
+      return reqs.where((r) =>
+          EmployeeActivity.isCreatedBy(r, user) &&
+          !EmployeeActivity.isWon(r) &&
+          !EmployeeActivity.isRejected(r)).length;
+    }
+
+    int activeLeadsOf(List<RequirementModel> reqs) {
+      if (isSalesRole) {
+        return assignedOf(reqs) + createdOf(reqs);
+      }
+      return reqs.where((r) =>
+          (EmployeeActivity.isCreatedBy(r, user) || EmployeeActivity.isAssignedTo(r, user)) &&
+          !EmployeeActivity.isWon(r) &&
+          !EmployeeActivity.isRejected(r)).length;
+    }
 
     final assignedRent = assignedOf(rentReqs);
     final assignedResale = assignedOf(resaleReqs);
     final createdRent = createdOf(rentReqs);
     final createdResale = createdOf(resaleReqs);
-    final leadsRent = rentReqs.length;
-    final leadsResale = resaleReqs.length;
+    final leadsRent = activeLeadsOf(rentReqs);
+    final leadsResale = activeLeadsOf(resaleReqs);
 
     final wonCount = visibleReqs.where(EmployeeActivity.isWon).length;
     final rejectedCount = visibleReqs.where(EmployeeActivity.isRejected).length;
     final assignedCount = assignedOf(visibleReqs);
     final createdCount = createdOf(visibleReqs);
+    final totalLeadsCount = activeLeadsOf(visibleReqs);
     final conversion =
         visibleReqs.isEmpty ? 0.0 : (wonCount / visibleReqs.length) * 100;
 
-    var pendingFollowupsRent = 0;
-    var pendingFollowupsResale = 0;
-    var totalFollowupsRent = 0;
-    var totalFollowupsResale = 0;
-    var overdueFollowupsRent = 0;
-    var overdueFollowupsResale = 0;
-    var totalOverdueFollowupsRent = 0;
-    var totalOverdueFollowupsResale = 0;
-    var siteVisitsRent = 0;
-    var siteVisitsResale = 0;
-    var totalSiteVisitsRent = 0;
-    var totalSiteVisitsResale = 0;
+    int pendingFollowupsOf(List<RequirementModel> reqs) {
+      return reqs.where((r) {
+        if (EmployeeActivity.isWon(r) || EmployeeActivity.isRejected(r)) return false;
+        if (isTelecallerRole && !EmployeeActivity.isCreatedBy(r, user)) return false;
+        return isFollowupStatus(r.status);
+      }).length;
+    }
 
-    if (isSalesRole && _followupRows != null) {
-      final followupsCurrentRent = _salesFollowups(
-        user,
-        listingByReqId,
-        currentLeadsOnly: true,
-        listing: 'Rent',
-      );
-      final followupsCurrentResale = _salesFollowups(
-        user,
-        listingByReqId,
-        currentLeadsOnly: true,
-        listing: 'Re-Sale',
-      );
+    int overdueFollowupsOf(List<RequirementModel> reqs) {
+      return reqs.where((r) {
+        if (EmployeeActivity.isWon(r) || EmployeeActivity.isRejected(r)) return false;
+        if (isTelecallerRole && !EmployeeActivity.isCreatedBy(r, user)) return false;
+        if (!isFollowupStatus(r.status)) return false;
+        return EmployeeActivity.isOverdueFollowup(r);
+      }).length;
+    }
+
+    int siteVisitsOf(List<RequirementModel> reqs) {
+      return reqs.where((r) {
+        if (EmployeeActivity.isWon(r) || EmployeeActivity.isRejected(r)) return false;
+        if (isTelecallerRole && !EmployeeActivity.isCreatedBy(r, user)) return false;
+        return isSiteVisitStatus(r.status);
+      }).length;
+    }
+
+    final pendingFollowupsRent = pendingFollowupsOf(rentReqs);
+    final pendingFollowupsResale = pendingFollowupsOf(resaleReqs);
+    final overdueFollowupsRent = overdueFollowupsOf(rentReqs);
+    final overdueFollowupsResale = overdueFollowupsOf(resaleReqs);
+    final siteVisitsRent = siteVisitsOf(rentReqs);
+    final siteVisitsResale = siteVisitsOf(resaleReqs);
+
+    var totalFollowupsRent = pendingFollowupsRent;
+    var totalFollowupsResale = pendingFollowupsResale;
+    var totalOverdueFollowupsRent = overdueFollowupsRent;
+    var totalOverdueFollowupsResale = overdueFollowupsResale;
+    var totalSiteVisitsRent = siteVisitsRent;
+    var totalSiteVisitsResale = siteVisitsResale;
+
+    if (_followupRows != null) {
       final followupsTakenRent = _salesFollowups(
         user,
         listingByReqId,
@@ -710,42 +794,13 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         listingByReqId,
         listing: 'Re-Sale',
       );
-      pendingFollowupsRent = _pendingFollowupCount(followupsCurrentRent);
-      pendingFollowupsResale = _pendingFollowupCount(followupsCurrentResale);
       totalFollowupsRent = followupsTakenRent.length;
       totalFollowupsResale = followupsTakenResale.length;
-      overdueFollowupsRent = _currentOverdueCount(followupsCurrentRent);
-      overdueFollowupsResale = _currentOverdueCount(followupsCurrentResale);
       totalOverdueFollowupsRent = _totalOverdueCount(followupsTakenRent);
       totalOverdueFollowupsResale = _totalOverdueCount(followupsTakenResale);
-    } else {
-      pendingFollowupsRent =
-          rentReqs.where(EmployeeActivity.isPendingFollowup).length;
-      pendingFollowupsResale =
-          resaleReqs.where(EmployeeActivity.isPendingFollowup).length;
-      overdueFollowupsRent =
-          rentReqs.where(EmployeeActivity.isOverdueFollowup).length;
-      overdueFollowupsResale =
-          resaleReqs.where(EmployeeActivity.isOverdueFollowup).length;
-      totalFollowupsRent = pendingFollowupsRent;
-      totalFollowupsResale = pendingFollowupsResale;
-      totalOverdueFollowupsRent = overdueFollowupsRent;
-      totalOverdueFollowupsResale = overdueFollowupsResale;
     }
 
-    if (isSalesRole && (_siteVisitRows != null || _followupRows != null)) {
-      final visitsCurrentRent = _salesSiteVisits(
-        user,
-        listingByReqId,
-        currentLeadsOnly: true,
-        listing: 'Rent',
-      );
-      final visitsCurrentResale = _salesSiteVisits(
-        user,
-        listingByReqId,
-        currentLeadsOnly: true,
-        listing: 'Re-Sale',
-      );
+    if (_siteVisitRows != null || _followupRows != null) {
       final visitsTakenRent = _salesSiteVisits(
         user,
         listingByReqId,
@@ -756,15 +811,8 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         listingByReqId,
         listing: 'Re-Sale',
       );
-      siteVisitsRent = _openSiteVisitCount(visitsCurrentRent);
-      siteVisitsResale = _openSiteVisitCount(visitsCurrentResale);
       totalSiteVisitsRent = visitsTakenRent.length;
       totalSiteVisitsResale = visitsTakenResale.length;
-    } else {
-      siteVisitsRent = rentReqs.where(EmployeeActivity.hasSiteVisit).length;
-      siteVisitsResale = resaleReqs.where(EmployeeActivity.hasSiteVisit).length;
-      totalSiteVisitsRent = siteVisitsRent;
-      totalSiteVisitsResale = siteVisitsResale;
     }
 
     final pendingFollowups = _listingFilter == 'Rent'
@@ -997,7 +1045,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                         ),
                         _salesKpiCard(
                           title: 'LEADS',
-                          value: visibleReqs.length.toString(),
+                          value: totalLeadsCount.toString(),
                           icon: Icons.assignment_outlined,
                           iconColor: CRMColors.info,
                           benefit: isSalesRole && _listingFilter == 'All'
@@ -1127,14 +1175,16 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                       minCardWidth: 150,
                       children: [
                         _salesKpiCard(
-                          title: 'ASSIGNED LEADS',
+                          title: isTelecallerRole ? 'ASSIGNED TO SALES' : 'ASSIGNED LEADS',
                           value: assignedCount.toString(),
                           icon: Icons.person_pin_circle_outlined,
                           iconColor: CRMColors.info,
-                          benefit: isSalesRole && _listingFilter == 'All'
-                              ? 'Currently on their plate  •  Hover for Rent / Re-Sale'
-                              : 'Currently on their plate',
-                          hoverValue: isSalesRole && _listingFilter == 'All'
+                          benefit: isTelecallerRole
+                              ? 'Leads passed to sales team'
+                              : (isSalesRole && _listingFilter == 'All'
+                                  ? 'Currently on their plate  •  Hover for Rent / Re-Sale'
+                                  : 'Currently on their plate'),
+                          hoverValue: (isSalesRole || isTelecallerRole) && _listingFilter == 'All'
                               ? _rentResaleLabel(assignedRent, assignedResale)
                               : null,
                           hoverBenefit:
@@ -1241,34 +1291,74 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                       ],
                     ),
                     const SizedBox(height: CRMSpacing.m),
-                    KeyedSubtree(
-                      key: _propertiesKey,
-                      child: _PropertiesSection(
-                        user: user,
-                        properties: visibleProps,
-                        isMobile: isMobile,
-                        onOpenAll: () => context.push(
-                          '/properties?search=${Uri.encodeComponent(user.fullName)}',
+                    if (!isMobile && MediaQuery.of(context).size.width >= 900)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: KeyedSubtree(
+                              key: _propertiesKey,
+                              child: _PropertiesSection(
+                                user: user,
+                                properties: visibleProps,
+                                isMobile: isMobile,
+                                onOpenAll: () => context.push(
+                                  '/properties?search=${Uri.encodeComponent(user.fullName)}',
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: CRMSpacing.m),
+                          Expanded(
+                            child: KeyedSubtree(
+                              key: _leadsKey,
+                              child: _LeadsSection(
+                                leads: focusedReqs,
+                                totalUnfiltered: visibleReqs.length,
+                                focus: _leadFocus,
+                                isMobile: isMobile,
+                                formatFollowup: _formatFollowup,
+                                onChangeFocus: (focus) =>
+                                    setState(() => _leadFocus = focus),
+                                showRejected: isSalesRole,
+                                onOpenAll: () => context.push(
+                                  '/requirements?search=${Uri.encodeComponent(user.fullName)}',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    else ...[
+                      KeyedSubtree(
+                        key: _propertiesKey,
+                        child: _PropertiesSection(
+                          user: user,
+                          properties: visibleProps,
+                          isMobile: isMobile,
+                          onOpenAll: () => context.push(
+                            '/properties?search=${Uri.encodeComponent(user.fullName)}',
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: CRMSpacing.m),
-                    KeyedSubtree(
-                      key: _leadsKey,
-                      child: _LeadsSection(
-                        leads: focusedReqs,
-                        totalUnfiltered: visibleReqs.length,
-                        focus: _leadFocus,
-                        isMobile: isMobile,
-                        formatFollowup: _formatFollowup,
-                        onChangeFocus: (focus) =>
-                            setState(() => _leadFocus = focus),
-                        showRejected: isSalesRole,
-                        onOpenAll: () => context.push(
-                          '/requirements?search=${Uri.encodeComponent(user.fullName)}',
+                      const SizedBox(height: CRMSpacing.m),
+                      KeyedSubtree(
+                        key: _leadsKey,
+                        child: _LeadsSection(
+                          leads: focusedReqs,
+                          totalUnfiltered: visibleReqs.length,
+                          focus: _leadFocus,
+                          isMobile: isMobile,
+                          formatFollowup: _formatFollowup,
+                          onChangeFocus: (focus) =>
+                              setState(() => _leadFocus = focus),
+                          showRejected: isSalesRole,
+                          onOpenAll: () => context.push(
+                            '/requirements?search=${Uri.encodeComponent(user.fullName)}',
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                     if (isAdminRole || team.isNotEmpty) ...[
                       const SizedBox(height: CRMSpacing.m),
                       KeyedSubtree(
@@ -1656,7 +1746,105 @@ class _InfoAction extends StatelessWidget {
   }
 }
 
-class _PropertiesSection extends StatelessWidget {
+Widget _buildSectionPagination({
+  required BuildContext context,
+  required int startItem,
+  required int endItem,
+  required int totalItems,
+  required int pageSize,
+  required int currentPage,
+  required int totalPages,
+  required ValueChanged<int> onPageSizeChanged,
+  required ValueChanged<int> onPageChanged,
+}) {
+  return Container(
+    padding: const EdgeInsets.only(top: 8, bottom: 4),
+    decoration: BoxDecoration(
+      border: Border(
+        top: BorderSide(
+          color: CRMColors.borderOf(context).withValues(alpha: 0.4),
+        ),
+      ),
+    ),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final showCompact = constraints.maxWidth < 280;
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Showing $startItem–$endItem of $totalItems',
+              style: CRMTypography.caption.copyWith(
+                color: CRMColors.textSecondaryOf(context),
+                fontSize: 11,
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!showCompact)
+                  Text(
+                    'Rows: ',
+                    style: CRMTypography.caption.copyWith(
+                      color: CRMColors.textSecondaryOf(context),
+                      fontSize: 11,
+                    ),
+                  ),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    value: pageSize,
+                    isDense: true,
+                    dropdownColor: CRMColors.surfaceElevatedOf(context),
+                    icon: const Icon(Icons.arrow_drop_down_rounded, size: 18),
+                    style: CRMTypography.captionBold.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontSize: 11,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 10, child: Text('10')),
+                      DropdownMenuItem(value: 15, child: Text('15')),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) onPageSizeChanged(val);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.chevron_left_rounded, size: 18),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed:
+                      currentPage > 1 ? () => onPageChanged(currentPage - 1) : null,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    '$currentPage / $totalPages',
+                    style: CRMTypography.captionBold.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right_rounded, size: 18),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: currentPage < totalPages
+                      ? () => onPageChanged(currentPage + 1)
+                      : null,
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class _PropertiesSection extends StatefulWidget {
   final UserModel user;
   final List<PropertyModel> properties;
   final bool isMobile;
@@ -1670,22 +1858,42 @@ class _PropertiesSection extends StatelessWidget {
   });
 
   @override
+  State<_PropertiesSection> createState() => _PropertiesSectionState();
+}
+
+class _PropertiesSectionState extends State<_PropertiesSection> {
+  int _currentPage = 1;
+  int _pageSize = 10;
+
+  @override
   Widget build(BuildContext context) {
+    final total = widget.properties.length;
+    final totalPages = total == 0 ? 1 : (total / _pageSize).ceil();
+    if (_currentPage > totalPages) _currentPage = totalPages;
+    if (_currentPage < 1) _currentPage = 1;
+
+    final startIndex = (total == 0) ? 0 : (_currentPage - 1) * _pageSize;
+    final endIndex = (startIndex + _pageSize).clamp(0, total);
+    final paged = widget.properties.sublist(startIndex, endIndex);
+
+    final startItem = total == 0 ? 0 : startIndex + 1;
+    final endItem = endIndex;
+
     return CRMCard(
       title: 'Properties added',
-      subtitle: properties.isEmpty
-          ? 'No inventory linked to ${user.fullName}'
-          : '${properties.length} listing${properties.length == 1 ? '' : 's'}  •  tap a row to open',
+      subtitle: total == 0
+          ? 'No inventory linked to ${widget.user.fullName}'
+          : '$total listing${total == 1 ? '' : 's'}  •  tap a row to open',
       headerAction: TextButton.icon(
-        onPressed: onOpenAll,
+        onPressed: widget.onOpenAll,
         icon: const Icon(Icons.open_in_new_rounded, size: 14),
-        label: Text(isMobile ? 'All' : 'Open in Properties'),
+        label: Text(widget.isMobile ? 'All' : 'Open in Properties'),
       ),
-      child: properties.isEmpty
+      child: total == 0
           ? const SizedBox(height: 8)
           : Column(
               children: [
-                for (var i = 0; i < properties.take(30).length; i++) ...[
+                for (var i = 0; i < paged.length; i++) ...[
                   if (i > 0)
                     Divider(
                       height: 1,
@@ -1694,23 +1902,22 @@ class _PropertiesSection extends StatelessWidget {
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
-                    onTap: () =>
-                        showCRMPropertyDrawer(context, properties[i]),
+                    onTap: () => showCRMPropertyDrawer(context, paged[i]),
                     title: Text(
-                      properties[i].title,
+                      paged[i].title,
                       style: CRMTypography.bodyMedium.copyWith(
                         fontWeight: FontWeight.w700,
                         color: CRMColors.textOf(context),
                       ),
                     ),
                     subtitle: Text(
-                      '${properties[i].propertyCode}  •  ${properties[i].areaName}  •  ${properties[i].configurationName ?? '${properties[i].bedrooms} BHK'}  •  ${EmployeeActivity.propertyListingBucket(properties[i])}',
+                      '${paged[i].propertyCode}  •  ${paged[i].areaName}  •  ${paged[i].configurationName ?? '${paged[i].bedrooms} BHK'}  •  ${EmployeeActivity.propertyListingBucket(paged[i])}',
                       style: CRMTypography.caption.copyWith(
                         color: CRMColors.textSecondaryOf(context),
                       ),
                     ),
                     trailing: Text(
-                      BudgetFormatter.format(properties[i].price),
+                      BudgetFormatter.format(paged[i].price),
                       style: CRMTypography.bodyMedium.copyWith(
                         color: CRMColors.primaryOf(context),
                         fontWeight: FontWeight.w700,
@@ -1718,21 +1925,34 @@ class _PropertiesSection extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (properties.length > 30)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton(
-                      onPressed: onOpenAll,
-                      child: Text('View all ${properties.length} properties'),
-                    ),
-                  ),
+                const SizedBox(height: CRMSpacing.s),
+                _buildSectionPagination(
+                  context: context,
+                  startItem: startItem,
+                  endItem: endItem,
+                  totalItems: total,
+                  pageSize: _pageSize,
+                  currentPage: _currentPage,
+                  totalPages: totalPages,
+                  onPageSizeChanged: (newSize) {
+                    setState(() {
+                      _pageSize = newSize;
+                      _currentPage = 1;
+                    });
+                  },
+                  onPageChanged: (newPage) {
+                    setState(() {
+                      _currentPage = newPage;
+                    });
+                  },
+                ),
               ],
             ),
     );
   }
 }
 
-class _LeadsSection extends StatelessWidget {
+class _LeadsSection extends StatefulWidget {
   final List<RequirementModel> leads;
   final int totalUnfiltered;
   final _LeadFocus focus;
@@ -1754,14 +1974,42 @@ class _LeadsSection extends StatelessWidget {
   });
 
   @override
+  State<_LeadsSection> createState() => _LeadsSectionState();
+}
+
+class _LeadsSectionState extends State<_LeadsSection> {
+  int _currentPage = 1;
+  int _pageSize = 10;
+
+  @override
+  void didUpdateWidget(covariant _LeadsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focus != widget.focus) {
+      _currentPage = 1;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final total = widget.leads.length;
+    final totalPages = total == 0 ? 1 : (total / _pageSize).ceil();
+    if (_currentPage > totalPages) _currentPage = totalPages;
+    if (_currentPage < 1) _currentPage = 1;
+
+    final startIndex = (total == 0) ? 0 : (_currentPage - 1) * _pageSize;
+    final endIndex = (startIndex + _pageSize).clamp(0, total);
+    final paged = widget.leads.sublist(startIndex, endIndex);
+
+    final startItem = total == 0 ? 0 : startIndex + 1;
+    final endItem = endIndex;
+
     return CRMCard(
-      title: 'Leads & follow-ups',
-      subtitle: '${leads.length} shown of $totalUnfiltered  •  tap a row to open',
+      title: 'Leads',
+      subtitle: '$total shown of ${widget.totalUnfiltered}  •  tap a row to open',
       headerAction: TextButton.icon(
-        onPressed: onOpenAll,
+        onPressed: widget.onOpenAll,
         icon: const Icon(Icons.open_in_new_rounded, size: 14),
-        label: Text(isMobile ? 'All' : 'Open in Leads'),
+        label: Text(widget.isMobile ? 'All' : 'Open in Leads'),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1772,7 +2020,8 @@ class _LeadsSection extends StatelessWidget {
             children: [
               _focusChip(context, 'All', _LeadFocus.all),
               _focusChip(context, 'Won', _LeadFocus.won),
-              if (showRejected) _focusChip(context, 'Rejected', _LeadFocus.rejected),
+              if (widget.showRejected)
+                _focusChip(context, 'Rejected', _LeadFocus.rejected),
               _focusChip(context, 'Follow-up', _LeadFocus.followup),
               _focusChip(context, 'Overdue', _LeadFocus.overdue),
               _focusChip(context, 'Site visits', _LeadFocus.visits),
@@ -1781,7 +2030,7 @@ class _LeadsSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: CRMSpacing.s),
-          if (leads.isEmpty)
+          if (total == 0)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(
@@ -1791,34 +2040,48 @@ class _LeadsSection extends StatelessWidget {
                 ),
               ),
             )
-          else
-            for (var i = 0; i < leads.take(30).length; i++) ...[
+          else ...[
+            for (var i = 0; i < paged.length; i++) ...[
               if (i > 0)
                 Divider(
                   height: 1,
                   color: CRMColors.borderOf(context).withValues(alpha: 0.4),
                 ),
-              _LeadTile(lead: leads[i], formatFollowup: formatFollowup),
+              _LeadTile(lead: paged[i], formatFollowup: widget.formatFollowup),
             ],
-          if (leads.length > 30)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: onOpenAll,
-                child: Text('View all ${leads.length} leads'),
-              ),
+            const SizedBox(height: CRMSpacing.s),
+            _buildSectionPagination(
+              context: context,
+              startItem: startItem,
+              endItem: endItem,
+              totalItems: total,
+              pageSize: _pageSize,
+              currentPage: _currentPage,
+              totalPages: totalPages,
+              onPageSizeChanged: (newSize) {
+                setState(() {
+                  _pageSize = newSize;
+                  _currentPage = 1;
+                });
+              },
+              onPageChanged: (newPage) {
+                setState(() {
+                  _currentPage = newPage;
+                });
+              },
             ),
+          ],
         ],
       ),
     );
   }
 
   Widget _focusChip(BuildContext context, String label, _LeadFocus value) {
-    final selected = focus == value;
+    final selected = widget.focus == value;
     return ChoiceChip(
       label: Text(label),
       selected: selected,
-      onSelected: (_) => onChangeFocus(value),
+      onSelected: (_) => widget.onChangeFocus(value),
       selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.18),
       labelStyle: TextStyle(
         fontWeight: FontWeight.w600,
