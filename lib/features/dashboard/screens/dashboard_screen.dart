@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/model_mappers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -21,12 +22,12 @@ import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/skeletons.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../auth/bloc/auth_bloc.dart';
+import '../../telecaller/screens/telecaller_dashboard_screen.dart';
+import '../../sales/bloc/sales_dashboard_bloc.dart';
 import '../bloc/dashboard_bloc.dart';
 import '../models/dashboard_summary.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/utils/currency.dart';
-import '../../../core/storage/repository_coordinator.dart';
-import '../../../core/storage/model_mappers.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
 import '../widgets/welcome_header.dart';
@@ -138,6 +139,17 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final role = context.select<AuthBloc, String>((bloc) {
+      final state = bloc.state;
+      return state is Authenticated ? state.user.role : '';
+    });
+    if (RoleGuard.isTelecaller(role)) {
+      return const TelecallerDashboardScreen();
+    }
+    if (RoleGuard.isSales(role)) {
+      return const SalesDashboardScreen();
+    }
+
     Theme.of(context);
     final userName = context.select<AuthBloc, String>((bloc) {
       final state = bloc.state;

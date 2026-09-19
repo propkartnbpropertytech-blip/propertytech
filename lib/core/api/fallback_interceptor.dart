@@ -1,30 +1,29 @@
 import 'package:dio/dio.dart';
 import 'api_constants.dart';
+import '../config/app_env.dart';
 import 'dio_client.dart';
 
 class FallbackInterceptor extends Interceptor {
   @override
   Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
+    if (AppEnv.isLocal) {
+      return super.onError(err, handler);
+    }
+
     final isNetworkError = err.type == DioExceptionType.connectionTimeout ||
         err.type == DioExceptionType.sendTimeout ||
         err.type == DioExceptionType.receiveTimeout ||
         err.type == DioExceptionType.connectionError;
 
-    // Only retry on the backup if a distinct backup exists and request targeted primary baseUrl
     if (isNetworkError &&
         ApiConstants.primaryBaseUrl != ApiConstants.backupBaseUrl &&
         err.requestOptions.baseUrl == ApiConstants.primaryBaseUrl) {
       final options = err.requestOptions;
-      
-      // Update the base URL to point to the backup/fallback server
       options.baseUrl = ApiConstants.backupBaseUrl;
-      
       try {
-        // Fetch/retry using the updated options
         final response = await DioClient.dio.fetch(options);
         return handler.resolve(response);
       } catch (retryErr) {
-        // If the backup retry fails, return the fallback error or original error
         if (retryErr is DioException) {
           return super.onError(retryErr, handler);
         }

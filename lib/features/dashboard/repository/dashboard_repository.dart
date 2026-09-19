@@ -38,10 +38,54 @@ class DashboardRepository {
       }
     }
 
+    bool usedNetworkKpis = false;
     if (forceRefresh || cachedData == null) {
       try {
         final response = await _dashboardService.getDashboardData();
-        final freshData = DashboardData.fromJson(response);
+        final authReport = await _dashboardService.getAuthoritativeReportMetrics();
+
+        DashboardData freshData = DashboardData.fromJson(response);
+        usedNetworkKpis = true;
+        if (authReport.isNotEmpty && authReport['kpis'] is Map) {
+          final kpis = authReport['kpis'] as Map<String, dynamic>;
+          final totalReqs = (kpis['total_leads'] as num?)?.toInt() ?? freshData.summary.requirements;
+          final wonCount = (kpis['closed_won'] as num?)?.toInt() ?? (freshData.summary.rentalWonRequirements + freshData.summary.resaleWonRequirements);
+
+          freshData = DashboardData(
+            summary: DashboardSummary(
+              totalProperties: freshData.summary.totalProperties,
+              available: freshData.summary.available,
+              sold: freshData.summary.sold,
+              rented: freshData.summary.rented,
+              requirements: totalReqs,
+              users: freshData.summary.users,
+              rentalAvailable: freshData.summary.rentalAvailable,
+              resaleAvailable: freshData.summary.resaleAvailable,
+              rentalRented: freshData.summary.rentalRented,
+              resaleSold: freshData.summary.resaleSold,
+              rentalRequirements: freshData.summary.rentalRequirements,
+              resaleRequirements: freshData.summary.resaleRequirements,
+              rentalWonRequirements: wonCount > 0 ? wonCount : freshData.summary.rentalWonRequirements,
+              resaleWonRequirements: freshData.summary.resaleWonRequirements,
+              totalPropertiesTrend: freshData.summary.totalPropertiesTrend,
+              availableTrend: freshData.summary.availableTrend,
+              soldTrend: freshData.summary.soldTrend,
+              rentedTrend: freshData.summary.rentedTrend,
+              requirementsTrend: freshData.summary.requirementsTrend,
+              topBroker: freshData.summary.topBroker,
+              topArea: freshData.summary.topArea,
+              topProperty: freshData.summary.topProperty,
+              monthlyGrowth: freshData.summary.monthlyGrowth,
+            ),
+            activity: freshData.activity,
+            recentProperties: freshData.recentProperties,
+            checklist: freshData.checklist,
+            followups: freshData.followups,
+            siteVisits: freshData.siteVisits,
+            inventoryLocations: freshData.inventoryLocations,
+          );
+        }
+
         await _coordinator.dashboardLocal.saveDashboard(freshData.toLocal());
         final listData = response['followups'] as List? ?? [];
         final freshFollowups = listData
@@ -72,7 +116,11 @@ class DashboardRepository {
       totalMs: totalMs,
     );
 
-    // Get the dynamic counts of requirements to ensure they are always correct and in sync
+    if (usedNetworkKpis && cachedData != null) {
+      return cachedData;
+    }
+
+    // Offline only: reconstruct counts from local cache
     var localReqs = await _coordinator.requirementLocal.getRequirements();
     final currentUser = RoleGuard.currentUser;
     if (currentUser != null) {

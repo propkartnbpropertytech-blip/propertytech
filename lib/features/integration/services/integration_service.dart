@@ -11,10 +11,10 @@ import '../../properties/repository/properties_repository.dart';
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
 import '../../../core/api/api_client.dart';
+import '../../../core/config/app_env.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/storage/isar_collections.dart';
 import '../../../core/storage/repository_coordinator.dart';
-import '../../../core/utils/budget_formatter.dart';
 import '../../../core/services/notification_center.dart';
 
 class IntegrationService extends ChangeNotifier {
@@ -22,9 +22,24 @@ class IntegrationService extends ChangeNotifier {
   factory IntegrationService() => _instance;
   IntegrationService._internal();
 
-  String get _orgScope => RoleGuard.currentUser?.organizationId ?? 'global';
+  static bool matchesCampaignSource(String leadSource, String? filter) {
+    if (filter == null || filter.isEmpty || filter == 'All') return true;
+    final src = leadSource.toUpperCase().trim();
+    final sel = filter.toUpperCase().trim();
+    if (sel.contains('HOUSING')) return src.contains('HOUSING');
+    if (sel.contains('META') || sel.contains('FACEBOOK')) {
+      return src.contains('META') || src.contains('FACEBOOK') || src.contains('INSTAGRAM');
+    }
+    if (sel.contains('SHEET') || sel.contains('GOOGLE')) {
+      return src.contains('SHEET') || src.contains('GOOGLE');
+    }
+    return src == sel;
+  }
 
-  String get _leadsPrefsKey => 'campaign_ingestion_leads_json_$_orgScope';
+  String get _orgScope => RoleGuard.currentUser?.organizationId ?? 'global';
+  String get _userScope => RoleGuard.currentUser?.id ?? 'global';
+
+  String get _leadsPrefsKey => 'campaign_ingestion_leads_json_${_orgScope}_$_userScope';
   String get _sheetUrlPrefsKey => 'campaign_google_sheet_url_$_orgScope';
   String get _propCustomHeadersPrefsKey => 'campaign_prop_custom_headers_v1_$_orgScope';
   String get _reqCustomHeadersPrefsKey => 'campaign_req_custom_headers_v1_$_orgScope';
@@ -61,19 +76,27 @@ class IntegrationService extends ChangeNotifier {
   bool _persistDirty = false;
 
   // Webhook configuration
-  String webhookUrl = "https://api-propkart.nbpropertytech.com/api/v1/integrations/webhooks/meta-leads";
-  String vpsDirectWebhookUrl = "http://200.234.36.120:5001/api/v1/integrations/webhooks/meta-leads";
+  String get webhookUrl => '${AppEnv.apiBaseUrl}/integrations/webhooks/meta-leads';
+  String get vpsDirectWebhookUrl => webhookUrl;
   String webhookSecret = "pk_sec_99a8b7c6d5e4f3a2b1";
   String metaVerifyToken = "propkart_meta_lead_verify_token_2026";
   bool isWebhookListening = true;
 
   // Ingested Leads (clean start)
   List<IntegrationLeadModel> _leads = [];
-  List<IntegrationLeadModel> get leads => List.unmodifiable(_leads);
+  List<IntegrationLeadModel> get leads {
+    if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) {
+      final myId = RoleGuard.currentUser?.id;
+      if (myId != null && myId.isNotEmpty) {
+        return List.unmodifiable(_leads.where((l) => l.assignedTelecallerId == myId));
+      }
+    }
+    return List.unmodifiable(_leads);
+  }
   List<IntegrationLeadModel> get requirementLeads =>
-      _leads.where((l) => l.leadType == 'Requirement').toList();
+      leads.where((l) => l.leadType == 'Requirement').toList();
   List<IntegrationLeadModel> get propertyListingLeads =>
-      _leads.where((l) => l.leadType == 'Property Listing').toList();
+      leads.where((l) => l.leadType == 'Property Listing').toList();
 
   // Dynamic user-defined headers created in advance or dynamically
   final Set<String> _customHeaders = {};
@@ -703,87 +726,7 @@ class IntegrationService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _googleSheetUrl = prefs.getString(_sheetUrlPrefsKey) ?? '';
 
-      // 1. Try loading from Isar database first (only if this org owns the local vault)
-      final isarOrg = prefs.getString('campaign_isar_org_v1');
-      final canUseIsar = isarOrg == null || isarOrg == _orgScope;
-      final dbLeads = canUseIsar
-          ? await RepositoryCoordinator().campaignLeadLocal.getLeads()
-          : <CampaignLeadLocal>[];
-      if (canUseIsar && isarOrg == null && dbLeads.isNotEmpty) {
-        await prefs.setString('campaign_isar_org_v1', _orgScope);
-      }
-      if (dbLeads.isNotEmpty) {
-        final parsed = <IntegrationLeadModel>[];
-        for (final item in dbLeads) {
-          Map<String, dynamic> raw = {};
-          try {
-            if (item.rawJsonString.isNotEmpty) {
-              raw = Map<String, dynamic>.from(jsonDecode(item.rawJsonString));
-            }
-          } catch (_) {}
-
-          final explicitLeadType = raw['_lead_type']?.toString();
-          final campaignStatus = raw['_campaign_status']?.toString() ?? 'New';
-          final enquiryCount = int.tryParse(raw['_enquiry_count']?.toString() ?? '1') ?? 1;
-          final followupScheduledAt = raw['_followup_scheduled_at'] != null
-              ? DateTime.tryParse(raw['_followup_scheduled_at'].toString())
-              : null;
-          final followupRemarks = raw['_followup_remarks']?.toString();
-          final followupStatus = raw['_followup_status']?.toString();
-          final crmMatch = raw['_crm_match'] is Map<String, dynamic>
-              ? CrmMatchInfo.fromJson(Map<String, dynamic>.from(raw['_crm_match']))
-              : null;
-
-          parsed.add(
-            IntegrationLeadModel(
-              id: item.id,
-              source: item.source,
-              receivedAt: item.receivedAt,
-              rawJson: raw,
-              externalLeadId: item.externalLeadId,
-              isDuplicate: item.isDuplicate,
-              duplicateReason: item.duplicateReason,
-              qualityStatus: item.qualityStatus,
-              importStatus: item.importStatus,
-              importedClientId: item.importedClientId,
-              metaFeedbackEventId: item.metaFeedbackEventId,
-              metaFeedbackSentAt: item.metaFeedbackSentAt,
-              leadType: IntegrationLeadModel.resolveLeadType(explicitLeadType, raw),
-              campaignStatus: campaignStatus,
-              enquiryCount: enquiryCount,
-              followupScheduledAt: followupScheduledAt,
-              followupRemarks: followupRemarks,
-              followupStatus: followupStatus,
-              crmMatch: crmMatch,
-            ),
-          );
-        }
-        _leads = parsed;
-        _invalidateHeaderCache();
-      } else {
-        // 2. Backward compatibility: Check SharedPreferences and migrate to DB
-        final stored = prefs.getString(_leadsPrefsKey);
-        if (stored != null && stored.isNotEmpty) {
-          final decoded = stored.length > 200000
-              ? await compute(_decodeCampaignLeadsJson, stored)
-              : jsonDecode(stored);
-          if (decoded is List) {
-            final parsed = <IntegrationLeadModel>[];
-            for (var i = 0; i < decoded.length; i++) {
-              final item = decoded[i];
-              if (item is Map) {
-                parsed.add(IntegrationLeadModel.fromJson(Map<String, dynamic>.from(item)));
-              }
-            }
-            _leads = parsed;
-            _invalidateHeaderCache();
-            // Persist migrated records to DB
-            unawaited(_persistLeads());
-          }
-        }
-      }
-
-      // 3. Load saved header ordering preference
+      // Load saved header ordering preference
       final savedHeaderOrder = prefs.getString(_headerOrderPrefsKey);
       if (savedHeaderOrder != null && savedHeaderOrder.isNotEmpty) {
         try {
@@ -842,8 +785,11 @@ class IntegrationService extends ChangeNotifier {
       if (_googleSheetUrl.isNotEmpty) {
         _startSheetPolling();
       }
+
+      // Fetch live leads directly from the database connection
+      await fetchServerLeads(resetWithServer: true);
     } catch (e) {
-      debugPrint('Failed to load persisted campaign leads: $e');
+      debugPrint('Failed to load campaign leads: $e');
     }
     notifyListeners();
   }
@@ -851,13 +797,21 @@ class IntegrationService extends ChangeNotifier {
   bool _isFetchingServerLeads = false;
   bool get isFetchingServerLeads => _isFetchingServerLeads;
 
-  Future<int> fetchServerLeads({bool silent = false, bool resetWithServer = false}) async {
+  Future<int> fetchServerLeads({
+    bool silent = false,
+    bool resetWithServer = false,
+    String? source,
+  }) async {
     if (_isFetchingServerLeads) return 0;
     _isFetchingServerLeads = true;
     try {
+      final queryParameters = <String, dynamic>{'limit': 1000};
+      if (source != null && source.isNotEmpty && source != 'All') {
+        queryParameters['source'] = source;
+      }
       final response = await _apiClient.get(
         '/integrations/leads',
-        queryParameters: {'limit': 1000},
+        queryParameters: queryParameters,
       );
 
       if (response.data is Map<String, dynamic>) {
@@ -873,7 +827,14 @@ class IntegrationService extends ChangeNotifier {
 
         if (incoming.isNotEmpty || resetWithServer) {
           if (resetWithServer) {
-            _leads = incoming;
+            if (source != null && source.isNotEmpty && source != 'All') {
+              _leads = [
+                ..._leads.where((l) => !matchesCampaignSource(l.source, source)),
+                ...incoming,
+              ];
+            } else {
+              _leads = incoming;
+            }
           } else {
             // Build lookup of existing local leads for status and assignment preservation
             final existingLocalMap = <String, IntegrationLeadModel>{};
@@ -888,26 +849,24 @@ class IntegrationService extends ChangeNotifier {
             for (final inc in incoming) {
               final local = existingLocalMap[inc.id] ?? (inc.externalLeadId != null ? existingLocalMap[inc.externalLeadId!] : null);
               if (local != null) {
-                final bool isLocalUserModified = local.campaignStatus.isNotEmpty && local.campaignStatus != 'New';
                 final bool isIncDefault = inc.campaignStatus.isEmpty || inc.campaignStatus == 'New' || inc.campaignStatus == 'Pending';
-                final bool localProtected = local.campaignStatus == 'Assigned' ||
-                    local.campaignStatus == 'CNR' ||
-                    local.campaignStatus == 'Interested' ||
-                    local.campaignStatus == 'Not interested' ||
-                    local.importStatus == 'Imported' ||
-                    (local.assignedTo != null && local.assignedTo!.isNotEmpty && local.assignedTo != 'Unassigned');
-                final bool incomingHasAssignment = (inc.assignedTo != null && inc.assignedTo!.isNotEmpty && inc.assignedTo != 'Unassigned') ||
-                    inc.campaignStatus == 'Assigned' ||
-                    inc.importStatus == 'Imported';
-                final bool keepLocalStatus = (isLocalUserModified && (isIncDefault || inc.campaignStatus.trim().toLowerCase() == local.campaignStatus.trim().toLowerCase())) ||
-                    (localProtected && !incomingHasAssignment && (inc.campaignStatus == 'Follow up' || inc.campaignStatus == 'Follow-up' || isIncDefault));
-                final mergedStatus = keepLocalStatus ? local.campaignStatus : (inc.campaignStatus.isNotEmpty ? inc.campaignStatus : local.campaignStatus);
+                final String mergedStatus;
+                if (!isIncDefault) {
+                  mergedStatus = inc.campaignStatus;
+                } else if (local.campaignStatus.isNotEmpty && local.campaignStatus != 'New') {
+                  mergedStatus = local.campaignStatus;
+                } else {
+                  mergedStatus = inc.campaignStatus.isNotEmpty ? inc.campaignStatus : 'New';
+                }
                 final incomingIsFollowup = mergedStatus == 'Follow up' || mergedStatus == 'Follow-up';
                 final merged = inc.copyWith(
                   leadType: (local.leadType != inc.leadType && local.leadType.isNotEmpty) ? local.leadType : inc.leadType,
                   campaignStatus: mergedStatus,
+                  allocationStatus: inc.allocationStatus ?? local.allocationStatus,
                   assignedTo: (inc.assignedTo != null && inc.assignedTo!.isNotEmpty) ? inc.assignedTo : local.assignedTo,
                   assignedToName: (inc.assignedToName != null && inc.assignedToName!.isNotEmpty) ? inc.assignedToName : local.assignedToName,
+                  assignedTelecallerId: inc.assignedTelecallerId ?? local.assignedTelecallerId,
+                  assignedTelecallerName: inc.assignedTelecallerName ?? local.assignedTelecallerName,
                   transferRemarks: (inc.transferRemarks != null && inc.transferRemarks!.isNotEmpty) ? inc.transferRemarks : local.transferRemarks,
                   interactedAt: inc.interactedAt ?? local.interactedAt,
                   interactedBy: (inc.interactedBy != null && inc.interactedBy!.isNotEmpty) ? inc.interactedBy : local.interactedBy,
@@ -931,11 +890,18 @@ class IntegrationService extends ChangeNotifier {
             // Meta Ads leads are authoritative from the server; retain other sources (e.g. CSV/Google Sheets)
             final incomingIds = incoming.map((l) => l.id).toSet();
             final incomingExtIds = incoming.map((l) => l.externalLeadId).whereType<String>().toSet();
-            final nonServerLeads = _leads.where((l) =>
-                l.source != 'Meta Ads' &&
+            final sourceScoped = source != null && source.isNotEmpty && source != 'All';
+            final retained = _leads.where((l) {
+              if (sourceScoped) {
+                return !matchesCampaignSource(l.source, source);
+              }
+              final src = l.source.toUpperCase();
+              final isServer = src.contains('META') || src.contains('HOUSING') || src.contains('ADS');
+              return !isServer &&
                 !incomingIds.contains(l.id) &&
-                (l.externalLeadId == null || !incomingExtIds.contains(l.externalLeadId))).toList();
-            _leads = [...mergedIncoming, ...nonServerLeads];
+                (l.externalLeadId == null || !incomingExtIds.contains(l.externalLeadId));
+            }).toList();
+            _leads = [...mergedIncoming, ...retained];
           }
 
           _updateDetectedHeadersFromRows(incoming.map((l) => l.rawJson).toList());
@@ -975,7 +941,7 @@ class IntegrationService extends ChangeNotifier {
   Future<Map<String, dynamic>> syncMetaLeads() async {
     try {
       final response = await _apiClient.post('/integrations/leads/sync-meta', {});
-      await fetchServerLeads(resetWithServer: true);
+      await fetchServerLeads(resetWithServer: true, source: 'Meta Ads');
       await fetchHealthAlerts();
       final data = response.data is Map<String, dynamic> ? response.data as Map<String, dynamic> : {'success': true};
       if (data['metaAlert'] != null && data['metaAlert'] is Map) {
@@ -987,6 +953,19 @@ class IntegrationService extends ChangeNotifier {
       return data;
     } catch (e) {
       debugPrint('Error syncing Meta leads: $e');
+      await fetchHealthAlerts();
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> syncHousingLeads() async {
+    try {
+      final response = await _apiClient.post('/integrations/leads/sync-housing', {});
+      await fetchServerLeads(resetWithServer: true, source: 'Housing.com');
+      await fetchHealthAlerts();
+      return response.data is Map<String, dynamic> ? response.data as Map<String, dynamic> : {'success': true};
+    } catch (e) {
+      debugPrint('Error syncing Housing leads: $e');
       await fetchHealthAlerts();
       return {'success': false, 'message': e.toString()};
     }
@@ -1203,10 +1182,12 @@ class IntegrationService extends ChangeNotifier {
     String? assignedToName,
     String? remarks,
   }) async {
-    final isCnr = status.trim().toUpperCase() == 'CNR';
-    final finalStatus = isCnr ? 'CNR' : 'Assigned';
-    final now = DateTime.now();
-    final user = RoleGuard.currentUser;
+      final isCnr = status.trim().toUpperCase() == 'CNR';
+      final isCallback = status.trim().toUpperCase() == 'CALLBACK' || status.trim().toLowerCase() == 'follow up';
+      final finalStatus = isCnr ? 'CNR' : (isCallback ? 'Follow up' : 'Assigned');
+      final finalAllocationStatus = isCnr ? 'CNR' : (isCallback ? 'CALLBACK' : 'HANDED_TO_SALES');
+      final now = DateTime.now();
+      final user = RoleGuard.currentUser;
 
     IntegrationLeadModel? previousLead;
     final idx = _leads.indexWhere((l) => l.id == leadId);
@@ -1242,13 +1223,14 @@ class IntegrationService extends ChangeNotifier {
         previousLead = _leads[idx];
         _leads[idx] = _leads[idx].copyWith(
           campaignStatus: finalStatus,
-          assignedTo: isCnr ? _leads[idx].assignedTo : assignedTo,
-          assignedToName: isCnr ? _leads[idx].assignedToName : assignedToName,
-          transferRemarks: isCnr ? _leads[idx].transferRemarks : remarks,
+          allocationStatus: finalAllocationStatus,
+          assignedTo: (isCnr || isCallback) ? _leads[idx].assignedTo : assignedTo,
+          assignedToName: (isCnr || isCallback) ? _leads[idx].assignedToName : assignedToName,
+          transferRemarks: (isCnr || isCallback) ? _leads[idx].transferRemarks : remarks,
           interactedAt: now,
           interactedBy: user?.fullName,
-          importStatus: isCnr ? _leads[idx].importStatus : 'Imported',
-          clearFollowup: true,
+          importStatus: (isCnr || isCallback) ? _leads[idx].importStatus : 'Imported',
+          clearFollowup: !isCallback,
         );
         notifyListeners();
         unawaited(_persistLeads());
@@ -1271,7 +1253,7 @@ class IntegrationService extends ChangeNotifier {
       }
 
       // 3. Notify and refresh CRM once. Backend transfer already writes assigned_to.
-      if (!isCnr && assignedTo != null && assignedTo.isNotEmpty) {
+      if (!isCnr && !isCallback && assignedTo != null && assignedTo.isNotEmpty) {
         final targetLead = idx != -1 ? _leads[idx] : null;
         final leadName = targetLead != null ? _mapLeadFields(targetLead)['name'] : null;
         final displayName = (leadName != null && leadName.isNotEmpty) ? leadName : 'Lead';
@@ -1308,6 +1290,7 @@ class IntegrationService extends ChangeNotifier {
         } else {
           unawaited(importLeadsToCrm([leadId], forceReimport: true, skipFetchServerLeads: true));
         }
+        unawaited(_requirementsRepository.getRequirements(refreshFromServer: true));
       }
 
       final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
@@ -1318,11 +1301,12 @@ class IntegrationService extends ChangeNotifier {
           if (leadIdx != -1) {
             _leads[leadIdx] = updatedLead.copyWith(
               campaignStatus: finalStatus,
-              assignedTo: assignedTo ?? updatedLead.assignedTo,
-              assignedToName: assignedToName ?? updatedLead.assignedToName,
+              allocationStatus: finalAllocationStatus,
+              assignedTo: (isCnr || isCallback) ? _leads[leadIdx].assignedTo : (assignedTo ?? updatedLead.assignedTo),
+              assignedToName: (isCnr || isCallback) ? _leads[leadIdx].assignedToName : (assignedToName ?? updatedLead.assignedToName),
               transferRemarks: remarks ?? updatedLead.transferRemarks,
-              importStatus: isCnr ? (_leads[leadIdx].importStatus ?? updatedLead.importStatus) : 'Imported',
-              clearFollowup: true,
+              importStatus: (isCnr || isCallback) ? _leads[leadIdx].importStatus : 'Imported',
+              clearFollowup: !isCallback,
             );
             notifyListeners();
             unawaited(_persistLeads());
@@ -1338,6 +1322,79 @@ class IntegrationService extends ChangeNotifier {
       } catch (_) {}
       return {'success': false, 'message': _transferErrorMessage(e)};
     }
+  }
+
+  /// Synchronize in-memory leads and trigger server parity when a telecaller records an outcome anywhere
+  void notifyOutcomeRecorded(
+    String leadId, {
+    required String outcome,
+    String? remarks,
+    String? salesUserId,
+    String? assignedToName,
+    String? callbackAt,
+  }) {
+    final normOutcome = outcome.trim().toUpperCase();
+    final isCnr = normOutcome == 'CNR';
+    final isCallback = normOutcome == 'CALLBACK' || normOutcome == 'FOLLOW UP' || normOutcome == 'FOLLOW-UP';
+    final isPickedUp = normOutcome == 'PICKED_UP' || normOutcome == 'PICKED UP' || normOutcome == 'ASSIGNED';
+
+    final finalStatus = isCnr ? 'CNR' : (isCallback ? 'Follow up' : (isPickedUp ? 'Assigned' : normOutcome));
+    final finalAllocStatus = isCnr ? 'CNR' : (isCallback ? 'CALLBACK' : (isPickedUp ? 'HANDED_TO_SALES' : normOutcome));
+    final now = DateTime.now();
+    final user = RoleGuard.currentUser;
+
+    final idx = _leads.indexWhere((l) => l.id == leadId || (l.externalLeadId != null && l.externalLeadId == leadId));
+    if (idx != -1) {
+      final lead = _leads[idx];
+      DateTime? parsedCallback;
+      if (callbackAt != null) {
+        parsedCallback = DateTime.tryParse(callbackAt);
+      }
+      _leads[idx] = lead.copyWith(
+        campaignStatus: finalStatus,
+        allocationStatus: finalAllocStatus,
+        assignedTo: isPickedUp ? (salesUserId ?? lead.assignedTo) : lead.assignedTo,
+        assignedToName: isPickedUp ? (assignedToName ?? lead.assignedToName) : lead.assignedToName,
+        transferRemarks: remarks ?? lead.transferRemarks,
+        interactedAt: now,
+        interactedBy: user?.fullName ?? lead.interactedBy,
+        followupScheduledAt: isCallback ? (parsedCallback ?? lead.followupScheduledAt) : (isPickedUp || isCnr ? null : lead.followupScheduledAt),
+        followupRemarks: isCallback ? (remarks ?? lead.followupRemarks) : lead.followupRemarks,
+        followupStatus: isCallback ? 'Pending' : (isPickedUp || isCnr ? 'Completed' : lead.followupStatus),
+        clearFollowup: isPickedUp || isCnr,
+      );
+      notifyListeners();
+      unawaited(_persistLeads());
+    }
+
+    // Background sync with server to ensure 100% database parity
+    unawaited(fetchServerLeads(resetWithServer: true));
+  }
+
+  /// Retrieve lead model from memory cache if available
+  IntegrationLeadModel? getLeadById(String leadId) {
+    try {
+      return _leads.firstWhere((l) => l.id == leadId || (l.externalLeadId != null && l.externalLeadId == leadId));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Retrieve or fetch complete lead model
+  Future<IntegrationLeadModel?> fetchLeadById(String leadId) async {
+    final local = getLeadById(leadId);
+    if (local != null) return local;
+    try {
+      final res = await _apiClient.get('/integrations/leads/$leadId');
+      if (res.data is Map<String, dynamic>) {
+        final data = res.data as Map<String, dynamic>;
+        final leadData = data['lead'] ?? data;
+        if (leadData is Map<String, dynamic>) {
+          return IntegrationLeadModel.fromJson(leadData);
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Reclassify a lead between 'Requirement' and 'Property Listing' ("Wrong Lead" action)
@@ -1715,28 +1772,39 @@ class IntegrationService extends ChangeNotifier {
     required String qualityStatus,
   }) async {
     final index = _leads.indexWhere((l) => l.id == leadId);
-    if (index == -1) throw Exception("Lead not found");
+    final response = await _apiClient.post('/integrations/meta-feedback', {
+      'leadId': leadId,
+      'qualityStatus': qualityStatus,
+    });
+    final data = response.data is Map<String, dynamic> ? response.data as Map<String, dynamic> : {'success': true};
+    if (index != -1) {
+      _leads[index] = _leads[index].copyWith(
+        qualityStatus: qualityStatus,
+        metaFeedbackEventId: data['eventId']?.toString(),
+        metaFeedbackSentAt: DateTime.now(),
+      );
+      notifyListeners();
+      unawaited(_persistLeads());
+    }
+    return data;
+  }
 
-    final lead = _leads[index];
-    final eventId = 'fb_evt_${DateTime.now().millisecondsSinceEpoch}';
-
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    _leads[index] = lead.copyWith(
-      qualityStatus: qualityStatus,
-      metaFeedbackEventId: eventId,
-      metaFeedbackSentAt: DateTime.now(),
-    );
-
-    notifyListeners();
-    unawaited(_persistLeads());
-
-    return {
-      'success': true,
-      'eventId': eventId,
-      'status': qualityStatus,
-      'message': 'Lead quality response for Meta successfully dispatched.',
-    };
+  Future<Map<String, dynamic>> sendHousingQualityFeedback({
+    required String leadId,
+    required String qualityStatus,
+  }) async {
+    final index = _leads.indexWhere((l) => l.id == leadId);
+    final response = await _apiClient.post('/integrations/housing-feedback', {
+      'leadId': leadId,
+      'qualityStatus': qualityStatus,
+    });
+    final data = response.data is Map<String, dynamic> ? response.data as Map<String, dynamic> : {'success': true};
+    if (index != -1) {
+      _leads[index] = _leads[index].copyWith(qualityStatus: qualityStatus);
+      notifyListeners();
+      unawaited(_persistLeads());
+    }
+    return data;
   }
 
   /// Import selected campaign rows into the Leads page (requirements).
@@ -3426,11 +3494,6 @@ function onFormSubmit(e) {
     }
     return digits;
   }
-}
-
-List<dynamic> _decodeCampaignLeadsJson(String stored) {
-  final decoded = jsonDecode(stored);
-  return decoded is List ? decoded : const [];
 }
 
 String _encodeCampaignLeadsJson(List<Map<String, dynamic>> leads) {

@@ -28,6 +28,7 @@ import 'package:propkart/features/properties/repository/properties_repository.da
 import 'package:propkart/features/integration/services/integration_service.dart';
 import 'package:propkart/features/requirements/services/match_criteria_manager.dart';
 import 'package:propkart/features/settings/services/upload_limits_manager.dart';
+import 'package:propkart/features/campaign/bloc/campaign_connections_bloc.dart';
 import '../utils/app_logger.dart';
 
 enum SyncState {
@@ -161,6 +162,8 @@ class SyncManager {
       'followups',
       'site_visits',
       'integration_leads',
+      'leads',
+      'campaign_connections',
       'campaign_lead_followups',
     ];
     _sendJson({
@@ -267,8 +270,11 @@ class SyncManager {
 
       tablesToRefresh.add(table);
 
-      if (table == "integration_leads") {
+      if (table == "integration_leads" || table == "leads") {
         IntegrationService().handleRealtimeEvent(type, record, oldRecord);
+        continue;
+      } else if (table == "campaign_connections") {
+        CampaignConnectionsBloc().add(const FetchCampaignConnectionsEvent(silent: true));
         continue;
       } else if (table == "campaign_lead_followups") {
         IntegrationService().handleFollowupRealtimeEvent(type, record, oldRecord);
@@ -286,13 +292,17 @@ class SyncManager {
           else if (table == "followups") followupsToDelete.add(id);
           else if (table == "builders") buildersToDelete.add(id);
           else if (table == "owners") ownersToDelete.add(id);
-          else if (table == "integration_leads") {
+          else if (table == "integration_leads" || table == "leads") {
             unawaited(IntegrationService().fetchServerLeads(silent: true));
+          } else if (table == "campaign_connections") {
+            CampaignConnectionsBloc().add(const FetchCampaignConnectionsEvent(silent: true));
           }
         }
       } else if (record != null) {
-        if (table == "integration_leads") {
+        if (table == "integration_leads" || table == "leads") {
           unawaited(IntegrationService().fetchServerLeads(silent: true));
+        } else if (table == "campaign_connections") {
+          CampaignConnectionsBloc().add(const FetchCampaignConnectionsEvent(silent: true));
         } else if (table == "properties") {
           try {
             final id = record['id'] as String;

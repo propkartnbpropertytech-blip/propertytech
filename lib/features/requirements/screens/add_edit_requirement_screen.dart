@@ -24,6 +24,7 @@ class AddEditRequirementScreen extends StatefulWidget {
   final bool isInline;
   final String? initialListingTypeId;
   final String? initialListingTab;
+  final int initialStep;
 
   const AddEditRequirementScreen({
     super.key,
@@ -32,6 +33,7 @@ class AddEditRequirementScreen extends StatefulWidget {
     this.isInline = false,
     this.initialListingTypeId,
     this.initialListingTab,
+    this.initialStep = 0,
   });
 
   @override
@@ -80,7 +82,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(initialPage: 0);
+    _activeStep = widget.initialStep;
+    _pageController = PageController(initialPage: widget.initialStep);
     _mobileController.addListener(_handleMobileChange);
     _loadMetadata();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -206,13 +209,25 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           
           _selectedStatus = req.status;
 
-          _selectedAreaIds.addAll(req.areaIds);
+          if (req.isAllAreas) {
+            _selectedAreaIds.clear();
+            _selectedAreaIds.addAll(_areas.map((a) => a.id));
+          } else {
+            _selectedAreaIds.addAll(req.areaIds);
+          }
           _selectedLeadSource = req.leadSource;
           _referralNameController.text = req.referralName ?? '';
         }
         
         _isLoadingMetadata = false;
       });
+      if (widget.initialStep > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _pageController.hasClients && _activeStep != _pageController.page?.round()) {
+            _pageController.jumpToPage(_activeStep);
+          }
+        });
+      }
     } catch (e) {
       setState(() {
         _isLoadingMetadata = false;
@@ -670,10 +685,14 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       orElse: () => LookupItem(id: '', name: 'N/A'),
     );
 
-    final List<String> areaNames = _selectedAreaIds.map((id) {
-      final match = _areas.firstWhere((a) => a.id == id, orElse: () => AreaLookup(id: id, name: id, cityId: '', pincode: ''));
-      return match.name;
-    }).toList();
+    final bool isAllAreasSelected = _areas.isNotEmpty && _selectedAreaIds.length >= _areas.length;
+
+    final List<String> areaNames = isAllAreasSelected
+        ? ['All Areas']
+        : _selectedAreaIds.map((id) {
+            final match = _areas.firstWhere((a) => a.id == id, orElse: () => AreaLookup(id: id, name: id, cityId: '', pincode: ''));
+            return match.name;
+          }).toList();
 
     final authState = context.read<AuthBloc>().state;
     UserModel? currentUser;
@@ -734,6 +753,21 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       createdBy: widget.requirement?.createdBy ?? currentUser?.id,
       assignedTo: defaultAssignedTo,
       assigneeName: defaultAssigneeName,
+      metaLeadId: widget.requirement?.metaLeadId,
+      metaPageId: widget.requirement?.metaPageId,
+      metaFormId: widget.requirement?.metaFormId,
+      metaCampaignId: widget.requirement?.metaCampaignId,
+      metaCampaignName: widget.requirement?.metaCampaignName,
+      metaAdsetId: widget.requirement?.metaAdsetId,
+      metaAdsetName: widget.requirement?.metaAdsetName,
+      metaAdId: widget.requirement?.metaAdId,
+      metaAdName: widget.requirement?.metaAdName,
+      metaCustomFields: {
+        ...(widget.requirement?.metaCustomFields ?? {}),
+        if (_selectedAreaIds.isNotEmpty) 'match_engine_status': 'READY',
+        if (isAllAreasSelected) 'is_all_areas': true,
+        if (!isAllAreasSelected && widget.requirement?.metaCustomFields?['is_all_areas'] == true) 'is_all_areas': false,
+      },
     );
 
     _isSaved = true;
@@ -963,10 +997,24 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 )
               else
                 const SizedBox.shrink(),
-              CRMButton(
-                label: _activeStep == 6 ? "Submit" : "Next",
-                onPressed: _nextStep,
-                height: widget.isInline ? 32 : 40,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.requirement != null && _activeStep != 6) ...[
+                    CRMButton(
+                      label: "Save Changes",
+                      variant: CRMButtonVariant.outline,
+                      onPressed: _submitForm,
+                      height: widget.isInline ? 32 : 40,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  CRMButton(
+                    label: _activeStep == 6 ? "Submit" : "Next",
+                    onPressed: _nextStep,
+                    height: widget.isInline ? 32 : 40,
+                  ),
+                ],
               ),
             ],
           ),
@@ -1303,6 +1351,28 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.requirement?.hasUnmappedArea == true)
+          Container(
+            margin: const EdgeInsets.only(bottom: CRMSpacing.s),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFF59E0B)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFD97706)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Unmapped Locality: "${widget.requirement!.areaNames.isNotEmpty ? widget.requirement!.areaNames.join(', ') : 'Unmapped'}" - Please select one or more CRM areas below.',
+                    style: const TextStyle(fontSize: 11.5, color: Color(0xFF92400E), fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
         isMobile
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1320,6 +1390,61 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 ],
               ),
         const SizedBox(height: CRMSpacing.m),
+        if (_areaSearchQuery.isEmpty && _areas.isNotEmpty) ...[
+          Builder(
+            builder: (context) {
+              final bool isAllAreasSelected = _selectedAreaIds.length >= _areas.length;
+              return Container(
+                margin: const EdgeInsets.only(bottom: CRMSpacing.s),
+                decoration: BoxDecoration(
+                  color: isAllAreasSelected ? CRMColors.primaryOf(context).withValues(alpha: 0.08) : CRMColors.cardBgOf(context),
+                  borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+                  border: Border.all(
+                    color: isAllAreasSelected ? CRMColors.primaryOf(context) : CRMColors.borderOf(context),
+                    width: isAllAreasSelected ? 1.5 : 1.0,
+                  ),
+                ),
+                child: CheckboxListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+                  secondary: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: isAllAreasSelected ? CRMColors.primaryOf(context) : CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      Icons.public_rounded,
+                      color: isAllAreasSelected ? Colors.white : CRMColors.primaryOf(context),
+                      size: 18,
+                    ),
+                  ),
+                  title: const Text(
+                    'All Areas (Entire City)',
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    isAllAreasSelected
+                        ? 'Selected all ${_areas.length} areas across the city'
+                        : 'Select to cover all ${_areas.length} areas across the city',
+                    style: TextStyle(fontSize: 11.5, color: CRMColors.textMutedOf(context)),
+                  ),
+                  value: isAllAreasSelected,
+                  activeColor: CRMColors.primaryOf(context),
+                  onChanged: (val) {
+                    setState(() {
+                      if (val == true) {
+                        _selectedAreaIds.clear();
+                        _selectedAreaIds.addAll(_areas.map((a) => a.id));
+                      } else {
+                        _selectedAreaIds.clear();
+                      }
+                    });
+                  },
+                ),
+              );
+            },
+          ),
+        ],
         Expanded(
           child: Builder(
             builder: (context) {

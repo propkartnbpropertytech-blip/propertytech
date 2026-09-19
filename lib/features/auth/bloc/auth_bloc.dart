@@ -5,6 +5,7 @@ import '../models/user_model.dart';
 import '../repository/auth_repository.dart';
 import '../../../core/network/sync_manager.dart';
 import '../../../core/storage/session_cleanup.dart';
+import '../../../core/storage/secure_storage.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/services/push_notification_service.dart';
@@ -82,6 +83,7 @@ class AuthError extends AuthState {
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final AuthRepository _authRepository;
   StreamSubscription<void>? _forcedLogoutSub;
+  Timer? _sessionWatchdogTimer;
 
   AuthBloc({required AuthRepository authRepository})
       : _authRepository = authRepository,
@@ -92,12 +94,39 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthSessionExpired>(_onSessionExpired);
 
     _forcedLogoutSub = SessionCleanup.onForcedLogout.listen((_) {
-      if (!isClosed) add(AuthSessionExpired());
+      if (!isClosed && state is Authenticated) {
+        add(AuthSessionExpired());
+      }
+    });
+  }
+
+  void _startSessionWatchdog() async {
+    _sessionWatchdogTimer?.cancel();
+    final secureStorage = SecureStorage();
+    final loginTime = await secureStorage.getSessionLoginTime();
+    if (loginTime == null) return;
+
+    final expirationHours = await secureStorage.getSessionExpirationHours();
+    final maxDurationMs = expirationHours * 3600 * 1000;
+    final elapsedMs = DateTime.now().millisecondsSinceEpoch - loginTime.millisecondsSinceEpoch;
+    final remainingMs = maxDurationMs - elapsedMs;
+
+    if (remainingMs <= 0) {
+      AppLogger.w('[AuthBloc] Session reached limit ($expirationHours hours). Auto-logging out.');
+      add(AuthSessionExpired());
+      return;
+    }
+
+    AppLogger.i('[AuthBloc] Session watchdog scheduled: expires in ${(remainingMs / 3600000).toStringAsFixed(1)} hours.');
+    _sessionWatchdogTimer = Timer(Duration(milliseconds: remainingMs), () {
+      AppLogger.w('[AuthBloc] Session expired ($expirationHours hours). Firing AuthSessionExpired.');
+      add(AuthSessionExpired());
     });
   }
 
   @override
   Future<void> close() async {
+    _sessionWatchdogTimer?.cancel();
     await _forcedLogoutSub?.cancel();
     return super.close();
   }
@@ -112,6 +141,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         final user = await _authRepository.getProfile();
         RoleGuard.currentUser = user;
         emit(Authenticated(user: user));
+        _startSessionWatchdog();
         unawaited(PushNotificationService.registerCurrentUser());
         unawaited(() async {
           try {
@@ -137,15 +167,18 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     emit(AuthLoading());
     try {
-      await _authRepository.login(
+      final user = await _authRepository.login(
         event.email,
         event.password,
         event.rememberMe,
       );
-      final user = await _authRepository.getProfile();
       RoleGuard.currentUser = user;
       AppLogger.i('User ${user.email} (${user.role}) logged in successfully');
-      
+
+      emit(Authenticated(user: user));
+      _startSessionWatchdog();
+      unawaited(PushNotificationService.registerCurrentUser());
+
       unawaited(() async {
         try {
           await SyncManager().performStartupSync();
@@ -156,9 +189,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           AppLogger.w('Post-login background sync warning', syncErr);
         }
       }());
-
-      emit(Authenticated(user: user));
-      unawaited(PushNotificationService.registerCurrentUser());
     } catch (e, stackTrace) {
       AppLogger.e('Login failed for ${event.email}', e, stackTrace);
       RoleGuard.currentUser = null;
@@ -171,6 +201,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     LogoutRequested event,
     Emitter<AuthState> emit,
   ) async {
+    _sessionWatchdogTimer?.cancel();
     RoleGuard.currentUser = null;
     try {
       await NotificationCenter.clearSession();
@@ -191,6 +222,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     AuthSessionExpired event,
     Emitter<AuthState> emit,
   ) async {
+    _sessionWatchdogTimer?.cancel();
     try {
       await SessionCleanup.clearLocalSession(clearToken: true);
     } catch (_) {}

@@ -2130,7 +2130,7 @@ class _LeadTile extends StatelessWidget {
         [
           lead.clientMobile,
           '${lead.propertyTypeName}${lead.configurationName != null ? ' (${lead.configurationName})' : ''}',
-          if (lead.areaNames.isNotEmpty) lead.areaNames.join(', '),
+          lead.displayAreasText,
           if (followup.isNotEmpty) 'Follow-up $followup',
         ].join('  •  '),
         style: CRMTypography.caption.copyWith(

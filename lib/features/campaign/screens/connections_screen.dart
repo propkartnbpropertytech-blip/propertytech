@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
@@ -11,9 +12,12 @@ import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_permission_denied.dart';
 import '../../integration/services/integration_service.dart';
 import 'campaign_subshell_header.dart';
+import '../bloc/campaign_connections_bloc.dart';
+import '../models/campaign_connection_model.dart';
 
 class ConnectionsScreen extends StatefulWidget {
-  const ConnectionsScreen({super.key});
+  final String? providerFocus;
+  const ConnectionsScreen({super.key, this.providerFocus});
 
   @override
   State<ConnectionsScreen> createState() => _ConnectionsScreenState();
@@ -115,48 +119,244 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             children: [
               // Header
               CampaignSubshellHeader(
-                activeTab: 'connections',
-                trailing: CRMButton(
-                  label: 'Setup Guides',
-                  prefixIcon: Icons.menu_book_rounded,
-                  variant: CRMButtonVariant.outline,
-                  height: 40,
-                  onPressed: () => _showSetupGuidesModal(context),
-                ),
+                activeTab: widget.providerFocus == 'META'
+                    ? 'meta'
+                    : (widget.providerFocus == 'HOUSING' ? 'housing' : 'connections'),
+                trailing: widget.providerFocus == null
+                    ? IconButton(
+                        tooltip: 'Manage connections',
+                        onPressed: () => _showManageConnectionsSheet(context),
+                        icon: const Icon(Icons.add_rounded),
+                      )
+                    : CRMButton(
+                        label: 'Back to Connections',
+                        prefixIcon: Icons.arrow_back_rounded,
+                        variant: CRMButtonVariant.outline,
+                        height: 40,
+                        onPressed: () => context.go('/campaign/connections'),
+                      ),
               ),
 
               const SizedBox(height: CRMSpacing.l),
 
               // Active & Ready Connectors Grid
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isWide = constraints.maxWidth > 900;
-                  return isWide
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: _buildMetaConnectionCard(context)),
-                            const SizedBox(width: CRMSpacing.l),
-                            Expanded(child: _buildGoogleSheetsCard(context)),
-                          ],
-                        )
-                      : Column(
-                          children: [
-                            _buildMetaConnectionCard(context),
+              BlocConsumer<CampaignConnectionsBloc, CampaignConnectionsState>(
+                bloc: CampaignConnectionsBloc()..add(const FetchCampaignConnectionsEvent(silent: true)),
+                listener: (context, connState) {
+                  if (connState.successMessage != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(connState.successMessage!),
+                        backgroundColor: CRMColors.success,
+                      ),
+                    );
+                    CampaignConnectionsBloc().add(const ClearCampaignConnectionMessageEvent());
+                  }
+                  if (connState.errorMessage != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(connState.errorMessage!),
+                        backgroundColor: CRMColors.danger,
+                      ),
+                    );
+                    CampaignConnectionsBloc().add(const ClearCampaignConnectionMessageEvent());
+                  }
+                },
+                builder: (context, connState) {
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isWide = constraints.maxWidth > 900;
+                      final focus = widget.providerFocus?.toUpperCase();
+                      if (focus == 'META') {
+                        return _buildMetaConnectionCard(context);
+                      }
+                      if (focus == 'HOUSING') {
+                        return _buildHousingConnectionCard(context, connState);
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (isWide)
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: _buildProviderTile(
+                                    context,
+                                    title: 'Meta',
+                                    subtitle: 'Lead Ads webhook & quality feedback',
+                                    icon: Icons.campaign_rounded,
+                                    color: CRMColors.terracotta,
+                                    route: '/campaign/connections/meta',
+                                    status: 'Listening',
+                                  ),
+                                ),
+                                const SizedBox(width: CRMSpacing.l),
+                                Expanded(
+                                  child: _buildProviderTile(
+                                    context,
+                                    title: 'Housing',
+                                    subtitle: 'HMAC pull & quality status',
+                                    icon: Icons.apartment_rounded,
+                                    color: const Color(0xFF6C5CE7),
+                                    route: '/campaign/connections/housing',
+                                    status: connState.findByProvider('HOUSING')?.isConnected == true
+                                        ? 'Connected'
+                                        : 'Ready',
+                                  ),
+                                ),
+                              ],
+                            )
+                          else ...[
+                            _buildProviderTile(
+                              context,
+                              title: 'Meta',
+                              subtitle: 'Lead Ads webhook & quality feedback',
+                              icon: Icons.campaign_rounded,
+                              color: CRMColors.terracotta,
+                              route: '/campaign/connections/meta',
+                              status: 'Listening',
+                            ),
                             const SizedBox(height: CRMSpacing.l),
-                            _buildGoogleSheetsCard(context),
+                            _buildProviderTile(
+                              context,
+                              title: 'Housing',
+                              subtitle: 'HMAC pull & quality status',
+                              icon: Icons.apartment_rounded,
+                              color: const Color(0xFF6C5CE7),
+                              route: '/campaign/connections/housing',
+                              status: connState.findByProvider('HOUSING')?.isConnected == true
+                                  ? 'Connected'
+                                  : 'Ready',
+                            ),
                           ],
-                        );
+                        ],
+                      );
+                    },
+                  );
                 },
               ),
 
               const SizedBox(height: CRMSpacing.l),
-
-              // Future Connectors Section
-              _buildFutureConnectorsCard(context),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildProviderTile(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required String route,
+    required String status,
+  }) {
+    return InkWell(
+      onTap: () => context.go(route),
+      borderRadius: BorderRadius.circular(16),
+      child: CRMCard(
+        elevated: true,
+        accentBorder: color.withValues(alpha: 0.35),
+        title: title,
+        subtitle: subtitle,
+        headerAction: Text(
+          status.toUpperCase(),
+          style: CRMTypography.captionBold.copyWith(color: color, fontSize: 11),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Open connection settings',
+                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: CRMColors.textSecondaryOf(context)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showManageConnectionsSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Manage connections', style: CRMTypography.headline),
+              const SizedBox(height: 8),
+              const Text('Active connectors appear as Meta and Housing. Additional channels are not implemented yet.'),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.campaign_rounded),
+                title: const Text('Meta Lead Ads'),
+                subtitle: const Text('Configured'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.go('/campaign/connections/meta');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.apartment_rounded),
+                title: const Text('Housing.com'),
+                subtitle: const Text('Configured'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.go('/campaign/connections/housing');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.table_chart_rounded),
+                title: const Text('Google Sheets'),
+                subtitle: const Text('Optional inbox import'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showGoogleSheetsSheet(context);
+                },
+              ),
+              const ListTile(
+                leading: Icon(Icons.chat_rounded),
+                title: Text('WhatsApp Cloud API'),
+                subtitle: Text('Not implemented'),
+              ),
+              const ListTile(
+                leading: Icon(Icons.ads_click_rounded),
+                title: Text('Google Ads'),
+                subtitle: Text('Not implemented'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showGoogleSheetsSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: SingleChildScrollView(child: _buildGoogleSheetsCard(context)),
       ),
     );
   }
@@ -234,49 +434,6 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                     Clipboard.setData(ClipboardData(text: _service.webhookUrl));
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Production Webhook URL copied!')),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: CRMSpacing.m),
-
-          // Direct Hostinger VPS IP URL
-          Text(
-            'DIRECT HOSTINGER VPS IP ENDPOINT (PORT 5001)',
-            style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
-          ),
-          const SizedBox(height: CRMSpacing.xs),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
-            decoration: BoxDecoration(
-              color: CRMColors.cardBgOf(context),
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              border: Border.all(color: CRMColors.borderOf(context)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.dns_rounded, color: CRMColors.textSecondaryOf(context), size: 18),
-                const SizedBox(width: CRMSpacing.s),
-                Expanded(
-                  child: SelectableText(
-                    _service.vpsDirectWebhookUrl,
-                    style: CRMTypography.caption.copyWith(
-                      fontFamily: 'monospace',
-                      color: CRMColors.textSecondaryOf(context),
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.copy_rounded, size: 16),
-                  tooltip: 'Copy Direct VPS URL',
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: _service.vpsDirectWebhookUrl));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Direct VPS IP Webhook URL copied!')),
                     );
                   },
                 ),
@@ -403,6 +560,343 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  // --- HOUSING.COM CONNECTION CARD ---
+  Widget _buildHousingConnectionCard(BuildContext context, CampaignConnectionsState connState) {
+    final conn = connState.findByProvider('HOUSING');
+    final isConnected = conn?.isConnected ?? false;
+    final isSyncing = connState.syncingIds.contains(conn?.id) || (conn?.isSyncing ?? false);
+    final isTesting = connState.testingIds.contains(conn?.id);
+    final isToggling = connState.togglingIds.contains(conn?.id);
+    final isEnabled = conn?.isActive ?? true;
+
+    final accountIdMasked = conn?.credentials['account_id']?.toString() ?? '••••••••';
+    final hasHmac = conn?.credentials['has_hmac_key'] == true || conn?.credentials['is_configured'] == true;
+
+    return CRMCard(
+      elevated: true,
+      accentBorder: const Color(0xFF6C5CE7).withValues(alpha: 0.35),
+      title: 'Housing.com Leads API',
+      subtitle: 'HMAC-SHA256 authenticated pull connector for Housing.com verified property inquiries.',
+      headerAction: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: (isEnabled ? (isConnected ? CRMColors.success : const Color(0xFF6C5CE7)) : CRMColors.textSecondaryOf(context)).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: (isEnabled ? (isConnected ? CRMColors.success : const Color(0xFF6C5CE7)) : CRMColors.textSecondaryOf(context)).withValues(alpha: 0.4),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: isEnabled ? (isConnected ? CRMColors.success : const Color(0xFF6C5CE7)) : CRMColors.textSecondaryOf(context),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  isSyncing
+                      ? 'SYNCING...'
+                      : (isEnabled ? (isConnected ? 'ACTIVE & CONNECTED' : 'READY TO SYNC') : 'DISABLED'),
+                  style: CRMTypography.captionBold.copyWith(
+                    color: isEnabled ? (isConnected ? CRMColors.success : const Color(0xFF6C5CE7)) : CRMColors.textSecondaryOf(context),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (conn != null) ...[
+            const SizedBox(width: 8),
+            Switch.adaptive(
+              value: isEnabled,
+              activeThumbColor: const Color(0xFF6C5CE7),
+              onChanged: isToggling
+                  ? null
+                  : (val) {
+                      CampaignConnectionsBloc().add(
+                        ToggleCampaignConnectionEvent(id: conn.id, isActive: val),
+                      );
+                    },
+            ),
+          ],
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: CRMSpacing.s),
+
+          // Credentials status
+          Text(
+            'PROFILE & AUTHENTICATION (HMAC-SHA256)',
+            style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+          ),
+          const SizedBox(height: CRMSpacing.xs),
+          Container(
+            padding: const EdgeInsets.all(CRMSpacing.m),
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+              border: Border.all(color: CRMColors.borderOf(context)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.badge_rounded, size: 18, color: Color(0xFF6C5CE7)),
+                    const SizedBox(width: CRMSpacing.s),
+                    Text('Account / Profile ID:', style: CRMTypography.captionBold),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        accountIdMasked,
+                        style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: CRMColors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        hasHmac ? 'Key Configured' : 'Key Missing',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: hasHmac ? CRMColors.success : CRMColors.danger),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 16),
+                Row(
+                  children: [
+                    const Icon(Icons.vpn_key_rounded, size: 18, color: Color(0xFF6C5CE7)),
+                    const SizedBox(width: CRMSpacing.s),
+                    Text('HMAC Signature:', style: CRMTypography.captionBold),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        '••••••••••••••••••••••••••••••••',
+                        style: TextStyle(fontFamily: 'monospace', fontSize: 12),
+                      ),
+                    ),
+                    Text(
+                      'AES-256 Encrypted',
+                      style: CRMTypography.caption.copyWith(fontSize: 10, color: CRMColors.textSecondaryOf(context)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: CRMSpacing.m),
+
+          // Last sync timestamp
+          if (conn?.lastSyncAt != null) ...[
+            Row(
+              children: [
+                Icon(Icons.history_rounded, size: 14, color: CRMColors.textSecondaryOf(context)),
+                const SizedBox(width: 6),
+                Text(
+                  'Last synced: ${conn!.lastSyncAt!.toLocal().toString().split('.').first}',
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                ),
+              ],
+            ),
+            const SizedBox(height: CRMSpacing.s),
+          ],
+
+          if (conn?.lastError != null && conn!.lastError!.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: CRMColors.danger.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: CRMColors.danger.withValues(alpha: 0.3)),
+              ),
+              child: Text(
+                'Sync Warning: ${conn.lastError}',
+                style: CRMTypography.caption.copyWith(color: CRMColors.danger, fontSize: 11),
+              ),
+            ),
+            const SizedBox(height: CRMSpacing.s),
+          ],
+
+          // Action Buttons
+          Wrap(
+            spacing: CRMSpacing.s,
+            runSpacing: CRMSpacing.s,
+            children: [
+              CRMButton(
+                label: isSyncing ? 'Syncing Leads...' : 'Sync Leads Now',
+                prefixIcon: Icons.sync_rounded,
+                height: 40,
+                isLoading: isSyncing,
+                onPressed: (isSyncing || conn == null || !isEnabled)
+                    ? null
+                    : () {
+                        CampaignConnectionsBloc().add(SyncCampaignConnectionEvent(id: conn.id));
+                      },
+              ),
+              CRMButton(
+                label: isTesting ? 'Testing...' : 'Test Connection',
+                prefixIcon: Icons.speed_rounded,
+                variant: CRMButtonVariant.outline,
+                height: 40,
+                isLoading: isTesting,
+                onPressed: (isTesting || conn == null)
+                    ? null
+                    : () {
+                        CampaignConnectionsBloc().add(TestCampaignConnectionEvent(id: conn.id));
+                      },
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.edit_rounded, size: 16),
+                label: const Text('Configure Credentials'),
+                onPressed: () => _showHousingCredentialsModal(context, conn),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.menu_book_rounded, size: 16),
+                label: const Text('Housing Setup Guide'),
+                onPressed: () => _showHousingSetupGuide(context),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showHousingCredentialsModal(BuildContext context, CampaignConnectionModel? conn) {
+    final accountIdController = TextEditingController();
+    final hmacKeyController = TextEditingController();
+    bool obscureKey = true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.apartment_rounded, color: Color(0xFF6C5CE7)),
+              SizedBox(width: 8),
+              Expanded(child: Text('Housing.com API Credentials')),
+            ],
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Enter your Profile ID and Encryption Key provided by Housing.com. Credentials are encrypted using AES-256-GCM before storage.',
+                  style: TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: accountIdController,
+                  decoration: const InputDecoration(
+                    labelText: 'Profile ID / Account ID',
+                    hintText: 'e.g. 57200168',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.badge_rounded),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: hmacKeyController,
+                  obscureText: obscureKey,
+                  decoration: InputDecoration(
+                    labelText: 'Encryption Key (HMAC-SHA256)',
+                    hintText: '32-character hex key',
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.vpn_key_rounded),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscureKey ? Icons.visibility_off : Icons.visibility),
+                      onPressed: () => setDialogState(() => obscureKey = !obscureKey),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final accId = accountIdController.text.trim();
+                final key = hmacKeyController.text.trim();
+                if (accId.isEmpty && key.isEmpty) {
+                  Navigator.pop(ctx);
+                  return;
+                }
+                CampaignConnectionsBloc().add(
+                  SaveCampaignConnectionEvent(
+                    data: {
+                      if (conn?.id != null) 'id': conn!.id,
+                      'provider_type': 'HOUSING',
+                      'display_name': 'Housing.com Integration',
+                      'credentials': {
+                        if (accId.isNotEmpty) 'account_id': accId,
+                        if (key.isNotEmpty) 'hmac_key': key,
+                      },
+                    },
+                  ),
+                );
+                Navigator.pop(ctx);
+              },
+              child: const Text('Save Encrypted Credentials'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showHousingSetupGuide(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.apartment_rounded, color: Color(0xFF6C5CE7)),
+            SizedBox(width: 8),
+            Expanded(child: Text('Housing.com Integration Guide')),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildGuideStep('1', 'Obtain API Access', 'Contact your Housing.com account manager to request Lead API access, your Profile ID, and Encryption Key.'),
+                _buildGuideStep('2', 'Cryptographic Signature', 'PropKart calculates a SHA-256 HMAC signature using your key and the current UTC timestamp for each request.'),
+                _buildGuideStep('3', 'Deduplication & Mapping', 'Incoming leads are normalized into the authoritative public.leads schema and deduplicated by external lead_id.'),
+                _buildGuideStep('4', 'Telecaller Allocation', 'Newly synced leads are automatically queued for round-robin allocation respecting the 10-lead capacity cap.'),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
         ],
       ),
     );
@@ -724,6 +1218,21 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                     onTap: () {
                       Navigator.pop(ctx);
                       _showMetaSetupGuide(context);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    leading: const Icon(Icons.apartment_rounded, color: Color(0xFF6C5CE7), size: 28),
+                    title: const Text('Housing.com Integration Guide', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Connect Housing.com HMAC-SHA256 authenticated Lead API'),
+                    trailing: const Icon(Icons.chevron_right),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(color: CRMColors.borderOf(context)),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showHousingSetupGuide(context);
                     },
                   ),
                   const SizedBox(height: 10),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../api/dio_client.dart';
 
 /// Represents a single controllable permission metric.
 class PermissionItem {
@@ -55,7 +56,7 @@ class PermissionMatrixService extends ChangeNotifier {
     _init();
   }
 
-  static const String _storageKey = 'propkart_role_permission_matrix_v1';
+  static const String _storageKey = 'propkart_role_permission_matrix_v2';
 
   // Master definition of all permissions in the system
   static const List<PermissionItem> allPermissions = [
@@ -118,6 +119,46 @@ class PermissionMatrixService extends ChangeNotifier {
       relatedRoute: '/campaign',
       defaultAdmin: true,
       defaultTelecaller: true,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.telecaller_leads',
+      title: 'Telecaller Leads',
+      description: 'Leads allocated to the signed-in Telecaller (/telecaller/leads).',
+      category: PermissionCategory.pages,
+      relatedRoute: '/telecaller/leads',
+      defaultAdmin: false,
+      defaultTelecaller: true,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.callbacks',
+      title: 'Telecaller Callbacks',
+      description: 'Owned callbacks (/telecaller/callbacks).',
+      category: PermissionCategory.pages,
+      relatedRoute: '/telecaller/callbacks',
+      defaultAdmin: false,
+      defaultTelecaller: true,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.cnr',
+      title: 'CNR / Retry',
+      description: 'Owned CNR retry desk (/telecaller/cnr).',
+      category: PermissionCategory.pages,
+      relatedRoute: '/telecaller/cnr',
+      defaultAdmin: false,
+      defaultTelecaller: true,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.lead_allocation',
+      title: 'Lead Allocation Monitoring',
+      description: 'Admin queue and Telecaller workload monitor (/admin/lead-allocation).',
+      category: PermissionCategory.pages,
+      relatedRoute: '/admin/lead-allocation',
+      defaultAdmin: true,
+      defaultTelecaller: false,
       defaultSales: false,
     ),
     PermissionItem(
@@ -291,7 +332,7 @@ class PermissionMatrixService extends ChangeNotifier {
       description: 'Register client requirements, budgets, configurations, and preferred areas.',
       category: PermissionCategory.leads,
       defaultAdmin: true,
-      defaultTelecaller: true,
+      defaultTelecaller: false,
       defaultSales: true,
     ),
     PermissionItem(
@@ -300,7 +341,7 @@ class PermissionMatrixService extends ChangeNotifier {
       description: 'Modify inquiry status, budget brackets, client preferences, and notes.',
       category: PermissionCategory.leads,
       defaultAdmin: true,
-      defaultTelecaller: true,
+      defaultTelecaller: false,
       defaultSales: true,
     ),
     PermissionItem(
@@ -374,7 +415,7 @@ class PermissionMatrixService extends ChangeNotifier {
       description: 'Tag inbound leads as Follow up, Interested, or Not interested.',
       category: PermissionCategory.campaign,
       defaultAdmin: true,
-      defaultTelecaller: true,
+      defaultTelecaller: false,
       defaultSales: false,
     ),
     PermissionItem(
@@ -383,7 +424,7 @@ class PermissionMatrixService extends ChangeNotifier {
       description: 'One-click transfer cleaned campaign leads to Leads or Properties pages.',
       category: PermissionCategory.campaign,
       defaultAdmin: true,
-      defaultTelecaller: true,
+      defaultTelecaller: false,
       defaultSales: false,
     ),
     PermissionItem(
@@ -591,6 +632,42 @@ class PermissionMatrixService extends ChangeNotifier {
     }
   }
 
+  /// Syncs dynamic feature permissions directly from backend/database
+  Future<void> syncFromBackend() async {
+    try {
+      final res = await DioClient.dio.get('/super-admin/feature-permissions');
+      final data = res.data['data'];
+      if (data is Map) {
+        final roleDefaults = data['roleDefaults'];
+        if (roleDefaults is List) {
+          for (final row in roleDefaults) {
+            final role = _normalizeRole(row['role_name']?.toString());
+            final featureKey = row['feature_key']?.toString();
+            final enabled = row['enabled'] == true;
+            if (featureKey != null && _overrides.containsKey(role)) {
+              _applyBackendFeatureToggle(role, featureKey, enabled);
+            }
+          }
+        }
+        notifyListeners();
+        await _saveToStorage();
+      }
+    } catch (_) {
+      // Non-blocking; offline fallback remains valid
+    }
+  }
+
+  void _applyBackendFeatureToggle(String role, String featureKey, bool enabled) {
+    if (!_overrides.containsKey(role)) {
+      _overrides[role] = {};
+    }
+    for (final p in allPermissions) {
+      if (_featureKeyForPermission(p.key) == featureKey) {
+        _overrides[role]![p.key] = enabled;
+      }
+    }
+  }
+
   /// Evaluates whether a [role] has a specific [permissionKey].
   /// Note: 'Super Admin' always returns `true` (locked master).
   bool hasPermission(String? role, String permissionKey) {
@@ -635,6 +712,14 @@ class PermissionMatrixService extends ChangeNotifier {
       permKey = 'page.dashboard';
     } else if (r.startsWith('/properties')) {
       permKey = 'page.properties';
+    } else if (r.startsWith('/telecaller/callbacks')) {
+      permKey = 'page.callbacks';
+    } else if (r.startsWith('/telecaller/cnr')) {
+      permKey = 'page.cnr';
+    } else if (r.startsWith('/telecaller')) {
+      permKey = 'page.telecaller_leads';
+    } else if (r.startsWith('/admin/lead-allocation')) {
+      permKey = 'page.lead_allocation';
     } else if (r.startsWith('/requirements')) {
       permKey = 'page.leads';
     } else if (r.startsWith('/users')) {
@@ -678,6 +763,7 @@ class PermissionMatrixService extends ChangeNotifier {
     _overrides[normRole]![permissionKey] = allowed;
     notifyListeners();
     await _saveToStorage();
+    await _syncRoleFeatureToBackend(normRole, permissionKey, allowed);
   }
 
   /// Bulk updates all permissions for a category for a given role.
@@ -747,6 +833,39 @@ class PermissionMatrixService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error saving permission matrix: $e');
     }
+  }
+
+  Future<void> _syncRoleFeatureToBackend(String role, String permissionKey, bool allowed) async {
+    final featureKey = _featureKeyForPermission(permissionKey);
+    if (featureKey == null) return;
+    try {
+      await DioClient.dio.patch(
+        '/super-admin/feature-permissions/role',
+        data: {
+          'roleName': role,
+          'featureKey': featureKey,
+          'enabled': allowed,
+        },
+      );
+    } catch (e) {
+      debugPrint('Permission backend sync skipped: $e');
+    }
+  }
+
+  String? _featureKeyForPermission(String permissionKey) {
+    if (permissionKey.startsWith('page.dashboard')) return 'dashboard';
+    if (permissionKey.startsWith('page.properties')) return 'properties';
+    if (permissionKey.startsWith('page.leads') || permissionKey.startsWith('page.telecaller_leads')) {
+      return 'leads';
+    }
+    if (permissionKey.startsWith('page.callbacks')) return 'callbacks';
+    if (permissionKey.startsWith('page.cnr')) return 'cnr';
+    if (permissionKey.startsWith('page.library')) return 'library';
+    if (permissionKey.startsWith('page.settings')) return 'settings';
+    if (permissionKey.startsWith('page.recycle_bin')) return 'recycle_bin';
+    if (permissionKey.startsWith('page.campaign')) return 'campaign';
+    if (permissionKey.startsWith('page.lead_allocation')) return 'lead_allocation';
+    return null;
   }
 
   String _normalizeRole(String? raw) {

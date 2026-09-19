@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:persistent_bottom_nav_bar_v2/persistent_bottom_nav_bar_v2.dart';
 import '../../security/role_guard.dart';
+import '../../security/permission_matrix_service.dart';
 import '../../../../features/auth/bloc/auth_bloc.dart';
 import '../../theme/theme_manager.dart';
 import '../tokens/app_colors.dart';
@@ -26,6 +27,9 @@ import '../../../features/properties/models/property_model.dart';
 import '../../../features/properties/repository/properties_repository.dart';
 import '../../navigation/mobile_system_back_handler.dart';
 import '../../../../features/shell/widgets/sidebar.dart';
+import '../../../../features/telecaller/telecaller_heartbeat_service.dart';
+import '../../../../features/telecaller/services/telecaller_shift_manager.dart';
+import '../../../../features/telecaller/widgets/telecaller_shift_gate_overlay.dart';
 import '../../../../features/shell/widgets/top_bar.dart';
 import '../../../../features/team_messages/services/team_messages_service.dart';
 
@@ -126,6 +130,10 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
       await NotificationCenter.init(userId: userId);
       await _fetchNotifications();
+      if (authState is Authenticated) {
+        TelecallerHeartbeatService.instance.start(authState);
+        unawaited(PermissionMatrixService.instance.syncFromBackend());
+      }
       _notificationsTimer?.cancel();
       _notificationsTimer = Timer.periodic(const Duration(seconds: 25), (
         _,
@@ -146,6 +154,7 @@ class _CRMAppShellState extends State<CRMAppShell>
     _searchFocusNode.dispose();
     _searchDebounce?.cancel();
     _notificationsTimer?.cancel();
+    TelecallerHeartbeatService.instance.stop();
     super.dispose();
   }
 
@@ -1292,6 +1301,9 @@ class _CRMAppShellState extends State<CRMAppShell>
       if (userState.user.role.isNotEmpty) {
         currentUserRole = userState.user.role;
       }
+      if (RoleGuard.isTelecaller(currentUserRole)) {
+        TelecallerShiftManager.instance.init(userState.user.id);
+      }
     }
 
     final targetIndex = _getTabRouteIndex(location);
@@ -1355,8 +1367,10 @@ class _CRMAppShellState extends State<CRMAppShell>
                         ),
                       )
                     : null,
-                body: Stack(
-                  children: [
+                body: TelecallerShiftGateOverlay(
+                  isTelecaller: RoleGuard.isTelecaller(currentUserRole),
+                  child: Stack(
+                    children: [
                     SizedBox(
                   width: size.width,
                   child: Row(
@@ -1471,7 +1485,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                                                   _isBottomBarVisible = false;
                                                 });
                                               }
-                                            } else if (scrollDelta < 0) {
+                                            } else {
                                               if (!_isBottomBarVisible) {
                                                 setState(() {
                                                   _isBottomBarVisible = true;
@@ -1532,6 +1546,7 @@ class _CRMAppShellState extends State<CRMAppShell>
               ),
             ),
           ),
+        ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),
           ValueListenableBuilder<bool>(
             valueListenable: SyncManager().isSyncing,
@@ -2495,7 +2510,7 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   Color _getCategoryColor(dynamic rawType) {
     final type = (rawType ?? '').toString().toLowerCase();
-    if (type.contains('meta')) return const Color(0xFF10B981);
+    if (type.contains('meta') || type.contains('housing')) return const Color(0xFF10B981);
     if (type.contains('assign')) return const Color(0xFF3B82F6);
     if (type.contains('site_visit') || type.contains('visit')) return const Color(0xFF8B5CF6);
     if (type.contains('followup')) return const Color(0xFFF59E0B);
@@ -2506,6 +2521,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   String _formatCategoryLabel(dynamic rawType) {
     final type = (rawType ?? '').toString().toLowerCase();
     if (type.contains('meta')) return 'META LEAD';
+    if (type.contains('housing')) return 'HOUSING LEAD';
     if (type.contains('assign')) return 'LEAD ASSIGNED';
     if (type.contains('site_visit') || type.contains('visit')) return 'SITE VISIT';
     if (type.contains('property')) return 'PROPERTY ADDED';
@@ -2828,9 +2844,14 @@ class _CRMAppShellState extends State<CRMAppShell>
                         route: '/campaign/connections',
                       ),
                       _SidebarSubItemData(
-                        icon: Icons.table_chart_rounded,
-                        label: 'Campaign Leads',
-                        route: '/campaign/leads',
+                        icon: Icons.campaign_rounded,
+                        label: 'Meta',
+                        route: '/campaign/meta',
+                      ),
+                      _SidebarSubItemData(
+                        icon: Icons.apartment_rounded,
+                        label: 'Housing',
+                        route: '/campaign/housing',
                       ),
                     ],
                   ),

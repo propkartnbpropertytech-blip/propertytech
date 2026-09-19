@@ -47,6 +47,8 @@ class CRMPageHeader extends StatelessWidget {
         ],
         Text(
           title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: CRMTypography.pageTitle.copyWith(
             color: CRMColors.textOf(context),
             fontSize: isMobile ? 22 : 28,
@@ -57,6 +59,8 @@ class CRMPageHeader extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             benefit!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: CRMTypography.caption.copyWith(
               color: CRMColors.textSecondaryOf(context),
               fontSize: 12,

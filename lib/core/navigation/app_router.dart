@@ -7,6 +7,8 @@ import '../../features/auth/bloc/auth_bloc.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/reset_password_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
+import '../../features/telecaller/screens/telecaller_callbacks_screen.dart';
+import '../../features/admin/bloc/lead_allocation_monitor_bloc.dart';
 import '../../features/properties/screens/properties_screen.dart';
 import '../../features/properties/screens/property_search_screen.dart';
 import '../../features/properties/screens/property_detail_screen.dart';
@@ -44,6 +46,7 @@ import '../../features/campaign/screens/campaign_leads_screen.dart';
 import '../../features/reports/screens/reports_shell.dart';
 import '../../features/reports/screens/leads/overall_business_insight_screen.dart';
 import '../../features/reports/screens/leads/telecaller_report_screen.dart';
+import '../../features/reports/screens/leads/super_admin_metrics_screen.dart';
 import '../../features/reports/screens/leads/sales_report_placeholder.dart';
 import '../../features/reports/screens/leads/lead_metrics_screen.dart';
 import '../../features/reports/screens/properties/properties_coming_soon_screen.dart';
@@ -191,6 +194,41 @@ class AppRouter {
             ),
           ),
           GoRoute(
+            path: '/telecaller/leads',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const CampaignLeadsScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/telecaller/callbacks',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const TelecallerCallbacksScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/telecaller/cnr',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const TelecallerCnrScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/admin/lead-allocation',
+            redirect: (context, state) {
+              final role = RoleGuard.currentUser?.role ?? '';
+              if (!RoleGuard.isAdmin(role) && !RoleGuard.isSuperAdmin(role)) {
+                return '/telecaller/leads';
+              }
+              return null;
+            },
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const LeadAllocationMonitorScreen(),
+            ),
+          ),
+          GoRoute(
             path: '/properties',
             pageBuilder: (context, state) {
               final openId = state.uri.queryParameters['openId'] ?? (state.extra as String?);
@@ -232,10 +270,44 @@ class AppRouter {
             ),
           ),
           GoRoute(
-            path: '/campaign/leads',
+            path: '/campaign/connections/meta',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const CampaignLeadsScreen(),
+              child: const ConnectionsScreen(providerFocus: 'META'),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/connections/housing',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const ConnectionsScreen(providerFocus: 'HOUSING'),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/leads',
+            pageBuilder: (context, state) {
+              final source = state.uri.queryParameters['source'];
+              return crmFadeSlidePage(
+                key: state.pageKey,
+                child: CampaignLeadsScreen(
+                  initialSource: source,
+                  lockSource: source,
+                ),
+              );
+            },
+          ),
+          GoRoute(
+            path: '/campaign/housing',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const CampaignLeadsScreen(lockSource: 'Housing.com'),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/meta',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const CampaignLeadsScreen(lockSource: 'Meta Ads'),
             ),
           ),
           GoRoute(
@@ -390,6 +462,13 @@ class AppRouter {
                 ),
               ),
               GoRoute(
+                path: '/reports/leads/super-admin-metrics',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const SuperAdminMetricsScreen(),
+                ),
+              ),
+              GoRoute(
                 path: '/reports/leads/sales',
                 pageBuilder: (context, state) => crmFadeSlidePage(
                   key: state.pageKey,
@@ -501,10 +580,10 @@ class AppRouter {
       final isAuthGate = loggingIn || onSplash || onGetStarted || isPublicShare || onTerms || onPrivacy || onResetPassword;
 
       if (authState is Authenticated) {
-        // Check 9-hour inactivity timeout
+        // Check session expiration (default 8h or admin configured)
         final secureStorage = SecureStorage();
-        final isInactiveExpired = await secureStorage.isSessionExpiredDueToInactivity();
-        if (isInactiveExpired) {
+        final isExpired = await secureStorage.isSessionExpired();
+        if (isExpired) {
           await SessionCleanup.clearLocalSession(clearToken: true);
           authBloc.add(AuthSessionExpired());
           final target = state.uri.toString();

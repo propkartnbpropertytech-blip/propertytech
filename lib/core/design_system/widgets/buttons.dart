@@ -90,26 +90,33 @@ class _CRMButtonState extends State<CRMButton> {
       ),
     );
 
-    Widget content = Row(
-      mainAxisSize: widget.width != null ? MainAxisSize.max : MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        if (widget.isLoading) ...[
-          SizedBox(
-            height: 14,
-            width: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(fgColor),
-            ),
-          ),
-          const SizedBox(width: CRMSpacing.xs),
-        ] else if (widget.prefixIcon != null) ...[
-          Icon(widget.prefixIcon, size: compact ? 14 : 16, color: fgColor),
-          const SizedBox(width: CRMSpacing.xs),
-        ],
-        if (widget.width != null) Flexible(child: labelText) else labelText,
-      ],
+    Widget content = LayoutBuilder(
+      builder: (context, constraints) {
+        final shrink = constraints.hasBoundedWidth &&
+            constraints.maxWidth.isFinite &&
+            constraints.maxWidth < double.infinity;
+        return Row(
+          mainAxisSize: shrink ? MainAxisSize.max : MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (widget.isLoading) ...[
+              SizedBox(
+                height: 14,
+                width: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(fgColor),
+                ),
+              ),
+              const SizedBox(width: CRMSpacing.xs),
+            ] else if (widget.prefixIcon != null) ...[
+              Icon(widget.prefixIcon, size: compact ? 14 : 16, color: fgColor),
+              const SizedBox(width: CRMSpacing.xs),
+            ],
+            if (shrink) Flexible(child: labelText) else labelText,
+          ],
+        );
+      },
     );
 
     return AnimatedScale(
