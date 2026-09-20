@@ -49,6 +49,7 @@ import 'package:propkart/core/storage/model_mappers.dart';
 import 'package:propkart/core/storage/isar_collections.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../utils/property_share_pdf.dart';
+import '../widgets/pdf_option_selection_dialog.dart';
 import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/telemetry/audit_dwell_tracker.dart';
@@ -9350,71 +9351,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
                                 ? null
                                 : () async {
-                                    setDialogState(() => isSharingPdf = true);
-                                    try {
-                                      final selected = allMatches
-                                          .where((m) => selectedPropIds.contains(m.property.id))
-                                          .map((m) => m.property)
-                                          .toList();
-                                      final bytes = await PropertySharePdf.build(selected);
-                                      final fileName = selected.length == 1
-                                          ? PropertySharePdf.fileName(selected.first)
-                                          : 'Selected_Properties_Details.pdf';
-
-                                      await FileDownloader.download(bytes, fileName);
-
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              selected.length == 1
-                                                  ? 'Property PDF ready to share.'
-                                                  : 'Selected properties PDF ready to share.',
-                                            ),
-                                          ),
-                                        );
-                                      }
-
-                                      final phone = req.clientMobile;
-                                      final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
-                                      String formattedPhone = cleanPhone;
-                                      if (cleanPhone.length == 10) {
-                                        formattedPhone = '91$cleanPhone';
-                                      }
-
-                                      final nativeUrl = "whatsapp://send?phone=$formattedPhone";
-                                      final nativeUri = Uri.parse(nativeUrl);
-
-                                      if (await canLaunchUrl(nativeUri)) {
-                                        await launchUrl(nativeUri, mode: LaunchMode.externalApplication);
-                                      } else {
-                                        final webUrl = "https://web.whatsapp.com/send?phone=$formattedPhone";
-                                        final webUri = Uri.parse(webUrl);
-                                        if (await canLaunchUrl(webUri)) {
-                                          await launchUrl(webUri, mode: LaunchMode.externalApplication);
-                                        } else {
-                                          final fallbackUrl = "https://wa.me/$formattedPhone";
-                                          final fallbackUri = Uri.parse(fallbackUrl);
-                                          if (await canLaunchUrl(fallbackUri)) {
-                                            await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
-                                          }
-                                        }
-                                      }
-                                    } catch (e) {
-                                      debugPrint('Share PDF failed: $e');
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Failed to create property PDF.'),
-                                            backgroundColor: CRMColors.danger,
-                                          ),
-                                        );
-                                      }
-                                    } finally {
-                                      if (context.mounted) {
-                                        setDialogState(() => isSharingPdf = false);
-                                      }
-                                    }
+                                    final selected = allMatches
+                                        .where((m) => selectedPropIds.contains(m.property.id))
+                                        .map((m) => m.property)
+                                        .toList();
+                                    await PdfOptionSelectionDialog.show(
+                                      context,
+                                      properties: selected,
+                                      recipientPhone: req.clientMobile,
+                                    );
                                   },
                           ),
                           OutlinedButton.icon(

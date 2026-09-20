@@ -19,6 +19,7 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
+import '../../../core/design_system/widgets/crm_embedded_video_player.dart';
 import '../../../core/design_system/widgets/data_table.dart';
 import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
@@ -35,6 +36,7 @@ import '../../../core/api/dio_client.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../requirements/utils/property_share_pdf.dart';
+import '../../requirements/widgets/pdf_option_selection_dialog.dart';
 
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
@@ -530,104 +532,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           onPressed: (isGeneratingLink || isSharingPdf)
                               ? null
                               : () async {
-                                  setDialogState(() => isSharingPdf = true);
-                                  try {
-                                    final bytes =
-                                        await PropertySharePdf.build([p]);
-                                    final fileName =
-                                        PropertySharePdf.fileName(p);
-
-                                    await FileDownloader.download(
-                                        bytes, fileName);
-
-                                    AuditTelemetryService.instance.trackPropertyShare(
-                                      propertyId: p.id,
-                                      channel: 'PDF Download',
-                                      extra: {
-                                        'property_code': p.propertyCode,
-                                        'title': p.title,
-                                        'filename': fileName,
-                                      },
-                                    );
-
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Property PDF ready to share.'),
-                                        ),
-                                      );
-                                    }
-
-                                    final phone = p.ownerMobile;
-                                    final cleanPhone =
-                                        phone.replaceAll(RegExp(r'\D'), '');
-                                    String formattedPhone = cleanPhone;
-                                    if (cleanPhone.length == 10) {
-                                      formattedPhone = '91$cleanPhone';
-                                    }
-
-                                    AuditTelemetryService.instance.trackPropertyShare(
-                                      propertyId: p.id,
-                                      channel: 'WhatsApp',
-                                      recipientInfo: formattedPhone.isNotEmpty ? formattedPhone : null,
-                                      extra: {
-                                        'property_code': p.propertyCode,
-                                        'title': p.title,
-                                      },
-                                    );
-
-                                    final text = Uri.encodeComponent(
-                                        "Hello, please find property details for ${p.title ?? 'Property'} (${p.propertyCode}).");
-                                    final nativeUrl = formattedPhone.isNotEmpty
-                                        ? "whatsapp://send?phone=$formattedPhone&text=$text"
-                                        : "whatsapp://send?text=$text";
-                                    final nativeUri = Uri.parse(nativeUrl);
-
-                                    if (await canLaunchUrl(nativeUri)) {
-                                      await launchUrl(nativeUri,
-                                          mode:
-                                              LaunchMode.externalApplication);
-                                    } else {
-                                      final webUrl = formattedPhone.isNotEmpty
-                                          ? "https://web.whatsapp.com/send?phone=$formattedPhone&text=$text"
-                                          : "https://wa.me/?text=$text";
-                                      final webUri = Uri.parse(webUrl);
-                                      if (await canLaunchUrl(webUri)) {
-                                        await launchUrl(webUri,
-                                            mode: LaunchMode
-                                                .externalApplication);
-                                      } else {
-                                        final fallbackUrl =
-                                            "https://wa.me/$formattedPhone?text=$text";
-                                        final fallbackUri =
-                                            Uri.parse(fallbackUrl);
-                                        if (await canLaunchUrl(fallbackUri)) {
-                                          await launchUrl(fallbackUri,
-                                              mode: LaunchMode
-                                                  .externalApplication);
-                                        }
-                                      }
-                                    }
-                                  } catch (e) {
-                                    debugPrint('Share PDF failed: $e');
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Failed to create property PDF.'),
-                                          backgroundColor: CRMColors.danger,
-                                        ),
-                                      );
-                                    }
-                                  } finally {
-                                    if (context.mounted) {
-                                      setDialogState(
-                                          () => isSharingPdf = false);
-                                    }
-                                  }
+                                  await PdfOptionSelectionDialog.show(
+                                    context,
+                                    properties: [p],
+                                    recipientPhone: p.ownerMobile,
+                                  );
                                 },
                           child: const Text("Share PDF"),
                         ),
@@ -1029,66 +938,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                   isSharingPdf
                               ? null
                               : () async {
-                                  setDialogState(() => isSharingPdf = true);
-                                  try {
-                                    final bytes = await PropertySharePdf.build(
-                                        currentlySelected);
-                                    final fileName = currentlySelected.length == 1
-                                        ? PropertySharePdf.fileName(
-                                            currentlySelected.first)
-                                        : 'Selected_Properties_Details.pdf';
-
-                                    await FileDownloader.download(
-                                        bytes, fileName);
-
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Property PDF ready to share.'),
-                                        ),
-                                      );
-                                    }
-
-                                    final text = Uri.encodeComponent(
-                                        "Hello, please find property details for selected properties.");
-                                    final nativeUrl =
-                                        "whatsapp://send?text=$text";
-                                    final nativeUri = Uri.parse(nativeUrl);
-
-                                    if (await canLaunchUrl(nativeUri)) {
-                                      await launchUrl(nativeUri,
-                                          mode:
-                                              LaunchMode.externalApplication);
-                                    } else {
-                                      final webUrl =
-                                          "https://web.whatsapp.com/send?text=$text";
-                                      final webUri = Uri.parse(webUrl);
-                                      if (await canLaunchUrl(webUri)) {
-                                        await launchUrl(webUri,
-                                            mode: LaunchMode
-                                                .externalApplication);
-                                      }
-                                    }
-                                  } catch (e) {
-                                    debugPrint('Share PDF failed: $e');
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Failed to create property PDF.'),
-                                          backgroundColor: CRMColors.danger,
-                                        ),
-                                      );
-                                    }
-                                  } finally {
-                                    if (context.mounted) {
-                                      setDialogState(
-                                          () => isSharingPdf = false);
-                                    }
-                                  }
+                                  await PdfOptionSelectionDialog.show(
+                                    context,
+                                    properties: currentlySelected,
+                                  );
                                 },
                           child: const Text("Share PDF"),
                         ),
@@ -2133,7 +1986,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final priceText = rawPriceFormatted.startsWith('₹')
         ? rawPriceFormatted
         : "₹ $rawPriceFormatted";
-    final hasImages = p.images.isNotEmpty;
+    final hasMedia = p.images.isNotEmpty || p.videos.isNotEmpty;
     final formattedDateText = _formatPropertyDate(p.createdAt);
     final bool isHighlighted = p.id == _highlightedPropertyId;
 
@@ -2172,9 +2025,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (hasImages) ...[
+                  if (hasMedia) ...[
                     _MobilePropertyImageCarousel(
                       images: p.images,
+                      videos: p.videos,
                       height: isNarrow ? 220 : 210,
                       onTap: () => _openPropertyDetails(context, p),
                     ),
@@ -6312,14 +6166,22 @@ class _HoverChartTooltipState extends State<HoverChartTooltip> {
   }
 }
 
+class _MediaItem {
+  final String url;
+  final bool isVideo;
+  _MediaItem({required this.url, required this.isVideo});
+}
+
 class _MobilePropertyImageCarousel extends StatefulWidget {
   final List<String> images;
+  final List<String>? videos;
   final VoidCallback onTap;
   final double? height;
 
   const _MobilePropertyImageCarousel({
     Key? key,
     required this.images,
+    this.videos,
     required this.onTap,
     this.height,
   }) : super(key: key);
@@ -6332,6 +6194,23 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
   late final PageController _pageController;
   Timer? _timer;
   int _currentPage = 0;
+
+  List<_MediaItem> get _mediaItems {
+    final list = <_MediaItem>[];
+    if (widget.videos != null) {
+      for (final v in widget.videos!) {
+        if (v.trim().isNotEmpty) {
+          list.add(_MediaItem(url: v.trim(), isVideo: true));
+        }
+      }
+    }
+    for (final img in widget.images) {
+      if (img.trim().isNotEmpty) {
+        list.add(_MediaItem(url: img.trim(), isVideo: false));
+      }
+    }
+    return list;
+  }
 
   @override
   void initState() {
@@ -6369,9 +6248,44 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
     );
   }
 
+  Widget _buildVideoThumbnail(String url) {
+    return Container(
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CRMEmbeddedVideoPlayer(videoUrl: url),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.red.shade700,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.play_arrow_rounded, color: Colors.white, size: 12),
+                  SizedBox(width: 3),
+                  Text(
+                    'VIDEO',
+                    style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (widget.images.isEmpty) return const SizedBox.shrink();
+    final media = _mediaItems;
+    if (media.isEmpty) return const SizedBox.shrink();
 
     return Stack(
       alignment: Alignment.center,
@@ -6393,15 +6307,16 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
                   _currentPage = page;
                 });
               },
-              itemCount: widget.images.length,
+              itemCount: media.length,
               itemBuilder: (context, index) {
-                return _buildPropertyThumbnail(widget.images[index]);
+                final item = media[index];
+                return item.isVideo ? _buildVideoThumbnail(item.url) : _buildPropertyThumbnail(item.url);
               },
             ),
           ),
         ),
-        // Navigation Buttons (only if there are multiple images)
-        if (widget.images.length > 1) ...[
+        // Navigation Buttons (only if there are multiple media items)
+        if (media.length > 1) ...[
           // Left Arrow
           Positioned(
             left: 8,
@@ -6416,7 +6331,7 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
                   // Reset timer on manual action
                   _startTimer();
                   if (_pageController.hasClients) {
-                    final prevPage = (_currentPage - 1 + widget.images.length) % widget.images.length;
+                    final prevPage = (_currentPage - 1 + media.length) % media.length;
                     _pageController.animateToPage(
                       prevPage,
                       duration: const Duration(milliseconds: 300),
@@ -6441,7 +6356,7 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
                   // Reset timer on manual action
                   _startTimer();
                   if (_pageController.hasClients) {
-                    final nextPage = (_currentPage + 1) % widget.images.length;
+                    final nextPage = (_currentPage + 1) % media.length;
                     _pageController.animateToPage(
                       nextPage,
                       duration: const Duration(milliseconds: 300),
@@ -6464,7 +6379,7 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              '${_currentPage + 1}/${widget.images.length}',
+              '${_currentPage + 1}/${media.length}',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 10,
