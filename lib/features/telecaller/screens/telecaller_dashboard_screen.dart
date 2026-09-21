@@ -584,7 +584,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               Builder(
                 builder: (context) {
                   final totalPages = (_followups.isEmpty ? 1 : (_followups.length / _followupsPerPage).ceil());
-                  final startIndex = (_followupsPage - 1) * _followupsPerPage;
+                  final safeTotalPages = totalPages < 1 ? 1 : totalPages;
+                  final currentPage = _followupsPage.clamp(1, safeTotalPages);
+                  final startIndex = (currentPage - 1) * _followupsPerPage;
                   final pagedFollowups = _followups.skip(startIndex).take(_followupsPerPage).toList();
 
                   return Column(
@@ -717,19 +719,19 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
-                                  onPressed: _followupsPage > 1 ? () => setState(() => _followupsPage--) : null,
+                                  onPressed: currentPage > 1 ? () => setState(() => _followupsPage = currentPage - 1) : null,
                                   icon: const Icon(Icons.chevron_left, size: 16),
                                   label: const Text('Previous', style: TextStyle(fontSize: 12)),
                                 ),
                                 const SizedBox(width: 8),
-                                Text('Page $_followupsPage of $totalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                Text('Page $currentPage of $safeTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                                 const SizedBox(width: 8),
                                 OutlinedButton.icon(
                                   style: OutlinedButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
-                                  onPressed: _followupsPage < totalPages ? () => setState(() => _followupsPage++) : null,
+                                  onPressed: currentPage < safeTotalPages ? () => setState(() => _followupsPage = currentPage + 1) : null,
                                   icon: const Icon(Icons.chevron_right, size: 16),
                                   label: const Text('Next', style: TextStyle(fontSize: 12)),
                                 ),
@@ -751,6 +753,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
 
   // --- WIDGET 2: RECENT LEADS TRANSFERRED TO SALES TABLE WITH PAGINATION ---
   Widget _buildTransferredLeadsCard(BuildContext context) {
+    final safeTransferredTotalPages = _transferredTotalPages < 1 ? 1 : _transferredTotalPages;
+    final currentTransferredPage = _transferredPage.clamp(1, safeTransferredTotalPages);
+
     return Card(
       elevation: 0.5,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -778,7 +783,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                 IconButton(
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   tooltip: 'Refresh transferred leads',
-                  onPressed: () => _loadTransferredLeads(_transferredPage),
+                  onPressed: () => _loadTransferredLeads(currentTransferredPage),
                 ),
               ],
             ),
@@ -818,7 +823,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                     DataColumn(label: Text('Remarks')),
                   ],
                   rows: _transferredLeads.asMap().entries.map((entry) {
-                    final index = (_transferredPage - 1) * 10 + entry.key + 1;
+                    final index = (currentTransferredPage - 1) * 10 + entry.key + 1;
                     final lead = entry.value as Map;
                     final clientName = (lead['clientName'] ?? 'Lead').toString();
                     final phone = (lead['phone'] ?? '').toString();
@@ -893,7 +898,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Showing ${min((_transferredPage - 1) * 10 + 1, _transferredTotal)}–${min(_transferredPage * 10, _transferredTotal)} of $_transferredTotal transferred leads',
+                    'Showing ${_transferredTotal == 0 ? 0 : (currentTransferredPage - 1) * 10 + 1}–${min(currentTransferredPage * 10, _transferredTotal)} of $_transferredTotal transferred leads',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   Row(
@@ -903,19 +908,19 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        onPressed: _transferredPage > 1 ? () => _loadTransferredLeads(_transferredPage - 1) : null,
+                        onPressed: currentTransferredPage > 1 ? () => _loadTransferredLeads(currentTransferredPage - 1) : null,
                         icon: const Icon(Icons.chevron_left, size: 16),
                         label: const Text('Previous', style: TextStyle(fontSize: 12)),
                       ),
                       const SizedBox(width: 8),
-                      Text('Page $_transferredPage of $_transferredTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      Text('Page $currentTransferredPage of $safeTransferredTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                       const SizedBox(width: 8),
                       OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        onPressed: _transferredPage < _transferredTotalPages ? () => _loadTransferredLeads(_transferredPage + 1) : null,
+                        onPressed: currentTransferredPage < safeTransferredTotalPages ? () => _loadTransferredLeads(currentTransferredPage + 1) : null,
                         icon: const Icon(Icons.chevron_right, size: 16),
                         label: const Text('Next', style: TextStyle(fontSize: 12)),
                       ),
@@ -999,7 +1004,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               Builder(
                 builder: (context) {
                   final totalPages = (_personalNotes.isEmpty ? 1 : (_personalNotes.length / _notesPerPage).ceil());
-                  final startIndex = (_notesPage - 1) * _notesPerPage;
+                  final safeTotalPages = totalPages < 1 ? 1 : totalPages;
+                  final currentPage = _notesPage.clamp(1, safeTotalPages);
+                  final startIndex = (currentPage - 1) * _notesPerPage;
                   final pagedNotes = _personalNotes.skip(startIndex).take(_notesPerPage).toList();
 
                   return Column(
@@ -1104,12 +1111,12 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                     minimumSize: const Size(0, 28),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                   ),
-                                  onPressed: _notesPage > 1 ? () => setState(() => _notesPage--) : null,
+                                  onPressed: currentPage > 1 ? () => setState(() => _notesPage = currentPage - 1) : null,
                                   child: const Icon(Icons.chevron_left, size: 16),
                                 ),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                                  child: Text('$_notesPage / $totalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                  child: Text('$currentPage / $safeTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                                 ),
                                 OutlinedButton(
                                   style: OutlinedButton.styleFrom(
@@ -1117,7 +1124,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                     minimumSize: const Size(0, 28),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                   ),
-                                  onPressed: _notesPage < totalPages ? () => setState(() => _notesPage++) : null,
+                                  onPressed: currentPage < safeTotalPages ? () => setState(() => _notesPage = currentPage + 1) : null,
                                   child: const Icon(Icons.chevron_right, size: 16),
                                 ),
                               ],
@@ -1180,8 +1187,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               Builder(
                 builder: (context) {
                   final totalItems = recentActivities.length;
-                  final totalPages = (totalItems == 0 ? 1 : (totalItems / _activityPerPage).ceil());
-                  final currentPage = _activityPage.clamp(1, totalPages);
+                  final totalPages = (totalItems <= 0 ? 1 : (totalItems / _activityPerPage).ceil());
+                  final safeTotalPages = totalPages < 1 ? 1 : totalPages;
+                  final currentPage = _activityPage.clamp(1, safeTotalPages);
                   final startIndex = (currentPage - 1) * _activityPerPage;
                   final pagedActivities = recentActivities.skip(startIndex).take(_activityPerPage).toList();
 
@@ -1306,7 +1314,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                 ),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                                  child: Text('$currentPage / $totalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                  child: Text('$currentPage / $safeTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                                 ),
                                 OutlinedButton(
                                   style: OutlinedButton.styleFrom(
@@ -1314,7 +1322,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                     minimumSize: const Size(0, 28),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                   ),
-                                  onPressed: currentPage < totalPages ? () => setState(() => _activityPage = currentPage + 1) : null,
+                                  onPressed: currentPage < safeTotalPages ? () => setState(() => _activityPage = currentPage + 1) : null,
                                   child: const Icon(Icons.chevron_right, size: 16),
                                 ),
                               ],
