@@ -417,26 +417,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     List<IntegrationLeadModel> list;
     final selectedUser = selectedFilterUser;
-    if (userFilterActive && selectedUser != null && _viewMode == 'active') {
-      list = scopedLeads
-          .where((l) =>
-              l.leadType == _selectedSection &&
-              TeamUserVisibility.campaignLeadBelongsToUser(l, selectedUser))
-          .toList();
-    } else {
-      list = _viewMode == 'not_interested'
-          ? scopedLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList()
-          : (_viewMode == 'archive_listed' || _viewMode == 'listed'
-              ? scopedLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList()
-              : (_viewMode == 'archive_requirements'
-                  ? scopedLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won')).toList()
-                  : scopedLeads.where((l) {
-                      if (l.leadType != _selectedSection) return false;
-                      return !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned');
-                    }).toList()));
-      if (userFilterActive && selectedUser != null) {
-        list = list.where((l) => TeamUserVisibility.campaignLeadBelongsToUser(l, selectedUser)).toList();
-      }
+    list = _viewMode == 'not_interested'
+        ? scopedLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList()
+        : (_viewMode == 'archive_listed' || _viewMode == 'listed'
+            ? scopedLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList()
+            : (_viewMode == 'archive_requirements'
+                ? scopedLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won')).toList()
+                : scopedLeads.where((l) {
+                    if (l.leadType != _selectedSection) return false;
+                    return !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned');
+                  }).toList()));
+    if (userFilterActive && selectedUser != null) {
+      list = list.where((l) => TeamUserVisibility.campaignLeadBelongsToUser(l, selectedUser)).toList();
     }
 
     // Filter by Date (Today is default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
