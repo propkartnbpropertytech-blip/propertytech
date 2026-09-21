@@ -59,6 +59,10 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   static const int _followupsPerPage = 5;
   bool _loadingFollowups = false;
 
+  // Recent activity pagination state
+  int _activityPage = 1;
+  static const int _activityPerPage = 10;
+
   @override
   void initState() {
     super.initState();
@@ -276,6 +280,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
 
         return RefreshIndicator(
           onRefresh: () async {
+            if (mounted) setState(() => _activityPage = 1);
             context.read<TelecallerDashboardBloc>().add(TelecallerDashboardRequested());
             await Future.wait([
               _loadTransferredLeads(1),
@@ -1026,104 +1031,157 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   ),
                 ),
               )
-            else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: recentActivities.length,
-                separatorBuilder: (context, index) => const Divider(height: 16),
-                itemBuilder: (context, i) {
-                  final act = Map<String, dynamic>.from(recentActivities[i] as Map);
-                  final clientName = (act['clientName'] ?? 'Lead').toString();
-                  final phone = (act['phone'] ?? '').toString();
-                  final outcome = (act['outcome'] ?? '').toString().toUpperCase();
-                  final remarks = (act['remarks'] ?? '').toString();
-                  final attemptNum = act['attemptNumber'] ?? 1;
-                  final transferredTo = act['transferredTo'];
-
-                  String timeStr = '-';
-                  if (act['createdAt'] != null) {
-                    final dt = DateTime.tryParse(act['createdAt'].toString());
-                    if (dt != null) timeStr = DateFormat('h:mm a').format(dt.toLocal());
-                  }
-
-                  // Color & label based on outcome
-                  Color badgeBg;
-                  Color badgeText;
-                  String badgeLabel;
-                  if (outcome == 'PICKED_UP' || transferredTo != null) {
-                    badgeBg = const Color(0xFFECFDF5);
-                    badgeText = const Color(0xFF059669);
-                    badgeLabel = transferredTo != null ? 'Handed to Sales: $transferredTo' : 'Picked up / Qualified';
-                  } else if (outcome == 'CALLBACK') {
-                    badgeBg = const Color(0xFFFEF3C7);
-                    badgeText = const Color(0xFFD97706);
-                    badgeLabel = 'Callback Scheduled';
-                  } else if (outcome == 'CNR') {
-                    badgeBg = const Color(0xFFFFEDD5);
-                    badgeText = const Color(0xFFEA580C);
-                    badgeLabel = 'CNR (Attempt $attemptNum)';
-                  } else if (outcome == 'NOT_INTERESTED' || outcome.contains('LOST')) {
-                    badgeBg = const Color(0xFFFEE2E2);
-                    badgeText = const Color(0xFFDC2626);
-                    badgeLabel = 'Not Interested';
-                  } else {
-                    badgeBg = const Color(0xFFF1F5F9);
-                    badgeText = const Color(0xFF475569);
-                    badgeLabel = outcome;
-                  }
+            else ...[
+              Builder(
+                builder: (context) {
+                  final totalItems = recentActivities.length;
+                  final totalPages = (totalItems == 0 ? 1 : (totalItems / _activityPerPage).ceil());
+                  final currentPage = _activityPage.clamp(1, totalPages);
+                  final startIndex = (currentPage - 1) * _activityPerPage;
+                  final pagedActivities = recentActivities.skip(startIndex).take(_activityPerPage).toList();
 
                   return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Text(timeStr, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.grey)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              clientName,
-                              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: pagedActivities.length,
+                        separatorBuilder: (context, index) => const Divider(height: 16),
+                        itemBuilder: (context, i) {
+                          final act = Map<String, dynamic>.from(pagedActivities[i] as Map);
+                          final clientName = (act['clientName'] ?? 'Lead').toString();
+                          final phone = (act['phone'] ?? '').toString();
+                          final outcome = (act['outcome'] ?? '').toString().toUpperCase();
+                          final remarks = (act['remarks'] ?? '').toString();
+                          final attemptNum = act['attemptNumber'] ?? 1;
+                          final transferredTo = act['transferredTo'];
+
+                          String timeStr = '-';
+                          if (act['createdAt'] != null) {
+                            final dt = DateTime.tryParse(act['createdAt'].toString());
+                            if (dt != null) timeStr = DateFormat('h:mm a').format(dt.toLocal());
+                          }
+
+                          // Color & label based on outcome
+                          Color badgeBg;
+                          Color badgeText;
+                          String badgeLabel;
+                          if (outcome == 'PICKED_UP' || transferredTo != null) {
+                            badgeBg = const Color(0xFFECFDF5);
+                            badgeText = const Color(0xFF059669);
+                            badgeLabel = transferredTo != null ? 'Handed to Sales: $transferredTo' : 'Picked up / Qualified';
+                          } else if (outcome == 'CALLBACK') {
+                            badgeBg = const Color(0xFFFEF3C7);
+                            badgeText = const Color(0xFFD97706);
+                            badgeLabel = 'Callback Scheduled';
+                          } else if (outcome == 'CNR') {
+                            badgeBg = const Color(0xFFFFEDD5);
+                            badgeText = const Color(0xFFEA580C);
+                            badgeLabel = 'CNR (Attempt $attemptNum)';
+                          } else if (outcome == 'NOT_INTERESTED' || outcome.contains('LOST')) {
+                            badgeBg = const Color(0xFFFEE2E2);
+                            badgeText = const Color(0xFFDC2626);
+                            badgeLabel = 'Not Interested';
+                          } else {
+                            badgeBg = const Color(0xFFF1F5F9);
+                            badgeText = const Color(0xFF475569);
+                            badgeLabel = outcome;
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(timeStr, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.grey)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      clientName,
+                                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (phone.isNotEmpty) ...[
+                                    Text(phone, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF64748B)),
+                                    tooltip: 'Edit remarks',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => _showEditRemarksDialog(act),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(6)),
+                                    child: Text(badgeLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeText)),
+                                  ),
+                                ],
+                              ),
+                              if (remarks.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  '“$remarks”',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          );
+                        },
+                      ),
+                      if (totalItems > _activityPerPage) ...[
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Showing ${startIndex + 1}–${min(startIndex + _activityPerPage, totalItems)} of $totalItems calls',
+                              style: const TextStyle(fontSize: 11.5, color: Colors.grey),
                             ),
-                          ),
-                          if (phone.isNotEmpty) ...[
-                            Text(phone, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                            const SizedBox(width: 8),
+                            Row(
+                              children: [
+                                OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: const Size(0, 28),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                  onPressed: currentPage > 1 ? () => setState(() => _activityPage = currentPage - 1) : null,
+                                  child: const Icon(Icons.chevron_left, size: 16),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  child: Text('$currentPage / $totalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                ),
+                                OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: const Size(0, 28),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                  onPressed: currentPage < totalPages ? () => setState(() => _activityPage = currentPage + 1) : null,
+                                  child: const Icon(Icons.chevron_right, size: 16),
+                                ),
+                              ],
+                            ),
                           ],
-                          IconButton(
-                            icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF64748B)),
-                            tooltip: 'Edit remarks',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () => _showEditRemarksDialog(act),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(6)),
-                            child: Text(badgeLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeText)),
-                          ),
-                        ],
-                      ),
-                      if (remarks.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          '“$remarks”',
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ],
                   );
                 },
               ),
+            ],
           ],
         ),
       ),
