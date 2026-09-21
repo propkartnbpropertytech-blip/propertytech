@@ -195,10 +195,13 @@ class AppRouter {
           ),
           GoRoute(
             path: '/telecaller/leads',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const CampaignLeadsScreen(),
-            ),
+            pageBuilder: (context, state) {
+              final view = state.uri.queryParameters['view'];
+              return crmFadeSlidePage(
+                key: state.pageKey,
+                child: CampaignLeadsScreen(initialView: view),
+              );
+            },
           ),
           GoRoute(
             path: '/telecaller/callbacks',
@@ -287,11 +290,13 @@ class AppRouter {
             path: '/campaign/leads',
             pageBuilder: (context, state) {
               final source = state.uri.queryParameters['source'];
+              final view = state.uri.queryParameters['view'];
               return crmFadeSlidePage(
                 key: state.pageKey,
                 child: CampaignLeadsScreen(
                   initialSource: source,
                   lockSource: source,
+                  initialView: view,
                 ),
               );
             },

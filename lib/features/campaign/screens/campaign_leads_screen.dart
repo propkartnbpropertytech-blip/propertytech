@@ -36,7 +36,8 @@ import '../../../core/utils/team_user_visibility.dart';
 class CampaignLeadsScreen extends StatefulWidget {
   final String? initialSource;
   final String? lockSource;
-  const CampaignLeadsScreen({super.key, this.initialSource, this.lockSource});
+  final String? initialView;
+  const CampaignLeadsScreen({super.key, this.initialSource, this.lockSource, this.initialView});
 
   @override
   State<CampaignLeadsScreen> createState() => _CampaignLeadsScreenState();
@@ -84,6 +85,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialView != null && widget.initialView!.isNotEmpty) {
+      _viewMode = widget.initialView!;
+      if (_viewMode == 'followups') {
+        unawaited(_loadFollowups());
+      }
+    }
     if (widget.lockSource != null && widget.lockSource!.isNotEmpty) {
       _selectedSourceFilter = widget.lockSource!;
     } else if (widget.initialSource != null && widget.initialSource!.isNotEmpty) {

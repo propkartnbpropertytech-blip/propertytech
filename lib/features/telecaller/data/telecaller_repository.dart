@@ -84,4 +84,20 @@ class TelecallerRepository {
     final res = await DioClient.dio.get('/telecaller/leads/$leadId/call-history');
     return List<dynamic>.from(res.data['data'] ?? []);
   }
+
+  Future<Map<String, dynamic>> updateAttemptRemarks(String attemptId, String remarks) async {
+    final res = await DioClient.dio.patch(
+      '/telecaller/attempts/$attemptId/remarks',
+      data: {'remarks': remarks},
+    );
+    return Map<String, dynamic>.from(res.data['data'] ?? {});
+  }
+
+  Future<Map<String, dynamic>> getTransferredLeads({int page = 1, int limit = 10}) async {
+    final res = await DioClient.dio.get(
+      '/telecaller/transferred-leads',
+      queryParameters: {'page': page, 'limit': limit},
+    );
+    return Map<String, dynamic>.from(res.data['data'] ?? {});
+  }
 }
