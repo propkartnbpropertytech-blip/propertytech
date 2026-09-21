@@ -149,9 +149,15 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     try {
       final res = await _repository.getTransferredLeads(page: targetPage, limit: 10);
       if (mounted) {
+        final rawLeads = List<dynamic>.from(res['leads'] as List? ?? []);
+        rawLeads.sort((a, b) {
+          final dtA = DateTime.tryParse(a['transferredAt']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final dtB = DateTime.tryParse(b['transferredAt']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return dtB.compareTo(dtA);
+        });
         setState(() {
           _transferredPage = targetPage;
-          _transferredLeads = res['leads'] as List? ?? [];
+          _transferredLeads = rawLeads;
           _transferredTotal = res['total'] as int? ?? 0;
           _transferredTotalPages = res['totalPages'] as int? ?? 1;
           _loadingTransferred = false;
@@ -260,6 +266,96 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               }
             },
             child: const Text('Save Remark'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTransferRemarkDialog(
+    BuildContext context,
+    String clientName,
+    String remarks,
+    String transferredTo,
+    String timeStr,
+  ) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.comment_outlined, color: Color(0xFF2563EB), size: 20),
+            ),
+            const SizedBox(width: 10),
+            const Text('Transfer Remarks', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.person_outline, size: 16, color: Color(0xFF64748B)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Client: $clientName',
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.swap_horiz_rounded, size: 16, color: Color(0xFF64748B)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Transferred to: $transferredTo ($timeStr)',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              width: double.maxFinite,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Text(
+                remarks.trim().isEmpty ? 'No remarks provided for this transfer.' : remarks.trim(),
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: remarks.trim().isEmpty ? Colors.grey : const Color(0xFF1E293B),
+                  fontStyle: remarks.trim().isEmpty ? FontStyle.italic : FontStyle.normal,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -760,14 +856,27 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                         ),
                         DataCell(Text(timeStr, style: const TextStyle(fontSize: 12, color: Colors.grey))),
                         DataCell(
-                          SizedBox(
-                            width: 180,
-                            child: Text(
-                              remarks.isEmpty ? '-' : remarks,
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              minimumSize: const Size(0, 28),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              side: BorderSide(
+                                color: remarks.trim().isEmpty ? Colors.grey.shade300 : const Color(0xFF3B82F6).withValues(alpha: 0.5),
+                              ),
+                              backgroundColor: remarks.trim().isEmpty ? const Color(0xFFF8FAFC) : const Color(0xFFEFF6FF),
+                              foregroundColor: remarks.trim().isEmpty ? const Color(0xFF64748B) : const Color(0xFF2563EB),
                             ),
+                            icon: Icon(
+                              Icons.visibility_outlined,
+                              size: 14,
+                              color: remarks.trim().isEmpty ? const Color(0xFF94A3B8) : const Color(0xFF2563EB),
+                            ),
+                            label: const Text(
+                              'View Remark',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                            ),
+                            onPressed: () => _showTransferRemarkDialog(context, clientName, remarks, transferredTo, timeStr),
                           ),
                         ),
                       ],
