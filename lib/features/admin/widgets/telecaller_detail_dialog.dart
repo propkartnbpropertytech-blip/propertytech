@@ -44,6 +44,9 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _data;
+  int _selectedCapacity = 10;
+  int _savedCapacity = 10;
+  bool _savingCapacity = false;
 
   @override
   void initState() {
@@ -62,8 +65,12 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
         ApiConstants.adminTelecallerDetails(widget.telecallerId),
       );
       if (mounted) {
+        final data = Map<String, dynamic>.from(res.data['data'] ?? {});
+        final cap = (data['workload']?['capacity'] as num?)?.toInt() ?? 10;
         setState(() {
-          _data = Map<String, dynamic>.from(res.data['data'] ?? {});
+          _data = data;
+          _selectedCapacity = cap;
+          _savedCapacity = cap;
           _loading = false;
         });
       }
@@ -73,6 +80,47 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
           _error = e.toString();
           _loading = false;
         });
+      }
+    }
+  }
+
+  Future<void> _updateCapacity(int newCapacity) async {
+    if (_savingCapacity || newCapacity < 1) return;
+    setState(() => _savingCapacity = true);
+    try {
+      await DioClient.dio.patch(
+        ApiConstants.adminTelecallerCapacity(widget.telecallerId),
+        data: {'maxCapacity': newCapacity},
+      );
+      if (mounted) {
+        setState(() {
+          _savedCapacity = newCapacity;
+          _selectedCapacity = newCapacity;
+          if (_data != null && _data!['workload'] != null) {
+            _data!['workload']['capacity'] = newCapacity;
+            final currentLoad = (_data!['workload']['currentWorkload'] as num?)?.toInt() ?? 0;
+            _data!['workload']['availableSlots'] = (newCapacity - currentLoad).clamp(0, 999);
+          }
+          _savingCapacity = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Max capacity updated to $newCapacity leads for ${widget.telecallerName ?? "telecaller"}.'),
+            backgroundColor: Colors.green.shade800,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        widget.onLeadReassigned?.call();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _savingCapacity = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update capacity: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -376,6 +424,131 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                             '$staleCount Untouched (>30m) - Stale',
                             style: TextStyle(fontSize: 11, color: Colors.red.shade800, fontWeight: FontWeight.bold),
                           ),
+                        ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.tune, size: 18, color: CRMColors.primary),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Max Capacity Limit',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: CRMColors.primary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$_selectedCapacity Leads',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: CRMColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          if (_selectedCapacity != _savedCapacity)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: Text(
+                                '(Unsaved: $_selectedCapacity)',
+                                style: const TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            ),
+                            onPressed: _savingCapacity || _selectedCapacity == _savedCapacity
+                                ? null
+                                : () => _updateCapacity(_selectedCapacity),
+                            icon: _savingCapacity
+                                ? const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.check, size: 14),
+                            label: Text(_savingCapacity ? 'Saving...' : 'Save Limit', style: const TextStyle(fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      IconButton.outlined(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.remove, size: 16),
+                        tooltip: 'Decrease by 1',
+                        onPressed: _selectedCapacity > 1
+                            ? () => setState(() => _selectedCapacity--)
+                            : null,
+                      ),
+                      Expanded(
+                        child: Slider(
+                          value: _selectedCapacity.toDouble().clamp(1.0, 50.0),
+                          min: 1.0,
+                          max: 50.0,
+                          divisions: 49,
+                          label: '$_selectedCapacity',
+                          activeColor: CRMColors.primary,
+                          onChanged: (val) {
+                            setState(() => _selectedCapacity = val.round());
+                          },
+                        ),
+                      ),
+                      IconButton.outlined(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.add, size: 16),
+                        tooltip: 'Increase by 1',
+                        onPressed: _selectedCapacity < 50
+                            ? () => setState(() => _selectedCapacity++)
+                            : null,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text(
+                        'Presets:',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                      ),
+                      for (final preset in [5, 10, 15, 20, 25, 30, 50])
+                        ActionChip(
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          label: Text(
+                            preset == 10 ? '10 (Default)' : '$preset',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: _selectedCapacity == preset ? FontWeight.bold : FontWeight.normal,
+                              color: _selectedCapacity == preset ? Colors.white : null,
+                            ),
+                          ),
+                          backgroundColor: _selectedCapacity == preset ? CRMColors.primary : null,
+                          onPressed: () {
+                            setState(() => _selectedCapacity = preset);
+                          },
                         ),
                     ],
                   ),

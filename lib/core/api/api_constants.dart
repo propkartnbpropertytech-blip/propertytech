@@ -36,6 +36,7 @@ class ApiConstants {
   static const adminTokenExpiration = "/admin/token-expiration";
   static const adminRecoverStaleLeads = "/admin/recover-stale-leads";
   static String adminTelecallerDetails(String id) => "/admin/telecallers/$id/details";
+  static String adminTelecallerCapacity(String id) => "/admin/telecallers/$id/capacity";
   static const salesDashboardSummary = "/sales/dashboard-summary";
   static const superAdminMetrics = "/super-admin/metrics";
 
