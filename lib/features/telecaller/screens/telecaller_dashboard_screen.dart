@@ -297,55 +297,58 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
             const Text('Transfer Remarks', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.person_outline, size: 16, color: Color(0xFF64748B)),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Client: $clientName',
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.person_outline, size: 16, color: Color(0xFF64748B)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Client: $clientName',
+                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.swap_horiz_rounded, size: 16, color: Color(0xFF64748B)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Transferred to: $transferredTo ($timeStr)',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Text(
+                  remarks.trim().isEmpty ? 'No remarks provided for this transfer.' : remarks.trim(),
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.45,
+                    color: remarks.trim().isEmpty ? Colors.grey : const Color(0xFF1E293B),
+                    fontStyle: remarks.trim().isEmpty ? FontStyle.italic : FontStyle.normal,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                const Icon(Icons.swap_horiz_rounded, size: 16, color: Color(0xFF64748B)),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Transferred to: $transferredTo ($timeStr)',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Container(
-              width: double.maxFinite,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: Text(
-                remarks.trim().isEmpty ? 'No remarks provided for this transfer.' : remarks.trim(),
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.45,
-                  color: remarks.trim().isEmpty ? Colors.grey : const Color(0xFF1E293B),
-                  fontStyle: remarks.trim().isEmpty ? FontStyle.italic : FontStyle.normal,
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           ElevatedButton(
@@ -873,7 +876,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                               color: remarks.trim().isEmpty ? const Color(0xFF94A3B8) : const Color(0xFF2563EB),
                             ),
                             label: const Text(
-                              'View Remark',
+                              'View',
                               style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
                             ),
                             onPressed: () => _showTransferRemarkDialog(context, clientName, remarks, transferredTo, timeStr),
@@ -1010,11 +1013,28 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                           final note = pagedNotes[i];
                           final id = (note['id'] ?? '').toString();
                           final isDone = note['isDone'] == true;
+
+                          DateTime? dt;
+                          if (note['createdAt'] != null) {
+                            dt = DateTime.tryParse(note['createdAt'].toString());
+                          }
+                          if (dt == null && note['id'] != null) {
+                            final ms = int.tryParse(note['id'].toString());
+                            if (ms != null && ms > 1000000000000) {
+                              dt = DateTime.fromMillisecondsSinceEpoch(ms);
+                            }
+                          }
+                          String timeSubtitle = '';
+                          if (dt != null) {
+                            timeSubtitle = DateFormat('EEE, d MMM • h:mm a').format(dt.toLocal());
+                          }
+
                           return InkWell(
                             onTap: () => _toggleNoteDone(id),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(vertical: 8),
                               child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   // Exact left-side checkbox
                                   SizedBox(
@@ -1029,16 +1049,32 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: Text(
-                                      (note['text'] ?? '').toString(),
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: isDone ? Colors.grey.shade400 : const Color(0xFF1E293B),
-                                        decoration: isDone ? TextDecoration.lineThrough : null,
-                                        decorationColor: Colors.grey.shade400,
-                                        decorationThickness: 2,
-                                        fontWeight: isDone ? FontWeight.normal : FontWeight.w500,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          (note['text'] ?? '').toString(),
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: isDone ? Colors.grey.shade400 : const Color(0xFF1E293B),
+                                            decoration: isDone ? TextDecoration.lineThrough : null,
+                                            decorationColor: Colors.grey.shade400,
+                                            decorationThickness: 2,
+                                            fontWeight: isDone ? FontWeight.normal : FontWeight.w500,
+                                          ),
+                                        ),
+                                        if (timeSubtitle.isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            timeSubtitle,
+                                            style: TextStyle(
+                                              fontSize: 10.5,
+                                              color: isDone ? Colors.grey.shade400 : const Color(0xFF64748B),
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ),
                                   IconButton(
