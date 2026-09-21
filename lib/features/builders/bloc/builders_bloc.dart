@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
+import '../../../core/storage/repository_coordinator.dart';
 import '../models/builder_model.dart';
 import '../repository/builders_repository.dart';
 

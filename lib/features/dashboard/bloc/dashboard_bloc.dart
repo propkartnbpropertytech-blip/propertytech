@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
+import '../../../core/storage/repository_coordinator.dart';
 import '../models/dashboard_summary.dart';
 import '../repository/dashboard_repository.dart';
 

@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'package:propkart/features/properties/models/property_model.dart';
-import 'package:propkart/features/properties/services/properties_service.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
-import 'package:propkart/core/storage/isar_collections.dart';
-import 'package:propkart/core/storage/model_mappers.dart';
-import 'package:propkart/core/storage/local_repositories.dart';
-import 'package:propkart/core/storage/performance_logger.dart';
+import '../models/property_model.dart';
+import '../services/properties_service.dart';
+import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/isar_collections.dart';
+import '../../../core/storage/model_mappers.dart';
+import '../../../core/storage/local_repositories.dart';
+import '../../../core/storage/performance_logger.dart';
 
 class PropertiesRepository {
   final PropertiesService _propertiesService = PropertiesService();

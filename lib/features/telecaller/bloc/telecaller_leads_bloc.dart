@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:propkart/features/requirements/repository/requirements_repository.dart';
+import '../../requirements/repository/requirements_repository.dart';
 import '../../integration/services/integration_service.dart';
 import '../data/telecaller_repository.dart';
 

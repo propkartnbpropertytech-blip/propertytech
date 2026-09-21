@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter/foundation.dart';
-import 'package:propkart/core/api/cloudinary_uploader.dart';
+import '../../../api/cloudinary_uploader.dart';
 import '../crm_network_image.dart';
 import '../../tokens/app_colors.dart';
 import '../../tokens/app_spacing.dart';

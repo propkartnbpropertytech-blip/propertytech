@@ -1,10 +1,10 @@
-import 'package:propkart/features/dashboard/models/dashboard_summary.dart';
-import 'package:propkart/features/dashboard/services/dashboard_service.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
-import 'package:propkart/core/storage/isar_collections.dart';
-import 'package:propkart/core/storage/model_mappers.dart';
-import 'package:propkart/core/storage/performance_logger.dart';
-import 'package:propkart/core/security/role_guard.dart';
+import '../models/dashboard_summary.dart';
+import '../services/dashboard_service.dart';
+import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/isar_collections.dart';
+import '../../../core/storage/model_mappers.dart';
+import '../../../core/storage/performance_logger.dart';
+import '../../../core/security/role_guard.dart';
 import 'package:collection/collection.dart';
 
 class DashboardRepository {

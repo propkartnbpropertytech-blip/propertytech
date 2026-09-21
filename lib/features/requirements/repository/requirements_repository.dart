@@ -1,12 +1,12 @@
-﻿import 'dart:convert';
-import 'package:propkart/features/requirements/models/requirement_model.dart';
-import 'package:propkart/features/requirements/services/requirements_service.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
-import 'package:propkart/core/storage/isar_collections.dart';
-import 'package:propkart/core/storage/model_mappers.dart';
-import 'package:propkart/core/storage/performance_logger.dart';
-import 'package:propkart/core/security/role_guard.dart';
-import 'package:propkart/core/storage/local_repositories.dart';
+import 'dart:convert';
+import '../models/requirement_model.dart';
+import '../services/requirements_service.dart';
+import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/isar_collections.dart';
+import '../../../core/storage/model_mappers.dart';
+import '../../../core/storage/performance_logger.dart';
+import '../../../core/security/role_guard.dart';
+import '../../../core/storage/local_repositories.dart';
 
 class RequirementsRepository {
   final RequirementsService _requirementsService = RequirementsService();
