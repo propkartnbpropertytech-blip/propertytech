@@ -16,6 +16,50 @@
     }
   </script>
 
+  <!-- WebGL / CanvasKit Shader Compatibility Patch for Windows ANGLE (D3D11) -->
+  <script type="text/javascript">
+    (function() {
+      // Intercept WebGL shaderSource to fix negative LOD bias (-0.475) causing ANGLE D3D11 compiler crash
+      function patchWebGLProto(proto) {
+        if (!proto || !proto.shaderSource) return;
+        var origShaderSource = proto.shaderSource;
+        proto.shaderSource = function(shader, source) {
+          if (typeof source === 'string' && (source.indexOf('-0.475') !== -1 || source.indexOf('-0.5') !== -1)) {
+            source = source.replace(/,\s*-0\.(475|5)\)/g, ')');
+          }
+          return origShaderSource.call(this, shader, source);
+        };
+      }
+
+      try {
+        if (typeof WebGLRenderingContext !== 'undefined') {
+          patchWebGLProto(WebGLRenderingContext.prototype);
+        }
+        if (typeof WebGL2RenderingContext !== 'undefined') {
+          patchWebGLProto(WebGL2RenderingContext.prototype);
+        }
+      } catch (e) {}
+
+      // Suppress noisy internal CanvasKit fallback shader dumps in DevTools console
+      try {
+        var origConsoleError = console.error;
+        console.error = function() {
+          if (arguments.length > 0) {
+            var msg = String(arguments[0] || '');
+            if (
+              msg.indexOf('uTextureSampler_0_S0') !== -1 ||
+              msg.indexOf('sk_FragColor') !== -1 ||
+              (msg.indexOf('canvaskit') !== -1 && msg.indexOf('unknown error') !== -1)
+            ) {
+              return;
+            }
+          }
+          return origConsoleError.apply(console, arguments);
+        };
+      } catch (e) {}
+    })();
+  </script>
+
   <!--
     If you are serving your web app in a path other than the root, change the
     href value below to reflect the base path you are serving from.
