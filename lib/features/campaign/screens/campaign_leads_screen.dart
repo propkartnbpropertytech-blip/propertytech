@@ -2044,6 +2044,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final isAssigned = lead.campaignStatus == 'Assigned' || (lead.assignedTo != null && lead.assignedTo!.isNotEmpty);
     final assignedName = lead.assignedToName;
     final remarks = lead.transferRemarks;
+    final isPropertyListing = lead.leadType == 'Property Listing' || _selectedSection == 'Property Listing';
+    final hasBadge = isAssigned || isCnr || (lead.assignedTelecallerName != null && lead.assignedTelecallerName!.isNotEmpty);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -2112,7 +2114,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ),
             ),
           ],
-          const SizedBox(width: 6),
+          if (!isPropertyListing) const SizedBox(width: 6),
         ] else if (isCnr) ...[
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2139,7 +2141,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 6),
+          if (!isPropertyListing) const SizedBox(width: 6),
         ] else if (lead.assignedTelecallerName?.isNotEmpty == true) ...[
           Tooltip(
             message: 'Allocated to Telecaller: ${lead.assignedTelecallerName}\nStatus: ${lead.allocationStatus ?? "ASSIGNED"}',
@@ -2172,37 +2174,41 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 6),
+          if (!isPropertyListing) const SizedBox(width: 6),
         ],
 
-        // Transfer Button
-        ElevatedButton.icon(
-          onPressed: () => _showTransferDialog(context, lead),
-          icon: Icon(
-            isAssigned ? Icons.edit_note_rounded : Icons.swap_horiz_rounded,
-            size: 14,
-            color: Colors.white,
-          ),
-          label: Text(
-            isAssigned ? 'Re-transfer' : 'Transfer',
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
+        // Transfer Button (Only for Requirement Leads, removed on Property Listing Leads tab)
+        if (!isPropertyListing) ...[
+          ElevatedButton.icon(
+            onPressed: () => _showTransferDialog(context, lead),
+            icon: Icon(
+              isAssigned ? Icons.edit_note_rounded : Icons.swap_horiz_rounded,
+              size: 14,
               color: Colors.white,
             ),
+            label: Text(
+              isAssigned ? 'Re-transfer' : 'Transfer',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isAssigned
+                  ? const Color(0xFF0F766E)
+                  : (isCnr ? const Color(0xFFD97706) : CRMColors.primaryOf(context)),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              elevation: 0.5,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+            ),
           ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: isAssigned
-                ? const Color(0xFF0F766E)
-                : (isCnr ? const Color(0xFFD97706) : CRMColors.primaryOf(context)),
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            elevation: 0.5,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-          ),
-        ),
+        ] else if (!hasBadge) ...[
+          const Text('—', style: TextStyle(color: Colors.grey, fontSize: 13)),
+        ],
       ],
     );
   }
