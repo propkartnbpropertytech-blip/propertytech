@@ -43,6 +43,8 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
 
   // Personal Notes state
   List<Map<String, dynamic>> _personalNotes = [];
+  int _notesPage = 1;
+  static const int _notesPerPage = 5;
 
   // Transferred leads state
   int _transferredPage = 1;
@@ -53,6 +55,8 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
 
   // Active followups preview state
   List<CampaignFollowupModel> _followups = [];
+  int _followupsPage = 1;
+  static const int _followupsPerPage = 5;
   bool _loadingFollowups = false;
 
   @override
@@ -108,20 +112,28 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         'createdAt': DateTime.now().toIso8601String(),
       });
       _noteController.clear();
+      _notesPage = 1;
     });
     _savePersonalNotes();
   }
 
-  void _toggleNoteDone(int index) {
-    setState(() {
-      _personalNotes[index]['isDone'] = !(_personalNotes[index]['isDone'] == true);
-    });
-    _savePersonalNotes();
+  void _toggleNoteDone(String id) {
+    final idx = _personalNotes.indexWhere((n) => n['id'] == id);
+    if (idx != -1) {
+      setState(() {
+        _personalNotes[idx]['isDone'] = !(_personalNotes[idx]['isDone'] == true);
+      });
+      _savePersonalNotes();
+    }
   }
 
-  void _deleteNote(int index) {
+  void _deleteNote(String id) {
     setState(() {
-      _personalNotes.removeAt(index);
+      _personalNotes.removeWhere((n) => n['id'] == id);
+      final totalPages = (_personalNotes.isEmpty ? 1 : (_personalNotes.length / _notesPerPage).ceil());
+      if (_notesPage > totalPages) {
+        _notesPage = totalPages;
+      }
     });
     _savePersonalNotes();
   }
@@ -152,8 +164,22 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     try {
       final list = await IntegrationService().fetchFollowups(filter: 'all');
       if (mounted) {
+        // Strictly filter to active/current existing follow-ups matching My Calling Leads
+        final activeFollowups = list.where((f) {
+          if (f.status == 'Completed' || f.status == 'Cancelled') return false;
+          final leadStatus = f.lead?.campaignStatus;
+          if (leadStatus != null &&
+              leadStatus != 'Follow up' &&
+              leadStatus != 'Follow-up') {
+            return false;
+          }
+          return true;
+        }).toList();
+        activeFollowups.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+
         setState(() {
-          _followups = list.take(6).toList();
+          _followups = activeFollowups;
+          _followupsPage = 1;
           _loadingFollowups = false;
         });
       }
@@ -450,119 +476,169 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   ),
                 ),
               )
-            else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _followups.length,
-                separatorBuilder: (context, index) => const SizedBox(height: 10),
-                itemBuilder: (context, i) {
-                  final fu = _followups[i];
-                  return Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
-                          child: const Icon(Icons.access_time_rounded, color: Color(0xFFD97706), size: 18),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      fu.clientName,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+            else ...[
+              Builder(
+                builder: (context) {
+                  final totalPages = (_followups.isEmpty ? 1 : (_followups.length / _followupsPerPage).ceil());
+                  final startIndex = (_followupsPage - 1) * _followupsPerPage;
+                  final pagedFollowups = _followups.skip(startIndex).take(_followupsPerPage).toList();
+
+                  return Column(
+                    children: [
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: pagedFollowups.length,
+                        separatorBuilder: (context, index) => const SizedBox(height: 10),
+                        itemBuilder: (context, i) {
+                          final fu = pagedFollowups[i];
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
+                                  child: const Icon(Icons.access_time_rounded, color: Color(0xFFD97706), size: 18),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              fu.clientName,
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          if (fu.isToday)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                              decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(6)),
+                                              child: const Text('Today', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                                            ),
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                            decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(6)),
+                                            child: Text(fu.leadType, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Icon(Icons.calendar_today_outlined, size: 12, color: Colors.grey.shade500),
+                                          const SizedBox(width: 4),
+                                          Text(DateFormat('EEE, d MMM • h:mm a').format(fu.scheduledAt), style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                          if (fu.mobile.isNotEmpty) ...[
+                                            const SizedBox(width: 10),
+                                            Icon(Icons.phone_outlined, size: 12, color: Colors.grey.shade500),
+                                            const SizedBox(width: 4),
+                                            Text(fu.mobile, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                          ],
+                                        ],
+                                      ),
+                                      if (fu.remarks.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          fu.remarks,
+                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ],
                                   ),
-                                  const SizedBox(width: 8),
-                                  if (fu.isToday)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                      decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(6)),
-                                      child: const Text('Today', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                                ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (fu.mobile.isNotEmpty) ...[
+                                      IconButton(
+                                        icon: const Icon(Icons.phone_forwarded, size: 18, color: Color(0xFF059669)),
+                                        tooltip: 'Call client',
+                                        onPressed: () async {
+                                          final uri = Uri.parse('tel:${fu.mobile}');
+                                          if (await canLaunchUrl(uri)) await launchUrl(uri);
+                                        },
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.chat_outlined, size: 18, color: Color(0xFF25D366)),
+                                        tooltip: 'WhatsApp',
+                                        onPressed: () async {
+                                          final clean = fu.mobile.replaceAll(RegExp(r'\D'), '');
+                                          final uri = Uri.parse('https://wa.me/$clean');
+                                          if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                        },
+                                      ),
+                                    ],
+                                    IconButton(
+                                      icon: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
+                                      tooltip: 'Open in Follow-ups tab',
+                                      onPressed: () => context.go('/campaign/leads?view=followups'),
                                     ),
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                    decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(6)),
-                                    child: Text(fu.leadType, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(Icons.calendar_today_outlined, size: 12, color: Colors.grey.shade500),
-                                  const SizedBox(width: 4),
-                                  Text(DateFormat('EEE, d MMM • h:mm a').format(fu.scheduledAt), style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                                  if (fu.mobile.isNotEmpty) ...[
-                                    const SizedBox(width: 10),
-                                    Icon(Icons.phone_outlined, size: 12, color: Colors.grey.shade500),
-                                    const SizedBox(width: 4),
-                                    Text(fu.mobile, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                                   ],
-                                ],
-                              ),
-                              if (fu.remarks.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  fu.remarks,
-                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
-                            ],
-                          ),
-                        ),
+                            ),
+                          );
+                        },
+                      ),
+                      if (_followups.length > _followupsPerPage) ...[
+                        const SizedBox(height: 12),
                         Row(
-                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            if (fu.mobile.isNotEmpty) ...[
-                              IconButton(
-                                icon: const Icon(Icons.phone_forwarded, size: 18, color: Color(0xFF059669)),
-                                tooltip: 'Call client',
-                                onPressed: () async {
-                                  final uri = Uri.parse('tel:${fu.mobile}');
-                                  if (await canLaunchUrl(uri)) await launchUrl(uri);
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.chat_outlined, size: 18, color: Color(0xFF25D366)),
-                                tooltip: 'WhatsApp',
-                                onPressed: () async {
-                                  final clean = fu.mobile.replaceAll(RegExp(r'\D'), '');
-                                  final uri = Uri.parse('https://wa.me/$clean');
-                                  if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
-                                },
-                              ),
-                            ],
-                            IconButton(
-                              icon: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
-                              tooltip: 'Open in Follow-ups tab',
-                              onPressed: () => context.go('/campaign/leads?view=followups'),
+                            Text(
+                              'Showing ${startIndex + 1}–${min(startIndex + _followupsPerPage, _followups.length)} of ${_followups.length} follow-ups',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                            Row(
+                              children: [
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onPressed: _followupsPage > 1 ? () => setState(() => _followupsPage--) : null,
+                                  icon: const Icon(Icons.chevron_left, size: 16),
+                                  label: const Text('Previous', style: TextStyle(fontSize: 12)),
+                                ),
+                                const SizedBox(width: 8),
+                                Text('Page $_followupsPage of $totalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                const SizedBox(width: 8),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onPressed: _followupsPage < totalPages ? () => setState(() => _followupsPage++) : null,
+                                  icon: const Icon(Icons.chevron_right, size: 16),
+                                  label: const Text('Next', style: TextStyle(fontSize: 12)),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ],
-                    ),
+                    ],
                   );
                 },
               ),
+            ],
           ],
         ),
       ),
@@ -802,56 +878,108 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   child: Text('No notes yet. Add your personal reminders above.', style: TextStyle(fontSize: 12.5, color: Colors.grey.shade500)),
                 ),
               )
-            else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _personalNotes.length,
-                separatorBuilder: (context, index) => const Divider(height: 1),
-                itemBuilder: (context, i) {
-                  final note = _personalNotes[i];
-                  final isDone = note['isDone'] == true;
-                  return InkWell(
-                    onTap: () => _toggleNoteDone(i),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          // Exact left-side checkbox
-                          SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: Checkbox(
-                              value: isDone,
-                              activeColor: const Color(0xFF8B5CF6),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                              onChanged: (_) => _toggleNoteDone(i),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              (note['text'] ?? '').toString(),
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: isDone ? Colors.grey.shade400 : const Color(0xFF1E293B),
-                                decoration: isDone ? TextDecoration.lineThrough : null,
-                                decorationColor: Colors.grey.shade400,
-                                decorationThickness: 2,
-                                fontWeight: isDone ? FontWeight.normal : FontWeight.w500,
+            else ...[
+              Builder(
+                builder: (context) {
+                  final totalPages = (_personalNotes.isEmpty ? 1 : (_personalNotes.length / _notesPerPage).ceil());
+                  final startIndex = (_notesPage - 1) * _notesPerPage;
+                  final pagedNotes = _personalNotes.skip(startIndex).take(_notesPerPage).toList();
+
+                  return Column(
+                    children: [
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: pagedNotes.length,
+                        separatorBuilder: (context, index) => const Divider(height: 1),
+                        itemBuilder: (context, i) {
+                          final note = pagedNotes[i];
+                          final id = (note['id'] ?? '').toString();
+                          final isDone = note['isDone'] == true;
+                          return InkWell(
+                            onTap: () => _toggleNoteDone(id),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Row(
+                                children: [
+                                  // Exact left-side checkbox
+                                  SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: Checkbox(
+                                      value: isDone,
+                                      activeColor: const Color(0xFF8B5CF6),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                      onChanged: (_) => _toggleNoteDone(id),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      (note['text'] ?? '').toString(),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: isDone ? Colors.grey.shade400 : const Color(0xFF1E293B),
+                                        decoration: isDone ? TextDecoration.lineThrough : null,
+                                        decorationColor: Colors.grey.shade400,
+                                        decorationThickness: 2,
+                                        fontWeight: isDone ? FontWeight.normal : FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.close_rounded, size: 16, color: Colors.grey.shade400),
+                                    onPressed: () => _deleteNote(id),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.close_rounded, size: 16, color: Colors.grey.shade400),
-                            onPressed: () => _deleteNote(i),
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                    ),
+                      if (_personalNotes.length > _notesPerPage) ...[
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Showing ${startIndex + 1}–${min(startIndex + _notesPerPage, _personalNotes.length)} of ${_personalNotes.length} notes',
+                              style: const TextStyle(fontSize: 11.5, color: Colors.grey),
+                            ),
+                            Row(
+                              children: [
+                                OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: const Size(0, 28),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                  onPressed: _notesPage > 1 ? () => setState(() => _notesPage--) : null,
+                                  child: const Icon(Icons.chevron_left, size: 16),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  child: Text('$_notesPage / $totalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                ),
+                                OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: const Size(0, 28),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                  onPressed: _notesPage < totalPages ? () => setState(() => _notesPage++) : null,
+                                  child: const Icon(Icons.chevron_right, size: 16),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
                   );
                 },
               ),
+            ],
           ],
         ),
       ),
