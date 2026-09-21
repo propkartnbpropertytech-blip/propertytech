@@ -458,6 +458,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
 
             // Search query filter (strips explicit BHK terms to match location/type/title/address cleanly)
             bool matchesSearch = true;
+            bool isDirectMatch = false;
             if (searchText.isNotEmpty) {
               final cleanQuery = searchText.replaceAll(RegExp(r'(\d+\+?)\s*-?\s*bhk', caseSensitive: false), '').trim();
               if (cleanQuery.isNotEmpty) {
@@ -477,8 +478,13 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                       (p.furnishingTypeName?.toLowerCase().contains(w) ?? false) ||
                       (p.remarks?.toLowerCase().contains(w) ?? false);
                 });
+                if (matchesSearch && words.any((w) => p.propertyCode.toLowerCase().contains(w.toLowerCase()) || p.title.toLowerCase().contains(w.toLowerCase()))) {
+                  isDirectMatch = true;
+                }
               }
             }
+
+            if (isDirectMatch && matchesSearch) return true;
 
             return matchesListing && matchesCategoryTab && matchesBhk && matchesSearch;
           }).toList();

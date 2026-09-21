@@ -204,7 +204,8 @@ class IntegrationService extends ChangeNotifier {
   };
 
   /// Add a custom header dynamically
-  Future<void> addCustomHeader(String headerName, {String? crmField, String? section}) async {
+  /// Add a custom header dynamically with optional persistence scope ('user' | 'global')
+  Future<void> addCustomHeader(String headerName, {String? crmField, String? section, String? scope}) async {
     final trimmed = headerName.trim();
     if (trimmed.isEmpty) return;
 
@@ -214,16 +215,14 @@ class IntegrationService extends ChangeNotifier {
       if (!_propertyListingHeaderOrder.contains(trimmed)) {
         _propertyListingHeaderOrder.add(trimmed);
       }
-      unawaited(_persistSectionCustomHeaders('Property Listing'));
-      unawaited(_persistSectionHeaderOrder('Property Listing'));
+      unawaited(saveColumnLayoutToServer(section: 'Property Listing', scope: scope ?? 'user'));
     } else if (section == 'Requirement') {
       _requirementCustomHeaders.add(trimmed);
       _requirementHiddenHeaders.remove(trimmed);
       if (!_requirementHeaderOrder.contains(trimmed)) {
         _requirementHeaderOrder.add(trimmed);
       }
-      unawaited(_persistSectionCustomHeaders('Requirement'));
-      unawaited(_persistSectionHeaderOrder('Requirement'));
+      unawaited(saveColumnLayoutToServer(section: 'Requirement', scope: scope ?? 'user'));
     } else {
       _customHeaders.add(trimmed);
       _hiddenHeaders.remove(trimmed);
@@ -244,19 +243,17 @@ class IntegrationService extends ChangeNotifier {
   }
 
   /// Remove a custom header
-  Future<void> removeCustomHeader(String headerName, {String? section}) async {
+  Future<void> removeCustomHeader(String headerName, {String? section, String? scope}) async {
     if (section == 'Property Listing') {
       _propertyListingCustomHeaders.remove(headerName);
       _propertyListingHiddenHeaders.remove(headerName);
       _propertyListingHeaderOrder.remove(headerName);
-      unawaited(_persistSectionCustomHeaders('Property Listing'));
-      unawaited(_persistSectionHeaderOrder('Property Listing'));
+      unawaited(saveColumnLayoutToServer(section: 'Property Listing', scope: scope ?? 'user'));
     } else if (section == 'Requirement') {
       _requirementCustomHeaders.remove(headerName);
       _requirementHiddenHeaders.remove(headerName);
       _requirementHeaderOrder.remove(headerName);
-      unawaited(_persistSectionCustomHeaders('Requirement'));
-      unawaited(_persistSectionHeaderOrder('Requirement'));
+      unawaited(saveColumnLayoutToServer(section: 'Requirement', scope: scope ?? 'user'));
     } else {
       _customHeaders.remove(headerName);
       _hiddenHeaders.remove(headerName);
@@ -281,22 +278,22 @@ class IntegrationService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Toggle header visibility
-  Future<void> setHeaderVisibility(String header, bool isVisible, {String? section}) async {
+  /// Toggle header visibility with optional persistence scope ('user' | 'global')
+  Future<void> setHeaderVisibility(String header, bool isVisible, {String? section, String? scope}) async {
     if (section == 'Property Listing') {
       if (isVisible) {
         _propertyListingHiddenHeaders.remove(header);
       } else {
         _propertyListingHiddenHeaders.add(header);
       }
-      unawaited(_persistSectionHiddenHeaders('Property Listing'));
+      unawaited(saveColumnLayoutToServer(section: 'Property Listing', scope: scope ?? 'user'));
     } else if (section == 'Requirement') {
       if (isVisible) {
         _requirementHiddenHeaders.remove(header);
       } else {
         _requirementHiddenHeaders.add(header);
       }
-      unawaited(_persistSectionHiddenHeaders('Requirement'));
+      unawaited(saveColumnLayoutToServer(section: 'Requirement', scope: scope ?? 'user'));
     } else {
       if (isVisible) {
         _hiddenHeaders.remove(header);
@@ -308,8 +305,8 @@ class IntegrationService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Select or Deselect all headers
-  void setAllHeadersVisibility(bool isVisible, {String? section}) {
+  /// Select or Deselect all headers with optional persistence scope ('user' | 'global')
+  void setAllHeadersVisibility(bool isVisible, {String? section, String? scope}) {
     final all = getDetectedHeaders(section: section);
     if (section == 'Property Listing') {
       if (isVisible) {
@@ -317,14 +314,14 @@ class IntegrationService extends ChangeNotifier {
       } else {
         _propertyListingHiddenHeaders.addAll(all);
       }
-      unawaited(_persistSectionHiddenHeaders('Property Listing'));
+      unawaited(saveColumnLayoutToServer(section: 'Property Listing', scope: scope ?? 'user'));
     } else if (section == 'Requirement') {
       if (isVisible) {
         _requirementHiddenHeaders.clear();
       } else {
         _requirementHiddenHeaders.addAll(all);
       }
-      unawaited(_persistSectionHiddenHeaders('Requirement'));
+      unawaited(saveColumnLayoutToServer(section: 'Requirement', scope: scope ?? 'user'));
     } else {
       if (isVisible) {
         _hiddenHeaders.clear();
@@ -503,7 +500,7 @@ class IntegrationService extends ChangeNotifier {
   }
 
   /// Reorder headers via drag and place
-  Future<void> reorderHeaders(int oldIndex, int newIndex, {List<IntegrationLeadModel>? leadsSubset, String? section}) async {
+  Future<void> reorderHeaders(int oldIndex, int newIndex, {List<IntegrationLeadModel>? leadsSubset, String? section, String? scope}) async {
     final current = List<String>.from(getDetectedHeaders(leadsSubset: leadsSubset, section: section));
     if (oldIndex < 0 || oldIndex >= current.length) return;
     if (newIndex < 0 || newIndex > current.length) return;
@@ -516,10 +513,10 @@ class IntegrationService extends ChangeNotifier {
 
     if (section == 'Property Listing') {
       _propertyListingHeaderOrder = current;
-      unawaited(_persistSectionHeaderOrder('Property Listing'));
+      unawaited(saveColumnLayoutToServer(section: 'Property Listing', scope: scope ?? 'user'));
     } else if (section == 'Requirement') {
       _requirementHeaderOrder = current;
-      unawaited(_persistSectionHeaderOrder('Requirement'));
+      unawaited(saveColumnLayoutToServer(section: 'Requirement', scope: scope ?? 'user'));
     } else if (leadsSubset != null) {
       final fullHeaders = List<String>.from(getDetectedHeaders());
       final sectionIndices = <int>[];
@@ -543,7 +540,7 @@ class IntegrationService extends ChangeNotifier {
   }
 
   /// Move a single header left (-1) or right (+1)
-  Future<void> moveHeader(String header, int direction, {List<IntegrationLeadModel>? leadsSubset, String? section}) async {
+  Future<void> moveHeader(String header, int direction, {List<IntegrationLeadModel>? leadsSubset, String? section, String? scope}) async {
     final current = List<String>.from(getDetectedHeaders(leadsSubset: leadsSubset, section: section));
     final idx = current.indexOf(header);
     if (idx == -1) return;
@@ -555,10 +552,10 @@ class IntegrationService extends ChangeNotifier {
 
     if (section == 'Property Listing') {
       _propertyListingHeaderOrder = current;
-      unawaited(_persistSectionHeaderOrder('Property Listing'));
+      unawaited(saveColumnLayoutToServer(section: 'Property Listing', scope: scope ?? 'user'));
     } else if (section == 'Requirement') {
       _requirementHeaderOrder = current;
-      unawaited(_persistSectionHeaderOrder('Requirement'));
+      unawaited(saveColumnLayoutToServer(section: 'Requirement', scope: scope ?? 'user'));
     } else if (leadsSubset != null) {
       final fullHeaders = List<String>.from(getDetectedHeaders());
       final sectionIndices = <int>[];
@@ -675,6 +672,95 @@ class IntegrationService extends ChangeNotifier {
         await prefs.setString(_reqHiddenHeadersPrefsKey, jsonEncode(_requirementHiddenHeaders.toList()));
       }
     } catch (_) {}
+  }
+
+  /// Save Column Layout to backend server DB for a specific section & scope ('user' | 'global')
+  Future<void> saveColumnLayoutToServer({
+    required String section,
+    required String scope, // 'user' or 'global'
+  }) async {
+    // 1. Always sync local cache first for instant fallback
+    if (section == 'Property Listing') {
+      await _persistSectionCustomHeaders('Property Listing');
+      await _persistSectionHiddenHeaders('Property Listing');
+      await _persistSectionHeaderOrder('Property Listing');
+    } else if (section == 'Requirement') {
+      await _persistSectionCustomHeaders('Requirement');
+      await _persistSectionHiddenHeaders('Requirement');
+      await _persistSectionHeaderOrder('Requirement');
+    }
+
+    // 2. Transmit layout setting to server DB
+    final customList = customHeadersFor(section).toList();
+    final hiddenList = hiddenHeadersFor(section).toList();
+    final orderList = headerOrderFor(section).toList();
+
+    final payload = {
+      'scope': scope,
+      'section': section,
+      'custom_headers': customList,
+      'hidden_headers': hiddenList,
+      'header_order': orderList,
+      'org_scope': _orgScope,
+      'user_id': RoleGuard.currentUser?.id,
+    };
+
+    try {
+      await _apiClient.post('/integrations/campaign-column-settings', payload);
+    } catch (_) {
+      // Retain seamless local cached state if offline
+    }
+  }
+
+  /// Fetch Column Layout settings from backend server DB
+  Future<void> fetchColumnLayoutFromServer() async {
+    try {
+      final response = await _apiClient.get(
+        '/integrations/campaign-column-settings',
+        queryParameters: {
+          'org_scope': _orgScope,
+          'user_id': RoleGuard.currentUser?.id,
+        },
+      );
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        _applyColumnSettingsFromMap(data);
+        _invalidateHeaderCache();
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  void _applyColumnSettingsFromMap(Map<String, dynamic> data) {
+    if (data['property_listing'] is Map<String, dynamic>) {
+      final propMap = data['property_listing'] as Map<String, dynamic>;
+      if (propMap['custom_headers'] is List) {
+        _propertyListingCustomHeaders.clear();
+        _propertyListingCustomHeaders.addAll((propMap['custom_headers'] as List).map((e) => e.toString()));
+      }
+      if (propMap['hidden_headers'] is List) {
+        _propertyListingHiddenHeaders.clear();
+        _propertyListingHiddenHeaders.addAll((propMap['hidden_headers'] as List).map((e) => e.toString()));
+      }
+      if (propMap['header_order'] is List) {
+        _propertyListingHeaderOrder = (propMap['header_order'] as List).map((e) => e.toString()).toList();
+      }
+    }
+
+    if (data['requirement'] is Map<String, dynamic>) {
+      final reqMap = data['requirement'] as Map<String, dynamic>;
+      if (reqMap['custom_headers'] is List) {
+        _requirementCustomHeaders.clear();
+        _requirementCustomHeaders.addAll((reqMap['custom_headers'] as List).map((e) => e.toString()));
+      }
+      if (reqMap['hidden_headers'] is List) {
+        _requirementHiddenHeaders.clear();
+        _requirementHiddenHeaders.addAll((reqMap['hidden_headers'] as List).map((e) => e.toString()));
+      }
+      if (reqMap['header_order'] is List) {
+        _requirementHeaderOrder = (reqMap['header_order'] as List).map((e) => e.toString()).toList();
+      }
+    }
   }
 
   /// Get currently visible headers for the table
@@ -842,6 +928,7 @@ class IntegrationService extends ChangeNotifier {
       if (_googleSheetUrl.isNotEmpty) {
         _startSheetPolling();
       }
+      unawaited(fetchColumnLayoutFromServer());
     } catch (e) {
       debugPrint('Failed to load persisted campaign leads: $e');
     }

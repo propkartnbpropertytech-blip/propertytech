@@ -931,16 +931,45 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _searchController.text = searchParam;
           setState(() {});
         }
-        final openId = uri.queryParameters['openId'];
-        if (openId != null && openId.isNotEmpty) {
-          RepositoryCoordinator().requirementLocal.getRequirement(openId).then((local) {
-            if (local != null && mounted) {
-              showCRMRequirementDrawer(context, local.toModel());
-            }
-          });
-        }
+        _checkAutoOpenRequirement();
       }
     });
+  }
+
+  String? _lastOpenedReqKey;
+
+  void _checkAutoOpenRequirement() {
+    try {
+      final uri = GoRouterState.of(context).uri;
+      final openId = uri.queryParameters['openId'] ?? uri.queryParameters['openReqId'];
+      final t = uri.queryParameters['t'];
+      final uniqueKey = openId != null ? '${openId}_$t' : null;
+      if (openId != null && openId.isNotEmpty && _lastOpenedReqKey != uniqueKey) {
+        _lastOpenedReqKey = uniqueKey;
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (!mounted) return;
+          RequirementModel? matched;
+          try {
+            final local = await RepositoryCoordinator().requirementLocal.getRequirement(openId);
+            if (local != null) matched = local.toModel();
+          } catch (_) {}
+          if (matched == null) {
+            try {
+              final allReqs = await RepositoryCoordinator().requirementLocal.getRequirements();
+              for (final r in allReqs) {
+                if (r.id == openId) {
+                  matched = r.toModel();
+                  break;
+                }
+              }
+            } catch (_) {}
+          }
+          if (matched != null && mounted) {
+            showCRMRequirementDrawer(context, matched);
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -1028,6 +1057,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _selectedFollowupSubTab = subTabParam;
         });
       }
+      _checkAutoOpenRequirement();
     } catch (_) {}
   }
 

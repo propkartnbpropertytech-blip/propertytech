@@ -2833,6 +2833,38 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           PropertyMetadataModel? metadata = state is PropertiesLoaded ? (state.metadata ?? _cachedMetadata) : _cachedMetadata;
           Set<String> bookmarkedIds = state is PropertiesLoaded ? state.bookmarkedIds : _cachedBookmarkedIds;
 
+          final bhkParam = GoRouterState.of(context).uri.queryParameters['bhk'];
+          if (bhkParam != null && bhkParam.isNotEmpty) {
+            if (bhkParam == '1' || bhkParam == '2' || bhkParam == '3' || bhkParam == '4') {
+              _activeBhkFilter = '$bhkParam BHK';
+            } else if (bhkParam == '5') {
+              _activeBhkFilter = '5+ BHK';
+            }
+          }
+
+          final searchQuery = GoRouterState.of(context).uri.queryParameters['search'] ??
+              GoRouterState.of(context).uri.queryParameters['q'];
+          if (searchQuery != null && searchQuery.isNotEmpty && _searchController.text != searchQuery) {
+            _searchController.text = searchQuery;
+            final sqLower = searchQuery.toLowerCase();
+            if (sqLower.contains('commercial') || sqLower.contains('office') || sqLower.contains('shop') || sqLower.contains('showroom')) {
+              _activeCategoryTab = 'Commercial';
+            } else if (sqLower.contains('industrial') || sqLower.contains('factory') || sqLower.contains('warehouse')) {
+              _activeCategoryTab = 'Industrial';
+            } else if (sqLower.contains('land') || sqLower.contains('plot')) {
+              _activeCategoryTab = 'Land & Plot';
+            }
+          }
+
+          final listingParam = GoRouterState.of(context).uri.queryParameters['listingType'];
+          if (listingParam != null && listingParam.isNotEmpty) {
+            if (listingParam.toLowerCase() == 'rent' && _activeListingTab != 'Rent') {
+              _activeListingTab = 'Rent';
+            } else if ((listingParam.toLowerCase().contains('sale') || listingParam.toLowerCase().contains('re-sale')) && _activeListingTab != 'Re-Sale') {
+              _activeListingTab = 'Re-Sale';
+            }
+          }
+
           if (rawLoadedList.isNotEmpty) {
             properties = rawLoadedList.where((p) {
               final ltName = p.listingTypeName.toLowerCase();
@@ -2901,6 +2933,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               }
 
               bool matchesSearch = true;
+              bool isDirectMatch = false;
               if (_searchController.text.trim().isNotEmpty) {
                 final query = _searchController.text.trim().toLowerCase();
                 final words = query.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
@@ -2916,6 +2949,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     (p.configurationName?.toLowerCase().contains(word) ?? false) ||
                     p.propertyTypeName.toLowerCase().contains(word) ||
                     (p.showsAddedBy && p.createdByName.toLowerCase().contains(word)));
+
+                if (matchesSearch && words.any((w) => p.propertyCode.toLowerCase() == w || (w.startsWith('pr') && p.propertyCode.toLowerCase().replaceAll('-', '') == w.replaceAll('-', '')))) {
+                  isDirectMatch = true;
+                }
               }
 
               final matchesMyAdded = !_myAddedOnly || (p.createdBy == currentUserId);
@@ -2977,6 +3014,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 matchesNoImages = p.images.isEmpty;
               }
 
+              if (isDirectMatch && matchesSearch) {
+                return matchesBhk && matchesMyAdded && matchesArchive;
+              }
+
               return matchesListing &&
                   matchesCategory &&
                   matchesTabCategory &&
@@ -3001,39 +3042,6 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             } else if (_selectedPriceSortOrRange == 'h2l') {
               properties.sort((a, b) => b.price.compareTo(a.price));
             }
-
-            final bhkParam = GoRouterState.of(context).uri.queryParameters['bhk'];
-            if (bhkParam != null && bhkParam.isNotEmpty) {
-              if (bhkParam == '1' || bhkParam == '2' || bhkParam == '3' || bhkParam == '4') {
-                _activeBhkFilter = '$bhkParam BHK';
-              } else if (bhkParam == '5') {
-                _activeBhkFilter = '5+ BHK';
-              }
-            }
-
-            final searchQuery = GoRouterState.of(context).uri.queryParameters['search'] ??
-                GoRouterState.of(context).uri.queryParameters['q'];
-            if (searchQuery != null && searchQuery.isNotEmpty && _searchController.text != searchQuery) {
-              _searchController.text = searchQuery;
-              final sqLower = searchQuery.toLowerCase();
-              if (sqLower.contains('commercial') || sqLower.contains('office') || sqLower.contains('shop') || sqLower.contains('showroom')) {
-                _activeCategoryTab = 'Commercial';
-              } else if (sqLower.contains('industrial') || sqLower.contains('factory') || sqLower.contains('warehouse')) {
-                _activeCategoryTab = 'Industrial';
-              } else if (sqLower.contains('land') || sqLower.contains('plot')) {
-                _activeCategoryTab = 'Land & Plot';
-              }
-            }
-
-            final listingParam = GoRouterState.of(context).uri.queryParameters['listingType'];
-            if (listingParam != null && listingParam.isNotEmpty) {
-              if (listingParam.toLowerCase() == 'rent' && _activeListingTab != 'Rent') {
-                _activeListingTab = 'Rent';
-              } else if ((listingParam.toLowerCase().contains('sale') || listingParam.toLowerCase().contains('re-sale')) && _activeListingTab != 'Re-Sale') {
-                _activeListingTab = 'Re-Sale';
-              }
-            }
-
             final action =
                 GoRouterState.of(context).uri.queryParameters['action'];
             if (action == 'add' &&

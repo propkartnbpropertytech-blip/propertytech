@@ -7420,10 +7420,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 ],
                               ),
                               value: isChecked,
-                              onChanged: (val) {
-                                _service.setHeaderVisibility(h, val ?? false, section: _selectedSection);
-                                setModalState(() {});
-                                setState(() {});
+                              onChanged: (val) async {
+                                final scope = await _showSaveScopeDialog(context, actionLabel: (val == true ? 'Show column "$h"' : 'Hide column "$h"'));
+                                if (scope != null) {
+                                  _service.setHeaderVisibility(h, val ?? false, section: _selectedSection, scope: scope);
+                                  setModalState(() {});
+                                  setState(() {});
+                                }
                               },
                             );
                           },
@@ -7443,6 +7446,67 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           },
         );
       },
+    );
+  }
+
+  /// Scope Selection Dialog: "Change only for me" vs "Change for all users"
+  Future<String?> _showSaveScopeDialog(BuildContext context, {required String actionLabel}) async {
+    return await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.tune_rounded, color: CRMColors.primaryOf(context)),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Save Column Layout Changes',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'How would you like to save this column layout change ($actionLabel)?',
+              style: const TextStyle(fontSize: 13.5),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: CRMColors.borderOf(context)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.person_rounded, color: Color(0xFF3B82F6)),
+                    title: const Text('Change only for me', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                    subtitle: const Text('Saves column layout to your personal user profile on the server.', style: TextStyle(fontSize: 11)),
+                    onTap: () => Navigator.pop(ctx, 'user'),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.groups_rounded, color: Color(0xFF10B981)),
+                    title: const Text('Change for all users', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                    subtitle: const Text('Saves column layout as the default organization layout on the server.', style: TextStyle(fontSize: 11)),
+                    onTap: () => Navigator.pop(ctx, 'global'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -7520,14 +7584,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 final name = textController.text.trim();
                 if (name.isNotEmpty) {
-                  _service.addCustomHeader(name, crmField: selectedCrmTarget, section: _selectedSection);
                   Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Added header "$name" to $_selectedSection')),
-                  );
+                  final scope = await _showSaveScopeDialog(context, actionLabel: 'Add header "$name"');
+                  if (scope != null) {
+                    await _service.addCustomHeader(name, crmField: selectedCrmTarget, section: _selectedSection, scope: scope);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Added header "$name" to $_selectedSection (${scope == 'global' ? 'for all users' : 'only for me'}).')),
+                      );
+                    }
+                  }
                 }
               },
               child: const Text('Add Header'),
@@ -7611,8 +7680,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       dense: true,
                       onTap: () async {
                         Navigator.pop(ctx);
-                        await _service.moveHeader(header, -1, leadsSubset: _filteredLeads, section: _selectedSection);
-                        if (mounted) setState(() {});
+                        final scope = await _showSaveScopeDialog(context, actionLabel: 'Move "$header" left');
+                        if (scope != null) {
+                          await _service.moveHeader(header, -1, leadsSubset: _filteredLeads, section: _selectedSection, scope: scope);
+                          if (mounted) setState(() {});
+                        }
                       },
                     ),
                     ListTile(
@@ -7622,8 +7694,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       dense: true,
                       onTap: () async {
                         Navigator.pop(ctx);
-                        await _service.moveHeader(header, 1, leadsSubset: _filteredLeads, section: _selectedSection);
-                        if (mounted) setState(() {});
+                        final scope = await _showSaveScopeDialog(context, actionLabel: 'Move "$header" right');
+                        if (scope != null) {
+                          await _service.moveHeader(header, 1, leadsSubset: _filteredLeads, section: _selectedSection, scope: scope);
+                          if (mounted) setState(() {});
+                        }
                       },
                     ),
                     ListTile(
@@ -7652,12 +7727,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       title: const Text('Hide this Column'),
                       contentPadding: EdgeInsets.zero,
                       dense: true,
-                      onTap: () {
-                        _service.setHeaderVisibility(header, false, section: _selectedSection);
+                      onTap: () async {
                         Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Column "$header" hidden from $_selectedSection table view.')),
-                        );
+                        final scope = await _showSaveScopeDialog(context, actionLabel: 'Hide "$header"');
+                        if (scope != null) {
+                          _service.setHeaderVisibility(header, false, section: _selectedSection, scope: scope);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Column "$header" hidden (${scope == 'global' ? 'for all users' : 'only for me'}).')),
+                          );
+                        }
                       },
                     ),
                     if (_service.customHeadersFor(_selectedSection).contains(header) || _service.customHeaders.contains(header))
@@ -7666,12 +7744,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         title: const Text('Delete Custom Header', style: TextStyle(color: CRMColors.danger)),
                         contentPadding: EdgeInsets.zero,
                         dense: true,
-                        onTap: () {
-                          _service.removeCustomHeader(header, section: _selectedSection);
+                        onTap: () async {
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Custom column "$header" removed from $_selectedSection.')),
-                          );
+                          final scope = await _showSaveScopeDialog(context, actionLabel: 'Delete "$header"');
+                          if (scope != null) {
+                            _service.removeCustomHeader(header, section: _selectedSection, scope: scope);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Custom column "$header" removed (${scope == 'global' ? 'for all users' : 'only for me'}).')),
+                            );
+                          }
                         },
                       ),
                   ],
