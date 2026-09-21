@@ -692,6 +692,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
               !EmployeeActivity.isRejected(r);
         case _LeadFocus.created:
           return EmployeeActivity.isCreatedBy(r, user) &&
+              !EmployeeActivity.isTransferredAway(r, user) &&
               !EmployeeActivity.isWon(r) &&
               !EmployeeActivity.isRejected(r);
       }
@@ -715,6 +716,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     int createdOf(List<RequirementModel> reqs) {
       return reqs.where((r) =>
           EmployeeActivity.isCreatedBy(r, user) &&
+          !EmployeeActivity.isTransferredAway(r, user) &&
           !EmployeeActivity.isWon(r) &&
           !EmployeeActivity.isRejected(r)).length;
     }

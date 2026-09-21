@@ -88,7 +88,18 @@ class EmployeeActivity {
     return false;
   }
 
+  static bool isTransferredAway(RequirementModel r, UserModel user) {
+    if (user.roleName.toLowerCase() != 'sales') return false;
+    final isAssignee = isAssignedTo(r, user);
+    final isCreator = isCreatedBy(r, user);
+    if (!isCreator) return false;
+    final assigned = (r.assignedTo ?? '').trim();
+    if (assigned.isEmpty || assigned.toLowerCase() == 'unassigned') return false;
+    return !isAssignee;
+  }
+
   static bool isSalesOwnedLead(RequirementModel r, UserModel user) {
+    if (isTransferredAway(r, user)) return false;
     return isAssignedTo(r, user) || isCreatedBy(r, user);
   }
 

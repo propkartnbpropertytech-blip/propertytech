@@ -22,6 +22,7 @@ import '../../utils/budget_formatter.dart';
 import '../../network/sync_manager.dart';
 import 'dart:async';
 import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/model_mappers.dart';
 import '../../../features/properties/services/properties_service.dart';
 import '../../../features/properties/models/property_model.dart';
 import '../../../features/properties/repository/properties_repository.dart';
@@ -765,23 +766,26 @@ class _CRMAppShellState extends State<CRMAppShell>
       String token, List<String> fieldStrings, List<String> fieldWords) {
     if (token.isEmpty) return true;
 
-    // 1. Direct substring match in any field string
+    // Direct substring match in any field string
     for (final fs in fieldStrings) {
       if (fs.contains(token)) return true;
       if (token.length >= 4 && fs.length >= 3 && token.contains(fs)) return true;
     }
 
-    // 2. Word level matching (exact, prefix, or Levenshtein distance)
+    final isNumericToken = RegExp(r'^\d+$').hasMatch(token);
+
+    // Word level matching
     for (final w in fieldWords) {
       if (w.isEmpty) continue;
-      if (w == token || w.contains(token) || token.contains(w)) return true;
+      if (w == token) return true;
+      if (!isNumericToken && (w.contains(token) || token.contains(w))) return true;
 
       if (token.length <= 3) {
-        if (w.startsWith(token)) return true;
+        if (!isNumericToken && w.startsWith(token)) return true;
       } else if (token.length <= 6) {
-        if (_levenshteinDistance(token, w) <= 1) return true;
+        if (!isNumericToken && _levenshteinDistance(token, w) <= 1) return true;
       } else {
-        if (_levenshteinDistance(token, w) <= 2) return true;
+        if (!isNumericToken && _levenshteinDistance(token, w) <= 2) return true;
       }
     }
     return false;
@@ -791,6 +795,49 @@ class _CRMAppShellState extends State<CRMAppShell>
     if (val != null) {
       final s = val.toString().trim().toLowerCase();
       if (s.isNotEmpty) list.add(s);
+    }
+  }
+
+  Set<int> _extractAllBhks(String? text) {
+    final Set<int> results = {};
+    if (text == null || text.trim().isEmpty) return results;
+    final matches = RegExp(r'(\d+)\s*(?:bhk|rk|bedroom|bed)', caseSensitive: false).allMatches(text);
+    for (final m in matches) {
+      final val = int.tryParse(m.group(1) ?? '');
+      if (val != null && val > 0 && val <= 10) {
+        results.add(val);
+      }
+    }
+    return results;
+  }
+
+  void _addPriceStrings(List<String> list, num? price) {
+    if (price == null || price <= 0) return;
+    final val = price.toDouble();
+    final valInt = price.toInt();
+    list.add(valInt.toString());
+
+    final fmt = BudgetFormatter.format(val).toLowerCase();
+    list.add(fmt);
+    list.add(fmt.replaceAll(' ', ''));
+    list.add('₹$fmt');
+    list.add('₹${fmt.replaceAll(' ', '')}');
+
+    if (val >= 100000) {
+      final lakhs = val / 100000;
+      final lakhsStr = lakhs.toStringAsFixed(lakhs.truncateToDouble() == lakhs ? 0 : 1);
+      list.add('${lakhsStr}l');
+      list.add('${lakhsStr} l');
+      list.add('${lakhsStr}lakh');
+      list.add('${lakhsStr} lakh');
+      list.add('${lakhsStr} lakhs');
+    } else if (val >= 1000) {
+      final k = val / 1000;
+      final kStr = k.toStringAsFixed(k.truncateToDouble() == k ? 0 : 1);
+      list.add('${kStr}k');
+      list.add('${kStr} k');
+      list.add('${kStr}thousand');
+      list.add('${kStr} thousand');
     }
   }
 
@@ -812,10 +859,17 @@ class _CRMAppShellState extends State<CRMAppShell>
       queryNorm = queryNorm.replaceAll(RegExp(r'\bresel(l)?\b'), 'resale');
       queryNorm = queryNorm.replaceAll(RegExp(r'\bre-sale\b'), 'resale');
 
+      final requestedBhks = _extractAllBhks(queryNorm);
+
       final queryTokens = queryNorm
           .split(RegExp(r'[\s,/\-]+'))
           .where((t) => t.isNotEmpty)
           .toList();
+
+      final cleanQueryNoSpaces = queryNorm.replaceAll(RegExp(r'\s+'), '');
+      final isPrSearch = cleanQueryNoSpaces.startsWith('pr-') ||
+          (cleanQueryNoSpaces.startsWith('pr') && RegExp(r'^pr\d+').hasMatch(cleanQueryNoSpaces));
+      final prDigitsMatch = RegExp(r'\d+').firstMatch(queryNorm)?.group(0);
 
       // 1. Active Properties (with fallback to repository API if local is empty)
       List<dynamic> props = [];
@@ -830,6 +884,23 @@ class _CRMAppShellState extends State<CRMAppShell>
 
       final matchedProps = props
           .where((p) {
+            final pCodeNorm = (p.propertyCode ?? '').toLowerCase().replaceAll('-', '').replaceAll(' ', '');
+            if (isPrSearch && prDigitsMatch != null) {
+              final targetPrNorm = 'pr$prDigitsMatch';
+              if (prDigitsMatch.length >= 4) {
+                if (pCodeNorm != targetPrNorm) return false;
+              } else {
+                if (!pCodeNorm.startsWith(targetPrNorm)) return false;
+              }
+            }
+
+            if (requestedBhks.isNotEmpty) {
+              final propBhks = _extractAllBhks('${p.configurationName ?? ''} ${p.title} ${p.description ?? ''}');
+              if (propBhks.isNotEmpty && propBhks.intersection(requestedBhks).isEmpty) {
+                return false;
+              }
+            }
+
             final fieldStrings = <String>[];
             _addStr(fieldStrings, p.propertyCode);
             _addStr(fieldStrings, p.title);
@@ -837,13 +908,13 @@ class _CRMAppShellState extends State<CRMAppShell>
             _addStr(fieldStrings, p.ownerMobile);
             _addStr(fieldStrings, p.areaName);
             _addStr(fieldStrings, p.configurationName);
-            _addStr(fieldStrings, p.createdAt);
             _addStr(fieldStrings, p.propertyStatusName);
             _addStr(fieldStrings, p.superBuiltupArea);
             _addStr(fieldStrings, p.propertyTypeName);
             _addStr(fieldStrings, p.categoryName);
             _addStr(fieldStrings, p.remarks);
             _addStr(fieldStrings, p.description);
+            _addPriceStrings(fieldStrings, p.price);
 
             final configLower = p.configurationName?.toLowerCase() ?? '';
             if (configLower.isNotEmpty) {
@@ -892,6 +963,23 @@ class _CRMAppShellState extends State<CRMAppShell>
 
         matchedBinProps = binProps
             .where((p) {
+              final pCodeNorm = (p.propertyCode ?? '').toLowerCase().replaceAll('-', '').replaceAll(' ', '');
+              if (isPrSearch && prDigitsMatch != null) {
+                final targetPrNorm = 'pr$prDigitsMatch';
+                if (prDigitsMatch.length >= 4) {
+                  if (pCodeNorm != targetPrNorm) return false;
+                } else {
+                  if (!pCodeNorm.startsWith(targetPrNorm)) return false;
+                }
+              }
+
+              if (requestedBhks.isNotEmpty) {
+                final propBhks = _extractAllBhks('${p.configurationName} ${p.title} ${p.description}');
+                if (propBhks.isNotEmpty && propBhks.intersection(requestedBhks).isEmpty) {
+                  return false;
+                }
+              }
+
               final fieldStrings = <String>[];
               _addStr(fieldStrings, p.propertyCode);
               _addStr(fieldStrings, p.title);
@@ -899,13 +987,13 @@ class _CRMAppShellState extends State<CRMAppShell>
               _addStr(fieldStrings, p.ownerMobile);
               _addStr(fieldStrings, p.areaName);
               _addStr(fieldStrings, p.configurationName);
-              _addStr(fieldStrings, p.createdAt);
               _addStr(fieldStrings, p.propertyStatusName);
               _addStr(fieldStrings, p.superBuiltupArea);
               _addStr(fieldStrings, p.propertyTypeName);
               _addStr(fieldStrings, p.categoryName);
               _addStr(fieldStrings, p.remarks);
               _addStr(fieldStrings, p.description);
+              _addPriceStrings(fieldStrings, p.price);
 
               final configLower = p.configurationName?.toLowerCase() ?? '';
               if (configLower.isNotEmpty) {
@@ -947,17 +1035,41 @@ class _CRMAppShellState extends State<CRMAppShell>
 
       final allMatchedProps = [...matchedProps, ...matchedBinProps].take(12).toList();
 
+      final isReqSearch = cleanQueryNoSpaces.startsWith('req') || cleanQueryNoSpaces.startsWith('r-');
+      final reqDigitsMatch = RegExp(r'\d+').firstMatch(queryNorm)?.group(0);
+
       // 2. Requirements / Leads
       final reqs = await RepositoryCoordinator().requirementLocal.getRequirements();
       final matchedReqs = reqs
           .where((r) {
+            final reqModel = r.toModel();
+            final reqCodeNorm = reqModel.requirementCode.toLowerCase().replaceAll('-', '').replaceAll(' ', '');
+
+            if (isReqSearch && reqDigitsMatch != null) {
+              if (reqDigitsMatch.length >= 4) {
+                if (!reqCodeNorm.contains(reqDigitsMatch)) return false;
+              }
+            }
+
+            if (requestedBhks.isNotEmpty) {
+              final reqBhks = _extractAllBhks('${r.configurationName ?? ''} ${r.remarks ?? ''}');
+              if (reqBhks.isNotEmpty && reqBhks.intersection(requestedBhks).isEmpty) {
+                return false;
+              }
+            }
+
             final fieldStrings = <String>[];
+            _addStr(fieldStrings, reqModel.requirementCode);
+            _addStr(fieldStrings, r.id);
             _addStr(fieldStrings, r.clientName);
             _addStr(fieldStrings, r.clientMobile);
             _addStr(fieldStrings, r.remarks);
+            _addStr(fieldStrings, r.notes);
             _addStr(fieldStrings, r.propertyTypeName);
             _addStr(fieldStrings, r.configurationName);
             _addStr(fieldStrings, r.categoryName);
+            _addPriceStrings(fieldStrings, r.minBudget);
+            _addPriceStrings(fieldStrings, r.maxBudget);
             for (final a in r.areaNames) {
               _addStr(fieldStrings, a);
             }
@@ -977,10 +1089,14 @@ class _CRMAppShellState extends State<CRMAppShell>
             );
           })
           .map(
-            (r) => {
-              'id': r.id,
-              'customer_name': r.clientName,
-              'mobile': r.clientMobile,
+            (r) {
+              final reqModel = r.toModel();
+              return {
+                'id': r.id,
+                'customer_name': r.clientName,
+                'mobile': r.clientMobile,
+                'requirement_code': reqModel.requirementCode,
+              };
             },
           )
           .take(12)
@@ -1080,6 +1196,58 @@ class _CRMAppShellState extends State<CRMAppShell>
     }
   }
 
+  Widget _buildViewAllTile({
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: CRMSpacing.m,
+        vertical: CRMSpacing.xs,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: CRMSpacing.m,
+            vertical: 9,
+          ),
+          decoration: BoxDecoration(
+            color: CRMColors.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: CRMColors.primary.withValues(alpha: 0.25),
+              width: 0.8,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: CRMColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_rounded,
+                color: CRMColors.primary,
+                size: 16,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showSearchOverlay() {
     if (_searchOverlayEntry != null) return;
     _searchOverlayEntry = OverlayEntry(
@@ -1097,6 +1265,8 @@ class _CRMAppShellState extends State<CRMAppShell>
             ? (availableHeight < 400 ? availableHeight : 400)
             : 100;
 
+        final String activeSearchQuery = _searchController.text.trim();
+
         final Widget cardContent = Material(
           elevation: 8,
           shadowColor: CRMColors.shadow,
@@ -1107,7 +1277,7 @@ class _CRMAppShellState extends State<CRMAppShell>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(CRMBorderRadius.input),
               border: Border.all(
-                color: CRMColors.borderOf(context).withOpacity(0.6),
+                color: CRMColors.borderOf(context).withValues(alpha: 0.6),
                 width: 0.5,
               ),
             ),
@@ -1135,7 +1305,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                     children: [
                       if (_propertySuggestions.isNotEmpty) ...[
                         _buildSuggestionSectionHeader('Properties'),
-                        ..._propertySuggestions.map(
+                        ..._propertySuggestions.take(5).map(
                           (p) => _buildSuggestionTile(
                             icon: Icons.business_rounded,
                             title: p['title'] ?? '',
@@ -1154,24 +1324,66 @@ class _CRMAppShellState extends State<CRMAppShell>
                             },
                           ),
                         ),
+                        _buildViewAllTile(
+                          label: activeSearchQuery.isNotEmpty
+                              ? 'View All Matching Properties ("$activeSearchQuery")'
+                              : 'View All Properties',
+                          onTap: () {
+                            _hideSearchOverlay();
+                            final bhks = _extractAllBhks(activeSearchQuery);
+                            String? bhkVal;
+                            if (bhks.isNotEmpty) {
+                              final b = bhks.first;
+                              bhkVal = b <= 4 ? b.toString() : '5';
+                            }
+                            final uri = Uri(
+                              path: '/properties',
+                              queryParameters: {
+                                if (activeSearchQuery.isNotEmpty) 'search': activeSearchQuery,
+                                if (bhkVal != null) 'bhk': bhkVal,
+                                't': DateTime.now().millisecondsSinceEpoch.toString(),
+                              },
+                            );
+                            context.go(uri.toString());
+                          },
+                        ),
                       ],
                       if (_requirementSuggestions.isNotEmpty) ...[
                         _buildSuggestionSectionHeader('Leads'),
-                        ..._requirementSuggestions.map(
+                        ..._requirementSuggestions.take(5).map(
                           (r) => _buildSuggestionTile(
                             icon: Icons.person_search_rounded,
                             title: r['customer_name'] ?? '',
-                            subtitle: 'Mobile: ${r['mobile']}',
+                            subtitle: 'Req Code: ${r['requirement_code']} • Mobile: ${r['mobile']}',
                             onTap: () {
                               _hideSearchOverlay();
-                              context.go('/requirements');
+                              context.go(
+                                '/requirements?openId=${r['id']}&t=${DateTime.now().millisecondsSinceEpoch}',
+                              );
                             },
                           ),
+                        ),
+                        _buildViewAllTile(
+                          label: activeSearchQuery.isNotEmpty
+                              ? 'View All Matching Leads ("$activeSearchQuery")'
+                              : 'View All Leads',
+                          onTap: () {
+                            _hideSearchOverlay();
+                            final uri = Uri(
+                              path: '/requirements',
+                              queryParameters: {
+                                if (activeSearchQuery.isNotEmpty) 'search': activeSearchQuery,
+                                'tab': 'leads',
+                                't': DateTime.now().millisecondsSinceEpoch.toString(),
+                              },
+                            );
+                            context.go(uri.toString());
+                          },
                         ),
                       ],
                       if (_ownerSuggestions.isNotEmpty) ...[
                         _buildSuggestionSectionHeader('Owners'),
-                        ..._ownerSuggestions.map(
+                        ..._ownerSuggestions.take(5).map(
                           (o) => _buildSuggestionTile(
                             icon: Icons.person_rounded,
                             title: o['name'] ?? '',
@@ -1185,7 +1397,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                       ],
                       if (_builderSuggestions.isNotEmpty) ...[
                         _buildSuggestionSectionHeader('Builders'),
-                        ..._builderSuggestions.map(
+                        ..._builderSuggestions.take(5).map(
                           (b) => _buildSuggestionTile(
                             icon: Icons.construction_rounded,
                             title: b['company_name'] ?? '',
@@ -1200,16 +1412,47 @@ class _CRMAppShellState extends State<CRMAppShell>
                       ],
                       if (_clientSuggestions.isNotEmpty) ...[
                         _buildSuggestionSectionHeader('Clients'),
-                        ..._clientSuggestions.map(
+                        ..._clientSuggestions.take(5).map(
                           (c) => _buildSuggestionTile(
                             icon: Icons.people_alt_rounded,
                             title: c['name'] ?? '',
                             subtitle: 'Mobile: ${c['mobile']}',
-                            onTap: () {
+                            onTap: () async {
                               _hideSearchOverlay();
-                              context.go('/clients');
+                              final clientMobile = (c['mobile'] ?? '').toString().trim();
+                              final clientName = (c['name'] ?? '').toString().trim().toLowerCase();
+                              String? matchedReqId;
+                              try {
+                                final reqs = await RepositoryCoordinator().requirementLocal.getRequirements();
+                                for (final req in reqs) {
+                                  if (clientMobile.isNotEmpty && req.clientMobile.trim() == clientMobile) {
+                                    matchedReqId = req.id;
+                                    break;
+                                  }
+                                  if (clientName.isNotEmpty && req.clientName.trim().toLowerCase() == clientName) {
+                                    matchedReqId = req.id;
+                                    break;
+                                  }
+                                }
+                              } catch (_) {}
+                              if (matchedReqId != null) {
+                                context.go(
+                                  '/requirements?openId=$matchedReqId&t=${DateTime.now().millisecondsSinceEpoch}',
+                                );
+                              } else {
+                                context.go('/clients');
+                              }
                             },
                           ),
+                        ),
+                        _buildViewAllTile(
+                          label: activeSearchQuery.isNotEmpty
+                              ? 'View All Clients ("$activeSearchQuery")'
+                              : 'View All Clients',
+                          onTap: () {
+                            _hideSearchOverlay();
+                            context.go('/clients');
+                          },
                         ),
                       ],
                     ],
