@@ -565,7 +565,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               ],
             ),
             const Divider(height: 24),
-            if (_loadingFollowups)
+            if (_loadingFollowups && _followups.isEmpty)
               const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
             else if (_followups.isEmpty)
               Padding(
@@ -783,7 +783,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               ],
             ),
             const Divider(height: 24),
-            if (_loadingTransferred)
+            if (_loadingTransferred && _transferredLeads.isEmpty)
               const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
             else if (_transferredLeads.isEmpty)
               Padding(

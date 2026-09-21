@@ -94,6 +94,11 @@ class _CRMAppShellState extends State<CRMAppShell>
           (newNotif['id'] ?? '').toString() == 'refresh') {
         return;
       }
+      final notifId = (newNotif['id'] ?? '').toString();
+      if (notifId.isNotEmpty &&
+          _notifications.any((n) => (n is Map && (n['id'] ?? '').toString() == notifId))) {
+        return;
+      }
       if (mounted) {
         setState(() {
           _notifications.insert(0, newNotif);
@@ -106,7 +111,6 @@ class _CRMAppShellState extends State<CRMAppShell>
           return;
         }
 
-        final notifId = (newNotif['id'] ?? '').toString();
         if (notifId.isNotEmpty && !_knownNotificationIds.contains(notifId)) {
           _knownNotificationIds.add(notifId);
           AppNotifierService.notify(
@@ -139,7 +143,7 @@ class _CRMAppShellState extends State<CRMAppShell>
         _,
       ) async {
         if (mounted) {
-          await _fetchNotifications();
+          await _fetchNotifications(silent: true);
           await AppNotifierService.checkAndTriggerWelcomeIfNewlyGranted();
         }
       });
@@ -154,6 +158,7 @@ class _CRMAppShellState extends State<CRMAppShell>
     _searchFocusNode.dispose();
     _searchDebounce?.cancel();
     _notificationsTimer?.cancel();
+    _notifCenterSub?.cancel();
     TelecallerHeartbeatService.instance.stop();
     super.dispose();
   }
@@ -377,16 +382,24 @@ class _CRMAppShellState extends State<CRMAppShell>
     }
   }
 
-  Future<void> _fetchNotifications({bool loadMore = false}) async {
+  Future<void> _fetchNotifications({bool loadMore = false, bool silent = false}) async {
     if (!mounted) return;
-    setState(() {
-      _isLoadingNotifications = true;
+    if (!silent) {
+      setState(() {
+        _isLoadingNotifications = true;
+        if (!loadMore) {
+          _notificationsPage = 1;
+        } else {
+          _notificationsPage++;
+        }
+      });
+    } else {
       if (!loadMore) {
         _notificationsPage = 1;
       } else {
         _notificationsPage++;
       }
-    });
+    }
 
     String? role;
     String? userId;
@@ -638,15 +651,30 @@ class _CRMAppShellState extends State<CRMAppShell>
     } catch (_) {}
 
     if (mounted) {
-      setState(() {
+      final newUnreadCount = uniqueNotifs
+          .where((n) => n['is_read'] == false)
+          .length;
+      final bool hasChanged = !silent ||
+          _notificationsPanelOpen ||
+          _unreadNotificationsCount != newUnreadCount ||
+          _unreadTeamMessagesCount != unreadMsgCount ||
+          _notifications.length != uniqueNotifs.length;
+
+      if (hasChanged) {
+        setState(() {
+          _notifications = uniqueNotifs;
+          _totalNotificationPages = apiTotalPages;
+          _unreadNotificationsCount = newUnreadCount;
+          _unreadTeamMessagesCount = unreadMsgCount;
+          _isLoadingNotifications = false;
+        });
+      } else {
         _notifications = uniqueNotifs;
         _totalNotificationPages = apiTotalPages;
-        _unreadNotificationsCount = _notifications
-            .where((n) => n['is_read'] == false)
-            .length;
+        _unreadNotificationsCount = newUnreadCount;
         _unreadTeamMessagesCount = unreadMsgCount;
         _isLoadingNotifications = false;
-      });
+      }
     }
   }
 
@@ -1318,11 +1346,6 @@ class _CRMAppShellState extends State<CRMAppShell>
 
     final showSidebar = isDesktop || isTablet;
 
-    final entryCurved = CurvedAnimation(
-      parent: _entryController,
-      curve: CRMMotion.emphasized,
-    );
-
     return MobileSystemBackHandler(
       onBeforeBack: () async {
         if (_searchOverlayEntry != null || _isMobileSearchActive) {
@@ -1340,15 +1363,8 @@ class _CRMAppShellState extends State<CRMAppShell>
       },
       child: Stack(
         children: [
-          FadeTransition(
-            opacity: entryCurved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.012),
-                end: Offset.zero,
-              ).animate(entryCurved),
-              child: Scaffold(
-                backgroundColor: CRMColors.backgroundOf(context),
+          Scaffold(
+            backgroundColor: CRMColors.backgroundOf(context),
                 extendBody: true,
                 drawer: isMobile
                     ? Drawer(
@@ -1545,8 +1561,6 @@ class _CRMAppShellState extends State<CRMAppShell>
                 ),
               ),
             ),
-          ),
-        ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),
           ValueListenableBuilder<bool>(
             valueListenable: SyncManager().isSyncing,
