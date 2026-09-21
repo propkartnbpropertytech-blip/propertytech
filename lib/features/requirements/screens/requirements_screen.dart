@@ -10203,19 +10203,8 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
   void initState() {
     super.initState();
     _currentStep = widget.initialStep;
-    if (widget.requirement.nextFollowupDate != null && widget.requirement.nextFollowupDate!.trim().isNotEmpty) {
-      final parsed = _parseFollowupDateTime(widget.requirement.nextFollowupDate);
-      if (parsed != null) {
-        _followupDate = parsed;
-        _followupTime = TimeOfDay.fromDateTime(parsed);
-      } else {
-        _followupDate = DateTime.now();
-        _followupTime = TimeOfDay.now();
-      }
-    } else {
-      _followupDate = DateTime.now();
-      _followupTime = TimeOfDay.now();
-    }
+    _followupDate = DateTime.now();
+    _followupTime = TimeOfDay.now();
   }
 
   @override
@@ -10870,10 +10859,12 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
                                 Expanded(
                                   child: InkWell(
                                     onTap: () async {
+                                      final now = DateTime.now();
+                                      final todayStart = DateTime(now.year, now.month, now.day);
                                       final picked = await showDatePicker(
                                         context: context,
-                                        initialDate: _followupDate,
-                                        firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                                        initialDate: _followupDate.isBefore(todayStart) ? todayStart : _followupDate,
+                                        firstDate: DateTime.now().subtract(const Duration(days: 30)),
                                         lastDate: DateTime(2030),
                                       );
                                       if (picked != null) {
