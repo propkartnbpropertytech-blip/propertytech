@@ -429,7 +429,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         : (_viewMode == 'archive_listed' || _viewMode == 'listed'
             ? scopedLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList()
             : (_viewMode == 'archive_requirements'
-                ? scopedLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won')).toList()
+                ? scopedLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed')).toList()
                 : scopedLeads.where((l) {
                     if (l.leadType != _selectedSection) return false;
                     return !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned');
@@ -601,7 +601,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       final isSelectedSec = l.leadType == _selectedSection;
       final isNotInterested = isNotInterestedStatus(l.campaignStatus);
       final isListed = isProp && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived');
-      final isArchivedReq = isReq && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won');
+      final isArchivedReq = isReq && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed');
       final isArchived = isListed || isArchivedReq;
 
       if (isNotInterested) {
@@ -1491,15 +1491,25 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             );
           }
         } else if (newStatus == 'Wrong Lead Property Listing') {
+          final isArchive = _viewMode == 'archive_requirements' || _viewMode == 'archive_listed' || _viewMode == 'listed' || lead.campaignStatus == 'Archived' || lead.campaignStatus == 'Closed' || lead.campaignStatus == 'Won';
+          if (isArchive) {
+            await _service.updateLeadCampaignStatus(lead.id, 'Property Listed');
+          }
           final ok = await _service.reclassifyLead(lead.id, 'Property Listing');
           unawaited(_service.fetchServerLeads(resetWithServer: true));
           if (mounted) {
             setState(() {
+              if (_viewMode == 'archive_requirements') {
+                _viewMode = 'archive_listed';
+                _selectedSection = 'Property Listing';
+                _persistedSection = 'Property Listing';
+              }
               _cachedFilteredLeads = null;
+              _currentPage = 1;
             });
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: const Text('Lead moved to Property Listing table.'),
+                content: Text(isArchive ? 'Lead moved to Property Listing Archive table.' : 'Lead moved to Property Listing table.'),
                 backgroundColor: const Color(0xFF0284C7),
                 action: SnackBarAction(
                   label: 'View',
@@ -1508,6 +1518,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     setState(() {
                       _selectedSection = 'Property Listing';
                       _persistedSection = 'Property Listing';
+                      if (isArchive) {
+                        _viewMode = 'archive_listed';
+                      }
                       _cachedFilteredLeads = null;
                       _currentPage = 1;
                     });
@@ -1517,15 +1530,25 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             );
           }
         } else if (newStatus == 'Wrong Lead Requirement') {
+          final isArchive = _viewMode == 'archive_listed' || _viewMode == 'listed' || _viewMode == 'archive_requirements' || lead.campaignStatus == 'Property Listed' || lead.campaignStatus == 'Listed' || lead.campaignStatus == 'Archived';
+          if (isArchive) {
+            await _service.updateLeadCampaignStatus(lead.id, 'Archived');
+          }
           final ok = await _service.reclassifyLead(lead.id, 'Requirement');
           unawaited(_service.fetchServerLeads(resetWithServer: true));
           if (mounted) {
             setState(() {
+              if (_viewMode == 'archive_listed' || _viewMode == 'listed') {
+                _viewMode = 'archive_requirements';
+                _selectedSection = 'Requirement';
+                _persistedSection = 'Requirement';
+              }
               _cachedFilteredLeads = null;
+              _currentPage = 1;
             });
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: const Text('Lead moved to Requirement table.'),
+                content: Text(isArchive ? 'Lead moved to Requirement Archive table.' : 'Lead moved to Requirement table.'),
                 backgroundColor: const Color(0xFF8B5CF6),
                 action: SnackBarAction(
                   label: 'View',
@@ -1534,6 +1557,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     setState(() {
                       _selectedSection = 'Requirement';
                       _persistedSection = 'Requirement';
+                      if (isArchive) {
+                        _viewMode = 'archive_requirements';
+                      }
                       _cachedFilteredLeads = null;
                       _currentPage = 1;
                     });
@@ -4342,7 +4368,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   Widget _buildArchiveNoticeBanner(BuildContext context) {
-    final isListed = _viewMode == 'archive_listed' || _viewMode == 'listed';
+    final isListed = _selectedSection == 'Property Listing';
     final themeColor = isListed ? const Color(0xFF10B981) : const Color(0xFF6366F1);
     final count = isListed ? _cachedListedCount : _cachedArchivedReqCount;
     final title = isListed
@@ -4428,6 +4454,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           setState(() {
             _selectedSection = 'Property Listing';
             _persistedSection = 'Property Listing';
+            if (_viewMode == 'archive_requirements') {
+              _viewMode = 'archive_listed';
+            }
             _selectedLeadIds.clear();
             _currentPage = 1;
             _cachedFilteredLeads = null;
@@ -4449,6 +4478,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           setState(() {
             _selectedSection = 'Requirement';
             _persistedSection = 'Requirement';
+            if (_viewMode == 'archive_listed' || _viewMode == 'listed') {
+              _viewMode = 'archive_requirements';
+            }
             _selectedLeadIds.clear();
             _currentPage = 1;
             _cachedFilteredLeads = null;

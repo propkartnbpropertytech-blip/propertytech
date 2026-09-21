@@ -1433,7 +1433,17 @@ class IntegrationService extends ChangeNotifier {
     try {
       final idx = _leads.indexWhere((l) => l.id == leadId);
       if (idx != -1) {
-        _leads[idx] = _leads[idx].copyWith(leadType: targetLeadType);
+        final current = _leads[idx];
+        String newCampaignStatus = current.campaignStatus;
+        if (targetLeadType == 'Requirement' && (current.campaignStatus == 'Property Listed' || current.campaignStatus == 'Listed')) {
+          newCampaignStatus = 'Archived';
+        } else if (targetLeadType == 'Property Listing' && current.campaignStatus == 'Archived') {
+          newCampaignStatus = 'Property Listed';
+        }
+        _leads[idx] = current.copyWith(
+          leadType: targetLeadType,
+          campaignStatus: newCampaignStatus,
+        );
         notifyListeners();
         unawaited(_persistLeads());
       }
