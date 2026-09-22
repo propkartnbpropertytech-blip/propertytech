@@ -215,7 +215,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
   static const int _transferredPerPage = 10;
 
   int _propertiesPage = 1;
-  static const int _propertiesPerPage = 10;
+  static const int _propertiesPerPage = 8;
   String _propertyPriceSort = 'none';
   final Set<String> _selectedPropertyAreas = <String>{};
 
@@ -223,7 +223,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
   static const int _notesPerPage = 5;
 
   int _activityPage = 1;
-  static const int _activityPerPage = 10;
+  static const int _activityPerPage = 8;
 
   final TextEditingController _noteController = TextEditingController();
 
@@ -461,12 +461,12 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                 ),
                 const SizedBox(height: 24),
 
-                // Row 2: Recent Properties Listed & Activity Logs on Left (flex 6), Recent Leads on Right (flex 4)
+                // Row 2: Recent Properties Listed & Activity Logs on Left (flex 11), Recent Leads on Right (flex 9)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      flex: 6,
+                      flex: 11,
                       child: Column(
                         children: [
                           _buildRecentPropertiesCard(context, safeList(d['recentProperties'])),
@@ -477,7 +477,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     ),
                     const SizedBox(width: 24),
                     Expanded(
-                      flex: 4,
+                      flex: 9,
                       child: Column(
                         children: [
                           _buildRecentLeadsCard(context, recentLeads),
@@ -1782,18 +1782,18 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
-                  horizontalMargin: 8,
-                  columnSpacing: 18,
-                  headingRowHeight: 40,
-                  dataRowMinHeight: 56,
-                  dataRowMaxHeight: 66,
+                  horizontalMargin: 12,
+                  columnSpacing: 20,
+                  headingRowHeight: 42,
+                  dataRowMinHeight: 70,
+                  dataRowMaxHeight: 80,
                   headingTextStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
                   columns: const [
                     DataColumn(label: Text('#')),
                     DataColumn(label: Text('Property')),
                     DataColumn(label: Text('Price')),
                     DataColumn(label: Text('Type')),
-                    DataColumn(label: Text('Added Date')),
+                    DataColumn(label: Text('Area / Location')),
                     DataColumn(label: Text('Actions')),
                   ],
                   rows: pagedProps.asMap().entries.map((entry) {
@@ -1801,83 +1801,134 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     final prop = entry.value as Map;
                     final code = (prop['property_code'] ?? prop['code'] ?? 'PROP').toString();
                     final title = (prop['title'] ?? code).toString();
-                    final priceVal = prop['price'];
-                    final priceStr = _formatPropPrice(priceVal);
-
                     final listingType = (prop['listing_type'] ?? prop['listingType'] ?? 'Sale').toString();
+                    final isRent = _isRentMode ? !listingType.toLowerCase().contains('sale') : listingType.toLowerCase().contains('rent');
+                    final priceVal = prop['price'];
+                    final priceStr = _formatPropPrice(priceVal, isRent: isRent);
+
                     final status = (prop['status'] ?? 'Available').toString();
                     final images = prop['images'] as List? ?? [];
                     final coverImg = images.isNotEmpty ? images.first.toString() : null;
 
                     String timeStr = '-';
+                    String timeAgo = '';
                     final dateStr = prop['created_at'] ?? prop['createdAt'];
                     if (dateStr != null) {
-                      final dt = DateTime.tryParse(dateStr.toString());
-                      if (dt != null) timeStr = DateFormat('d MMM, h:mm a').format(dt.toLocal());
+                      final dt = DateTime.tryParse(dateStr.toString())?.toLocal();
+                      if (dt != null) {
+                        timeStr = DateFormat('d MMM, h:mm a').format(dt);
+                        timeAgo = _formatTimeAgo(dt);
+                      }
                     }
 
-                    final isRent = listingType.toLowerCase().contains('rent');
+                    String areaStr = '';
+                    final rawArea = prop['area_name'] ?? prop['area'];
+                    if (rawArea is Map) {
+                      areaStr = (rawArea['area_name'] ?? rawArea['name'] ?? '').toString();
+                    } else if (rawArea != null && rawArea.toString().trim().isNotEmpty) {
+                      areaStr = rawArea.toString().trim();
+                    }
+                    if (areaStr.isEmpty) {
+                      final rawAddr = (prop['address'] ?? prop['location'] ?? '').toString().trim();
+                      areaStr = rawAddr;
+                    }
+                    if (areaStr.isEmpty) {
+                      areaStr = '-';
+                    }
 
                     return DataRow(
                       cells: [
                         DataCell(Text('$index', style: const TextStyle(fontSize: 12, color: Colors.grey))),
                         DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // 1. Property Image: size 48x48 (slightly increased) with status badge directly over it
-                              Stack(
-                                children: [
-                                  Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF1F5F9),
-                                      borderRadius: BorderRadius.circular(8),
-                                      image: coverImg != null && coverImg.startsWith('http')
-                                          ? DecorationImage(image: NetworkImage(coverImg), fit: BoxFit.cover)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // 1. Property Image: size 58x58 (larger & more clearly visible) with status badge overlay
+                                Stack(
+                                  children: [
+                                    Container(
+                                      width: 58,
+                                      height: 58,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF1F5F9),
+                                        borderRadius: BorderRadius.circular(8),
+                                        image: coverImg != null && coverImg.startsWith('http')
+                                            ? DecorationImage(image: NetworkImage(coverImg), fit: BoxFit.cover)
+                                            : null,
+                                      ),
+                                      child: coverImg == null || !coverImg.startsWith('http')
+                                          ? const Icon(Icons.home_work_outlined, size: 26, color: Color(0xFF94A3B8))
                                           : null,
                                     ),
-                                    child: coverImg == null || !coverImg.startsWith('http')
-                                        ? const Icon(Icons.home_work_outlined, size: 22, color: Color(0xFF94A3B8))
-                                        : null,
-                                  ),
-                                  Positioned(
-                                    bottom: 0,
-                                    left: 0,
-                                    right: 0,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1.5),
-                                      decoration: BoxDecoration(
-                                        color: status.toLowerCase().contains('avail')
-                                            ? const Color(0xFF059669).withValues(alpha: 0.9)
-                                            : (status.toLowerCase().contains('sold') || status.toLowerCase().contains('rented')
-                                                ? const Color(0xFFDC2626).withValues(alpha: 0.9)
-                                                : const Color(0xFF334155).withValues(alpha: 0.9)),
-                                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
-                                      ),
-                                      child: Text(
-                                        status,
-                                        textAlign: TextAlign.center,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.white),
+                                    Positioned(
+                                      bottom: 0,
+                                      left: 0,
+                                      right: 0,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1.5),
+                                        decoration: BoxDecoration(
+                                          color: status.toLowerCase().contains('avail')
+                                              ? const Color(0xFF059669).withValues(alpha: 0.9)
+                                              : (status.toLowerCase().contains('sold') || status.toLowerCase().contains('rented')
+                                                  ? const Color(0xFFDC2626).withValues(alpha: 0.9)
+                                                  : const Color(0xFF334155).withValues(alpha: 0.9)),
+                                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
+                                        ),
+                                        child: Text(
+                                          status,
+                                          textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.white),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(width: 12),
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 190),
-                                child: Text(
-                                  title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                                  ],
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 12),
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(maxWidth: 210),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            timeStr,
+                                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          const Text('•', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            code,
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF475569)),
+                                          ),
+                                        ],
+                                      ),
+                                      if (timeAgo.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          timeAgo,
+                                          style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         DataCell(Text(priceStr, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
@@ -1898,16 +1949,16 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                             ),
                           ),
                         ),
-                        // Added Date column with PR Number directly below
+                        // Area / Location column displaying only the property's area/location
                         DataCell(
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(timeStr, style: const TextStyle(fontSize: 12, color: Color(0xFF334155), fontWeight: FontWeight.w500)),
-                              const SizedBox(height: 3),
-                              Text(code, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-                            ],
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 140),
+                            child: Text(
+                              areaStr,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+                            ),
                           ),
                         ),
                         // Actions column with View button opening Property View Details
@@ -1932,41 +1983,43 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                   }).toList(),
                 ),
               ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Showing ${totalItems == 0 ? 0 : (currentPage - 1) * _propertiesPerPage + 1}–${min(currentPage * _propertiesPerPage, totalItems)} of $totalItems ${_isRentMode ? 'rental ' : 're-sale '}properties',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  Row(
-                    children: [
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              if (totalItems > _propertiesPerPage) ...[
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Showing ${totalItems == 0 ? 0 : (currentPage - 1) * _propertiesPerPage + 1}–${min(currentPage * _propertiesPerPage, totalItems)} of $totalItems ${_isRentMode ? 'rental ' : 're-sale '}properties',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: currentPage > 1 ? () => setState(() => _propertiesPage = currentPage - 1) : null,
+                          icon: const Icon(Icons.chevron_left, size: 16),
+                          label: const Text('Previous', style: TextStyle(fontSize: 12)),
                         ),
-                        onPressed: currentPage > 1 ? () => setState(() => _propertiesPage = currentPage - 1) : null,
-                        icon: const Icon(Icons.chevron_left, size: 16),
-                        label: const Text('Previous', style: TextStyle(fontSize: 12)),
-                      ),
-                      const SizedBox(width: 8),
-                      Text('Page $currentPage of $safeTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        const SizedBox(width: 8),
+                        Text('Page $currentPage of $safeTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: currentPage < safeTotalPages ? () => setState(() => _propertiesPage = currentPage + 1) : null,
+                          icon: const Icon(Icons.chevron_right, size: 16),
+                          label: const Text('Next', style: TextStyle(fontSize: 12)),
                         ),
-                        onPressed: currentPage < safeTotalPages ? () => setState(() => _propertiesPage = currentPage + 1) : null,
-                        icon: const Icon(Icons.chevron_right, size: 16),
-                        label: const Text('Next', style: TextStyle(fontSize: 12)),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
             ],
           ],
         ),
@@ -2178,16 +2231,63 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
     );
   }
 
-  String _formatPropPrice(dynamic amount) {
+  String _formatPropPrice(dynamic amount, {bool isRent = false}) {
     if (amount == null) return 'N/A';
     final num val = num.tryParse(amount.toString()) ?? 0;
     if (val <= 0) return 'N/A';
+    if (isRent) {
+      String formatted;
+      if (val >= 10000000) {
+        final cr = val / 10000000;
+        final crStr = cr % 1 == 0 ? cr.toInt().toString() : cr.toStringAsFixed(cr * 10 % 1 == 0 ? 1 : 2);
+        formatted = '₹$crStr Cr';
+      } else if (val >= 100000) {
+        final l = val / 100000;
+        final lStr = l % 1 == 0 ? l.toInt().toString() : l.toStringAsFixed(l * 10 % 1 == 0 ? 1 : 2);
+        formatted = '₹$lStr L';
+      } else if (val >= 1000) {
+        final k = val / 1000;
+        final kStr = k % 1 == 0 ? k.toInt().toString() : k.toStringAsFixed(1);
+        formatted = '₹$kStr K';
+      } else {
+        formatted = '₹$val';
+      }
+      return '$formatted / mo';
+    }
+
     if (val >= 10000000) {
-      return '₹${(val / 10000000).toStringAsFixed(2)} Cr';
+      final cr = val / 10000000;
+      return '₹${cr % 1 == 0 ? cr.toInt().toString() : cr.toStringAsFixed(2)} Cr';
     } else if (val >= 100000) {
-      return '₹${(val / 100000).toStringAsFixed(2)} L';
+      final l = val / 100000;
+      return '₹${l % 1 == 0 ? l.toInt().toString() : l.toStringAsFixed(2)} L';
     } else {
       return NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0).format(val);
     }
   }
+
+  String _formatTimeAgo(DateTime? dt) {
+    if (dt == null) return '';
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.isNegative || diff.inSeconds < 60) {
+      return 'Added just now';
+    } else if (diff.inMinutes < 60) {
+      final m = diff.inMinutes;
+      return 'Added $m ${m == 1 ? 'minute' : 'minutes'} ago';
+    } else if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return 'Added $h ${h == 1 ? 'hour' : 'hours'} ago';
+    } else if (diff.inDays < 30) {
+      final d = diff.inDays;
+      return 'Added $d ${d == 1 ? 'day' : 'days'} ago';
+    } else if (diff.inDays < 365) {
+      final months = (diff.inDays / 30).floor();
+      return 'Added $months ${months == 1 ? 'month' : 'months'} ago';
+    } else {
+      final years = (diff.inDays / 365).floor();
+      return 'Added $years ${years == 1 ? 'year' : 'years'} ago';
+    }
+  }
+
 }
