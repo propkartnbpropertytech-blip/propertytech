@@ -27,18 +27,37 @@ class LoginSubmitted extends AuthEvent {
   final String email;
   final String password;
   final bool rememberMe;
+  final String? captchaId;
+  final String? captchaAnswer;
 
   const LoginSubmitted({
     required this.email,
     required this.password,
     required this.rememberMe,
+    this.captchaId,
+    this.captchaAnswer,
   });
 
   @override
-  List<Object?> get props => [email, rememberMe];
+  List<Object?> get props => [email, rememberMe, captchaId, captchaAnswer];
 }
 
 class LogoutRequested extends AuthEvent {}
+
+class MfaSubmitted extends AuthEvent {
+  final String mfaChallengeId;
+  final String code;
+  final bool rememberMe;
+
+  const MfaSubmitted({
+    required this.mfaChallengeId,
+    required this.code,
+    required this.rememberMe,
+  });
+
+  @override
+  List<Object?> get props => [mfaChallengeId, code, rememberMe];
+}
 
 /// Internal: session killed by 401 / forced cleanup.
 class AuthSessionExpired extends AuthEvent {}
@@ -66,6 +85,37 @@ class Authenticated extends AuthState {
   List<Object?> get props => [user];
 }
 
+class MfaChallengeRequired extends AuthState {
+  final String mfaChallengeId;
+  final String email;
+  final String role;
+  final bool rememberMe;
+  final bool mfaSetupRequired;
+  final String? secret;
+  final String? otpauthUrl;
+
+  const MfaChallengeRequired({
+    required this.mfaChallengeId,
+    required this.email,
+    required this.role,
+    required this.rememberMe,
+    this.mfaSetupRequired = false,
+    this.secret,
+    this.otpauthUrl,
+  });
+
+  @override
+  List<Object?> get props => [
+        mfaChallengeId,
+        email,
+        role,
+        rememberMe,
+        mfaSetupRequired,
+        secret,
+        otpauthUrl,
+      ];
+}
+
 class Unauthenticated extends AuthState {}
 
 class AuthError extends AuthState {
@@ -90,6 +140,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         super(AuthInitial()) {
     on<AuthCheckStatus>(_onAuthCheckStatus);
     on<LoginSubmitted>(_onLoginSubmitted);
+    on<MfaSubmitted>(_onMfaSubmitted);
     on<LogoutRequested>(_onLogoutRequested);
     on<AuthSessionExpired>(_onSessionExpired);
 
@@ -167,11 +218,28 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     emit(AuthLoading());
     try {
-      final user = await _authRepository.login(
+      final result = await _authRepository.login(
         event.email,
         event.password,
         event.rememberMe,
+        captchaId: event.captchaId,
+        captchaAnswer: event.captchaAnswer,
       );
+
+      if (result is Map && result['mfaRequired'] == true) {
+        emit(MfaChallengeRequired(
+          mfaChallengeId: result['mfaChallengeId'] ?? '',
+          email: result['email'] ?? event.email,
+          role: result['role'] ?? '',
+          rememberMe: event.rememberMe,
+          mfaSetupRequired: result['mfaSetupRequired'] == true,
+          secret: result['secret']?.toString(),
+          otpauthUrl: result['otpauthUrl']?.toString(),
+        ));
+        return;
+      }
+
+      final user = result as UserModel;
       RoleGuard.currentUser = user;
       AppLogger.i('User ${user.email} (${user.role}) logged in successfully');
 
@@ -193,6 +261,42 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       AppLogger.e('Login failed for ${event.email}', e, stackTrace);
       RoleGuard.currentUser = null;
       emit(AuthError(message: e.toString()));
+      emit(Unauthenticated());
+    }
+  }
+
+  Future<void> _onMfaSubmitted(
+    MfaSubmitted event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(AuthLoading());
+    try {
+      final user = await _authRepository.verifyMfa(
+        event.mfaChallengeId,
+        event.code,
+        event.rememberMe,
+      );
+      RoleGuard.currentUser = user;
+      AppLogger.i('User ${user.email} (${user.role}) logged in successfully via 2FA');
+
+      emit(Authenticated(user: user));
+      _startSessionWatchdog();
+      unawaited(PushNotificationService.registerCurrentUser());
+
+      unawaited(() async {
+        try {
+          await SyncManager().performStartupSync();
+          SyncManager().isSyncCompleted = true;
+          await SyncManager().connectAfterAuth();
+        } catch (syncErr) {
+          SyncManager().isSyncCompleted = false;
+          AppLogger.w('Post-login background sync warning', syncErr);
+        }
+      }());
+    } catch (e, stackTrace) {
+      AppLogger.e('2FA verification failed for challenge ${event.mfaChallengeId}', e, stackTrace);
+      RoleGuard.currentUser = null;
+      emit(AuthError(message: e.toString().replaceAll('Exception: ', '')));
       emit(Unauthenticated());
     }
   }

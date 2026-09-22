@@ -35,6 +35,7 @@ import '../../../core/utils/budget_formatter.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/utils/file_downloader.dart';
+import '../../../core/utils/formatters.dart';
 import '../../requirements/utils/property_share_pdf.dart';
 import '../../requirements/widgets/pdf_option_selection_dialog.dart';
 
@@ -3607,7 +3608,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final bool isMobile = screenWidth < 600;
 
     final double cardWidth = isMobile
-        ? (screenWidth - (CRMSpacing.m * 2) - CRMSpacing.m).clamp(0.0, double.infinity) / 2
+        ? math.max(0.0, screenWidth - (CRMSpacing.m * 2) - CRMSpacing.m) / 2
         : 180.0;
     final double chartCardWidth = isMobile
         ? (screenWidth - (CRMSpacing.m * 2))
@@ -5256,7 +5257,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         DateFormat('dd/MM/yyyy hh:mm a').format(p.createdAt.toLocal()),
       ];
 
-      csvBuffer.writeln(row.map((val) => '"${val.toString().replaceAll('"', '""')}"').join(','));
+      csvBuffer.writeln(row.map((val) => '"${CsvSanitizer.sanitize(val)}"').join(','));
     }
 
     final bytes = utf8.encode(csvBuffer.toString());

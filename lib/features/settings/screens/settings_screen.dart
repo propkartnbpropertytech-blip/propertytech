@@ -15,10 +15,12 @@ import '../../../core/theme/theme_presets.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import 'sync_debug_screen.dart';
 import '../widgets/permission_matrix_card.dart';
+import '../widgets/backup_management_card.dart';
 import '../../requirements/services/match_criteria_manager.dart';
 import '../services/upload_limits_manager.dart';
 import '../../../core/storage/isar_service.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/api/api_constants.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -1654,6 +1656,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (isSuperAdmin)
         const _SettingsNavItem(id: 'permissions', label: 'Permission Matrix', icon: Icons.admin_panel_settings_rounded),
       if (isSuperAdmin)
+        const _SettingsNavItem(id: 'backups', label: 'Automated Backups', icon: Icons.cloud_download_rounded),
+      if (isSuperAdmin)
         const _SettingsNavItem(id: 'audit', label: 'Audit Logs', icon: Icons.history_rounded),
       const _SettingsNavItem(id: 'system', label: 'System', icon: Icons.info_outline_rounded),
     ];
@@ -1679,6 +1683,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         case 'permissions':
           if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
           return const PermissionMatrixCard();
+        case 'backups':
+          if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
+          return const BackupManagementCard();
         case 'audit':
           return _buildAuditLogsCard();
         case 'system':
@@ -1847,9 +1854,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             CRMButton(
-              label: 'Verify Sentry Setup',
+              label: 'Verify Error Monitoring (${ApiConstants.errorMonitoringProvider})',
               onPressed: () {
-                throw StateError('This is test exception to verify Sentry Setup');
+                throw StateError('This is test exception to verify ${ApiConstants.errorMonitoringProvider} error telemetry setup');
               },
             ),
             const SizedBox(height: CRMSpacing.m),

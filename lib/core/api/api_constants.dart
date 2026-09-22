@@ -15,11 +15,27 @@ class ApiConstants {
     defaultValue: 'https://60d7ddcd27827fcd0b9ebe472ce8cd39@o4511857602658304.ingest.us.sentry.io/4511857636999168',
   );
 
+  static const glitchtipDsn = String.fromEnvironment(
+    'GLITCHTIP_DSN',
+    defaultValue: '',
+  );
+
+  static String get errorMonitoringDsn =>
+      glitchtipDsn.isNotEmpty ? glitchtipDsn : sentryDsn;
+
+  static String get errorMonitoringProvider =>
+      glitchtipDsn.isNotEmpty ? 'GlitchTip' : 'Sentry';
+
+  static const captcha = "/auth/captcha";
   static const login = "/auth/login";
   static const register = "/auth/register";
   static const me = "/auth/me";
   static const refresh = "/auth/refresh";
   static const logout = "/auth/logout";
+  static const mfaVerify = "/auth/mfa/verify";
+  static const mfaSetup = "/auth/mfa/setup";
+  static const mfaConfirm = "/auth/mfa/confirm";
+  static const mfaDisable = "/auth/mfa/disable";
   static const health = "/health";
 
   static const telecallerAvailability = "/telecaller/availability";

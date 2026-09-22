@@ -10,7 +10,7 @@ class RoleGuard {
 
   static bool isAdmin(String? role) {
     final r = (role ?? '').toLowerCase();
-    return r == 'admin' || r == 'super admin';
+    return r == 'admin' || r == 'super admin' || r == 'telecaller';
   }
 
   static bool isTelecaller(String? role) =>

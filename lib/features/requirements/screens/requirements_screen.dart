@@ -48,6 +48,7 @@ import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/storage/model_mappers.dart';
 import '../../../core/storage/isar_collections.dart';
 import '../../../core/utils/file_downloader.dart';
+import '../../../core/utils/formatters.dart';
 import '../utils/property_share_pdf.dart';
 import '../widgets/pdf_option_selection_dialog.dart';
 import '../../../core/api/cloudinary_uploader.dart';
@@ -6823,7 +6824,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         req.createdAt != null ? DateFormat('dd/MM/yyyy hh:mm a').format(req.createdAt!.toLocal()) : '',
       ];
 
-      csvBuffer.writeln(row.map((val) => '"${val.toString().replaceAll('"', '""')}"').join(','));
+      csvBuffer.writeln(row.map((val) => '"${CsvSanitizer.sanitize(val)}"').join(','));
     }
 
     final bytes = utf8.encode(csvBuffer.toString());

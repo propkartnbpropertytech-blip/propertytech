@@ -23,6 +23,7 @@ import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
+import '../widgets/mfa_security_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -457,6 +458,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ],
               ),
+            ],
+            if (user.role == 'Super Admin' || user.role == 'Admin') ...[
+              const SizedBox(height: CRMSpacing.l),
+              MfaSecurityCard(user: user),
             ],
           ],
         ),

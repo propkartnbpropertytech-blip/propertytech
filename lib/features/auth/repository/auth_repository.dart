@@ -9,14 +9,36 @@ class AuthRepository {
   final AuthService _authService = AuthService();
   final SecureStorage _secureStorage = SecureStorage();
 
-  Future<UserModel> login(String email, String password, bool rememberMe) async {
+  Future<dynamic> login(
+    String email,
+    String password,
+    bool rememberMe, {
+    String? captchaId,
+    String? captchaAnswer,
+  }) async {
     await SessionCleanup.clearLocalSession(clearToken: true);
 
     final responseData = await _authService.login(
       email,
       password,
       rememberMe: rememberMe,
+      captchaId: captchaId,
+      captchaAnswer: captchaAnswer,
     );
+
+    final data = responseData['data'];
+    if (data is Map<String, dynamic> && data['mfaRequired'] == true) {
+      return {
+        'mfaRequired': true,
+        'mfaSetupRequired': data['mfaSetupRequired'] == true,
+        'mfaChallengeId': data['mfaChallengeId'] ?? '',
+        'email': data['email'] ?? email,
+        'role': data['role'] ?? '',
+        'secret': data['secret'],
+        'otpauthUrl': data['otpauthUrl'],
+      };
+    }
+
     final user = UserModel.fromJson(responseData);
 
     if (user.token == null || user.token!.isEmpty) {
@@ -147,5 +169,44 @@ class AuthRepository {
 
     final token = await getSavedToken();
     return token != null && token.isNotEmpty;
+  }
+
+  Future<UserModel> verifyMfa(String mfaChallengeId, String code, bool rememberMe) async {
+    final responseData = await _authService.verifyMfa(mfaChallengeId, code);
+    final user = UserModel.fromJson(responseData);
+
+    if (user.token == null || user.token!.isEmpty) {
+      throw Exception('MFA verification succeeded but no access token was returned.');
+    }
+
+    final refresh = _extractRefreshToken(responseData);
+    await _secureStorage.saveToken(user.token!, persist: rememberMe);
+    if (refresh != null && refresh.isNotEmpty) {
+      await _secureStorage.saveRefreshToken(refresh, persist: rememberMe);
+    }
+
+    if (kIsWeb) {
+      await _secureStorage.markWebCookieSession(
+        active: true,
+        persistHint: rememberMe,
+      );
+    }
+
+    await _secureStorage.saveSessionLoginTime(DateTime.now());
+    await _secureStorage.updateLastActivity();
+
+    return user;
+  }
+
+  Future<Map<String, dynamic>> setupMfa() async {
+    return await _authService.setupMfa();
+  }
+
+  Future<Map<String, dynamic>> confirmMfa(String code) async {
+    return await _authService.confirmMfa(code);
+  }
+
+  Future<Map<String, dynamic>> disableMfa(String password) async {
+    return await _authService.disableMfa(password);
   }
 }

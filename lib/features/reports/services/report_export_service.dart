@@ -4,6 +4,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:excel/excel.dart';
 import '../../../core/utils/file_downloader.dart';
+import '../../../core/utils/formatters.dart';
 import '../models/report_kpi_type.dart';
 import '../models/report_configuration.dart';
 import '../models/report_data.dart';
@@ -526,7 +527,7 @@ class ReportExportService {
     for (final l in reportData.filteredLeads) {
       final budgetStr = 'Rs ${l.minBudget.toInt()} - ${l.maxBudget.toInt()}';
       final createdStr = DateFormat('yyyy-MM-dd').format(l.createdAt);
-      buffer.writeln('"${l.clientName}","${l.clientMobile}","${l.status}","$createdStr","${l.assigneeName ?? ''}","${l.creatorName ?? ''}","$budgetStr","${l.categoryName}"');
+      buffer.writeln('"${CsvSanitizer.sanitize(l.clientName)}","${CsvSanitizer.sanitize(l.clientMobile)}","${CsvSanitizer.sanitize(l.status)}","$createdStr","${CsvSanitizer.sanitize(l.assigneeName)}","${CsvSanitizer.sanitize(l.creatorName)}","${CsvSanitizer.sanitize(budgetStr)}","${CsvSanitizer.sanitize(l.categoryName)}"');
     }
     return buffer.toString();
   }

@@ -6,7 +6,27 @@ import '../../../core/api/api_exception.dart';
 class AuthService {
   final ApiClient _apiClient = ApiClient();
 
-  Future<Map<String, dynamic>> login(String email, String password, {bool rememberMe = false}) async {
+  Future<Map<String, dynamic>> getCaptcha() async {
+    try {
+      final response = await _apiClient.get(ApiConstants.captcha);
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      throw ApiException(message: "Invalid CAPTCHA response format.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> login(
+    String email,
+    String password, {
+    bool rememberMe = false,
+    String? captchaId,
+    String? captchaAnswer,
+  }) async {
     try {
       final response = await _apiClient.post(
         ApiConstants.login,
@@ -14,6 +34,8 @@ class AuthService {
           'email': email,
           'password': password,
           'rememberMe': rememberMe,
+          if (captchaId != null && captchaId.isNotEmpty) 'captchaId': captchaId,
+          if (captchaAnswer != null && captchaAnswer.isNotEmpty) 'captchaAnswer': captchaAnswer,
         },
       );
       if (response.data is Map<String, dynamic>) {
@@ -69,6 +91,74 @@ class AuthService {
         return response.data as Map<String, dynamic>;
       }
       throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> verifyMfa(String mfaChallengeId, String code) async {
+    try {
+      final response = await _apiClient.post(
+        ApiConstants.mfaVerify,
+        {
+          'mfaChallengeId': mfaChallengeId,
+          'code': code.trim(),
+        },
+      );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      throw ApiException(message: "Invalid MFA verification response.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> setupMfa() async {
+    try {
+      final response = await _apiClient.post(ApiConstants.mfaSetup, {});
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      throw ApiException(message: "Invalid MFA setup response.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> confirmMfa(String code) async {
+    try {
+      final response = await _apiClient.post(
+        ApiConstants.mfaConfirm,
+        {'code': code.trim()},
+      );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      throw ApiException(message: "Invalid MFA confirmation response.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> disableMfa(String password) async {
+    try {
+      final response = await _apiClient.post(
+        ApiConstants.mfaDisable,
+        {'password': password},
+      );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      throw ApiException(message: "Invalid MFA disable response.");
     } on DioException catch (e) {
       throw ApiException.fromDioException(e);
     } catch (e) {

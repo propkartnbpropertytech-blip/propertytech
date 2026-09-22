@@ -918,7 +918,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
                                   final targetProperties = _visibleBinProperties;
                                   final totalItems = targetProperties.length;
-                                  final totalPages = (totalItems / _propertiesPerPage).ceil().clamp(1, double.infinity).toInt();
+                                  final totalPages = totalItems <= 0 ? 1 : (totalItems / _propertiesPerPage).ceil();
                                   final safePage = _currentPropertiesPage.clamp(1, totalPages);
                                   final startIndex = (safePage - 1) * _propertiesPerPage;
                                   final endIndex = (startIndex + _propertiesPerPage).clamp(0, totalItems);
@@ -1031,7 +1031,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
                                   final targetRequirements = _visibleBinRequirements;
                                   final totalItems = targetRequirements.length;
-                                  final totalPages = (totalItems / _requirementsPerPage).ceil().clamp(1, double.infinity).toInt();
+                                  final totalPages = totalItems <= 0 ? 1 : (totalItems / _requirementsPerPage).ceil();
                                   final safePage = _currentRequirementsPage.clamp(1, totalPages);
                                   final startIndex = (safePage - 1) * _requirementsPerPage;
                                   final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalItems);

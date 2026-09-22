@@ -81,15 +81,15 @@ void main() async {
     runApp(MyApp(authRepository: authRepository));
   }
 
-  final sentryDsn = ApiConstants.sentryDsn.trim();
-  final enableSentry = !kDebugMode &&
-      sentryDsn.isNotEmpty &&
-      sentryDsn != 'YOUR_SENTRY_DSN';
+  final errorMonitoringDsn = ApiConstants.errorMonitoringDsn.trim();
+  final enableErrorMonitoring = !kDebugMode &&
+      errorMonitoringDsn.isNotEmpty &&
+      errorMonitoringDsn != 'YOUR_SENTRY_DSN';
 
-  if (enableSentry) {
+  if (enableErrorMonitoring) {
     await SentryFlutter.init(
       (options) {
-        options.dsn = sentryDsn;
+        options.dsn = errorMonitoringDsn;
         options.tracesSampleRate = kReleaseMode ? 0.15 : 0.2;
         // ignore: experimental_member_use
         options.profilesSampleRate = kReleaseMode ? 0.05 : 0.1;

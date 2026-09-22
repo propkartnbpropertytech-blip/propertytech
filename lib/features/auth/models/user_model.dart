@@ -18,6 +18,7 @@ class UserModel extends Equatable {
   final String? adminName;
   final String? adminEmail;
   final String? adminRole;
+  final bool mfaEnabled;
 
   const UserModel({
     required this.id,
@@ -37,6 +38,7 @@ class UserModel extends Equatable {
     this.adminName,
     this.adminEmail,
     this.adminRole,
+    this.mfaEnabled = false,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -130,6 +132,7 @@ class UserModel extends Equatable {
       adminName: adminName,
       adminEmail: adminEmail,
       adminRole: adminRole,
+      mfaEnabled: userMap['mfa_enabled'] == true || userMap['mfaEnabled'] == true,
     );
   }
 
@@ -152,6 +155,7 @@ class UserModel extends Equatable {
       if (adminName != null) 'admin_name': adminName,
       if (adminEmail != null) 'admin_email': adminEmail,
       if (adminRole != null) 'admin_role': adminRole,
+      'mfa_enabled': mfaEnabled,
     };
   }
 
@@ -173,6 +177,7 @@ class UserModel extends Equatable {
     String? adminName,
     String? adminEmail,
     String? adminRole,
+    bool? mfaEnabled,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -192,6 +197,7 @@ class UserModel extends Equatable {
       adminName: adminName ?? this.adminName,
       adminEmail: adminEmail ?? this.adminEmail,
       adminRole: adminRole ?? this.adminRole,
+      mfaEnabled: mfaEnabled ?? this.mfaEnabled,
     );
   }
 
@@ -213,6 +219,7 @@ class UserModel extends Equatable {
         adminName,
         adminEmail,
         adminRole,
+        mfaEnabled,
       ];
 }
 

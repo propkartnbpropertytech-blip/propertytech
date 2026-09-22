@@ -55,3 +55,24 @@ class UpperCaseFormatter extends TextInputFormatter {
     );
   }
 }
+
+class CsvSanitizer {
+  /// Neutralize CSV/Excel formula injection (DDE injection).
+  /// If a string starts with =, +, -, @, \t, or \r, prefix with a single quote (').
+  /// Also escapes internal double quotes.
+  static String sanitize(dynamic value) {
+    if (value == null) return '';
+    var str = value.toString();
+    if (str.isEmpty) return '';
+    final firstChar = str[0];
+    if (firstChar == '=' ||
+        firstChar == '+' ||
+        firstChar == '-' ||
+        firstChar == '@' ||
+        firstChar == '\t' ||
+        firstChar == '\r') {
+      str = "'$str";
+    }
+    return str.replaceAll('"', '""');
+  }
+}

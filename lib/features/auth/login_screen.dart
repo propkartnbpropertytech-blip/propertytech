@@ -1,9 +1,13 @@
+import 'dart:convert';
+import 'dart:math' as math;
 import '../../core/services/notification_center.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'bloc/auth_bloc.dart';
+import 'services/auth_service.dart';
+import 'widgets/mfa_verify_dialog.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/theme_manager.dart';
 import '../../core/design_system/tokens/app_colors.dart';
@@ -27,6 +31,13 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _captchaController = TextEditingController();
+  final _authService = AuthService();
+
+  String? _captchaId;
+  Uint8List? _captchaImageBytes;
+  bool _isLoadingCaptcha = false;
+  String? _captchaError;
 
   @override
   void initState() {
@@ -37,6 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
       canonicalUrl: 'https://propkart.nbpropertytech.com/login',
       imageUrl: 'https://propkart.nbpropertytech.com/assets/logo.png',
     );
+    _fetchCaptcha();
   }
 
   bool _obscurePassword = true;
@@ -46,7 +58,44 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _captchaController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchCaptcha() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingCaptcha = true;
+      _captchaError = null;
+    });
+    try {
+      final res = await _authService.getCaptcha();
+      final data = res['data'] is Map<String, dynamic>
+          ? res['data'] as Map<String, dynamic>
+          : <String, dynamic>{};
+      final id = data['captchaId']?.toString();
+      final imgUri = data['captchaImage']?.toString() ?? '';
+      Uint8List? bytes;
+      if (imgUri.contains(',')) {
+        final b64 = imgUri.split(',').last;
+        bytes = base64Decode(b64);
+      }
+      if (mounted) {
+        setState(() {
+          _captchaId = id;
+          _captchaImageBytes = bytes;
+          _isLoadingCaptcha = false;
+          _captchaController.clear();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingCaptcha = false;
+          _captchaError = 'Tap refresh to load';
+        });
+      }
+    }
   }
 
   void _showErrorDialog(String title, String message) {
@@ -246,11 +295,23 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_formKey.currentState?.validate() ?? false) {
       final email = _emailController.text.trim();
       final password = _passwordController.text;
+      final captchaAnswer = _captchaController.text.trim();
+
+      if (captchaAnswer.isEmpty) {
+        setState(() => _captchaError = 'Please enter the verification code');
+        return;
+      }
 
       TextInput.finishAutofillContext();
 
       context.read<AuthBloc>().add(
-        LoginSubmitted(email: email, password: password, rememberMe: _rememberMe),
+        LoginSubmitted(
+          email: email,
+          password: password,
+          rememberMe: _rememberMe,
+          captchaId: _captchaId,
+          captchaAnswer: captchaAnswer,
+        ),
       );
     }
   }
@@ -265,7 +326,15 @@ class _LoginScreenState extends State<LoginScreen> {
           body: BlocListener<AuthBloc, AuthState>(
             listener: (context, state) {
               if (state is AuthError) {
-                _showErrorDialog("Login Failed", state.message);
+                _fetchCaptcha();
+                final msg = state.message.toLowerCase();
+                if (msg.contains('verification code') || msg.contains('captcha')) {
+                  setState(() => _captchaError = state.message);
+                } else {
+                  _showErrorDialog("Login Failed", state.message);
+                }
+              } else if (state is MfaChallengeRequired) {
+                MfaVerifyDialog.show(context, state);
               }
             },
             child: Stack(
@@ -277,13 +346,16 @@ class _LoginScreenState extends State<LoginScreen> {
                       final isDesktop = constraints.maxWidth >= 950;
 
                       if (isDesktop) {
+                        final double cardWidth = math.min(1000.0, constraints.maxWidth - (CRMSpacing.l * 2));
+                        final double cardHeight = constraints.maxHeight > 760 ? 720.0 : math.max(640.0, constraints.maxHeight - (CRMSpacing.l * 2));
+
                         return Center(
                           child: SingleChildScrollView(
                             child: Padding(
                               padding: const EdgeInsets.all(CRMSpacing.l),
                               child: SizedBox(
-                                width: 1000,
-                                height: 600,
+                                width: cardWidth,
+                                height: cardHeight,
                                 child: Container(
                                   decoration: BoxDecoration(
                                     color: CRMColors.cardBgOf(context),
@@ -297,7 +369,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                     children: [
                                       Expanded(
                                         flex: 5,
-                                        child: _buildFormContent(isDesktop: true),
+                                        child: Center(
+                                          child: SingleChildScrollView(
+                                            child: _buildFormContent(isDesktop: true),
+                                          ),
+                                        ),
                                       ),
                                       const Expanded(
                                         flex: 6,
@@ -336,7 +412,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   builder: (context, state) {
                     if (state is AuthLoading) {
                       return Container(
-                        color: Colors.black.withOpacity(0.6),
+                        color: Colors.black.withValues(alpha: 0.6),
                         child: Center(
                           child: Card(
                             color: CRMColors.surfaceElevatedOf(context),
@@ -362,7 +438,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     width: 200,
                                     child: LinearProgressIndicator(
                                       color: CRMColors.primaryOf(context),
-                                      backgroundColor: CRMColors.borderOf(context).withOpacity(0.2),
+                                      backgroundColor: CRMColors.borderOf(context).withValues(alpha: 0.2),
                                     ),
                                   ),
                                 ],
@@ -385,30 +461,34 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildFormContent({required bool isDesktop}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 48),
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop ? 36 : 24,
+        vertical: isDesktop ? 20 : 20,
+      ),
       child: Form(
         key: _formKey,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             CRMBrandLockup(
-              markSize: 40,
+              markSize: 36,
               wordmarkColor: CRMColors.primaryOf(context),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 18),
 
             // Header Texts - Retain exact string "Go ahead to your account" for test assertion
             Text(
               'Go ahead to your account',
               style: CRMTypography.headline.copyWith(color: CRMColors.textOf(context)),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Text(
               'Enter your credentials to access your account.',
               style: CRMTypography.subheadline.copyWith(color: CRMColors.textSecondaryOf(context)),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 18),
 
             AutofillGroup(
               child: Column(
@@ -432,7 +512,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 12),
 
                   // Password input
                   PremiumTextField(
@@ -465,7 +545,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
 
             // Remember me and Forgot password
             Wrap(
@@ -527,7 +607,143 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 10),
+
+            // Dimension 10: Universal CAPTCHA / Bot Protection (Enforced for Everyone)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: CRMColors.backgroundOf(context),
+                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                border: Border.all(
+                  color: _captchaError != null ? CRMColors.danger : CRMColors.borderOf(context),
+                  width: _captchaError != null ? 1.5 : 1.0,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      // Distorted PNG CAPTCHA Image
+                      Expanded(
+                        child: Container(
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: CRMColors.borderOf(context)),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: _isLoadingCaptcha
+                              ? const Center(
+                                  child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                )
+                              : _captchaImageBytes != null
+                                  ? Image.memory(
+                                      _captchaImageBytes!,
+                                      fit: BoxFit.fill,
+                                    )
+                                  : Center(
+                                      child: Text(
+                                        _captchaError ?? 'Click refresh',
+                                        style: CRMTypography.caption.copyWith(
+                                          color: CRMColors.textSecondaryOf(context),
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Refresh button
+                      Tooltip(
+                        message: 'Refresh verification code',
+                        child: InkWell(
+                          onTap: _isLoadingCaptcha ? null : _fetchCaptcha,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            height: 38,
+                            width: 38,
+                            decoration: BoxDecoration(
+                              color: CRMColors.cardBgOf(context),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: CRMColors.borderOf(context)),
+                            ),
+                            child: Icon(
+                              Icons.refresh_rounded,
+                              color: CRMColors.primaryOf(context),
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  // CAPTCHA Text Input
+                  TextFormField(
+                    controller: _captchaController,
+                    textInputAction: TextInputAction.done,
+                    textCapitalization: TextCapitalization.characters,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                      LengthLimitingTextInputFormatter(5),
+                    ],
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 4,
+                      fontSize: 15,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Enter 5-character code',
+                      hintStyle: TextStyle(
+                        fontFamily: 'monospace',
+                        letterSpacing: 0.5,
+                        fontSize: 12,
+                        color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.6),
+                      ),
+                      prefixIcon: Icon(
+                        Icons.verified_user_outlined,
+                        size: 18,
+                        color: CRMColors.primaryOf(context),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      filled: true,
+                      fillColor: CRMColors.cardBgOf(context),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      if (_captchaError != null) {
+                        setState(() => _captchaError = null);
+                      }
+                    },
+                    onFieldSubmitted: (_) => _submit(),
+                  ),
+                  if (_captchaError != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _captchaError!,
+                      style: const TextStyle(color: CRMColors.danger, fontSize: 11),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
 
             // Sign In Button
             BlocBuilder<AuthBloc, AuthState>(
@@ -538,14 +754,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   isLoading: isLoading,
                   onPressed: _submit,
                   width: double.infinity,
-                  height: 48,
+                  height: 44,
                   borderRadius: CRMBorderRadius.input,
                   backgroundColor: CRMColors.primaryOf(context),
                   foregroundColor: Colors.white,
                 );
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
             // Browsewrap legal disclaimer
             Align(
