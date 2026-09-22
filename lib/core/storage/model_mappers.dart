@@ -188,7 +188,7 @@ extension RequirementLocalExtensions on RequirementLocal {
             }
           }
           decodedRemarks = remarks!.substring(closeBracketIdx + 1).trim();
-          if (decodedRemarks!.isEmpty) decodedRemarks = null;
+          if (decodedRemarks.isEmpty) decodedRemarks = null;
         }
       }
     }
@@ -531,12 +531,21 @@ extension DashboardDataExtensions on DashboardData {
 
 extension DashboardLocalExtensions on DashboardLocal {
   DashboardData toModel() {
-    final List<dynamic> actList = jsonDecode(activityJson);
-    final List<dynamic> propList = jsonDecode(recentPropertiesJson);
-    final List<dynamic> checkList = jsonDecode(checklistJson);
-    final List<dynamic> follList = jsonDecode(followupsJson);
-    final List<dynamic> svList = siteVisitsJson != null ? jsonDecode(siteVisitsJson!) : [];
- 
+    List<dynamic> safeDecodeList(String? jsonStr) {
+      if (jsonStr == null || jsonStr.isEmpty) return [];
+      try {
+        final decoded = jsonDecode(jsonStr);
+        if (decoded is List) return decoded;
+      } catch (_) {}
+      return [];
+    }
+
+    final List<dynamic> actList = safeDecodeList(activityJson);
+    final List<dynamic> propList = safeDecodeList(recentPropertiesJson);
+    final List<dynamic> checkList = safeDecodeList(checklistJson);
+    final List<dynamic> follList = safeDecodeList(followupsJson);
+    final List<dynamic> svList = safeDecodeList(siteVisitsJson);
+
     return DashboardData(
       summary: DashboardSummary(
         totalProperties: summary.totalProperties ?? 0,
@@ -561,11 +570,11 @@ extension DashboardLocalExtensions on DashboardLocal {
         topProperty: summary.topProperty ?? 'N/A',
         monthlyGrowth: summary.monthlyGrowth ?? '0.0%',
       ),
-      activity: actList.map((item) => RecentActivity.fromJson(item)).toList(),
-      recentProperties: propList.map((item) => RecentProperty.fromJson(item)).toList(),
-      checklist: checkList.map((item) => ChecklistItem.fromJson(item)).toList(),
-      followups: follList.map((item) => DashboardFollowup.fromJson(item)).toList(),
-      siteVisits: svList.map((item) => DashboardSiteVisit.fromJson(item)).toList(),
+      activity: actList.whereType<Map<String, dynamic>>().map((item) => RecentActivity.fromJson(item)).toList(),
+      recentProperties: propList.whereType<Map<String, dynamic>>().map((item) => RecentProperty.fromJson(item)).toList(),
+      checklist: checkList.whereType<Map<String, dynamic>>().map((item) => ChecklistItem.fromJson(item)).toList(),
+      followups: follList.whereType<Map<String, dynamic>>().map((item) => DashboardFollowup.fromJson(item)).toList(),
+      siteVisits: svList.whereType<Map<String, dynamic>>().map((item) => DashboardSiteVisit.fromJson(item)).toList(),
     );
   }
 }

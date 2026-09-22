@@ -87,7 +87,9 @@ class DashboardRepository {
         }
 
         await _coordinator.dashboardLocal.saveDashboard(freshData.toLocal());
-        final listData = response['followups'] as List? ?? [];
+        final listData = (response['followups'] is List)
+            ? response['followups'] as List
+            : ((response['followupsList'] is List) ? response['followupsList'] as List : []);
         final freshFollowups = listData
             .map((item) => DashboardFollowup.fromJson(item))
             .toList();
@@ -562,7 +564,9 @@ class DashboardRepository {
       await _coordinator.dashboardLocal.saveDashboard(freshData.toLocal());
       
       // Also synchronize structured followups table inside Isar
-      final listData = response['followups'] as List? ?? [];
+      final listData = (response['followups'] is List)
+          ? response['followups'] as List
+          : ((response['followupsList'] is List) ? response['followupsList'] as List : []);
       final freshFollowups = listData.map((item) => DashboardFollowup.fromJson(item)).toList();
       final localEntities = freshFollowups.map((f) => f.toLocal('System')).toList();
       await _coordinator.followupLocal.saveFollowups(localEntities);
