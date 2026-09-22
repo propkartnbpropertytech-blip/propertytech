@@ -1788,6 +1788,8 @@ class IntegrationService extends ChangeNotifier {
         lower.contains('owner') ||
         lower == 'fullname' ||
         lower == 'name' ||
+        lower == 'leadname' ||
+        lower.contains('leadname') ||
         lower == 'nameofclient') {
       _columnToCrmFieldMap[header] = 'name';
     }
@@ -1809,12 +1811,13 @@ class IntegrationService extends ChangeNotifier {
     // 6. Configuration / BHK / Property Type
     else if (lower.contains('bhk') ||
         lower.contains('config') ||
+        lower.contains('apartmentname') ||
         lower.contains('propertytype') ||
         lower.contains('hometype')) {
       _columnToCrmFieldMap[header] = 'configuration';
     }
     // 7. Property / Project
-    else if (lower.contains('project') || lower.contains('inventory') || lower == 'property') {
+    else if (lower.contains('project') || lower.contains('inventory') || lower == 'property' || lower.contains('propertyfield')) {
       _columnToCrmFieldMap[header] = 'property';
     }
     // 8. Location / Area / City

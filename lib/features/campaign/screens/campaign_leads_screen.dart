@@ -2969,21 +2969,23 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           }
                         }
 
-                        setDialogState(() => isSubmitting = true);
-
-                        final targetUser = assignableUsers.firstWhere(
-                          (u) => u['id'] == selectedUserId,
-                          orElse: () => {'full_name': 'Sales User'},
-                        );
-                        final targetUserName = (targetUser['full_name'] as String?) ?? 'Sales User';
-
-                        // Pop dialog immediately so user is never stuck in loading
-                        Navigator.pop(dialogCtx);
-                        setState(() {
-                          _cachedFilteredLeads = null;
-                        });
-
                         try {
+                          setDialogState(() => isSubmitting = true);
+
+                          final targetUser = assignableUsers.firstWhere(
+                            (u) => u['id']?.toString() == selectedUserId?.toString(),
+                            orElse: () => {'full_name': 'Sales User'},
+                          );
+                          final targetUserName = (targetUser['full_name'] as String?) ?? 'Sales User';
+
+                          // Pop dialog immediately so user is never stuck in loading
+                          if (dialogCtx.mounted) {
+                            Navigator.pop(dialogCtx);
+                          }
+                          setState(() {
+                            _cachedFilteredLeads = null;
+                          });
+
                           final result = await _service.transferLead(
                             lead.id,
                             status: selectedStatus,
@@ -2991,7 +2993,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             assignedToName: selectedStatus == 'Picked Up' ? targetUserName : null,
                             remarks: remarksController.text.trim(),
                           );
-                          IntegrationService().notifyOutcomeRecorded(
+                          _service.notifyOutcomeRecorded(
                             lead.id,
                             outcome: selectedStatus == 'Picked Up' ? 'PICKED_UP' : (selectedStatus == 'Callback' ? 'CALLBACK' : 'CNR'),
                             remarks: remarksController.text.trim(),
@@ -3021,6 +3023,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             ),
                           );
                         } catch (e) {
+                          if (dialogCtx.mounted) {
+                            setDialogState(() => isSubmitting = false);
+                          }
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
