@@ -180,7 +180,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         if (value == null || value.trim().isEmpty) {
                           return 'Please enter your email address';
                         }
-                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value.trim())) {
+                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,10}$').hasMatch(value.trim())) {
                           return 'Please enter a valid email address';
                         }
                         return null;
@@ -506,7 +506,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       if (value == null || value.trim().isEmpty) {
                         return 'Please enter your email address';
                       }
-                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value.trim())) {
+                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,10}$').hasMatch(value.trim())) {
                         return 'Please enter a valid email address';
                       }
                       return null;

@@ -214,32 +214,23 @@ class DashboardData {
   });
 
   factory DashboardData.fromJson(Map<String, dynamic> json) {
+    List<T> safeList<T>(dynamic raw, T Function(dynamic) mapper) {
+      if (raw is List) {
+        return raw.map(mapper).toList();
+      }
+      return <T>[];
+    }
+
+    final rawFollowups = json['followups'] is List ? json['followups'] : json['followupsList'];
+
     return DashboardData(
-      summary: DashboardSummary.fromJson(json['summary'] ?? {}),
-      activity: (json['activity'] as List?)
-              ?.map((item) => RecentActivity.fromJson(item))
-              .toList() ??
-          [],
-      recentProperties: (json['recentProperties'] as List?)
-              ?.map((item) => RecentProperty.fromJson(item))
-              .toList() ??
-          [],
-      checklist: (json['checklist'] as List?)
-              ?.map((item) => ChecklistItem.fromJson(item))
-              .toList() ??
-          [],
-      followups: (json['followups'] as List?)
-              ?.map((item) => DashboardFollowup.fromJson(item))
-              .toList() ??
-          [],
-      siteVisits: (json['siteVisits'] as List?)
-              ?.map((item) => DashboardSiteVisit.fromJson(item))
-              .toList() ??
-          [],
-      inventoryLocations: (json['inventoryLocations'] as List?)
-              ?.map((item) => DashboardLocationItem.fromJson(item))
-              .toList() ??
-          [],
+      summary: DashboardSummary.fromJson(json['summary'] is Map ? json['summary'] as Map<String, dynamic> : {}),
+      activity: safeList(json['activity'], (item) => RecentActivity.fromJson(item)),
+      recentProperties: safeList(json['recentProperties'], (item) => RecentProperty.fromJson(item)),
+      checklist: safeList(json['checklist'], (item) => ChecklistItem.fromJson(item)),
+      followups: safeList(rawFollowups, (item) => DashboardFollowup.fromJson(item)),
+      siteVisits: safeList(json['siteVisits'], (item) => DashboardSiteVisit.fromJson(item)),
+      inventoryLocations: safeList(json['inventoryLocations'], (item) => DashboardLocationItem.fromJson(item)),
     );
   }
 }
