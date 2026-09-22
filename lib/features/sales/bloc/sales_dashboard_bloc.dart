@@ -1601,9 +1601,8 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
 
     // Extract all distinct areas available in current mode properties for filter dialog
     final allDistinctAreas = modeProps
-        .map((p) => (p is Map ? (p['area_name'] ?? p['area'] ?? '') : '').toString().trim())
-        .map((a) => a.contains(',') ? a.split(',').first.trim() : a)
-        .where((a) => a.isNotEmpty && a != '-')
+        .map((p) => (p is Map ? (p['area_name'] ?? p['area'] ?? p['address'] ?? '') : '').toString().trim())
+        .where((a) => a.isNotEmpty)
         .toSet()
         .toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
@@ -1613,7 +1612,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
     if (_selectedPropertyAreas.isNotEmpty) {
       filteredProps = filteredProps.where((p) {
         if (p is! Map) return false;
-        final a = (p['area_name'] ?? p['area'] ?? '').toString().trim().toLowerCase();
+        final a = (p['area_name'] ?? p['area'] ?? p['address'] ?? '').toString().trim().toLowerCase();
         return _selectedPropertyAreas.any((sel) => a.contains(sel.toLowerCase()));
       }).toList();
     }
@@ -1780,198 +1779,158 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                 ),
               )
             else ...[
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final availableWidth = constraints.maxWidth;
-                  final propMaxWidth = ((availableWidth - 360) * 0.38).clamp(180.0, 260.0);
-                  final areaMaxWidth = ((availableWidth - 360) * 0.28).clamp(110.0, 180.0);
-                  final estimatedContentWidth = 24.0 + (60.0 + propMaxWidth) + 80.0 + 55.0 + areaMaxWidth + 60.0 + 16.0;
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  horizontalMargin: 8,
+                  columnSpacing: 18,
+                  headingRowHeight: 40,
+                  dataRowMinHeight: 56,
+                  dataRowMaxHeight: 66,
+                  headingTextStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                  columns: const [
+                    DataColumn(label: Text('#')),
+                    DataColumn(label: Text('Property')),
+                    DataColumn(label: Text('Price')),
+                    DataColumn(label: Text('Type')),
+                    DataColumn(label: Text('Added Date')),
+                    DataColumn(label: Text('Actions')),
+                  ],
+                  rows: pagedProps.asMap().entries.map((entry) {
+                    final index = (currentPage - 1) * _propertiesPerPage + entry.key + 1;
+                    final prop = entry.value as Map;
+                    final code = (prop['property_code'] ?? prop['code'] ?? 'PROP').toString();
+                    final title = (prop['title'] ?? code).toString();
+                    final priceVal = prop['price'];
+                    final priceStr = _formatPropPrice(priceVal);
 
-                  double colSpacing = 18.0;
-                  if (availableWidth > estimatedContentWidth) {
-                    final extra = availableWidth - estimatedContentWidth;
-                    colSpacing = (extra / 5.0 + 18.0).clamp(18.0, 48.0);
-                  }
+                    final listingType = (prop['listing_type'] ?? prop['listingType'] ?? 'Sale').toString();
+                    final status = (prop['status'] ?? 'Available').toString();
+                    final images = prop['images'] as List? ?? [];
+                    final coverImg = images.isNotEmpty ? images.first.toString() : null;
 
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minWidth: availableWidth),
-                      child: DataTable(
-                        horizontalMargin: 8,
-                        columnSpacing: colSpacing,
-                        headingRowHeight: 40,
-                        dataRowMinHeight: 56,
-                        dataRowMaxHeight: 66,
-                        headingTextStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
-                        columns: const [
-                          DataColumn(label: Text('#')),
-                          DataColumn(label: Text('Property')),
-                          DataColumn(label: Text('Price')),
-                          DataColumn(label: Text('Type')),
-                          DataColumn(label: Text('Area')),
-                          DataColumn(label: Text('Actions')),
-                        ],
-                        rows: pagedProps.asMap().entries.map((entry) {
-                          final index = (currentPage - 1) * _propertiesPerPage + entry.key + 1;
-                          final prop = entry.value as Map;
-                          final code = (prop['property_code'] ?? prop['code'] ?? 'PROP').toString();
-                          final title = (prop['title'] ?? code).toString();
-                          final priceVal = prop['price'];
-                          final priceStr = _formatPropPrice(priceVal);
+                    String timeStr = '-';
+                    final dateStr = prop['created_at'] ?? prop['createdAt'];
+                    if (dateStr != null) {
+                      final dt = DateTime.tryParse(dateStr.toString());
+                      if (dt != null) timeStr = DateFormat('d MMM, h:mm a').format(dt.toLocal());
+                    }
 
-                          final listingType = (prop['listing_type'] ?? prop['listingType'] ?? 'Sale').toString();
-                          final status = (prop['status'] ?? 'Available').toString();
-                          final images = prop['images'] as List? ?? [];
-                          final coverImg = images.isNotEmpty ? images.first.toString() : null;
+                    final isRent = listingType.toLowerCase().contains('rent');
 
-                          String timeStr = '-';
-                          final dateStr = prop['created_at'] ?? prop['createdAt'];
-                          if (dateStr != null) {
-                            final dt = DateTime.tryParse(dateStr.toString());
-                            if (dt != null) timeStr = DateFormat('d MMM, h:mm a').format(dt.toLocal());
-                          }
-
-                          String areaStr = (prop['area_name'] ?? prop['area'] ?? '').toString().trim();
-                          if (areaStr.contains(',')) {
-                            areaStr = areaStr.split(',').first.trim();
-                          }
-                          if (areaStr.isEmpty) {
-                            areaStr = '-';
-                          }
-
-                          final isRent = listingType.toLowerCase().contains('rent');
-
-                          return DataRow(
-                            cells: [
-                              DataCell(Text('$index', style: const TextStyle(fontSize: 12, color: Colors.grey))),
-                              DataCell(
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    // 1. Property Image: size 48x48 with status badge directly over it
-                                    Stack(
-                                      children: [
-                                        Container(
-                                          width: 48,
-                                          height: 48,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFF1F5F9),
-                                            borderRadius: BorderRadius.circular(8),
-                                            image: coverImg != null && coverImg.startsWith('http')
-                                                ? DecorationImage(image: NetworkImage(coverImg), fit: BoxFit.cover)
-                                                : null,
-                                          ),
-                                          child: coverImg == null || !coverImg.startsWith('http')
-                                              ? const Icon(Icons.home_work_outlined, size: 22, color: Color(0xFF94A3B8))
-                                              : null,
-                                        ),
-                                        Positioned(
-                                          bottom: 0,
-                                          left: 0,
-                                          right: 0,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1.5),
-                                            decoration: BoxDecoration(
-                                              color: status.toLowerCase().contains('avail')
-                                                  ? const Color(0xFF059669).withValues(alpha: 0.9)
-                                                  : (status.toLowerCase().contains('sold') || status.toLowerCase().contains('rented')
-                                                      ? const Color(0xFFDC2626).withValues(alpha: 0.9)
-                                                      : const Color(0xFF334155).withValues(alpha: 0.9)),
-                                              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
-                                            ),
-                                            child: Text(
-                                              status,
-                                              textAlign: TextAlign.center,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.white),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                    return DataRow(
+                      cells: [
+                        DataCell(Text('$index', style: const TextStyle(fontSize: 12, color: Colors.grey))),
+                        DataCell(
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // 1. Property Image: size 48x48 (slightly increased) with status badge directly over it
+                              Stack(
+                                children: [
+                                  Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(8),
+                                      image: coverImg != null && coverImg.startsWith('http')
+                                          ? DecorationImage(image: NetworkImage(coverImg), fit: BoxFit.cover)
+                                          : null,
                                     ),
-                                    const SizedBox(width: 12),
-                                    // 2. Property Name (main text) + Date and PR Number (small secondary text directly below)
-                                    ConstrainedBox(
-                                      constraints: BoxConstraints(maxWidth: propMaxWidth),
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            timeStr != '-' ? '$timeStr • $code' : code,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
-                                          ),
-                                        ],
+                                    child: coverImg == null || !coverImg.startsWith('http')
+                                        ? const Icon(Icons.home_work_outlined, size: 22, color: Color(0xFF94A3B8))
+                                        : null,
+                                  ),
+                                  Positioned(
+                                    bottom: 0,
+                                    left: 0,
+                                    right: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: status.toLowerCase().contains('avail')
+                                            ? const Color(0xFF059669).withValues(alpha: 0.9)
+                                            : (status.toLowerCase().contains('sold') || status.toLowerCase().contains('rented')
+                                                ? const Color(0xFFDC2626).withValues(alpha: 0.9)
+                                                : const Color(0xFF334155).withValues(alpha: 0.9)),
+                                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
+                                      ),
+                                      child: Text(
+                                        status,
+                                        textAlign: TextAlign.center,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.white),
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                              DataCell(Text(priceStr, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
-                              DataCell(
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: isRent ? const Color(0xFFEFF6FF) : const Color(0xFFFEF3C7),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    listingType,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: isRent ? const Color(0xFF2563EB) : const Color(0xFFD97706),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              // Area column displaying only Area / Location
-                              DataCell(
-                                ConstrainedBox(
-                                  constraints: BoxConstraints(maxWidth: areaMaxWidth),
-                                  child: Text(
-                                    areaStr,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: Color(0xFF334155)),
-                                  ),
-                                ),
-                              ),
-                              // Actions column with View button
-                              DataCell(
-                                OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    minimumSize: const Size(0, 28),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                  ),
-                                  onPressed: () {
-                                    final propId = (prop['id'] ?? '').toString();
-                                    if (propId.isNotEmpty) {
-                                      _openPropertyDetails(context, propId);
-                                    }
-                                  },
-                                  child: const Text('View', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                              const SizedBox(width: 12),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 190),
+                                child: Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
                                 ),
                               ),
                             ],
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  );
-                },
+                          ),
+                        ),
+                        DataCell(Text(priceStr, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
+                        DataCell(
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isRent ? const Color(0xFFEFF6FF) : const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              listingType,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: isRent ? const Color(0xFF2563EB) : const Color(0xFFD97706),
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Added Date column with PR Number directly below
+                        DataCell(
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(timeStr, style: const TextStyle(fontSize: 12, color: Color(0xFF334155), fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 3),
+                              Text(code, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                            ],
+                          ),
+                        ),
+                        // Actions column with View button opening Property View Details
+                        DataCell(
+                          OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              minimumSize: const Size(0, 28),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                            onPressed: () {
+                              final propId = (prop['id'] ?? '').toString();
+                              if (propId.isNotEmpty) {
+                                _openPropertyDetails(context, propId);
+                              }
+                            },
+                            child: const Text('View', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
               ),
               const SizedBox(height: 12),
               Row(
