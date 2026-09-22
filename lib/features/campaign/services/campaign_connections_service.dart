@@ -11,7 +11,8 @@ class CampaignConnectionsService {
       final response = await _apiClient.get('/campaign-connections');
       if (response.data is Map<String, dynamic>) {
         final map = response.data as Map<String, dynamic>;
-        final list = map['connections'] as List? ?? [];
+        final rawList = map['connections'] ?? map['data'];
+        final list = rawList is List ? rawList : [];
         return list
             .map((item) => CampaignConnectionModel.fromJson(item as Map<String, dynamic>))
             .toList();
@@ -32,7 +33,7 @@ class CampaignConnectionsService {
         {'is_active': isActive},
       );
       if (response.data is Map<String, dynamic>) {
-        final conn = response.data['connection'] as Map<String, dynamic>;
+        final conn = (response.data['connection'] ?? response.data['data']) as Map<String, dynamic>;
         return CampaignConnectionModel.fromJson(conn);
       }
       throw Exception('Invalid response format');
@@ -90,7 +91,7 @@ class CampaignConnectionsService {
         );
       }
       if (response.data is Map<String, dynamic>) {
-        final conn = response.data['connection'] as Map<String, dynamic>;
+        final conn = (response.data['connection'] ?? response.data['data']) as Map<String, dynamic>;
         return CampaignConnectionModel.fromJson(conn);
       }
       throw Exception('Invalid response format');
