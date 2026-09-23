@@ -9,14 +9,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/design_system/tokens/app_colors.dart';
-import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/security/role_guard.dart';
 import '../../campaign/models/campaign_followup_model.dart';
 import '../../dashboard/widgets/stat_card.dart';
+import '../../dashboard/widgets/welcome_header.dart';
 import '../../integration/services/integration_service.dart';
 import '../bloc/telecaller_dashboard_bloc.dart';
 import '../data/telecaller_repository.dart';
-import '../widgets/telecaller_availability_toggle.dart';
 
 class TelecallerDashboardScreen extends StatelessWidget {
   const TelecallerDashboardScreen({super.key});
@@ -198,79 +197,6 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     }
   }
 
-  // --- REMARKS EDIT MODAL ---
-  void _showEditRemarksDialog(Map<String, dynamic> activity) {
-    final remarksCtrl = TextEditingController(text: activity['remarks'] ?? '');
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Icon(Icons.edit_note_rounded, color: CRMColors.primary),
-            const SizedBox(width: 8),
-            const Text('Edit Call Remark', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Client: ${activity['clientName'] ?? 'Lead'} (${activity['phone'] ?? ''})',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: remarksCtrl,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: 'Enter updated call remarks...',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.all(12),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: CRMColors.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () async {
-              final newRemarks = remarksCtrl.text.trim();
-              Navigator.of(dialogCtx).pop();
-              try {
-                await _repository.updateAttemptRemarks(activity['id'], newRemarks);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Remark updated successfully.'),
-                      backgroundColor: Color(0xFF10B981),
-                    ),
-                  );
-                  context.read<TelecallerDashboardBloc>().add(TelecallerDashboardRequested());
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to update remark: $e'), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-            child: const Text('Save Remark'),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _showTransferRemarkDialog(
     BuildContext context,
@@ -389,33 +315,18 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             children: [
-              const CRMPageHeader(
-                title: 'Telecaller Dashboard',
-                benefit: 'Availability, workload, and next lead come from the server.',
+              WelcomeHeader(
+                userName: RoleGuard.currentUser?.fullName.isNotEmpty == true
+                    ? RoleGuard.currentUser!.fullName
+                    : (data['telecallerName']?.toString().isNotEmpty == true
+                        ? data['telecallerName'].toString()
+                        : 'Telecaller'),
               ),
               if (state.error != null)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(top: 12),
                   child: Text(state.error!, style: const TextStyle(color: Colors.red)),
                 ),
-
-              // Availability bar
-              Row(
-                children: [
-                  const TelecallerAvailabilityToggle(),
-                  const SizedBox(width: 12),
-                  Text(
-                    data['heartbeatFresh'] == true
-                        ? '• System Live: Eligible to receive fresh incoming leads.'
-                        : '• Standby: Turn switch ACTIVE to start receiving leads.',
-                    style: TextStyle(
-                      color: data['heartbeatFresh'] == true ? const Color(0xFF059669) : const Color(0xFF64748B),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
               const SizedBox(height: 20),
 
               // KPI Cards Grid (including Not Interested)
@@ -1256,17 +1167,8 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  if (phone.isNotEmpty) ...[
+                                  if (phone.isNotEmpty)
                                     Text(phone, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF64748B)),
-                                    tooltip: 'Edit remarks',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    onPressed: () => _showEditRemarksDialog(act),
-                                  ),
                                 ],
                               ),
                               const SizedBox(height: 6),

@@ -307,8 +307,6 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
     final profile = Map<String, dynamic>.from(_data?['profile'] ?? {});
     final workload = Map<String, dynamic>.from(_data?['workload'] ?? {});
     final outcomes = Map<String, dynamic>.from(_data?['outcomes'] ?? {});
-    final callingStats = Map<String, dynamic>.from(_data?['callingStats'] ?? {});
-    final timing = Map<String, dynamic>.from(_data?['timing'] ?? {});
     final currentLeads = List<dynamic>.from(_data?['currentLeads'] ?? []);
     final history = List<dynamic>.from(_data?['history'] ?? []);
 
@@ -558,53 +556,37 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
           ),
           const SizedBox(height: 16),
 
-          // Row 2: Performance Summary Grid
+          // Row 2: Performance Summary Grid (Strictly 4 KPIs)
           Wrap(
             spacing: 12,
             runSpacing: 12,
             children: [
               _metricBox(
-                'Total Assigned',
-                '${_data?['leadStats']?['totalAssigned'] ?? 0}',
+                'Assigned',
+                '${_data?['leadStats']?['activeAssigned'] ?? currentLeads.length}',
                 Icons.assignment_outlined,
                 Colors.blue,
                 isDark,
               ),
               _metricBox(
-                'Total Calls Attempted',
-                '${callingStats['totalCallAttempts'] ?? 0}',
-                Icons.phone_outlined,
+                'Overall Assigned',
+                '${_data?['leadStats']?['overallAssigned'] ?? _data?['leadStats']?['totalAssigned'] ?? 0}',
+                Icons.history_rounded,
                 Colors.indigo,
                 isDark,
               ),
               _metricBox(
-                'Picked Up',
-                '${outcomes['pickedUp'] ?? 0}',
-                Icons.phone_in_talk,
-                Colors.teal,
-                isDark,
-              ),
-              _metricBox(
-                'CNR / Callbacks',
-                '${outcomes['cnr'] ?? 0} / ${outcomes['callbacks'] ?? 0}',
+                'CNR | Callback',
+                '${outcomes['cnr'] ?? 0} | ${outcomes['callbacks'] ?? 0}',
                 Icons.phone_missed,
                 Colors.orange,
                 isDark,
               ),
               _metricBox(
-                'Handed to Sales',
+                'Assigned to Sales',
                 '${outcomes['salesHandoffs'] ?? 0}',
                 Icons.check_circle_outline,
                 Colors.green,
-                isDark,
-              ),
-              _metricBox(
-                'Avg 1st Activity',
-                timing['avgFirstActivityMinutes'] != null
-                    ? '${timing['avgFirstActivityMinutes']}m'
-                    : 'N/A',
-                Icons.timer_outlined,
-                Colors.purple,
                 isDark,
               ),
             ],
@@ -849,11 +831,14 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                 Text(
                   value,
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 1),
                 Text(
                   label,
                   style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],

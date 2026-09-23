@@ -9,7 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
-import '../../../core/design_system/widgets/crm_page_header.dart';
+import '../../dashboard/widgets/welcome_header.dart';
 import '../../../core/security/role_guard.dart';
 import '../../dashboard/widgets/stat_card.dart';
 import '../../requirements/repository/requirements_repository.dart';
@@ -351,24 +351,24 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             children: [
-              // Page Header with Title & Rent/Re-Sale Mode Toggle Switch
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: CRMPageHeader(
-                      title: 'Welcome, $userName 👋',
-                      benefit: 'Direct access to your assigned leads, active follow-ups, and open inventory.',
-                    ),
-                  ),
-                  _buildRentResaleToggle(),
-                ],
+              WelcomeHeader(
+                userName: RoleGuard.currentUser?.fullName.isNotEmpty == true
+                    ? RoleGuard.currentUser!.fullName
+                    : userName,
               ),
               if (state.error != null)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(top: 12),
                   child: Text(state.error!, style: const TextStyle(color: Colors.red)),
                 ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _buildRentResaleToggle(),
+                ],
+              ),
+              const SizedBox(height: 16),
 
               // KPI Cards Grid (Identical to Telecaller StatCard Grid in Image 2)
               Wrap(

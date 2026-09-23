@@ -86,6 +86,7 @@ class IntegrationService extends ChangeNotifier {
   bool isWebhookListening = true;
 
   // Ingested Leads (clean start)
+  final Map<String, (String, DateTime)> _recentlyReclassifiedLeads = {};
   List<IntegrationLeadModel> _leads = [];
   List<IntegrationLeadModel> get leads {
     if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) {
@@ -908,9 +909,28 @@ class IntegrationService extends ChangeNotifier {
         final List<dynamic> leadsList = data['leads'] ?? [];
 
         final incoming = <IntegrationLeadModel>[];
+        final now = DateTime.now();
+        // Clean up reclassification protection entries older than 60 seconds
+        _recentlyReclassifiedLeads.removeWhere((_, entry) => now.difference(entry.$2).inSeconds > 60);
+
         for (final item in leadsList) {
           if (item is Map<String, dynamic>) {
-            incoming.add(IntegrationLeadModel.fromJson(item));
+            var model = IntegrationLeadModel.fromJson(item);
+            final recent = _recentlyReclassifiedLeads[model.id] ??
+                (model.externalLeadId != null ? _recentlyReclassifiedLeads[model.externalLeadId!] : null);
+            if (recent != null && model.leadType != recent.$1) {
+              String newStatus = model.campaignStatus;
+              if (recent.$1 == 'Requirement' && (model.campaignStatus == 'Property Listed' || model.campaignStatus == 'Listed')) {
+                newStatus = 'Archived';
+              } else if (recent.$1 == 'Property Listing' && model.campaignStatus == 'Archived') {
+                newStatus = 'Property Listed';
+              }
+              model = model.copyWith(
+                leadType: recent.$1,
+                campaignStatus: newStatus,
+              );
+            }
+            incoming.add(model);
           }
         }
 
@@ -1172,8 +1192,19 @@ class IntegrationService extends ChangeNotifier {
       final idx = _leads.indexWhere((l) => l.id == leadId);
       if (idx != -1) {
         final isFollowup = status == 'Follow up' || status == 'Follow-up';
+        final currentUserName = RoleGuard.currentUser?.fullName ?? RoleGuard.currentUser?.email ?? '';
+        final currentUserId = RoleGuard.currentUser?.id;
         _leads[idx] = _leads[idx].copyWith(
           campaignStatus: status,
+          statusUpdatedByName: currentUserName.isNotEmpty ? currentUserName : _leads[idx].statusUpdatedByName,
+          statusUpdatedById: currentUserId ?? _leads[idx].statusUpdatedById,
+          statusUpdatedAt: DateTime.now(),
+          notInterestedByName: status == 'Not interested' ? currentUserName : _leads[idx].notInterestedByName,
+          notInterestedById: status == 'Not interested' ? currentUserId : _leads[idx].notInterestedById,
+          notInterestedAt: status == 'Not interested' ? DateTime.now() : _leads[idx].notInterestedAt,
+          archivedByName: (status == 'Archived' || status == 'Property Listed' || status == 'Listed') ? currentUserName : _leads[idx].archivedByName,
+          archivedById: (status == 'Archived' || status == 'Property Listed' || status == 'Listed') ? currentUserId : _leads[idx].archivedById,
+          archivedAt: (status == 'Archived' || status == 'Property Listed' || status == 'Listed') ? DateTime.now() : _leads[idx].archivedAt,
           followupScheduledAt: isFollowup ? _leads[idx].followupScheduledAt : null,
           followupStatus: isFollowup ? _leads[idx].followupStatus : 'Completed',
           clearFollowup: !isFollowup,
@@ -1217,6 +1248,32 @@ class IntegrationService extends ChangeNotifier {
       return res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
     } catch (e) {
       debugPrint('[IntegrationService] Error updating campaign status for $leadId: $e');
+      return false;
+    }
+  }
+
+  /// Bulk updates campaign status for multiple leads (e.g., 'Property Listed', 'Archived', 'Not interested')
+  Future<bool> bulkUpdateCampaignStatus(List<String> leadIds, String status) async {
+    try {
+      final isFollowup = status == 'Follow up' || status == 'Follow-up';
+      for (final leadId in leadIds) {
+        final idx = _leads.indexWhere((l) => l.id == leadId || l.externalLeadId == leadId);
+        if (idx != -1) {
+          _leads[idx] = _leads[idx].copyWith(
+            campaignStatus: status,
+            followupScheduledAt: isFollowup ? _leads[idx].followupScheduledAt : null,
+            followupStatus: isFollowup ? _leads[idx].followupStatus : 'Completed',
+            clearFollowup: !isFollowup,
+          );
+        }
+      }
+      notifyListeners();
+      await _persistLeads();
+
+      final results = await Future.wait(leadIds.map((id) => updateLeadCampaignStatus(id, status)));
+      return results.every((ok) => ok);
+    } catch (e) {
+      debugPrint('[IntegrationService] Error bulk updating campaign status: $e');
       return false;
     }
   }
@@ -1514,32 +1571,87 @@ class IntegrationService extends ChangeNotifier {
     return null;
   }
 
+  /// Synchronously and optimistically reclassifies lead in local memory on the first click
+  void reclassifyLeadOptimistic(String leadId, String targetLeadType) {
+    _recentlyReclassifiedLeads[leadId] = (targetLeadType, DateTime.now());
+    int idx = _leads.indexWhere((l) => l.id == leadId);
+    if (idx == -1) {
+      idx = _leads.indexWhere((l) => l.externalLeadId == leadId);
+    }
+    if (idx != -1) {
+      final current = _leads[idx];
+      if (current.externalLeadId != null && current.externalLeadId!.isNotEmpty) {
+        _recentlyReclassifiedLeads[current.externalLeadId!] = (targetLeadType, DateTime.now());
+      }
+      String newCampaignStatus = current.campaignStatus;
+      if (targetLeadType == 'Requirement' && (current.campaignStatus == 'Property Listed' || current.campaignStatus == 'Listed')) {
+        newCampaignStatus = 'Archived';
+      } else if (targetLeadType == 'Property Listing' && current.campaignStatus == 'Archived') {
+        newCampaignStatus = 'Property Listed';
+      }
+      _leads[idx] = current.copyWith(
+        leadType: targetLeadType,
+        campaignStatus: newCampaignStatus,
+      );
+      notifyListeners();
+      unawaited(_persistLeads());
+    }
+  }
+
+  /// Optimistically reclassifies multiple leads in local memory
+  void bulkReclassifyLeadsOptimistic(List<String> leadIds, String targetLeadType) {
+    for (final id in leadIds) {
+      reclassifyLeadOptimistic(id, targetLeadType);
+    }
+  }
+
+  /// Bulk reclassify leads between 'Requirement' and 'Property Listing'
+  Future<bool> bulkReclassifyLeads(List<String> leadIds, String targetLeadType) async {
+    bulkReclassifyLeadsOptimistic(leadIds, targetLeadType);
+    final results = await Future.wait(leadIds.map((id) => reclassifyLead(id, targetLeadType)));
+    return results.every((ok) => ok);
+  }
+
   /// Reclassify a lead between 'Requirement' and 'Property Listing' ("Wrong Lead" action)
   Future<bool> reclassifyLead(String leadId, String targetLeadType) async {
+    // 1. Immediately apply optimistic reclassification so first-click is instant
+    reclassifyLeadOptimistic(leadId, targetLeadType);
+
     try {
-      final idx = _leads.indexWhere((l) => l.id == leadId);
-      if (idx != -1) {
-        final current = _leads[idx];
-        String newCampaignStatus = current.campaignStatus;
-        if (targetLeadType == 'Requirement' && (current.campaignStatus == 'Property Listed' || current.campaignStatus == 'Listed')) {
-          newCampaignStatus = 'Archived';
-        } else if (targetLeadType == 'Property Listing' && current.campaignStatus == 'Archived') {
-          newCampaignStatus = 'Property Listed';
-        }
-        _leads[idx] = current.copyWith(
-          leadType: targetLeadType,
-          campaignStatus: newCampaignStatus,
-        );
-        notifyListeners();
-        unawaited(_persistLeads());
+      // 2. Call backend PATCH endpoint (with fallback to POST /reclassify if needed)
+      Response? res;
+      try {
+        res = await _apiClient.patch('/integrations/leads/$leadId/lead-type', {
+          'leadType': targetLeadType,
+          'targetLeadType': targetLeadType,
+        });
+      } catch (patchErr) {
+        debugPrint('[IntegrationService] PATCH /lead-type failed, trying fallback: $patchErr');
+        res = await _apiClient.post('/integrations/leads/$leadId/reclassify', {
+          'leadType': targetLeadType,
+          'targetLeadType': targetLeadType,
+        });
       }
 
-      final res = await _apiClient.patch('/integrations/leads/$leadId/lead-type', {
-        'leadType': targetLeadType,
-        'targetLeadType': targetLeadType,
-      });
-
-      return res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+      final isSuccess = res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+      if (isSuccess) {
+        if (res.data is Map && res.data['lead'] is Map) {
+          try {
+            final updatedLead = IntegrationLeadModel.fromJson(Map<String, dynamic>.from(res.data['lead']));
+            int idx = _leads.indexWhere((l) => l.id == leadId);
+            if (idx == -1) {
+              idx = _leads.indexWhere((l) => l.externalLeadId == leadId);
+            }
+            if (idx != -1) {
+              _leads[idx] = updatedLead;
+              notifyListeners();
+              unawaited(_persistLeads());
+            }
+          } catch (_) {}
+        }
+        return true;
+      }
+      return false;
     } catch (e) {
       debugPrint('[IntegrationService] Error reclassifying lead $leadId: $e');
       return false;

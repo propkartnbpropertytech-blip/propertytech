@@ -1,4 +1,4 @@
-﻿import '../../integration/models/integration_lead_model.dart';
+import '../../integration/models/integration_lead_model.dart';
 
 class CampaignFollowupModel {
   final String id;
@@ -11,6 +11,7 @@ class CampaignFollowupModel {
   final String status;
   final DateTime createdAt;
   final IntegrationLeadModel? lead;
+  final String? telecallerName;
 
   CampaignFollowupModel({
     required this.id,
@@ -23,6 +24,7 @@ class CampaignFollowupModel {
     this.status = 'Pending',
     required this.createdAt,
     this.lead,
+    this.telecallerName,
   });
 
   bool get isToday {
@@ -62,6 +64,14 @@ class CampaignFollowupModel {
       lead: json['lead'] is Map<String, dynamic>
           ? IntegrationLeadModel.fromJson(Map<String, dynamic>.from(json['lead']))
           : null,
+      telecallerName: json['telecaller_name']?.toString() ??
+          (json['telecaller'] is Map ? json['telecaller']['full_name']?.toString() : null) ??
+          (json['lead'] is Map
+              ? (json['lead']['assigned_telecaller_name'] ??
+                      json['lead']['raw_json']?['assigned_telecaller_name'] ??
+                      json['lead']['raw_json']?['status_updated_by_name'])
+                  ?.toString()
+              : null),
     );
   }
 
@@ -76,6 +86,7 @@ class CampaignFollowupModel {
       'remarks': remarks,
       'status': status,
       'created_at': createdAt.toIso8601String(),
+      'telecaller_name': telecallerName,
     };
   }
 }

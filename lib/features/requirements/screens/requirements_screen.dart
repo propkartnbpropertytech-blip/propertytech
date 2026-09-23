@@ -790,6 +790,9 @@ enum LeadDateFilterPreset {
 class _RequirementsScreenState extends State<RequirementsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _wonSearchController = TextEditingController();
+  final TextEditingController _allClientsFollowupSearchController = TextEditingController();
+  String _allClientsFollowupSearchQuery = '';
+  Timer? _allClientsFollowupSearchDebounce;
   String? _wonCategoryId;
   String? _wonPropertyTypeId;
   final List<String> _wonConfigurationIds = [];
@@ -1119,6 +1122,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _dashboardStreamSub?.cancel();
     _searchController.dispose();
     _wonSearchController.dispose();
+    _allClientsFollowupSearchDebounce?.cancel();
+    _allClientsFollowupSearchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -8266,7 +8271,39 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 selectedList = todayFollowups;
               }
 
-              final filtered = selectedList;
+              var filtered = selectedList;
+              if (_selectedFollowupSubTab == 'AllClients' && _allClientsFollowupSearchQuery.isNotEmpty) {
+                final q = _allClientsFollowupSearchQuery.toLowerCase();
+                final cleanQ = q.replaceAll(RegExp(r'\D'), '');
+                filtered = filtered.where((f) {
+                  final name = f.clientName.toLowerCase();
+                  final mobile = f.mobile.replaceAll(RegExp(r'\D'), '');
+                  final notes = (f.notes ?? '').toLowerCase();
+                  final propTitle = (f.propertyTitle ?? '').toLowerCase();
+
+                  final reqModel = reqsList.firstWhereOrNull((r) =>
+                      (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+                      (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+                      (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+
+                  final config = (reqModel?.configurationName ?? '').toLowerCase();
+                  final pType = (reqModel?.propertyTypeName ?? reqModel?.categoryName ?? '').toLowerCase();
+                  final listing = (reqModel?.listingTypeName ?? '').toLowerCase();
+                  final areas = (reqModel?.displayAreasText ?? '').toLowerCase();
+                  final remarks = (reqModel?.remarks ?? '').toLowerCase();
+
+                  return name.contains(q) ||
+                      (cleanQ.isNotEmpty && mobile.contains(cleanQ)) ||
+                      f.mobile.toLowerCase().contains(q) ||
+                      notes.contains(q) ||
+                      propTitle.contains(q) ||
+                      config.contains(q) ||
+                      pType.contains(q) ||
+                      listing.contains(q) ||
+                      areas.contains(q) ||
+                      remarks.contains(q);
+                }).toList();
+              }
 
               final totalCount = filtered.length;
               final totalPages = (totalCount / _followupsPerPage).ceil();
@@ -8383,7 +8420,57 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ],
                     ),
                   ),
+                  if (_selectedFollowupSubTab == 'AllClients') ...[
+                    const SizedBox(height: CRMSpacing.m),
+                    SizedBox(
+                      height: 38,
+                      child: TextField(
+                        controller: _allClientsFollowupSearchController,
+                        onChanged: (val) {
+                          _allClientsFollowupSearchDebounce?.cancel();
+                          _allClientsFollowupSearchDebounce = Timer(const Duration(milliseconds: 200), () {
+                            if (!mounted) return;
+                            setState(() {
+                              _allClientsFollowupSearchQuery = val.trim().toLowerCase();
+                              _currentFollowupPage = 1;
+                            });
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Search all clients by name, phone, requirement, config...',
+                          hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                          suffixIcon: _allClientsFollowupSearchController.text.isNotEmpty
+                              ? IconButton(
+                                  tooltip: 'Clear',
+                                  icon: const Icon(Icons.close_rounded, size: 16),
+                                  onPressed: () {
+                                    _allClientsFollowupSearchDebounce?.cancel();
+                                    _allClientsFollowupSearchController.clear();
+                                    setState(() {
+                                      _allClientsFollowupSearchQuery = '';
+                                      _currentFollowupPage = 1;
+                                    });
+                                  },
+                                )
+                              : null,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                          ),
+                          filled: true,
+                          fillColor: CRMColors.cardBgOf(context),
+                        ),
+                      ),
+                    ),
+                  ],
                   if (showSelectColumn && _selectedFollowupClientKeys.isNotEmpty) ...[
+                    const SizedBox(height: CRMSpacing.m),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
@@ -8415,6 +8502,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   ],
 
                   if (_selectedFollowupSubTab == 'Due' && dueFollowups.isNotEmpty) ...[
+                    const SizedBox(height: CRMSpacing.m),
                     Container(
                       padding: const EdgeInsets.all(CRMSpacing.m),
                       decoration: BoxDecoration(
@@ -8429,7 +8517,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           Expanded(
                             child: Text(
                               isSiteVisitTab
-                                  ? '⚠️ Overdue Site Visit Reminder: You have ${dueFollowups.length} overdue site visit(s)! Please follow up immediately.'
+                                   ? '⚠️ Overdue Site Visit Reminder: You have ${dueFollowups.length} overdue site visit(s)! Please follow up immediately.'
                                   : '⚠️ Overdue Follow-up Reminder: You have ${dueFollowups.length} overdue follow-up(s)! Please contact these clients immediately to take action.',
                               style: CRMTypography.captionBold.copyWith(color: CRMColors.danger, fontSize: 12),
                             ),
@@ -8445,13 +8533,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 32),
                       child: Center(
                         child: Text(
-                          _selectedFollowupSubTab == 'Due'
-                              ? (isSiteVisitTab ? 'No overdue site visits found.' : 'No overdue follow-ups found.')
-                              : (_selectedFollowupSubTab == 'Future'
-                                  ? (isSiteVisitTab ? 'No future site visits scheduled.' : 'No future follow-ups scheduled.')
-                                  : (_reqFollowupDateFilter != null
-                                      ? (isSiteVisitTab ? 'No site visits for $dateStr.' : 'No follow-ups for $dateStr.')
-                                      : (isSiteVisitTab ? 'No site visits for today.' : 'No follow-ups for today.'))),
+                          _selectedFollowupSubTab == 'AllClients' && _allClientsFollowupSearchQuery.isNotEmpty
+                              ? 'No matching clients found.'
+                              : (_selectedFollowupSubTab == 'Due'
+                                  ? (isSiteVisitTab ? 'No overdue site visits found.' : 'No overdue follow-ups found.')
+                                  : (_selectedFollowupSubTab == 'Future'
+                                      ? (isSiteVisitTab ? 'No future site visits scheduled.' : 'No future follow-ups scheduled.')
+                                      : (_selectedFollowupSubTab == 'AllClients'
+                                          ? (isSiteVisitTab ? 'No site visit clients found.' : 'No follow-up clients found.')
+                                          : (_reqFollowupDateFilter != null
+                                              ? (isSiteVisitTab ? 'No site visits for $dateStr.' : 'No follow-ups for $dateStr.')
+                                              : (isSiteVisitTab ? 'No site visits for today.' : 'No follow-ups for today.'))))),
                           style: TextStyle(color: CRMColors.textSecondaryOf(context)),
                         ),
                       ),

@@ -2886,6 +2886,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     final formattedTime =
         "${displayHour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $amPm";
     final formattedDate = "${date.day}/${date.month}/${date.year}";
+    final currentRole = (RoleGuard.currentUser?.role ??
+            (context.read<AuthBloc>().state is Authenticated
+                ? (context.read<AuthBloc>().state as Authenticated).user.role
+                : ''))
+        .toLowerCase();
+    final isRealAdmin = currentRole == 'admin' || currentRole == 'super admin';
 
     return InkWell(
       onTap: () => _showEditFollowupDialog(f),
@@ -2951,27 +2957,23 @@ class _DashboardScreenState extends State<DashboardScreen>
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (context.read<AuthBloc>().state is Authenticated &&
-                      (context.read<AuthBloc>().state as Authenticated)
-                              .user
-                              .role !=
-                          'Sales' &&
+                  if (isRealAdmin &&
                       f.creatorName != null &&
                       f.creatorName!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(
-                          Icons.person_outline_rounded,
-                          size: 12,
-                          color: CRMColors.textSecondaryOf(context),
+                        const Icon(
+                          Icons.support_agent_rounded,
+                          size: 13,
+                          color: Color(0xFF6366F1),
                         ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            'Assigned to: ${f.creatorName}',
+                            'Telecaller: ${f.creatorName}',
                             style: CRMTypography.captionBold.copyWith(
-                              color: CRMColors.textSecondaryOf(context),
+                              color: const Color(0xFF6366F1),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

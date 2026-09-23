@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:collection/collection.dart';
 import '../../../core/theme/theme_manager.dart';
+import '../../../core/security/role_guard.dart';
 import '../../../core/storage/local_repositories.dart';
 import '../../../core/storage/model_mappers.dart';
 import '../../requirements/models/requirement_model.dart';
@@ -676,6 +677,9 @@ class _FollowupsCardState extends State<FollowupsCard> {
   }
 
   Widget _buildFollowupRow(DashboardFollowup item, bool isDark) {
+    final role = (RoleGuard.currentUser?.role ?? '').toLowerCase();
+    final isRealAdmin = role == 'admin' || role == 'super admin';
+
     final clientName = item.clientName.isNotEmpty
         ? item.clientName
         : (item.requirementCustomerName ?? 'Client');
@@ -732,6 +736,32 @@ class _FollowupsCardState extends State<FollowupsCard> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (isRealAdmin && item.creatorName != null && item.creatorName!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.support_agent_rounded,
+                          size: 11,
+                          color: Color(0xFF6366F1),
+                        ),
+                        const SizedBox(width: 3),
+                        Flexible(
+                          child: Text(
+                            'Telecaller: ${item.creatorName}',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF6366F1),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (property.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(

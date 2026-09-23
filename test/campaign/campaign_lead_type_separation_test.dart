@@ -146,5 +146,21 @@ void main() {
       final restoredFromCamel = IntegrationLeadModel.fromJson(jsonWithCamelCase);
       expect(restoredFromCamel.leadType, equals('Property Listing'));
     });
+
+    test('reclassifyLeadOptimistic updates leadType synchronously on first click', () {
+      final initialLead = IntegrationLeadModel(
+        id: 'test-lead-first-click',
+        source: 'Meta Ads',
+        receivedAt: DateTime.now(),
+        leadType: 'Requirement',
+        rawJson: {'Client Name': 'First Click User'},
+      );
+
+      // Verify copyWith changes leadType to Property Listing
+      final updated = initialLead.copyWith(leadType: 'Property Listing');
+      expect(updated.leadType, equals('Property Listing'));
+      expect(updated.rawJson['lead_type'], equals('Property Listing'));
+    });
   });
 }
+

@@ -31,6 +31,15 @@ class IntegrationLeadModel {
   final String? transferRemarks;
   final DateTime? interactedAt;
   final String? interactedBy;
+  final String? statusUpdatedByName;
+  final String? statusUpdatedById;
+  final DateTime? statusUpdatedAt;
+  final String? notInterestedByName;
+  final String? notInterestedById;
+  final DateTime? notInterestedAt;
+  final String? archivedByName;
+  final String? archivedById;
+  final DateTime? archivedAt;
 
   bool get isInteracted =>
       campaignStatus == 'CNR' ||
@@ -68,6 +77,15 @@ class IntegrationLeadModel {
     this.transferRemarks,
     this.interactedAt,
     this.interactedBy,
+    this.statusUpdatedByName,
+    this.statusUpdatedById,
+    this.statusUpdatedAt,
+    this.notInterestedByName,
+    this.notInterestedById,
+    this.notInterestedAt,
+    this.archivedByName,
+    this.archivedById,
+    this.archivedAt,
   }) : leadType = resolveLeadType(leadType, rawJson);
 
   /// Resolves lead type between 'Property Listing' and 'Requirement'
@@ -602,6 +620,15 @@ class IntegrationLeadModel {
     String? transferRemarks,
     DateTime? interactedAt,
     String? interactedBy,
+    String? statusUpdatedByName,
+    String? statusUpdatedById,
+    DateTime? statusUpdatedAt,
+    String? notInterestedByName,
+    String? notInterestedById,
+    DateTime? notInterestedAt,
+    String? archivedByName,
+    String? archivedById,
+    DateTime? archivedAt,
     bool clearFollowup = false,
   }) {
     final updatedRaw = rawJson != null
@@ -641,6 +668,15 @@ class IntegrationLeadModel {
       transferRemarks: transferRemarks ?? this.transferRemarks,
       interactedAt: interactedAt ?? this.interactedAt,
       interactedBy: interactedBy ?? this.interactedBy,
+      statusUpdatedByName: statusUpdatedByName ?? this.statusUpdatedByName,
+      statusUpdatedById: statusUpdatedById ?? this.statusUpdatedById,
+      statusUpdatedAt: statusUpdatedAt ?? this.statusUpdatedAt,
+      notInterestedByName: notInterestedByName ?? this.notInterestedByName,
+      notInterestedById: notInterestedById ?? this.notInterestedById,
+      notInterestedAt: notInterestedAt ?? this.notInterestedAt,
+      archivedByName: archivedByName ?? this.archivedByName,
+      archivedById: archivedById ?? this.archivedById,
+      archivedAt: archivedAt ?? this.archivedAt,
     );
   }
 
@@ -675,6 +711,15 @@ class IntegrationLeadModel {
       'transfer_remarks': transferRemarks,
       'interacted_at': interactedAt?.toIso8601String(),
       'interacted_by': interactedBy,
+      'status_updated_by_name': statusUpdatedByName,
+      'status_updated_by_id': statusUpdatedById,
+      'status_updated_at': statusUpdatedAt?.toIso8601String(),
+      'not_interested_by_name': notInterestedByName,
+      'not_interested_by_id': notInterestedById,
+      'not_interested_at': notInterestedAt?.toIso8601String(),
+      'archived_by_name': archivedByName,
+      'archived_by_id': archivedById,
+      'archived_at': archivedAt?.toIso8601String(),
     };
   }
 
@@ -733,6 +778,31 @@ class IntegrationLeadModel {
     final interactedAtVal = interactedAtRaw != null ? DateTime.tryParse(interactedAtRaw.toString()) : null;
     final interactedByVal = json['interacted_by']?.toString() ?? raw['_interacted_by']?.toString() ?? transferObj?['interacted_by']?.toString();
 
+    final statusUpdatedByNameVal = json['status_updated_by_name']?.toString() ??
+        raw['status_updated_by_name']?.toString() ??
+        raw['_status_updated_by_name']?.toString() ??
+        ((json['campaign_status'] != null && json['campaign_status'] != 'New' && json['campaign_status'] != 'Assigned') ? telecallerNameVal : null);
+    final statusUpdatedByIdVal = json['status_updated_by_id']?.toString() ??
+        raw['status_updated_by_id']?.toString();
+    final statusUpdatedAtRaw = json['status_updated_at'] ?? raw['status_updated_at'];
+    final statusUpdatedAtVal = statusUpdatedAtRaw != null ? DateTime.tryParse(statusUpdatedAtRaw.toString()) : null;
+
+    final notInterestedByNameVal = json['not_interested_by_name']?.toString() ??
+        raw['not_interested_by_name']?.toString() ??
+        (json['campaign_status'] == 'Not interested' ? (statusUpdatedByNameVal ?? telecallerNameVal) : null);
+    final notInterestedByIdVal = json['not_interested_by_id']?.toString() ??
+        raw['not_interested_by_id']?.toString();
+    final notInterestedAtRaw = json['not_interested_at'] ?? raw['not_interested_at'];
+    final notInterestedAtVal = notInterestedAtRaw != null ? DateTime.tryParse(notInterestedAtRaw.toString()) : null;
+
+    final archivedByNameVal = json['archived_by_name']?.toString() ??
+        raw['archived_by_name']?.toString() ??
+        ((json['campaign_status'] == 'Archived' || json['campaign_status'] == 'Property Listed' || json['campaign_status'] == 'Listed') ? (statusUpdatedByNameVal ?? telecallerNameVal) : null);
+    final archivedByIdVal = json['archived_by_id']?.toString() ??
+        raw['archived_by_id']?.toString();
+    final archivedAtRaw = json['archived_at'] ?? raw['archived_at'];
+    final archivedAtVal = archivedAtRaw != null ? DateTime.tryParse(archivedAtRaw.toString()) : null;
+
     return IntegrationLeadModel(
       id: json['id']?.toString() ?? '',
       source: json['source']?.toString() ?? 'Meta Ads',
@@ -773,6 +843,15 @@ class IntegrationLeadModel {
       transferRemarks: transferRemarksVal,
       interactedAt: interactedAtVal,
       interactedBy: interactedByVal,
+      statusUpdatedByName: statusUpdatedByNameVal,
+      statusUpdatedById: statusUpdatedByIdVal,
+      statusUpdatedAt: statusUpdatedAtVal,
+      notInterestedByName: notInterestedByNameVal,
+      notInterestedById: notInterestedByIdVal,
+      notInterestedAt: notInterestedAtVal,
+      archivedByName: archivedByNameVal,
+      archivedById: archivedByIdVal,
+      archivedAt: archivedAtVal,
     );
   }
 }
