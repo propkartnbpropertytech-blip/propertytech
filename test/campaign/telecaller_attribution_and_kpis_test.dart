@@ -197,5 +197,65 @@ void main() {
       expect(kpiCount, equals(3));
       expect(tabCount, equals(kpiCount));
     });
+
+    test('IntegrationLeadModel parses and serializes notInterestedReason accurately', () {
+      // 1. From root JSON
+      final json1 = {
+        'id': 'lead-ni-1',
+        'source': 'Meta Ads',
+        'campaign_status': 'Not interested',
+        'not_interested_reason': 'Client looking in different city',
+      };
+      final lead1 = IntegrationLeadModel.fromJson(json1);
+      expect(lead1.notInterestedReason, equals('Client looking in different city'));
+      expect(lead1.toJson()['not_interested_reason'], equals('Client looking in different city'));
+
+      // 2. From raw_json fallback
+      final json2 = {
+        'id': 'lead-ni-2',
+        'source': 'Meta Ads',
+        'campaign_status': 'Not interested',
+        'raw_json': {
+          'not_interested_reason': 'Budget too low for property',
+          'full_name': 'Test Client',
+        },
+      };
+      final lead2 = IntegrationLeadModel.fromJson(json2);
+      expect(lead2.notInterestedReason, equals('Budget too low for property'));
+
+      // 3. From rejection_reason fallback
+      final json3 = {
+        'id': 'lead-ni-3',
+        'source': 'Meta Ads',
+        'campaign_status': 'Not interested',
+        'rejection_reason': 'Already purchased elsewhere',
+      };
+      final lead3 = IntegrationLeadModel.fromJson(json3);
+      expect(lead3.notInterestedReason, equals('Already purchased elsewhere'));
+
+      // 4. From not_interested_notes and notes fallback
+      final json4 = {
+        'id': 'lead-ni-4',
+        'source': 'Meta Ads',
+        'campaign_status': 'Not interested',
+        'not_interested_notes': 'Client requested no further calls',
+      };
+      final lead4 = IntegrationLeadModel.fromJson(json4);
+      expect(lead4.notInterestedReason, equals('Client requested no further calls'));
+
+      final json5 = {
+        'id': 'lead-ni-5',
+        'source': 'Meta Ads',
+        'campaign_status': 'Not interested',
+        'notes': 'Looking for commercial space only',
+      };
+      final lead5 = IntegrationLeadModel.fromJson(json5);
+      expect(lead5.notInterestedReason, equals('Looking for commercial space only'));
+
+      // 5. copyWith
+      final updatedLead = lead1.copyWith(notInterestedReason: 'Updated Reason Note');
+      expect(updatedLead.notInterestedReason, equals('Updated Reason Note'));
+    });
   });
 }
+

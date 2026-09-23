@@ -2,8 +2,8 @@ import '../config/app_env.dart';
 
 class AppConstants {
   // App Info
-  static const String appVersion = '2.1.3';
-  static const String buildNumber = '13';
+  static const String appVersion = '3.0.0';
+  static const String buildNumber = '14';
 
   // API Config — same isolation rules as ApiConstants (no silent production fallback).
   static String get baseUrl => AppEnv.apiBaseUrl;

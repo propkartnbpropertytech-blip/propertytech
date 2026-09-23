@@ -37,6 +37,7 @@ class IntegrationLeadModel {
   final String? notInterestedByName;
   final String? notInterestedById;
   final DateTime? notInterestedAt;
+  final String? notInterestedReason;
   final String? archivedByName;
   final String? archivedById;
   final DateTime? archivedAt;
@@ -83,6 +84,7 @@ class IntegrationLeadModel {
     this.notInterestedByName,
     this.notInterestedById,
     this.notInterestedAt,
+    this.notInterestedReason,
     this.archivedByName,
     this.archivedById,
     this.archivedAt,
@@ -626,6 +628,7 @@ class IntegrationLeadModel {
     String? notInterestedByName,
     String? notInterestedById,
     DateTime? notInterestedAt,
+    String? notInterestedReason,
     String? archivedByName,
     String? archivedById,
     DateTime? archivedAt,
@@ -674,6 +677,7 @@ class IntegrationLeadModel {
       notInterestedByName: notInterestedByName ?? this.notInterestedByName,
       notInterestedById: notInterestedById ?? this.notInterestedById,
       notInterestedAt: notInterestedAt ?? this.notInterestedAt,
+      notInterestedReason: notInterestedReason ?? this.notInterestedReason,
       archivedByName: archivedByName ?? this.archivedByName,
       archivedById: archivedById ?? this.archivedById,
       archivedAt: archivedAt ?? this.archivedAt,
@@ -717,6 +721,7 @@ class IntegrationLeadModel {
       'not_interested_by_name': notInterestedByName,
       'not_interested_by_id': notInterestedById,
       'not_interested_at': notInterestedAt?.toIso8601String(),
+      'not_interested_reason': notInterestedReason,
       'archived_by_name': archivedByName,
       'archived_by_id': archivedById,
       'archived_at': archivedAt?.toIso8601String(),
@@ -794,6 +799,14 @@ class IntegrationLeadModel {
         raw['not_interested_by_id']?.toString();
     final notInterestedAtRaw = json['not_interested_at'] ?? raw['not_interested_at'];
     final notInterestedAtVal = notInterestedAtRaw != null ? DateTime.tryParse(notInterestedAtRaw.toString()) : null;
+    final notInterestedReasonVal = json['not_interested_reason']?.toString() ??
+        json['not_interested_notes']?.toString() ??
+        json['rejection_reason']?.toString() ??
+        json['notes']?.toString() ??
+        raw['not_interested_reason']?.toString() ??
+        raw['not_interested_notes']?.toString() ??
+        raw['rejection_reason']?.toString() ??
+        raw['notes']?.toString();
 
     final archivedByNameVal = json['archived_by_name']?.toString() ??
         raw['archived_by_name']?.toString() ??
@@ -849,6 +862,7 @@ class IntegrationLeadModel {
       notInterestedByName: notInterestedByNameVal,
       notInterestedById: notInterestedByIdVal,
       notInterestedAt: notInterestedAtVal,
+      notInterestedReason: notInterestedReasonVal,
       archivedByName: archivedByNameVal,
       archivedById: archivedByIdVal,
       archivedAt: archivedAtVal,

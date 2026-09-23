@@ -1626,29 +1626,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             );
           }
         } else if (newStatus == 'Not interested') {
-          await _service.updateLeadCampaignStatus(lead.id, 'Not interested');
-          unawaited(_service.fetchServerLeads(resetWithServer: true));
-          if (mounted) {
-            setState(() {
-              _cachedFilteredLeads = null;
-            });
-            unawaited(_loadFollowups());
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Lead marked as Not Interested and moved to Not Interested tab.'),
-                action: SnackBarAction(
-                  label: 'View',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      _viewMode = 'not_interested';
-                      _cachedFilteredLeads = null;
-                    });
-                  },
-                ),
-              ),
-            );
-          }
+          _showNotInterestedReasonDialog(context, lead);
         }
       },
       itemBuilder: (ctx) => [
@@ -2148,6 +2126,724 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Future<void> _showNotInterestedReasonDialog(BuildContext context, IntegrationLeadModel lead) async {
+    final clientName = lead.getStringValue('full_name').isNotEmpty
+        ? lead.getStringValue('full_name')
+        : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Client');
+    final phone = lead.getStringValue('phone_number').isNotEmpty
+        ? lead.getStringValue('phone_number')
+        : lead.getStringValue('phone');
+
+    final notesController = TextEditingController();
+    bool hasError = false;
+    bool isSubmitting = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: !isSubmitting,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+            actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.thumb_down_alt_rounded, color: Color(0xFFEF4444), size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Mark as Not Interested',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$clientName ${phone.isNotEmpty ? '($phone)' : ''}',
+                        style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    RichText(
+                      text: TextSpan(
+                        text: 'Reason / Notes ',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: CRMColors.textOf(ctx),
+                        ),
+                        children: const [
+                          TextSpan(
+                            text: '*',
+                            style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: notesController,
+                      maxLines: 3,
+                      autofocus: true,
+                      enabled: !isSubmitting,
+                      onChanged: (val) {
+                        if (hasError && val.trim().isNotEmpty) {
+                          setDialogState(() => hasError = false);
+                        }
+                      },
+                      decoration: InputDecoration(
+                        hintText: 'Enter reason why client is not interested (e.g., budget mismatch, not looking, bought elsewhere)...',
+                        hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                        errorText: hasError ? 'Please enter a reason or note. This field is mandatory.' : null,
+                        errorStyle: const TextStyle(fontSize: 11, color: Color(0xFFEF4444)),
+                        filled: true,
+                        fillColor: CRMColors.surfaceElevatedOf(ctx),
+                        contentPadding: const EdgeInsets.all(12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: hasError ? const Color(0xFFEF4444) : CRMColors.borderOf(ctx),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFEF4444),
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFEF4444)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'This note will be saved with the client and displayed in the Not Interested tab.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.grey.shade300 : const Color(0xFF991B1B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSubmitting ? null : () => Navigator.pop(dialogCtx),
+                child: Text('Cancel', style: TextStyle(color: CRMColors.textSecondaryOf(ctx))),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFEF4444),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                ),
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        final note = notesController.text.trim();
+                        if (note.isEmpty) {
+                          setDialogState(() => hasError = true);
+                          return;
+                        }
+
+                        setDialogState(() => isSubmitting = true);
+                        Navigator.pop(dialogCtx);
+                        setState(() {
+                          _cachedFilteredLeads = null;
+                        });
+
+                        try {
+                          await _service.updateLeadCampaignStatus(lead.id, 'Not interested', reason: note);
+                          if (!context.mounted) return;
+                          setState(() {
+                            _cachedFilteredLeads = null;
+                          });
+                          unawaited(_loadFollowups());
+                          unawaited(_service.fetchServerLeads(resetWithServer: true));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text('Lead marked as Not Interested and moved to Not Interested tab.'),
+                              backgroundColor: const Color(0xFFEF4444),
+                              action: SnackBarAction(
+                                label: 'View',
+                                textColor: Colors.white,
+                                onPressed: () {
+                                  setState(() {
+                                    _viewMode = 'not_interested';
+                                    _cachedFilteredLeads = null;
+                                  });
+                                },
+                              ),
+                            ),
+                          );
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to mark lead as Not Interested: $e'),
+                                backgroundColor: const Color(0xFFEF4444),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                child: isSubmitting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Mark Not Interested', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showBulkNotInterestedReasonDialog(BuildContext context, List<String> leadIds) async {
+    final count = leadIds.length;
+    final notesController = TextEditingController();
+    bool hasError = false;
+    bool isSubmitting = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: !isSubmitting,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+            actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.thumb_down_alt_rounded, color: Color(0xFFEF4444), size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Mark Selected as Not Interested',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$count lead(s) selected',
+                        style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    RichText(
+                      text: TextSpan(
+                        text: 'Reason / Notes ',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textOf(ctx)),
+                        children: const [
+                          TextSpan(text: '*', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: notesController,
+                      maxLines: 3,
+                      autofocus: true,
+                      enabled: !isSubmitting,
+                      onChanged: (val) {
+                        if (hasError && val.trim().isNotEmpty) {
+                          setDialogState(() => hasError = false);
+                        }
+                      },
+                      decoration: InputDecoration(
+                        hintText: 'Enter reason why selected leads are not interested...',
+                        hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                        errorText: hasError ? 'Please enter a reason or note. This field is mandatory.' : null,
+                        errorStyle: const TextStyle(fontSize: 11, color: Color(0xFFEF4444)),
+                        filled: true,
+                        fillColor: CRMColors.surfaceElevatedOf(ctx),
+                        contentPadding: const EdgeInsets.all(12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSubmitting ? null : () => Navigator.pop(dialogCtx),
+                child: Text('Cancel', style: TextStyle(color: CRMColors.textSecondaryOf(ctx))),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFEF4444),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                ),
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        final note = notesController.text.trim();
+                        if (note.isEmpty) {
+                          setDialogState(() => hasError = true);
+                          return;
+                        }
+                        setDialogState(() => isSubmitting = true);
+                        Navigator.pop(dialogCtx);
+                        await _service.bulkUpdateCampaignStatus(leadIds, 'Not interested', reason: note);
+                        unawaited(_service.fetchServerLeads(resetWithServer: true));
+                        if (mounted) {
+                          setState(() {
+                            _selectedLeadIds.clear();
+                            _cachedFilteredLeads = null;
+                          });
+                          unawaited(_loadFollowups());
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('$count lead(s) marked as Not Interested and moved to Not Interested tab.'),
+                              backgroundColor: const Color(0xFFEF4444),
+                              action: SnackBarAction(
+                                label: 'View',
+                                textColor: Colors.white,
+                                onPressed: () {
+                                  setState(() {
+                                    _viewMode = 'not_interested';
+                                    _cachedFilteredLeads = null;
+                                  });
+                                },
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                child: isSubmitting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Mark Not Interested', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showNotInterestedLeadDetailsDialog(BuildContext context, IntegrationLeadModel lead) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
+    final name = lead.getStringValue('full_name').isNotEmpty
+        ? lead.getStringValue('full_name')
+        : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Lead');
+    final phone = lead.getStringValue('phone_number').isNotEmpty
+        ? lead.getStringValue('phone_number')
+        : (lead.getStringValue('phone').isNotEmpty ? lead.getStringValue('phone') : '-');
+    final email = lead.getStringValue('email').isNotEmpty ? lead.getStringValue('email') : '-';
+    final campaignName = lead.getStringValue('campaign_name');
+    final adName = lead.getStringValue('ad_name');
+    final formName = lead.getStringValue('form_name');
+    final notInterestedNote = lead.notInterestedReason?.trim().isNotEmpty == true
+        ? lead.notInterestedReason!.trim()
+        : (lead.rawJson['not_interested_reason']?.toString().trim().isNotEmpty == true
+            ? lead.rawJson['not_interested_reason'].toString().trim()
+            : (lead.rawJson['not_interested_notes']?.toString().trim().isNotEmpty == true
+                ? lead.rawJson['not_interested_notes'].toString().trim()
+                : (lead.rawJson['rejection_reason']?.toString().trim().isNotEmpty == true
+                    ? lead.rawJson['rejection_reason'].toString().trim()
+                    : (lead.rawJson['notes']?.toString().trim().isNotEmpty == true
+                        ? lead.rawJson['notes'].toString().trim()
+                        : (lead.getStringValue('notes').isNotEmpty
+                            ? lead.getStringValue('notes')
+                            : '-')))));
+
+    final markedBy = lead.notInterestedByName?.trim().isNotEmpty == true
+        ? lead.notInterestedByName!
+        : (lead.statusUpdatedByName?.trim().isNotEmpty == true
+            ? lead.statusUpdatedByName!
+            : (lead.assignedTelecallerName?.trim().isNotEmpty == true ? lead.assignedTelecallerName! : 'Telecaller'));
+
+    final markedAtText = lead.notInterestedAt != null
+        ? DateFormat('d MMM yyyy, h:mm a').format(lead.notInterestedAt!.toLocal())
+        : (lead.statusUpdatedAt != null
+            ? DateFormat('d MMM yyyy, h:mm a').format(lead.statusUpdatedAt!.toLocal())
+            : DateFormat('d MMM yyyy, h:mm a').format(lead.receivedAt.toLocal()));
+
+    final ignoredKeys = {
+      'id', 'ad_id', 'form_id', 'adset_id', 'campaign_id', 'platform',
+      'is_organic', 'lead_status', 'created_time', 'phone_number', 'full_name',
+      'email', 'Ad Name', 'ad_name', 'Campaign Name', 'campaign_name', 'form_name',
+      'Form Name', 'adset_name', 'city', 'City', 'Name', 'name', 'Status', 'status',
+      'Remarks', 'Remarks ', 'Number', '', '_transfer', '_lead_type', 'lead_type',
+      'not_interested_reason', 'not_interested_notes', 'not_interested_by_name',
+      'not_interested_by_id', 'not_interested_at', 'status_updated_by_name',
+      'status_updated_by_id', 'status_updated_at', 'status_updated_by_role'
+    };
+
+    final questionnaire = <MapEntry<String, String>>[];
+    for (final entry in lead.rawJson.entries) {
+      final k = entry.key.toString().trim();
+      final v = entry.value?.toString().trim() ?? '';
+      if (!ignoredKeys.contains(k) && !k.startsWith('_') && v.isNotEmpty) {
+        var title = k.replaceAll('_', ' ').replaceAll('?', '').trim();
+        if (title.isNotEmpty) {
+          title = title.substring(0, 1).toUpperCase() + title.substring(1);
+        }
+        questionnaire.add(MapEntry(title, v));
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        actionsPadding: const EdgeInsets.all(16),
+        title: Row(
+          children: [
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: const Color(0xFFEF4444).withValues(alpha: 0.15),
+              child: const Icon(Icons.thumb_down_alt_rounded, color: Color(0xFFEF4444), size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: isMobile ? 16 : 18,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    'Lead ID: ${lead.id}',
+                    style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.35)),
+              ),
+              child: const Text(
+                'Not Interested',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFDC2626),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Highlighted Not Interested Note Card (Prominently displayed)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.notes_rounded, color: Color(0xFFDC2626), size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            'Not Interested Reason / Notes',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFDC2626),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        notInterestedNote != '-' && notInterestedNote.isNotEmpty
+                            ? notInterestedNote
+                            : 'No note was recorded for this client.',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: notInterestedNote != '-' && notInterestedNote.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                          color: notInterestedNote != '-' && notInterestedNote.isNotEmpty
+                              ? (isDark ? Colors.white : const Color(0xFF1E293B))
+                              : CRMColors.textSecondaryOf(context),
+                          fontStyle: notInterestedNote != '-' && notInterestedNote.isNotEmpty ? FontStyle.normal : FontStyle.italic,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Divider(height: 1),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 14,
+                        runSpacing: 4,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.support_agent_rounded, size: 13, color: Color(0xFF6366F1)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Marked by: $markedBy',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.access_time_rounded, size: 13, color: CRMColors.textSecondaryOf(context)),
+                              const SizedBox(width: 4),
+                              Text(
+                                markedAtText,
+                                style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // Quick Call & WhatsApp Action Buttons
+                if (phone != '-' && phone.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.call_rounded, size: 15),
+                          label: const Text('Call Client'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                          ),
+                          onPressed: () => _launchTel(phone),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 15),
+                          label: const Text('WhatsApp'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF22C55E),
+                            side: const BorderSide(color: Color(0xFF22C55E)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                          ),
+                          onPressed: () => _launchWhatsApp(phone, name),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
+                // Contact & Source Information
+                Text(
+                  'Contact & Source Details',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: CRMColors.textSecondaryOf(context)),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: CRMColors.borderOf(context)),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildDetailRow(context, Icons.person_outline, 'Customer Name', name),
+                      _buildDetailRow(context, Icons.phone_outlined, 'Phone', phone),
+                      if (email != '-') _buildDetailRow(context, Icons.email_outlined, 'Email', email),
+                      _buildDetailRow(context, Icons.source_rounded, 'Source', lead.source),
+                      _buildDetailRow(context, Icons.category_outlined, 'Lead Type', lead.leadType),
+                      _buildDetailRow(context, Icons.calendar_today_rounded, 'Received Date', DateFormat('d MMM yyyy, h:mm a').format(lead.receivedAt)),
+                      if (campaignName.isNotEmpty) _buildDetailRow(context, Icons.campaign_outlined, 'Campaign', campaignName),
+                      if (adName.isNotEmpty) _buildDetailRow(context, Icons.ad_units_outlined, 'Ad Name', adName),
+                      if (formName.isNotEmpty) _buildDetailRow(context, Icons.description_outlined, 'Form Name', formName),
+                    ],
+                  ),
+                ),
+
+                // Form Questionnaire & Responses (if present)
+                if (questionnaire.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Form Questionnaire & Responses',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: CRMColors.textSecondaryOf(context)),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: CRMColors.borderOf(context)),
+                    ),
+                    child: Column(
+                      children: questionnaire.map((q) => _buildDetailRow(context, Icons.check_circle_outline_rounded, q.key, q.value)).toList(),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Close', style: TextStyle(color: CRMColors.textSecondaryOf(context))),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.restore_rounded, size: 15),
+            label: const Text('Restore to Active'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.primaryOf(context),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _service.updateLeadCampaignStatus(lead.id, 'New');
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Lead restored to Active Leads.')),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(BuildContext context, IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: CRMColors.textSecondaryOf(context)),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context), fontWeight: FontWeight.w500),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3643,32 +4339,43 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           },
         ),
         IconButton(
-          icon: const Icon(Icons.star_rounded, color: Color(0xFF10B981), size: 18),
-          tooltip: 'Mark Interested',
-          onPressed: () async {
-            await _service.updateLeadCampaignStatus(item.leadId, 'Interested');
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Marked as Interested! You can move this lead to CRM.'),
-                  backgroundColor: Color(0xFF10B981),
-                ),
-              );
-              _loadFollowups();
-            }
+          icon: const Icon(Icons.swap_horiz_rounded, color: Color(0xFF10B981), size: 19),
+          tooltip: 'Transfer Lead',
+          onPressed: () {
+            IntegrationLeadModel? foundLead;
+            try {
+              foundLead = _service.leads.firstWhere((l) => l.id == item.leadId);
+            } catch (_) {}
+            final lead = foundLead ??
+                item.lead ??
+                IntegrationLeadModel(
+                  id: item.leadId,
+                  source: 'Meta Ads',
+                  leadType: item.leadType,
+                  receivedAt: item.createdAt,
+                  rawJson: {'full_name': item.clientName, 'phone_number': item.mobile},
+                );
+            _showTransferDialog(context, lead);
           },
         ),
         IconButton(
           icon: const Icon(Icons.thumb_down_alt_rounded, color: Color(0xFFEF4444), size: 18),
           tooltip: 'Mark Not Interested',
-          onPressed: () async {
-            await _service.updateLeadCampaignStatus(item.leadId, 'Not interested');
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Moved to Not Interested list.')),
-              );
-              _loadFollowups();
-            }
+          onPressed: () {
+            IntegrationLeadModel? foundLead;
+            try {
+              foundLead = _service.leads.firstWhere((l) => l.id == item.leadId);
+            } catch (_) {}
+            final lead = foundLead ??
+                item.lead ??
+                IntegrationLeadModel(
+                  id: item.leadId,
+                  source: 'Meta Ads',
+                  leadType: item.leadType,
+                  receivedAt: item.createdAt,
+                  rawJson: {'full_name': item.clientName, 'phone_number': item.mobile},
+                );
+            _showNotInterestedReasonDialog(context, lead);
           },
         ),
       ],
@@ -3865,6 +4572,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         : (lead.statusUpdatedByName?.trim().isNotEmpty == true
             ? lead.statusUpdatedByName!
             : (lead.assignedTelecallerName?.trim().isNotEmpty == true ? lead.assignedTelecallerName! : '-'));
+    final notInterestedReason = lead.notInterestedReason?.trim().isNotEmpty == true
+        ? lead.notInterestedReason!.trim()
+        : (lead.getStringValue('not_interested_reason').isNotEmpty
+            ? lead.getStringValue('not_interested_reason')
+            : (lead.getStringValue('not_interested_notes').isNotEmpty
+                ? lead.getStringValue('not_interested_notes')
+                : (lead.getStringValue('rejection_reason').isNotEmpty
+                    ? lead.getStringValue('rejection_reason')
+                    : '')));
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -3920,7 +4636,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
           const Divider(height: 14),
 
-          // Name
+          // Name with Date underneath
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Row(
@@ -3929,7 +4645,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 Icon(Icons.person_rounded, size: 14, color: CRMColors.textSecondaryOf(context)),
                 const SizedBox(width: 6),
                 Text('Name: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context))),
-                Expanded(child: Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 2),
+                      Text(
+                        DateFormat('d MMM yyyy, h:mm a').format(lead.receivedAt),
+                        style: TextStyle(fontSize: 10.5, color: CRMColors.textSecondaryOf(context)),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -4003,24 +4731,26 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
           ],
 
-          // Date Received
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.access_time_rounded, size: 14, color: CRMColors.textSecondaryOf(context)),
-                const SizedBox(width: 6),
-                Text('Received: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context))),
-                Expanded(
-                  child: Text(
-                    DateFormat('d MMM yyyy, h:mm a').format(lead.receivedAt),
-                    style: const TextStyle(fontSize: 12),
+          // Notes / Reason (Replaces Date Received)
+          if (notInterestedReason.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.note_alt_outlined, size: 14, color: Color(0xFFEF4444)),
+                  const SizedBox(width: 6),
+                  Text('Notes: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context))),
+                  Expanded(
+                    child: Text(
+                      notInterestedReason,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFB91C1C)),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
 
           const SizedBox(height: 4),
 
@@ -4031,12 +4761,26 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               border: Border(top: BorderSide(color: CRMColors.borderOf(context).withValues(alpha: 0.4))),
             ),
             child: Wrap(
-              spacing: 4,
+              spacing: 6,
               runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 140, maxWidth: 220),
+                  constraints: const BoxConstraints(minWidth: 70, maxWidth: 100),
+                  child: SizedBox(
+                    height: 32,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.visibility_outlined, size: 13),
+                      label: const Text('View', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      onPressed: () => _showNotInterestedLeadDetailsDialog(context, lead),
+                    ),
+                  ),
+                ),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 130, maxWidth: 180),
                   child: SizedBox(
                     height: 32,
                     child: ElevatedButton.icon(
@@ -4130,7 +4874,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           cell(const Text('Phone'), header: true),
           cell(const Text('Email'), header: true),
           if (isRealAdmin) cell(const Text('Telecaller'), header: true),
-          cell(const Text('Date Received'), header: true),
+          cell(const Text('Notes'), header: true),
           cell(const Text('Actions'), header: true),
         ],
       );
@@ -4149,6 +4893,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           : (lead.statusUpdatedByName?.trim().isNotEmpty == true
               ? lead.statusUpdatedByName!
               : (lead.assignedTelecallerName?.trim().isNotEmpty == true ? lead.assignedTelecallerName! : '-'));
+      final notInterestedNote = lead.notInterestedReason?.trim().isNotEmpty == true
+          ? lead.notInterestedReason!.trim()
+          : (lead.getStringValue('not_interested_reason').isNotEmpty
+              ? lead.getStringValue('not_interested_reason')
+              : (lead.getStringValue('not_interested_notes').isNotEmpty
+                  ? lead.getStringValue('not_interested_notes')
+                  : (lead.getStringValue('rejection_reason').isNotEmpty
+                      ? lead.getStringValue('rejection_reason')
+                      : '-')));
 
       return TableRow(
         children: [
@@ -4167,7 +4920,23 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
           ),
           cell(Text(lead.leadType)),
-          cell(Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+          cell(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(height: 3),
+                Text(
+                  DateFormat('d MMM yyyy, h:mm a').format(lead.receivedAt),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: CRMColors.textSecondaryOf(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
           cell(Text(phone)),
           cell(Text(email)),
           if (isRealAdmin)
@@ -4191,15 +4960,33 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 ],
               ),
             ),
-          cell(Text(DateFormat('d MMM yyyy, h:mm a').format(lead.receivedAt), style: const TextStyle(fontSize: 11))),
+          cell(
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.visibility_outlined, size: 13),
+                label: const Text('View', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  minimumSize: const Size(64, 28),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  side: BorderSide(color: CRMColors.borderOf(context)),
+                ),
+                onPressed: () => _showNotInterestedLeadDetailsDialog(context, lead),
+              ),
+            ),
+          ),
           cell(
             Align(
               alignment: Alignment.centerLeft,
               child: PopupMenuButton<String>(
                 tooltip: 'Actions',
-                icon: Icon(Icons.more_vert_rounded, color: CRMColors.textOf(context)),
+                padding: EdgeInsets.zero,
+                icon: Icon(Icons.more_vert_rounded, size: 18, color: CRMColors.textOf(context)),
                 onSelected: (value) async {
-                  if (value == 'restore') {
+                  if (value == 'view') {
+                    _showNotInterestedLeadDetailsDialog(context, lead);
+                  } else if (value == 'restore') {
                     await _service.updateLeadCampaignStatus(lead.id, 'New');
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -4220,6 +5007,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   }
                 },
                 itemBuilder: (menuContext) => [
+                  const PopupMenuItem(
+                    value: 'view',
+                    child: Row(
+                      children: [
+                        Icon(Icons.visibility_outlined, size: 18, color: Color(0xFF6366F1)),
+                        SizedBox(width: 10),
+                        Text('View Details'),
+                      ],
+                    ),
+                  ),
                   const PopupMenuItem(
                     value: 'restore',
                     child: Row(
@@ -4280,23 +5077,23 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ? const {
                 0: FlexColumnWidth(0.4),
                 1: FlexColumnWidth(0.85),
-                2: FlexColumnWidth(1.0),
-                3: FlexColumnWidth(1.35),
+                2: FlexColumnWidth(0.95),
+                3: FlexColumnWidth(1.45),
                 4: FlexColumnWidth(1.15),
-                5: FlexColumnWidth(1.4),
-                6: FlexColumnWidth(1.2),
-                7: FlexColumnWidth(1.15),
-                8: FlexColumnWidth(0.7),
+                5: FlexColumnWidth(1.35),
+                6: FlexColumnWidth(1.15),
+                7: FlexColumnWidth(0.9),
+                8: FlexColumnWidth(0.6),
               }
             : const {
                 0: FlexColumnWidth(0.45),
                 1: FlexColumnWidth(0.9),
-                2: FlexColumnWidth(1.05),
-                3: FlexColumnWidth(1.45),
+                2: FlexColumnWidth(1.0),
+                3: FlexColumnWidth(1.6),
                 4: FlexColumnWidth(1.2),
-                5: FlexColumnWidth(1.55),
-                6: FlexColumnWidth(1.15),
-                7: FlexColumnWidth(0.7),
+                5: FlexColumnWidth(1.4),
+                6: FlexColumnWidth(0.9),
+                7: FlexColumnWidth(0.6),
               },
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         border: TableBorder(
@@ -4620,6 +5417,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (email.toLowerCase().contains(query)) return true;
     if (lead.source.toLowerCase().contains(query)) return true;
     if (lead.leadType.toLowerCase().contains(query)) return true;
+    if (lead.notInterestedReason != null && lead.notInterestedReason!.toLowerCase().contains(query)) return true;
     for (final val in lead.rawJson.values) {
       if (val != null && val.toString().toLowerCase().contains(query)) return true;
     }
@@ -5598,30 +6396,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         }
       }));
     } else if (action == 'Not interested') {
-      await _service.bulkUpdateCampaignStatus(selectedIds, 'Not interested');
-      unawaited(_service.fetchServerLeads(resetWithServer: true));
-      if (mounted) {
-        setState(() {
-          _selectedLeadIds.clear();
-          _cachedFilteredLeads = null;
-        });
-        unawaited(_loadFollowups());
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$count lead(s) marked as Not Interested and moved to Not Interested tab.'),
-            action: SnackBarAction(
-              label: 'View',
-              textColor: Colors.white,
-              onPressed: () {
-                setState(() {
-                  _viewMode = 'not_interested';
-                  _cachedFilteredLeads = null;
-                });
-              },
-            ),
-          ),
-        );
-      }
+      _showBulkNotInterestedReasonDialog(context, selectedIds);
+      return;
     }
   }
 

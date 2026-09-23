@@ -908,7 +908,7 @@ class IntegrationService extends ChangeNotifier {
         final data = response.data as Map<String, dynamic>;
         final List<dynamic> leadsList = data['leads'] ?? [];
 
-        final incoming = <IntegrationLeadModel>[];
+        var incoming = <IntegrationLeadModel>[];
         final now = DateTime.now();
         // Clean up reclassification protection entries older than 60 seconds
         _recentlyReclassifiedLeads.removeWhere((_, entry) => now.difference(entry.$2).inSeconds > 60);
@@ -936,6 +936,17 @@ class IntegrationService extends ChangeNotifier {
 
         if (incoming.isNotEmpty || resetWithServer) {
           if (resetWithServer) {
+            final existingLocalMap = <String, IntegrationLeadModel>{for (final l in _leads) l.id: l};
+            incoming = incoming.map((inc) {
+              final local = existingLocalMap[inc.id] ?? (inc.externalLeadId != null ? existingLocalMap[inc.externalLeadId!] : null);
+              if (local?.notInterestedReason != null &&
+                  local!.notInterestedReason!.trim().isNotEmpty &&
+                  (inc.notInterestedReason == null || inc.notInterestedReason!.trim().isEmpty)) {
+                return inc.copyWith(notInterestedReason: local.notInterestedReason);
+              }
+              return inc;
+            }).toList();
+
             if (source != null && source.isNotEmpty && source != 'All') {
               _leads = [
                 ..._leads.where((l) => !matchesCampaignSource(l.source, source)),
@@ -971,6 +982,9 @@ class IntegrationService extends ChangeNotifier {
                 final merged = inc.copyWith(
                   leadType: (local.leadType != inc.leadType && local.leadType.isNotEmpty) ? local.leadType : inc.leadType,
                   campaignStatus: mergedStatus,
+                  notInterestedReason: (inc.notInterestedReason != null && inc.notInterestedReason!.trim().isNotEmpty)
+                      ? inc.notInterestedReason
+                      : local.notInterestedReason,
                   allocationStatus: inc.allocationStatus ?? local.allocationStatus,
                   assignedTo: (inc.assignedTo != null && inc.assignedTo!.isNotEmpty) ? inc.assignedTo : local.assignedTo,
                   assignedToName: (inc.assignedToName != null && inc.assignedToName!.isNotEmpty) ? inc.assignedToName : local.assignedToName,
@@ -1186,7 +1200,7 @@ class IntegrationService extends ChangeNotifier {
   }
 
   /// Update a lead's campaign status ('Follow up', 'Interested', 'Not interested', 'CNR', 'Property Listed', 'Archived', etc.)
-  Future<bool> updateLeadCampaignStatus(String leadId, String status) async {
+  Future<bool> updateLeadCampaignStatus(String leadId, String status, {String? reason}) async {
     try {
       // 1. Optimistically update in memory & persist to local DB immediately
       final idx = _leads.indexWhere((l) => l.id == leadId);
@@ -1194,14 +1208,24 @@ class IntegrationService extends ChangeNotifier {
         final isFollowup = status == 'Follow up' || status == 'Follow-up';
         final currentUserName = RoleGuard.currentUser?.fullName ?? RoleGuard.currentUser?.email ?? '';
         final currentUserId = RoleGuard.currentUser?.id;
+        final currentRaw = Map<String, dynamic>.from(_leads[idx].rawJson);
+        final cleanReason = reason?.trim();
+        if (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty) {
+          currentRaw['not_interested_reason'] = cleanReason;
+          currentRaw['not_interested_notes'] = cleanReason;
+        }
         _leads[idx] = _leads[idx].copyWith(
           campaignStatus: status,
+          rawJson: currentRaw,
           statusUpdatedByName: currentUserName.isNotEmpty ? currentUserName : _leads[idx].statusUpdatedByName,
           statusUpdatedById: currentUserId ?? _leads[idx].statusUpdatedById,
           statusUpdatedAt: DateTime.now(),
           notInterestedByName: status == 'Not interested' ? currentUserName : _leads[idx].notInterestedByName,
           notInterestedById: status == 'Not interested' ? currentUserId : _leads[idx].notInterestedById,
           notInterestedAt: status == 'Not interested' ? DateTime.now() : _leads[idx].notInterestedAt,
+          notInterestedReason: (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty)
+              ? cleanReason
+              : _leads[idx].notInterestedReason,
           archivedByName: (status == 'Archived' || status == 'Property Listed' || status == 'Listed') ? currentUserName : _leads[idx].archivedByName,
           archivedById: (status == 'Archived' || status == 'Property Listed' || status == 'Listed') ? currentUserId : _leads[idx].archivedById,
           archivedAt: (status == 'Archived' || status == 'Property Listed' || status == 'Listed') ? DateTime.now() : _leads[idx].archivedAt,
@@ -1214,9 +1238,12 @@ class IntegrationService extends ChangeNotifier {
       }
 
       // 2. Persist to backend
-      final res = await _apiClient.patch('/integrations/leads/$leadId/campaign-status', {
-        'status': status,
-      });
+      final payload = <String, dynamic>{'status': status};
+      if (reason != null && reason.trim().isNotEmpty) {
+        payload['reason'] = reason.trim();
+        payload['notes'] = reason.trim();
+      }
+      final res = await _apiClient.patch('/integrations/leads/$leadId/campaign-status', payload);
 
       if (res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300) {
         if (res.data is Map && res.data['lead'] is Map) {
@@ -1225,8 +1252,12 @@ class IntegrationService extends ChangeNotifier {
             final leadIdx = _leads.indexWhere((l) => l.id == leadId);
             if (leadIdx != -1) {
               final isFollowup = status == 'Follow up' || status == 'Follow-up';
+              final cleanReason = reason?.trim();
               _leads[leadIdx] = updatedLead.copyWith(
                 campaignStatus: status,
+                notInterestedReason: (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty)
+                    ? cleanReason
+                    : (updatedLead.notInterestedReason ?? _leads[leadIdx].notInterestedReason),
                 assignedTelecallerId: updatedLead.assignedTelecallerId ?? _leads[leadIdx].assignedTelecallerId,
                 assignedTelecallerName: updatedLead.assignedTelecallerName ?? _leads[leadIdx].assignedTelecallerName,
                 assignedTo: updatedLead.assignedTo ?? _leads[leadIdx].assignedTo,
@@ -1253,14 +1284,24 @@ class IntegrationService extends ChangeNotifier {
   }
 
   /// Bulk updates campaign status for multiple leads (e.g., 'Property Listed', 'Archived', 'Not interested')
-  Future<bool> bulkUpdateCampaignStatus(List<String> leadIds, String status) async {
+  Future<bool> bulkUpdateCampaignStatus(List<String> leadIds, String status, {String? reason}) async {
     try {
       final isFollowup = status == 'Follow up' || status == 'Follow-up';
+      final cleanReason = reason?.trim();
       for (final leadId in leadIds) {
         final idx = _leads.indexWhere((l) => l.id == leadId || l.externalLeadId == leadId);
         if (idx != -1) {
+          final currentRaw = Map<String, dynamic>.from(_leads[idx].rawJson);
+          if (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty) {
+            currentRaw['not_interested_reason'] = cleanReason;
+            currentRaw['not_interested_notes'] = cleanReason;
+          }
           _leads[idx] = _leads[idx].copyWith(
             campaignStatus: status,
+            rawJson: currentRaw,
+            notInterestedReason: (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty)
+                ? cleanReason
+                : _leads[idx].notInterestedReason,
             followupScheduledAt: isFollowup ? _leads[idx].followupScheduledAt : null,
             followupStatus: isFollowup ? _leads[idx].followupStatus : 'Completed',
             clearFollowup: !isFollowup,
@@ -1270,7 +1311,7 @@ class IntegrationService extends ChangeNotifier {
       notifyListeners();
       await _persistLeads();
 
-      final results = await Future.wait(leadIds.map((id) => updateLeadCampaignStatus(id, status)));
+      final results = await Future.wait(leadIds.map((id) => updateLeadCampaignStatus(id, status, reason: reason)));
       return results.every((ok) => ok);
     } catch (e) {
       debugPrint('[IntegrationService] Error bulk updating campaign status: $e');
