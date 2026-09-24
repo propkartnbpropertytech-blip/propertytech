@@ -62,6 +62,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   // Persisted view settings across tab navigation
   static String _persistedSection = 'Property Listing';
   static CampaignDateFilter _persistedDateFilter = CampaignDateFilter.allTime;
+  bool _telecallerQueueAligned = false;
   static String _persistedSourceFilter = 'All';
   static String _persistedDuplicateFilter = 'All';
 
@@ -103,6 +104,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _service.watchCampaignUi();
     // Warm up leads immediately from storage and sync in background
     _service.ensureLoaded();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _alignTelecallerQueue();
+      _cachedFilteredLeads = null;
+      setState(() {});
+    });
     unawaited(_bootstrapLockedSource());
     unawaited(_service.fetchHealthAlerts());
     unawaited(_preloadFilterUsers());
@@ -365,11 +372,51 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   void _onServiceUpdate() {
     _uiDebounce?.cancel();
     _uiDebounce = Timer(const Duration(milliseconds: 80), () {
-      if (mounted) {
-        _cachedFilteredLeads = null;
-        setState(() {});
-      }
+      if (!mounted) return;
+      _alignTelecallerQueue();
+      _cachedFilteredLeads = null;
+      setState(() {});
     });
+  }
+
+  DateTime _queueTime(IntegrationLeadModel lead) {
+    if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) {
+      return lead.telecallerAssignedAt ?? lead.receivedAt;
+    }
+    return lead.receivedAt;
+  }
+
+  bool _isOpenCallingLead(IntegrationLeadModel lead) {
+    if (isNotInterestedStatus(lead.campaignStatus)) return false;
+    if (lead.campaignStatus == 'Property Listed' ||
+        lead.campaignStatus == 'Listed' ||
+        lead.campaignStatus == 'Archived' ||
+        lead.campaignStatus == 'Assigned') {
+      return false;
+    }
+    if (lead.importStatus == 'Imported') return false;
+    if (lead.assignedTo != null && lead.assignedTo!.isNotEmpty && lead.assignedTo != 'Unassigned') {
+      return false;
+    }
+    return true;
+  }
+
+  /// Telecallers land on an empty Property Listing tab when their queue is requirements.
+  /// Open All Time once, then move to whichever section actually has assigned leads.
+  void _alignTelecallerQueue() {
+    if (!RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) return;
+    if (!_telecallerQueueAligned) {
+      _telecallerQueueAligned = true;
+      _selectedDateFilter = CampaignDateFilter.allTime;
+    }
+    final open = _service.leads.where(_isOpenCallingLead).toList();
+    if (open.isEmpty) return;
+    if (open.any((lead) => lead.leadType == _selectedSection)) return;
+    final requirement = open.where((lead) => lead.leadType == 'Requirement').length;
+    final listing = open.where((lead) => lead.leadType == 'Property Listing').length;
+    if (requirement == 0 && listing == 0) return;
+    _selectedSection = requirement >= listing ? 'Requirement' : 'Property Listing';
+    _persistedSection = _selectedSection;
   }
 
   void _recomputeFilteredLeadsIfNeeded() {
@@ -447,7 +494,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     // Filter by Date (Today is default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
     if (_selectedDateFilter != CampaignDateFilter.allTime) {
       list = list.where((l) => CampaignLeadsState.matchesDateFilter(
-        l.receivedAt,
+        _queueTime(l),
         _selectedDateFilter,
         customStart: _customStartDate,
         customEnd: _customEndDate,
@@ -593,7 +640,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     int countYesterday = 0;
     int countLast7Days = 0;
     int countThisMonth = 0;
-    int interestedCount = 0;
     int followupCount = 0;
     int notInterestedCount = 0;
     int notInterestedTodayCount = 0;
@@ -610,6 +656,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       final isArchivedReq = isReq && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed');
       final isArchived = isListed || isArchivedReq;
 
+      final isOpenPipeline = _isOpenCallingLead(l);
       if (isNotInterested) {
         notInterestedCount++;
         if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.today)) {
@@ -619,37 +666,32 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         listedCount++;
       } else if (isArchivedReq) {
         archivedReqCount++;
-      } else {
+      } else if (isOpenPipeline) {
         totalActiveCount++;
       }
 
       final isFollowupStatus = l.campaignStatus == 'Follow up' || l.campaignStatus == 'Follow-up';
-      final isTransferred = l.campaignStatus == 'Assigned' ||
-          l.importStatus == 'Imported' ||
-          (l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned');
-      if (isFollowupStatus && !isTransferred && !isNotInterested && !isArchived) {
+      if (isFollowupStatus && isOpenPipeline && isSelectedSec) {
         followupCount++;
       }
 
-      if (isSelectedSec && !isNotInterested && !isArchived) {
-        if (l.campaignStatus == 'Interested' && l.importStatus != 'Imported') {
-          interestedCount++;
-        }
-
+      // Section badges and date chips must match the spreadsheet. Transferred,
+      // imported, and sales-assigned leads stay out of this pipeline.
+      if (isSelectedSec && isOpenPipeline) {
         allTimeSectionCount++;
-        if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.today)) countToday++;
-        if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.yesterday)) countYesterday++;
-        if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.last7Days)) countLast7Days++;
-        if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.thisMonth)) countThisMonth++;
+        if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.today)) countToday++;
+        if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.yesterday)) countYesterday++;
+        if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.last7Days)) countLast7Days++;
+        if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.thisMonth)) countThisMonth++;
       }
 
-      if (isProp && !isNotInterested && !isArchived &&
-          CampaignLeadsState.matchesDateFilter(l.receivedAt, _selectedDateFilter,
+      if (isProp && isOpenPipeline &&
+          CampaignLeadsState.matchesDateFilter(_queueTime(l), _selectedDateFilter,
               customStart: _customStartDate, customEnd: _customEndDate)) {
         propListingCount++;
       }
-      if (isReq && !isNotInterested && !isArchived &&
-          CampaignLeadsState.matchesDateFilter(l.receivedAt, _selectedDateFilter,
+      if (isReq && isOpenPipeline &&
+          CampaignLeadsState.matchesDateFilter(_queueTime(l), _selectedDateFilter,
               customStart: _customStartDate, customEnd: _customEndDate)) {
         reqCount++;
       }
@@ -663,8 +705,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _cachedCountLast7Days = countLast7Days;
     _cachedCountThisMonth = countThisMonth;
     _cachedCountAllTime = allTimeSectionCount;
-    _cachedInterestedCount = interestedCount;
-    _cachedFollowupCount = _pendingDueFollowupLeadCount();
+    _cachedFollowupCount = followupCount;
     _cachedNotInterestedCount = notInterestedCount;
     _cachedNotInterestedTodayCount = notInterestedTodayCount;
     _cachedTotalActiveCount = totalActiveCount;
@@ -5706,7 +5747,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final items = [
       _buildMetricItem(context, 'Total Leads', total.toString(), Icons.inbox_rounded, CRMColors.primaryOf(context)),
       _buildMetricItem(context, 'Interested', _cachedInterestedCount.toString(), Icons.star_rounded, const Color(0xFF10B981)),
-      _buildMetricItem(context, 'Follow-ups', _pendingDueFollowupLeadCount().toString(), Icons.schedule_rounded, const Color(0xFFF59E0B)),
+      _buildMetricItem(context, 'Follow-ups', _cachedFollowupCount.toString(), Icons.schedule_rounded, const Color(0xFFF59E0B)),
       _buildMetricItem(context, 'Unique Leads', unique.toString(), Icons.verified_user_rounded, CRMColors.success),
       _buildMetricItem(context, 'Duplicates', dups.toString(), Icons.copy_rounded, CRMColors.warning),
       _buildMetricItem(context, destinationLabel, imported.toString(), destinationIcon, CRMColors.info),
@@ -7575,16 +7616,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       Icon(Icons.inbox_outlined, size: 48, color: CRMColors.primaryOf(context)),
                       const SizedBox(height: CRMSpacing.m),
                       Text(
-                        'No Leads Ingested Yet',
+                        RoleGuard.isTelecaller(currentRole) ? 'No leads assigned to you' : 'No Leads Ingested Yet',
                         style: CRMTypography.headline.copyWith(fontSize: 17),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: CRMSpacing.xs),
                       Text(
-                        'Connect your Google Sheet, then Sync or Import CSV. Leads stay here until you filter, delete fakes, and click Move to Leads page.',
+                        RoleGuard.isTelecaller(currentRole)
+                            ? 'Leads allocated while you are ACTIVE show up in this list. Switch the section tabs if a count is sitting on the other type.'
+                            : 'Connect your Google Sheet, then Sync or Import CSV. Leads stay here until you filter, delete fakes, and click Move to Leads page.',
                         style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 13),
                         textAlign: TextAlign.center,
                       ),
+                      if (!RoleGuard.isTelecaller(currentRole)) ...[
                       const SizedBox(height: CRMSpacing.m),
                       Wrap(
                         spacing: CRMSpacing.s,
@@ -7604,6 +7648,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           ),
                         ],
                       ),
+                      ],
                     ],
                   ),
                 ),

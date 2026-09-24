@@ -90,9 +90,12 @@ class IntegrationService extends ChangeNotifier {
   List<IntegrationLeadModel> _leads = [];
   List<IntegrationLeadModel> get leads {
     if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) {
-      final myId = RoleGuard.currentUser?.id;
+      final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
       if (myId != null && myId.isNotEmpty) {
-        return List.unmodifiable(_leads.where((l) => l.assignedTelecallerId == myId));
+        return List.unmodifiable(_leads.where((l) {
+          final assigned = l.assignedTelecallerId?.trim().toLowerCase();
+          return assigned != null && assigned.isNotEmpty && assigned == myId;
+        }));
       }
     }
     return List.unmodifiable(_leads);
