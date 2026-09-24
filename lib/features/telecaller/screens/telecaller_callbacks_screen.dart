@@ -116,8 +116,168 @@ class _LeadQueueFiltersState extends State<_LeadQueueFilters> {
   }
 }
 
-class _TelecallerCallbacksView extends StatelessWidget {
+class _TelecallerCallbacksView extends StatefulWidget {
   const _TelecallerCallbacksView();
+
+  @override
+  State<_TelecallerCallbacksView> createState() => _TelecallerCallbacksViewState();
+}
+
+class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
+  String _selectedTab = 'all'; // 'all', 'today', 'due', 'future'
+  final Map<String, TextEditingController> _tabSearchControllers = {
+    'all': TextEditingController(),
+    'today': TextEditingController(),
+    'due': TextEditingController(),
+    'future': TextEditingController(),
+  };
+  final Map<String, String> _tabSearchQueries = {
+    'all': '',
+    'today': '',
+    'due': '',
+    'future': '',
+  };
+  String _source = 'All';
+  DateTimeRange? _range;
+
+  @override
+  void dispose() {
+    for (final c in _tabSearchControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _fetchFromBloc() {
+    context.read<TelecallerCallbacksBloc>().add(
+      TelecallerCallbacksRequested(
+        source: _source,
+        from: _range?.start.toIso8601String(),
+        to: _range?.end.toIso8601String(),
+      ),
+    );
+  }
+
+  DateTime? _parseScheduledTime(dynamic raw) {
+    if (raw is! Map) return null;
+    final val = raw['scheduled_at']?.toString();
+    if (val == null || val.isEmpty) return null;
+    return DateTime.tryParse(val)?.toLocal();
+  }
+
+  bool _isTodayCallback(dynamic raw) {
+    final dt = _parseScheduledTime(raw);
+    if (dt == null) return false;
+    final now = DateTime.now();
+    return dt.year == now.year && dt.month == now.month && dt.day == now.day;
+  }
+
+  bool _isDueCallback(dynamic raw) {
+    if (raw is! Map) return false;
+    final scheduledAtRaw = raw['scheduled_at']?.toString();
+    return _isOverdue(scheduledAtRaw);
+  }
+
+  bool _isFutureCallback(dynamic raw) {
+    final dt = _parseScheduledTime(raw);
+    if (dt == null) return false;
+    final now = DateTime.now();
+    final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+    return dt.isAfter(endOfToday);
+  }
+
+  bool _matchesCallbackSearch(dynamic raw, String query) {
+    if (query.isEmpty) return true;
+    final q = query.trim().toLowerCase();
+    final cleanQ = q.replaceAll(RegExp(r'\D'), '');
+    if (raw is! Map) return false;
+
+    final clientName = (raw['client_name'] ?? '').toString().toLowerCase();
+    final mobile = (raw['mobile'] ?? '').toString().toLowerCase();
+    final cleanMobile = mobile.replaceAll(RegExp(r'\D'), '');
+    final remarks = (raw['remarks'] ?? '').toString().toLowerCase();
+    final lead = raw['lead'] is Map ? raw['lead'] as Map : null;
+    final campaignName = (lead?['campaign_name'] ?? '').toString().toLowerCase();
+    final source = (lead?['source'] ?? '').toString().toLowerCase();
+    final leadType = (raw['lead_type'] ?? lead?['lead_type'] ?? '').toString().toLowerCase();
+
+    return clientName.contains(q) ||
+        remarks.contains(q) ||
+        mobile.contains(q) ||
+        (cleanQ.isNotEmpty && cleanMobile.contains(cleanQ)) ||
+        campaignName.contains(q) ||
+        source.contains(q) ||
+        leadType.contains(q);
+  }
+
+  String _getTabDisplayName(String tab) {
+    switch (tab) {
+      case 'today':
+        return 'Today';
+      case 'due':
+        return 'Due';
+      case 'future':
+        return 'Future';
+      case 'all':
+      default:
+        return 'All Callbacks';
+    }
+  }
+
+  Widget _buildTabChip(String label, String value, int count) {
+    final isSelected = _selectedTab == value;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const activeColor = Color(0xFF2563EB);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () {
+        setState(() => _selectedTab = value);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? activeColor
+              : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? activeColor : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                color: isSelected ? Colors.white : (isDark ? Colors.white70 : const Color(0xFF334155)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white.withValues(alpha: 0.25) : (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06)),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: isSelected ? Colors.white : (isDark ? Colors.grey.shade300 : const Color(0xFF64748B)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -128,9 +288,39 @@ class _TelecallerCallbacksView extends StatelessWidget {
         if (state.loading && state.items.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
+
+        final allRawItems = state.items;
+        final totalCount = allRawItems.length;
+        final todayCount = allRawItems.where(_isTodayCallback).length;
+        final dueCount = allRawItems.where(_isDueCallback).length;
+        final futureCount = allRawItems.where(_isFutureCallback).length;
+
+        List<dynamic> tabScopedItems = List.from(allRawItems);
+        if (_selectedTab == 'today') {
+          tabScopedItems = tabScopedItems.where(_isTodayCallback).toList();
+        } else if (_selectedTab == 'due') {
+          tabScopedItems = tabScopedItems.where(_isDueCallback).toList();
+        } else if (_selectedTab == 'future') {
+          tabScopedItems = tabScopedItems.where(_isFutureCallback).toList();
+        }
+
+        final currentSearchController = _tabSearchControllers[_selectedTab]!;
+        final currentQuery = (_tabSearchQueries[_selectedTab] ?? '').trim().toLowerCase();
+
+        List<dynamic> filteredItems = List.from(tabScopedItems);
+        if (currentQuery.isNotEmpty) {
+          filteredItems = filteredItems.where((raw) => _matchesCallbackSearch(raw, currentQuery)).toList();
+        }
+
         return RefreshIndicator(
           onRefresh: () async {
-            context.read<TelecallerCallbacksBloc>().add(TelecallerCallbacksRequested());
+            context.read<TelecallerCallbacksBloc>().add(
+              TelecallerCallbacksRequested(
+                source: _source,
+                from: _range?.start.toIso8601String(),
+                to: _range?.end.toIso8601String(),
+              ),
+            );
           },
           child: ListView(
             padding: const EdgeInsets.all(20),
@@ -139,33 +329,131 @@ class _TelecallerCallbacksView extends StatelessWidget {
                 title: 'Callbacks',
                 benefit: 'Callbacks stay with you even on Break or Inactive.',
               ),
-              _LeadQueueFilters(
-                onChanged: ({search, source, range}) {
-                  context.read<TelecallerCallbacksBloc>().add(
-                    TelecallerCallbacksRequested(
-                      search: search,
-                      source: source,
-                      from: range?.start.toIso8601String(),
-                      to: range?.end.toIso8601String(),
-                    ),
-                  );
-                },
+
+              // Category Tabs: All Callbacks, Today, Due, Future
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildTabChip('All Callbacks', 'all', totalCount),
+                    const SizedBox(width: 8),
+                    _buildTabChip('Today', 'today', todayCount),
+                    const SizedBox(width: 8),
+                    _buildTabChip('Due', 'due', dueCount),
+                    const SizedBox(width: 8),
+                    _buildTabChip('Future', 'future', futureCount),
+                  ],
+                ),
               ),
+              const SizedBox(height: 16),
+
+              // Search & Filter controls
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 280,
+                      child: TextField(
+                        key: ValueKey('callback_search_$_selectedTab'),
+                        controller: currentSearchController,
+                        decoration: InputDecoration(
+                          hintText: 'Search ${_getTabDisplayName(_selectedTab)} by name, phone, remarks',
+                          hintStyle: const TextStyle(fontSize: 13),
+                          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                          suffixIcon: currentSearchController.text.isNotEmpty
+                              ? IconButton(
+                                  tooltip: 'Clear',
+                                  icon: const Icon(Icons.close_rounded, size: 16),
+                                  onPressed: () {
+                                    currentSearchController.clear();
+                                    setState(() {
+                                      _tabSearchQueries[_selectedTab] = '';
+                                    });
+                                  },
+                                )
+                              : null,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                          border: const OutlineInputBorder(),
+                        ),
+                        onChanged: (val) {
+                          setState(() {
+                            _tabSearchQueries[_selectedTab] = val.trim();
+                          });
+                        },
+                      ),
+                    ),
+                    DropdownButton<String>(
+                      value: _source,
+                      items: const [
+                        DropdownMenuItem(value: 'All', child: Text('All sources')),
+                        DropdownMenuItem(value: 'META', child: Text('Meta')),
+                        DropdownMenuItem(value: 'HOUSING', child: Text('Housing')),
+                      ],
+                      onChanged: (val) {
+                        if (val == null) return;
+                        setState(() => _source = val);
+                        _fetchFromBloc();
+                      },
+                    ),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.date_range_rounded, size: 18),
+                      label: Text(
+                        _range == null
+                            ? 'Date range'
+                            : '${DateFormat('dd MMM').format(_range!.start)} – ${DateFormat('dd MMM').format(_range!.end)}',
+                      ),
+                      onPressed: () async {
+                        final picked = await showDateRangePicker(
+                          context: context,
+                          firstDate: DateTime(2024),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                          initialDateRange: _range,
+                        );
+                        if (picked != null) {
+                          setState(() => _range = picked);
+                          _fetchFromBloc();
+                        }
+                      },
+                    ),
+                    if (_range != null)
+                      TextButton(
+                        onPressed: () {
+                          setState(() => _range = null);
+                          _fetchFromBloc();
+                        },
+                        child: const Text('Clear dates'),
+                      ),
+                  ],
+                ),
+              ),
+
               if (state.error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(state.error!, style: const TextStyle(color: Colors.red)),
                 ),
-              if (state.items.isEmpty)
+
+              if (filteredItems.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(32),
                   alignment: Alignment.center,
                   child: Column(
                     children: [
-                      Icon(Icons.event_available_rounded, size: 48, color: isDark ? Colors.grey.shade600 : Colors.grey.shade400),
+                      Icon(
+                        currentQuery.isNotEmpty ? Icons.search_off_rounded : Icons.event_available_rounded,
+                        size: 48,
+                        color: isDark ? Colors.grey.shade600 : Colors.grey.shade400,
+                      ),
                       const SizedBox(height: 12),
                       Text(
-                        'No callbacks scheduled.',
+                        currentQuery.isNotEmpty
+                            ? 'No matching callbacks in ${_getTabDisplayName(_selectedTab)}.'
+                            : 'No ${_getTabDisplayName(_selectedTab)} scheduled.',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -174,14 +462,16 @@ class _TelecallerCallbacksView extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'When leads are marked for follow-up, they will appear here with scheduled reminders.',
+                        currentQuery.isNotEmpty
+                            ? 'Try searching with a different client name, phone number, or remark.'
+                            : 'When leads are marked for follow-up, they will appear here with scheduled reminders.',
                         style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade500 : Colors.grey.shade500),
                         textAlign: TextAlign.center,
                       ),
                     ],
                   ),
                 ),
-              for (final raw in state.items)
+              for (final raw in filteredItems)
                 Builder(
                   builder: (context) {
                     final item = Map<String, dynamic>.from(raw as Map);

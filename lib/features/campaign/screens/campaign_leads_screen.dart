@@ -49,6 +49,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _notInterestedSearchController = TextEditingController();
   final TextEditingController _followupSearchController = TextEditingController();
+  final Map<String, TextEditingController> _followupTabSearchControllers = {
+    'all': TextEditingController(),
+    'today': TextEditingController(),
+    'future': TextEditingController(),
+    'missed': TextEditingController(),
+  };
+  final Map<String, String> _followupTabSearchQueries = {
+    'all': '',
+    'today': '',
+    'future': '',
+    'missed': '',
+  };
+  String _selectedFollowupTelecaller = 'All';
   String _followupSearchQuery = '';
   Timer? _followupSearchDebounce;
   List<users_model.UserModel>? _cachedUsers;
@@ -229,6 +242,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _searchController.dispose();
     _notInterestedSearchController.dispose();
     _followupSearchController.dispose();
+    for (final c in _followupTabSearchControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -654,7 +670,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       final isNotInterested = isNotInterestedStatus(l.campaignStatus);
       final isListed = isProp && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived');
       final isArchivedReq = isReq && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed');
-      final isArchived = isListed || isArchivedReq;
 
       final isOpenPipeline = _isOpenCallingLead(l);
       if (isNotInterested) {
@@ -961,10 +976,41 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       onPressed: () => _exportCurrentSpreadsheetToExcel(context),
     );
 
+    final isPropertyListing = _selectedSection == 'Property Listing';
+    final isArchiveMode = _viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed';
+    final archiveCount = isPropertyListing ? _cachedListedCount : _cachedArchivedReqCount;
+
+    final archiveHeaderButton = CRMButton(
+      label: isArchiveMode
+          ? 'Exit Archive'
+          : (isMobile
+              ? 'Archive ($archiveCount)'
+              : (isPropertyListing
+                  ? 'Property Archive ($archiveCount)'
+                  : 'Requirement Archive ($archiveCount)')),
+      prefixIcon: isArchiveMode ? Icons.arrow_back_rounded : Icons.inventory_2_outlined,
+      variant: isArchiveMode ? CRMButtonVariant.primary : CRMButtonVariant.outline,
+      height: 36,
+      onPressed: () {
+        setState(() {
+          if (isArchiveMode) {
+            _viewMode = 'active';
+          } else {
+            _viewMode = isPropertyListing ? 'archive_listed' : 'archive_requirements';
+          }
+          _cachedFilteredLeads = null;
+          _selectedLeadIds.clear();
+          _currentPage = 1;
+        });
+      },
+    );
+
     if (isTelecaller) {
       if (isMobile) {
         return Row(
           children: [
+            Expanded(child: archiveHeaderButton),
+            const SizedBox(width: 8),
             Expanded(child: refreshButton),
             const SizedBox(width: 8),
             Expanded(child: exportExcelButton),
@@ -977,6 +1023,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         alignment: WrapAlignment.end,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
+          archiveHeaderButton,
           refreshButton,
           exportExcelButton,
         ],
@@ -1066,6 +1113,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       if (isMobile) {
         return Row(
           children: [
+            Expanded(child: archiveHeaderButton),
+            const SizedBox(width: 8),
             Expanded(child: refreshButton),
             const SizedBox(width: 8),
             Expanded(child: exportExcelButton),
@@ -1076,7 +1125,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         spacing: 8,
         runSpacing: 8,
         alignment: WrapAlignment.end,
-        children: [refreshButton, exportExcelButton],
+        children: [archiveHeaderButton, refreshButton, exportExcelButton],
       );
     }
 
@@ -1099,14 +1148,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           // Action Buttons 2x2 Grid Layout
           Row(
             children: [
-              Expanded(child: refreshButton),
+              Expanded(child: archiveHeaderButton),
               const SizedBox(width: 6),
-              Expanded(child: syncSheetButton),
+              Expanded(child: refreshButton),
             ],
           ),
           const SizedBox(height: 6),
           Row(
             children: [
+              Expanded(child: syncSheetButton),
+              const SizedBox(width: 6),
               Expanded(child: exportExcelButton),
               const SizedBox(width: 6),
               Expanded(child: moreButton),
@@ -1124,6 +1175,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       children: [
         _buildMetaLiveDiagnosticBadge(context),
         _buildAutoSyncLiveBadge(context),
+        archiveHeaderButton,
         refreshButton,
         syncSheetButton,
         exportExcelButton,
@@ -1476,7 +1528,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           : 'Change Status (Follow up, Interested, CNR, Transfer, Not interested)',
       constraints: const BoxConstraints(minWidth: 260, maxWidth: 300),
       onSelected: (newStatus) async {
-        if (newStatus == 'Follow up') {
+        if (newStatus == 'Unarchive') {
+          await _unarchiveLead(lead);
+        } else if (newStatus == 'Archive Property' || newStatus == 'Archive Requirement') {
+          await _archiveLead(lead);
+        } else if (newStatus == 'Follow up') {
           _showScheduleFollowupDialog(context, lead);
         } else if (newStatus == 'Transfer') {
           _showTransferDialog(context, lead);
@@ -1671,6 +1727,33 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         }
       },
       itemBuilder: (ctx) => [
+        if (isArchiveLead)
+          PopupMenuItem(
+            value: 'Unarchive',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.unarchive_rounded, size: 16, color: Color(0xFF10B981)),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Unarchive Lead', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF10B981)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('Restore back to active leads tab', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         PopupMenuItem(
           value: 'Follow up',
           child: Row(
@@ -1724,18 +1807,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ],
           ),
         ),
-        if (lead.leadType == 'Property Listing') ...[
+        if (lead.leadType == 'Property Listing' || _selectedSection == 'Property Listing') ...[
           PopupMenuItem(
-            value: 'Property Listed',
+            value: 'CNR',
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                    color: const Color(0xFFD97706).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF10B981)),
+                  child: const Icon(Icons.phone_missed_rounded, size: 16, color: Color(0xFFD97706)),
                 ),
                 const SizedBox(width: 10),
                 const Expanded(
@@ -1743,8 +1826,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('Property Listed', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF10B981)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text('Mark as Listed (Saved to Archive in More Tools)', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('CNR', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFFD97706)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('Call Not Received / Busy', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
                     ],
                   ),
                 ),
@@ -1778,32 +1861,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
           ),
         ] else ...[
-          PopupMenuItem(
-            value: 'Archive Requirement',
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF6366F1).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Icon(Icons.archive_rounded, size: 16, color: Color(0xFF6366F1)),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('Archive Requirement', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6366F1)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text('Move to Archived Requirements in More Tools', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
           PopupMenuItem(
             value: 'Wrong Lead Property Listing',
             child: Row(
@@ -1857,6 +1914,53 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ],
           ),
         ),
+        if (!isArchiveLead)
+          PopupMenuItem(
+            value: _selectedSection == 'Property Listing' ? 'Archive Property' : 'Archive Requirement',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: (_selectedSection == 'Property Listing' ? const Color(0xFF10B981) : const Color(0xFF6366F1)).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    _selectedSection == 'Property Listing' ? Icons.inventory_2_rounded : Icons.archive_rounded,
+                    size: 16,
+                    color: _selectedSection == 'Property Listing' ? const Color(0xFF10B981) : const Color(0xFF6366F1),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _selectedSection == 'Property Listing' ? 'Archive Property' : 'Archive Requirement',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: _selectedSection == 'Property Listing' ? const Color(0xFF10B981) : const Color(0xFF6366F1),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        _selectedSection == 'Property Listing'
+                            ? 'Save to Property Listing archive'
+                            : 'Save to Requirement archive',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
@@ -4163,6 +4267,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         final phone = lead.getStringValue('phone_number').isNotEmpty
             ? lead.getStringValue('phone_number')
             : lead.getStringValue('phone');
+        final tcName = lead.assignedTelecallerName ??
+            (lead.rawJson['assigned_telecaller_name'] ??
+                    lead.rawJson['status_updated_by_name'])
+                ?.toString();
 
         allItems.add(CampaignFollowupModel(
           id: 'local_${lead.id}',
@@ -4175,16 +4283,76 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           status: lead.followupStatus ?? 'Pending',
           createdAt: lead.receivedAt,
           lead: lead,
+          telecallerName: tcName,
         ));
       }
     }
 
-    final totalCount = allItems.length;
-    final todayCount = allItems.where((f) => f.isToday).length;
-    final futureCount = allItems.where((f) => f.isFuture).length;
-    final missedCount = allItems.where((f) => f.isPast).length;
+    final role = (RoleGuard.currentUser?.role ?? '').toLowerCase().trim();
+    final currentAuth = context.read<AuthBloc>().state;
+    final currentRoleStr = (currentAuth is Authenticated ? currentAuth.user.role : null)?.toLowerCase().trim() ?? '';
+    final isAdminOnly = role == 'admin' || role == 'super admin' || currentRoleStr == 'admin' || currentRoleStr == 'super admin';
+    final canUseTelecallerFilter = isAdminOnly;
 
-    List<CampaignFollowupModel> items = List.from(allItems);
+    // Extract telecallers strictly (exclude salespersons and admins)
+    final Map<String, int> telecallerCounts = {};
+    final telecallerUsers = (_cachedUsers ?? const <users_model.UserModel>[])
+        .where((u) {
+          final r = u.roleName.toLowerCase().trim();
+          return r == 'telecaller' || (r.contains('telecaller') && !r.contains('sales'));
+        })
+        .toList()
+      ..sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+
+    final nonTelecallerNames = (_cachedUsers ?? const <users_model.UserModel>[])
+        .where((u) {
+          final r = u.roleName.toLowerCase().trim();
+          return r != 'telecaller' && !r.contains('telecaller');
+        })
+        .map((u) => u.fullName.trim().toLowerCase())
+        .toSet();
+
+    for (final f in allItems) {
+      final tcName = (f.telecallerName ??
+              f.lead?.assignedTelecallerName ??
+              f.lead?.rawJson['assigned_telecaller_name'] ??
+              '')
+          .toString()
+          .trim();
+      if (tcName.isNotEmpty && !nonTelecallerNames.contains(tcName.toLowerCase())) {
+        telecallerCounts[tcName] = (telecallerCounts[tcName] ?? 0) + 1;
+      }
+    }
+    for (final u in telecallerUsers) {
+      final name = u.fullName.trim();
+      if (name.isNotEmpty && !telecallerCounts.containsKey(name)) {
+        telecallerCounts[name] = 0;
+      }
+    }
+    final telecallerNames = telecallerCounts.keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    // Filter by telecaller only if Admin and a specific telecaller is selected
+    List<CampaignFollowupModel> telecallerScopedItems = List.from(allItems);
+    if (isAdminOnly && _selectedFollowupTelecaller != 'All' && _selectedFollowupTelecaller.isNotEmpty) {
+      telecallerScopedItems = telecallerScopedItems.where((f) {
+        final tcName = (f.telecallerName ??
+                f.lead?.assignedTelecallerName ??
+                f.lead?.rawJson['assigned_telecaller_name'] ??
+                '')
+            .toString()
+            .trim()
+            .toLowerCase();
+        return tcName == _selectedFollowupTelecaller.toLowerCase();
+      }).toList();
+    }
+
+    final totalCount = telecallerScopedItems.length;
+    final todayCount = telecallerScopedItems.where((f) => f.isToday).length;
+    final futureCount = telecallerScopedItems.where((f) => f.isFuture).length;
+    final missedCount = telecallerScopedItems.where((f) => f.isPast).length;
+
+    List<CampaignFollowupModel> items = List.from(telecallerScopedItems);
     if (_followupFilter == 'today') {
       items = items.where((f) => f.isToday).toList();
     } else if (_followupFilter == 'future') {
@@ -4193,8 +4361,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       items = items.where((f) => f.isPast).toList();
     }
 
-    if (_followupFilter == 'all' && _followupSearchQuery.isNotEmpty) {
-      final q = _followupSearchQuery.toLowerCase();
+    // Now filter by search for the active tab
+    final currentTabController = _followupTabSearchControllers[_followupFilter] ?? _followupSearchController;
+    final tabSearchQuery = (_followupTabSearchQueries[_followupFilter] ?? '').trim().toLowerCase();
+
+    if (tabSearchQuery.isNotEmpty) {
+      final q = tabSearchQuery;
       final cleanQ = q.replaceAll(RegExp(r'\D'), '');
       items = items.where((f) {
         final name = f.clientName.toLowerCase();
@@ -4203,6 +4375,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         final leadType = f.leadType.toLowerCase();
         final email = (f.lead?.getStringValue('email') ?? '').toLowerCase();
         final source = (f.lead?.getStringValue('source') ?? '').toLowerCase();
+        final tcName = (f.telecallerName ?? f.lead?.assignedTelecallerName ?? '').toLowerCase();
 
         return name.contains(q) ||
             (cleanQ.isNotEmpty && mobile.contains(cleanQ)) ||
@@ -4210,7 +4383,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             remarks.contains(q) ||
             leadType.contains(q) ||
             email.contains(q) ||
-            source.contains(q);
+            source.contains(q) ||
+            tcName.contains(q);
       }).toList();
     }
 
@@ -4245,53 +4419,74 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ],
         ),
 
-        if (_followupFilter == 'all') ...[
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 38,
-            child: TextField(
-              controller: _followupSearchController,
-              onChanged: (val) {
-                _followupSearchDebounce?.cancel();
-                _followupSearchDebounce = Timer(const Duration(milliseconds: 200), () {
-                  if (!mounted) return;
-                  setState(() {
-                    _followupSearchQuery = val.trim().toLowerCase();
-                  });
-                });
-              },
-              decoration: InputDecoration(
-                hintText: 'Search follow-ups by client name, phone, remarks...',
-                hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                suffixIcon: _followupSearchController.text.isNotEmpty
-                    ? IconButton(
-                        tooltip: 'Clear',
-                        icon: const Icon(Icons.close_rounded, size: 16),
-                        onPressed: () {
-                          _followupSearchDebounce?.cancel();
-                          _followupSearchController.clear();
-                          setState(() {
-                            _followupSearchQuery = '';
-                          });
-                        },
-                      )
-                    : null,
-                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: CRMColors.borderOf(context)),
+        if (canUseTelecallerFilter && telecallerNames.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFollowupTelecallerChip('All Telecallers', 'All', allItems.length),
+                      for (final name in telecallerNames) ...[
+                        const SizedBox(width: 6),
+                        _buildFollowupTelecallerChip(name, name, telecallerCounts[name] ?? 0),
+                      ],
+                    ],
+                  ),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: CRMColors.borderOf(context)),
-                ),
-                filled: true,
-                fillColor: CRMColors.cardBgOf(context),
               ),
-            ),
+            ],
           ),
         ],
+
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 38,
+          child: TextField(
+            key: ValueKey('followup_search_$_followupFilter'),
+            controller: currentTabController,
+            onChanged: (val) {
+              _followupSearchDebounce?.cancel();
+              _followupSearchDebounce = Timer(const Duration(milliseconds: 150), () {
+                if (!mounted) return;
+                setState(() {
+                  _followupTabSearchQueries[_followupFilter] = val.trim().toLowerCase();
+                });
+              });
+            },
+            decoration: InputDecoration(
+              hintText: 'Search ${_getFollowupTabLabel(_followupFilter)} by client name, phone, remarks...',
+              hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+              prefixIcon: const Icon(Icons.search_rounded, size: 18),
+              suffixIcon: currentTabController.text.isNotEmpty
+                  ? IconButton(
+                      tooltip: 'Clear',
+                      icon: const Icon(Icons.close_rounded, size: 16),
+                      onPressed: () {
+                        _followupSearchDebounce?.cancel();
+                        currentTabController.clear();
+                        setState(() {
+                          _followupTabSearchQueries[_followupFilter] = '';
+                        });
+                      },
+                    )
+                  : null,
+              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: CRMColors.borderOf(context)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: CRMColors.borderOf(context)),
+              ),
+              filled: true,
+              fillColor: CRMColors.cardBgOf(context),
+            ),
+          ),
+        ),
 
         const SizedBox(height: CRMSpacing.m),
 
@@ -4308,16 +4503,20 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   const Icon(Icons.schedule_rounded, size: 48, color: Color(0xFFF59E0B)),
                   const SizedBox(height: 12),
                   Text(
-                    _followupFilter == 'all' && _followupSearchQuery.isNotEmpty
+                    tabSearchQuery.isNotEmpty
                         ? 'No Matching Follow-ups'
-                        : 'No Follow-ups Found',
+                        : (isAdminOnly && _selectedFollowupTelecaller != 'All'
+                            ? 'No Follow-ups for $_selectedFollowupTelecaller'
+                            : 'No ${_getFollowupTabLabel(_followupFilter)} Found'),
                     style: CRMTypography.headline.copyWith(fontSize: 16),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _followupFilter == 'all' && _followupSearchQuery.isNotEmpty
+                    tabSearchQuery.isNotEmpty
                         ? 'Try searching with a different name, phone number, or remark.'
-                        : 'Schedule a follow-up from the Active Leads table using the Status dropdown.',
+                        : (isAdminOnly && _selectedFollowupTelecaller != 'All'
+                            ? 'This telecaller has no follow-ups in the selected tab.'
+                            : 'Schedule a follow-up from the Active Leads table using the Status dropdown.'),
                     style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 13),
                   ),
                 ],
@@ -4327,6 +4526,85 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         else
           ...items.map((item) => _buildFollowupCard(context, item)),
       ],
+    );
+  }
+
+  String _getFollowupTabLabel(String filter) {
+    switch (filter) {
+      case 'today':
+        return 'Today';
+      case 'future':
+        return 'Future';
+      case 'missed':
+        return 'Overdue';
+      case 'all':
+      default:
+        return 'All Follow-ups';
+    }
+  }
+
+  Widget _buildFollowupTelecallerChip(String label, String value, int count) {
+    final isSelected = _selectedFollowupTelecaller.toLowerCase() == value.toLowerCase();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const activeColor = Color(0xFF6366F1);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () {
+        setState(() {
+          _selectedFollowupTelecaller = value;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? activeColor
+              : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? activeColor : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              value == 'All' ? Icons.groups_rounded : Icons.support_agent_rounded,
+              size: 14,
+              color: isSelected ? Colors.white : activeColor,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                color: isSelected ? Colors.white : CRMColors.textOf(context),
+              ),
+            ),
+            const SizedBox(width: 5),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? Colors.white.withOpacity(0.25)
+                    : (isDark ? Colors.white10 : Colors.black.withOpacity(0.06)),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: isSelected ? Colors.white : CRMColors.textSecondaryOf(context),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -6275,10 +6553,147 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
 
+  Future<void> _archiveLead(IntegrationLeadModel lead) async {
+    final currentStatus = lead.campaignStatus.trim().isEmpty ? 'New' : lead.campaignStatus;
+    lead.rawJson['pre_archive_status'] = currentStatus;
+
+    final isProp = lead.leadType == 'Property Listing' || _selectedSection == 'Property Listing';
+    final archiveStatus = isProp ? 'Property Listed' : 'Archived';
+    await _service.updateLeadCampaignStatus(lead.id, archiveStatus);
+    unawaited(_service.fetchServerLeads(resetWithServer: true));
+
+    if (mounted) {
+      setState(() {
+        _cachedFilteredLeads = null;
+        _selectedLeadIds.remove(lead.id);
+      });
+      unawaited(_loadFollowups());
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isProp
+              ? 'Property listing archived.'
+              : 'Requirement lead archived.'),
+          backgroundColor: isProp ? const Color(0xFF10B981) : const Color(0xFF6366F1),
+          action: SnackBarAction(
+            label: 'View Archive',
+            textColor: Colors.white,
+            onPressed: () {
+              setState(() {
+                _viewMode = isProp ? 'archive_listed' : 'archive_requirements';
+                _selectedSection = isProp ? 'Property Listing' : 'Requirement';
+                _persistedSection = _selectedSection;
+                _cachedFilteredLeads = null;
+                _currentPage = 1;
+              });
+            },
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _unarchiveLead(IntegrationLeadModel lead) async {
+    String restoredStatus = (lead.rawJson['pre_archive_status'] ?? '').toString().trim();
+    if (restoredStatus.isEmpty || restoredStatus == 'Archived' || restoredStatus == 'Property Listed' || restoredStatus == 'Listed') {
+      restoredStatus = 'New';
+    }
+
+    final isProp = lead.leadType == 'Property Listing';
+    await _service.updateLeadCampaignStatus(lead.id, restoredStatus);
+    unawaited(_service.fetchServerLeads(resetWithServer: true));
+
+    if (mounted) {
+      setState(() {
+        _cachedFilteredLeads = null;
+        _selectedLeadIds.remove(lead.id);
+      });
+      unawaited(_loadFollowups());
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isProp
+              ? 'Property listing restored to active Property Listing Leads tab.'
+              : 'Requirement lead restored to active Requirement Leads tab.'),
+          backgroundColor: const Color(0xFF10B981),
+        ),
+      );
+    }
+  }
+
+  Future<void> _bulkArchiveSelectedLeads(BuildContext context) async {
+    final selectedIds = _selectedLeadIds.toList();
+    if (selectedIds.isEmpty) return;
+    final count = selectedIds.length;
+    final isProp = _selectedSection == 'Property Listing';
+    final archiveStatus = isProp ? 'Property Listed' : 'Archived';
+
+    await _service.bulkUpdateCampaignStatus(selectedIds, archiveStatus);
+    unawaited(_service.fetchServerLeads(resetWithServer: true));
+
+    if (mounted) {
+      setState(() {
+        _selectedLeadIds.clear();
+        _cachedFilteredLeads = null;
+      });
+      unawaited(_loadFollowups());
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$count lead(s) archived.'),
+          backgroundColor: isProp ? const Color(0xFF10B981) : const Color(0xFF6366F1),
+          action: SnackBarAction(
+            label: 'View Archive',
+            textColor: Colors.white,
+            onPressed: () {
+              setState(() {
+                _viewMode = isProp ? 'archive_listed' : 'archive_requirements';
+                _cachedFilteredLeads = null;
+                _currentPage = 1;
+              });
+            },
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _bulkUnarchiveSelectedLeads(BuildContext context) async {
+    final selectedIds = _selectedLeadIds.toList();
+    if (selectedIds.isEmpty) return;
+    final count = selectedIds.length;
+
+    await _service.bulkUpdateCampaignStatus(selectedIds, 'New');
+    unawaited(_service.fetchServerLeads(resetWithServer: true));
+
+    if (mounted) {
+      setState(() {
+        _selectedLeadIds.clear();
+        _cachedFilteredLeads = null;
+      });
+      unawaited(_loadFollowups());
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$count lead(s) restored to active $_selectedSection Leads tab.'),
+          backgroundColor: const Color(0xFF10B981),
+        ),
+      );
+    }
+  }
+
   Future<void> _handleBulkStatusAction(BuildContext context, String action) async {
     final selectedIds = _selectedLeadIds.toList();
     if (selectedIds.isEmpty) return;
     final count = selectedIds.length;
+
+    if (action == 'Archive') {
+      await _bulkArchiveSelectedLeads(context);
+      return;
+    } else if (action == 'Unarchive') {
+      await _bulkUnarchiveSelectedLeads(context);
+      return;
+    }
 
     if (action == 'Property Listed') {
       await _service.bulkUpdateCampaignStatus(selectedIds, 'Property Listed');
@@ -6496,6 +6911,40 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
 
 
+            if (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed') ...[
+              SizedBox(
+                height: 36,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.unarchive_rounded, size: 16),
+                  label: Text('Unarchive Selected ($count)'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  onPressed: () => _bulkUnarchiveSelectedLeads(context),
+                ),
+              ),
+              const SizedBox(width: CRMSpacing.s),
+            ] else ...[
+              SizedBox(
+                height: 36,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.archive_outlined, size: 16),
+                  label: Text('Archive Selected ($count)'),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.input)),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  onPressed: () => _bulkArchiveSelectedLeads(context),
+                ),
+              ),
+              const SizedBox(width: CRMSpacing.s),
+            ],
+
             // Bulk Status Action Menu (Shown for calling leads / replacing "Move to Properties" on calling leads)
             PopupMenuButton<String>(
               tooltip: 'Status Actions ($count)',
@@ -6503,32 +6952,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               onSelected: (action) => _handleBulkStatusAction(context, action),
               itemBuilder: (ctx) => [
                 if (_selectedSection == 'Property Listing') ...[
-                  PopupMenuItem(
-                    value: 'Property Listed',
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF10B981)),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('Property Listed', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF10B981)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                              Text('Mark as Listed (Saved to Archive in More Tools)', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                   PopupMenuItem(
                     value: 'Wrong Lead Requirement',
                     child: Row(
@@ -6556,32 +6979,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     ),
                   ),
                 ] else ...[
-                  PopupMenuItem(
-                    value: 'Archive Requirement',
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6366F1).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Icon(Icons.archive_rounded, size: 16, color: Color(0xFF6366F1)),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('Archive Requirement', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6366F1)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                              Text('Move to Archived Requirements in More Tools', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                   PopupMenuItem(
                     value: 'Wrong Lead Property Listing',
                     child: Row(
@@ -7026,6 +7423,30 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   onPressed: () => _showInspectLeadDialog(context, lead),
                 ),
                 IconButton(
+                  icon: Icon(
+                    (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed')
+                        ? Icons.unarchive_rounded
+                        : Icons.archive_outlined,
+                    size: 17,
+                    color: (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed')
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFF6366F1),
+                  ),
+                  tooltip: (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed')
+                      ? 'Unarchive Lead'
+                      : 'Archive Lead',
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    if (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed') {
+                      _unarchiveLead(lead);
+                    } else {
+                      _archiveLead(lead);
+                    }
+                  },
+                ),
+                IconButton(
                   icon: const Icon(Icons.delete_outline_rounded, size: 17, color: CRMColors.danger),
                   tooltip: 'Delete Lead',
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -7157,91 +7578,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         }
       },
       itemBuilder: (ctx) => [
-        PopupMenuItem(
-          value: 'archive_listed',
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(Icons.inventory_2_rounded, size: 16, color: Color(0xFF10B981)),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Text('Archive: Listed Properties', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '$_cachedListedCount',
-                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Text('View closed & listed properties archive', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: 'archive_requirements',
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(Icons.archive_rounded, size: 16, color: Color(0xFF6366F1)),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Text('Archive: Requirements', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6366F1).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '$_cachedArchivedReqCount',
-                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Text('View archived requirements archive', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
         const PopupMenuItem(
           value: 'reorder',
           child: Row(
@@ -7821,7 +8157,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               );
                             }),
 
-                            // Actions (Lead Intelligence Engine, Inspect JSON & Delete)
+                            // Actions (Lead Intelligence Engine, Inspect JSON, Archive/Unarchive & Delete)
                             DataCell(
                               Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -7835,6 +8171,27 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                     icon: const Icon(Icons.data_object_rounded, size: 18),
                                     tooltip: 'Inspect JSON Payload',
                                     onPressed: () => _showInspectLeadDialog(context, lead),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(
+                                      (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed')
+                                          ? Icons.unarchive_rounded
+                                          : Icons.archive_outlined,
+                                      size: 18,
+                                      color: (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed')
+                                          ? const Color(0xFF10B981)
+                                          : const Color(0xFF6366F1),
+                                    ),
+                                    tooltip: (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed')
+                                        ? 'Unarchive Lead'
+                                        : 'Archive Lead',
+                                    onPressed: () {
+                                      if (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed') {
+                                        _unarchiveLead(lead);
+                                      } else {
+                                        _archiveLead(lead);
+                                      }
+                                    },
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
