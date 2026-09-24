@@ -44,6 +44,7 @@ import '../../requirements/repository/requirements_repository.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/telemetry/audit_dwell_tracker.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class PropertiesScreen extends StatefulWidget {
   final String? openPropertyId;
@@ -480,7 +481,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       style: CRMTypography.sectionTitle
                           .copyWith(color: CRMColors.textOf(context))),
                   content: SizedBox(
-                    width: 400,
+                    width: CRMBreakpoints.adaptiveWidth(context, 400),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -866,7 +867,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       style: CRMTypography.sectionTitle
                           .copyWith(color: CRMColors.textOf(context))),
                   content: SizedBox(
-                    width: 450,
+                    width: CRMBreakpoints.adaptiveWidth(context, 450),
                     height: 320,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4576,7 +4577,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               content: SizedBox(
-                width: 380,
+                width: CRMBreakpoints.adaptiveWidth(context, 380),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,

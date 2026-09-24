@@ -6,6 +6,7 @@ import '../../../core/theme/theme_presets.dart';
 import '../../../core/security/role_guard.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../telecaller/widgets/telecaller_availability_toggle.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class ModernTopBar extends StatefulWidget {
   final VoidCallback onToggleSidebar;
@@ -111,7 +112,7 @@ class _ModernTopBarState extends State<ModernTopBar> {
                 ],
               ),
               content: SizedBox(
-                width: 440,
+                width: CRMBreakpoints.adaptiveWidth(context, 440),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [

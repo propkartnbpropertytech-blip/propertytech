@@ -136,19 +136,31 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 
   Widget _buildPageHeader() {
+    final isNarrow = MediaQuery.sizeOf(context).width < 600;
+    final title = Text(
+      "Clients",
+      style: CRMTypography.pageTitle.copyWith(color: CRMColors.textOf(context)),
+    );
+    final action = CRMButton(
+      label: "Add Client",
+      prefixIcon: Icons.person_add_rounded,
+      height: 40,
+      onPressed: () => _showAddEditDialog(),
+    );
+    if (isNarrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          title,
+          const SizedBox(height: CRMSpacing.s),
+          action,
+        ],
+      );
+    }
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          "Clients",
-          style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
-        ),
-        CRMButton(
-          label: "Add Client",
-          prefixIcon: Icons.person_add_rounded,
-          height: 40,
-          onPressed: () => _showAddEditDialog(),
-        ),
+        Expanded(child: title),
+        action,
       ],
     );
   }
@@ -201,37 +213,52 @@ class _ClientsScreenState extends State<ClientsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-                  decoration: InputDecoration(
-                    hintText: 'Search by client name, email, mobile, comments...',
-                    hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMutedOf(context)),
-                    prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context)),
-                    filled: true,
-                    fillColor: CRMColors.backgroundOf(context),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
-                    ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked = constraints.maxWidth < 560;
+              final field = TextField(
+                controller: _searchController,
+                style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+                decoration: InputDecoration(
+                  hintText: 'Search by client name, email, mobile, comments...',
+                  hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMutedOf(context)),
+                  prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context)),
+                  filled: true,
+                  fillColor: CRMColors.backgroundOf(context),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                    borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
                   ),
-                  onChanged: (val) => _triggerFetch(),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                    borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                    borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
+                  ),
                 ),
-              ),
-              const SizedBox(width: CRMSpacing.s),
-              CRMButton(label: "Search", onPressed: _triggerFetch),
-            ],
+                onChanged: (val) => _triggerFetch(),
+              );
+              final searchButton = CRMButton(label: "Search", onPressed: _triggerFetch);
+              if (stacked) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    field,
+                    const SizedBox(height: CRMSpacing.s),
+                    searchButton,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: field),
+                  const SizedBox(width: CRMSpacing.s),
+                  searchButton,
+                ],
+              );
+            },
           ),
           const SizedBox(height: CRMSpacing.m),
           Row(
@@ -321,8 +348,11 @@ class _ClientsScreenState extends State<ClientsScreen> {
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
   }) {
-    return SizedBox(
-      width: 180,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth < 200 ? constraints.maxWidth : 180.0;
+        return SizedBox(
+      width: width,
       height: 44,
       child: DropdownButtonFormField<T>(
         value: value,
@@ -351,6 +381,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
         items: items,
         onChanged: onChanged,
       ),
+    );
+      },
     );
   }
 

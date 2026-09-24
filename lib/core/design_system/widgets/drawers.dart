@@ -59,11 +59,13 @@ Future<void> showCRMPropertyDrawer(BuildContext context, PropertyModel property)
 class BuildPropertyDetailWidget extends StatefulWidget {
   final PropertyModel property;
   final bool showHeaderClose;
+  final VoidCallback? onClose;
 
   const BuildPropertyDetailWidget({
     super.key,
     required this.property,
     this.showHeaderClose = true,
+    this.onClose,
   });
 
   @override
@@ -974,13 +976,15 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildShortlistedHeaderIconButton(context),
-                        if (showHeaderClose) ...[
-                          const SizedBox(width: 12),
-                          CRMButton(
-                            label: 'Close',
-                            variant: CRMButtonVariant.danger,
-                            height: 40,
-                            onPressed: () => Navigator.pop(context),
+                        if (showHeaderClose || widget.onClose != null) ...[
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Back',
+                            onPressed: widget.onClose ?? () => Navigator.pop(context),
+                            icon: Icon(
+                              Icons.arrow_back_rounded,
+                              color: CRMColors.textOf(context),
+                            ),
                           ),
                         ],
                       ],

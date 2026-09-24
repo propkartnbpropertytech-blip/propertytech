@@ -44,6 +44,7 @@ class ApiConstants {
   static const telecallerDashboard = "/telecaller/dashboard";
   static const telecallerCallbacks = "/telecaller/callbacks";
   static const telecallerCnr = "/telecaller/cnr";
+  static const telecallerTransferLead = "/telecaller/transfer-lead";
   static const adminAllocationMonitor = "/admin/allocation-monitor";
   static const adminAllocationEngineToggle = "/admin/allocation-engine/toggle";
   static const adminAllocationEngineStatus = "/admin/allocation-engine/status";

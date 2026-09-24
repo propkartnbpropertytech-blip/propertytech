@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/security/role_guard.dart';
 import '../../integration/services/integration_service.dart';
 import '../data/telecaller_repository.dart';
 
@@ -61,12 +62,12 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
     on<TelecallerCallbacksRequested>((event, emit) async {
       emit(TelecallerListState(loading: true, items: state.items));
       try {
-        final items = await _repository.callbacks(
+        final items = _keptForCurrentTelecaller(await _repository.callbacks(
           search: event.search,
           from: event.from,
           to: event.to,
           source: event.source,
-        );
+        ));
         emit(TelecallerListState(items: items));
       } catch (e) {
         emit(TelecallerListState(error: e.toString(), items: state.items));
@@ -103,12 +104,12 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
     on<TelecallerCnrRequested>((event, emit) async {
       emit(TelecallerListState(loading: true, items: state.items));
       try {
-        final items = await _repository.cnr(
+        final items = _keptForCurrentTelecaller(await _repository.cnr(
           search: event.search,
           from: event.from,
           to: event.to,
           source: event.source,
-        );
+        ));
         emit(TelecallerListState(items: items));
       } catch (e) {
         emit(TelecallerListState(error: e.toString(), items: state.items));
@@ -132,4 +133,21 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
     _leadEventsSub?.cancel();
     return super.close();
   }
+}
+
+List<dynamic> _keptForCurrentTelecaller(List<dynamic> items) {
+  if (!RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) return items;
+  final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
+  if (myId == null || myId.isEmpty) return items;
+  return items.where((raw) {
+    if (raw is! Map) return true;
+    final id = (raw['lead_id'] ?? raw['campaign_lead_id'] ?? raw['campaignLeadId'] ?? raw['id'])
+        ?.toString();
+    if (id == null || id.isEmpty) return true;
+    final local = IntegrationService().getLeadById(id);
+    if (local == null) return true;
+    final assigned = local.assignedTelecallerId?.trim().toLowerCase();
+    if (assigned == null || assigned.isEmpty) return true;
+    return assigned == myId;
+  }).toList();
 }

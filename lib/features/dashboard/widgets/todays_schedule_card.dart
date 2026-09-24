@@ -7,6 +7,7 @@ import '../../../core/security/role_guard.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../models/dashboard_summary.dart';
 import '../services/dashboard_service.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class PersonalNoteItem {
   final String id;
@@ -215,7 +216,7 @@ class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
           ),
           backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
           child: Container(
-            width: 440,
+            width: CRMBreakpoints.adaptiveWidth(context, 440),
             padding: const EdgeInsets.all(20),
             child: Column(
               mainAxisSize: MainAxisSize.min,

@@ -8,6 +8,7 @@ import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../core/api/dio_client.dart';
 import '../data/telecaller_repository.dart';
 import '../bloc/telecaller_leads_bloc.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class TelecallerLeadsScreen extends StatelessWidget {
   const TelecallerLeadsScreen({super.key});
@@ -391,7 +392,7 @@ class _TelecallerLeadsView extends StatelessWidget {
           ],
         ),
         content: SizedBox(
-          width: 520,
+          width: CRMBreakpoints.adaptiveWidth(context, 520),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

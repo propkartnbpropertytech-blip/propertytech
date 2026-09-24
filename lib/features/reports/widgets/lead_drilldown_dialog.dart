@@ -5,6 +5,7 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/screens/add_edit_requirement_screen.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class LeadDrilldownDialog extends StatelessWidget {
   final String title;
@@ -28,7 +29,7 @@ class LeadDrilldownDialog extends StatelessWidget {
       backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       child: Container(
-        width: 900,
+        width: CRMBreakpoints.adaptiveWidth(context, 900),
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.85,
         ),
@@ -38,24 +39,29 @@ class LeadDrilldownDialog extends StatelessWidget {
           children: [
             // Header
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
+                Expanded(
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '$subtitle · ${leads.length} Leads found',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                       ),
                     ),
                   ],
+                  ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 20),

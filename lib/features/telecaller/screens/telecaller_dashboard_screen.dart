@@ -16,6 +16,7 @@ import '../../dashboard/widgets/welcome_header.dart';
 import '../../integration/services/integration_service.dart';
 import '../bloc/telecaller_dashboard_bloc.dart';
 import '../data/telecaller_repository.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class TelecallerDashboardScreen extends StatelessWidget {
   const TelecallerDashboardScreen({super.key});
@@ -62,16 +63,27 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   int _activityPage = 1;
   static const int _activityPerPage = 10;
 
+  StreamSubscription<Map<String, dynamic>>? _leadEventsSub;
+
   @override
   void initState() {
     super.initState();
     _loadPersonalNotes();
     _loadTransferredLeads();
     _loadFollowups();
+    _leadEventsSub = IntegrationService.leadEvents.stream.listen((event) {
+      if (!mounted) return;
+      final type = event['type']?.toString();
+      if (type == 'PEER_TRANSFER' || type == 'TRANSFER_COMPLETED' || type == 'OUTCOME_RECORDED') {
+        _loadFollowups();
+        _loadTransferredLeads(_transferredPage);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _leadEventsSub?.cancel();
     _noteController.dispose();
     super.dispose();
   }
@@ -182,7 +194,14 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               leadStatus != 'Follow-up') {
             return false;
           }
-          return true;
+          final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
+          if (myId == null || myId.isEmpty) return true;
+          final local = IntegrationService().getLeadById(f.leadId);
+          final assigned = (local?.assignedTelecallerId ?? f.lead?.assignedTelecallerId)
+              ?.trim()
+              .toLowerCase();
+          if (assigned == null || assigned.isEmpty) return true;
+          return assigned == myId;
         }).toList();
         activeFollowups.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
@@ -224,7 +243,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
           ],
         ),
         content: SizedBox(
-          width: 420,
+          width: CRMBreakpoints.adaptiveWidth(context, 420),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -301,7 +320,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         }
         final next = data['nextLead'] as Map<String, dynamic>?;
         final recentActivities = (data['recentActivity'] as List?) ?? [];
-        final isWide = MediaQuery.of(context).size.width >= 1050;
+        final viewport = MediaQuery.sizeOf(context).width;
+        final isWide = viewport >= 1050;
+        final isPhone = viewport < 700;
 
         return RefreshIndicator(
           onRefresh: () async {
@@ -313,7 +334,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
             ]);
           },
           child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            padding: EdgeInsets.fromLTRB(isPhone ? 12 : 24, isPhone ? 12 : 20, isPhone ? 12 : 24, isPhone ? 28 : 20),
             children: [
               WelcomeHeader(
                 userName: RoleGuard.currentUser?.fullName.isNotEmpty == true
@@ -329,35 +350,27 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                 ),
               const SizedBox(height: 20),
 
-              // KPI Cards Grid (including Not Interested)
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  _clickableKpi(context, 'My assigned leads', '${data['assignedLeads'] ?? 0}', Icons.assignment_outlined, '/telecaller/leads'),
-                  _clickableKpi(context, 'Uncontacted', '${data['uncontacted'] ?? 0}', Icons.mark_email_unread_outlined, '/telecaller/leads'),
-                  _clickableKpi(context, 'Callbacks', '${data['callbackCount'] ?? 0}', Icons.event_repeat, '/telecaller/callbacks'),
-                  _clickableKpi(context, "Today's callbacks", '${data['todaysCallbacks'] ?? 0}', Icons.today_outlined, '/telecaller/callbacks'),
-                  _clickableKpi(context, 'CNR / Retries', '${data['cnrCount'] ?? 0}', Icons.phone_missed_outlined, '/telecaller/cnr'),
-                  _clickableKpi(context, 'Picked up', '${data['pickedUp'] ?? 0}', Icons.call_received, '/telecaller/leads'),
-                  _clickableKpi(context, 'Handed to Sales', '${data['handedToSales'] ?? 0}', Icons.handshake_outlined, '/telecaller/leads'),
-                  _clickableKpi(
-                    context,
-                    'Not Interested',
-                    '${data['notInterestedCount'] ?? 0}',
-                    Icons.do_not_disturb_on_rounded,
-                    '/campaign/leads?view=not_interested',
-                    accentColor: const Color(0xFFEF4444),
-                  ),
-                  _clickableKpi(
-                    context,
-                    'Workload',
-                    '${data['currentWorkload'] ?? 0}/${data['maxCapacity'] ?? 0}',
-                    Icons.speed,
-                    '/telecaller/leads',
-                  ),
-                  _clickableKpi(context, 'Remaining Capacity', '${data['remainingCapacity'] ?? 0}', Icons.hourglass_bottom, '/telecaller/leads'),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  const gap = 12.0;
+                  final cols = constraints.maxWidth < 340
+                      ? 1
+                      : (constraints.maxWidth < 900 ? 2 : (constraints.maxWidth / 220).floor().clamp(2, 5));
+                  final cardW = (constraints.maxWidth - gap * (cols - 1)) / cols;
+                  final cards = <Widget>[
+                    _clickableKpi(context, 'My assigned leads', '${data['assignedLeads'] ?? 0}', Icons.assignment_outlined, '/telecaller/leads', width: cardW),
+                    _clickableKpi(context, 'Uncontacted', '${data['uncontacted'] ?? 0}', Icons.mark_email_unread_outlined, '/telecaller/leads', width: cardW),
+                    _clickableKpi(context, 'Callbacks', '${data['callbackCount'] ?? 0}', Icons.event_repeat, '/telecaller/callbacks', width: cardW),
+                    _clickableKpi(context, "Today's callbacks", '${data['todaysCallbacks'] ?? 0}', Icons.today_outlined, '/telecaller/callbacks', width: cardW),
+                    _clickableKpi(context, 'CNR / Retries', '${data['cnrCount'] ?? 0}', Icons.phone_missed_outlined, '/telecaller/cnr', width: cardW),
+                    _clickableKpi(context, 'Picked up', '${data['pickedUp'] ?? 0}', Icons.call_received, '/telecaller/leads', width: cardW),
+                    _clickableKpi(context, 'Handed to Sales', '${data['handedToSales'] ?? 0}', Icons.handshake_outlined, '/telecaller/leads', width: cardW),
+                    _clickableKpi(context, 'Not Interested', '${data['notInterestedCount'] ?? 0}', Icons.do_not_disturb_on_rounded, '/campaign/leads?view=not_interested', accentColor: const Color(0xFFEF4444), width: cardW),
+                    _clickableKpi(context, 'Workload', '${data['currentWorkload'] ?? 0}/${data['maxCapacity'] ?? 0}', Icons.speed, '/telecaller/leads', width: cardW),
+                    _clickableKpi(context, 'Remaining Capacity', '${data['remainingCapacity'] ?? 0}', Icons.hourglass_bottom, '/telecaller/leads', width: cardW),
+                  ];
+                  return Wrap(spacing: gap, runSpacing: gap, children: cards);
+                },
               ),
               const SizedBox(height: 24),
 
@@ -365,31 +378,31 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               Card(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 elevation: 0.5,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFE0E7FF),
-                    child: Icon(Icons.phone_forwarded_rounded, color: Color(0xFF4F46E5), size: 20),
-                  ),
-                  title: const Text('Next waiting lead', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
-                  subtitle: Text(
-                    next == null
-                        ? 'No actionable lead. Go ACTIVE to receive waiting-queue work.'
-                        : _leadDisplayName(next),
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
-                  ),
-                  trailing: ElevatedButton.icon(
-                    onPressed: () => context.go('/telecaller/leads'),
-                    icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                    label: const Text('Call Queue'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: CRMColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    ),
-                  ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
                   onTap: () => context.go('/telecaller/leads'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: isPhone
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _nextLeadSummary(next),
+                              const SizedBox(height: 12),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: _callQueueButton(context),
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(child: _nextLeadSummary(next)),
+                              const SizedBox(width: 12),
+                              _callQueueButton(context),
+                            ],
+                          ),
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -452,28 +465,27 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.schedule_rounded, color: Color(0xFFD97706), size: 20),
-                ),
-                const SizedBox(width: 10),
-                const Text('My Scheduled Follow-ups', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
-                  child: Text('${_followups.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () => context.go('/campaign/leads?view=followups'),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 15),
-                  label: const Text('View All', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                ),
-              ],
+            _sectionTitle(
+              icon: Icons.schedule_rounded,
+              iconColor: const Color(0xFFD97706),
+              iconBg: const Color(0xFFFEF3C7),
+              title: 'My Scheduled Follow-ups',
+              badge: '${_followups.length}',
+              badgeColor: const Color(0xFF475569),
+              badgeBg: const Color(0xFFF1F5F9),
+              trailing: MediaQuery.sizeOf(context).width < 700
+                  ? IconButton(
+                      tooltip: 'View all',
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                      onPressed: () => context.go('/campaign/leads?view=followups'),
+                      icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                    )
+                  : TextButton.icon(
+                      onPressed: () => context.go('/campaign/leads?view=followups'),
+                      icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                      label: const Text('View All', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    ),
             ),
             const Divider(height: 24),
             if (_loadingFollowups && _followups.isEmpty)
@@ -516,84 +528,68 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(color: const Color(0xFFE2E8F0)),
                             ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
-                                  child: const Icon(Icons.access_time_rounded, color: Color(0xFFD97706), size: 18),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              fu.clientName,
-                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          if (fu.isToday)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                              decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(6)),
-                                              child: const Text('Today', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
-                                            ),
-                                          const SizedBox(width: 6),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final narrow = constraints.maxWidth < 520;
+                                final details = Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      fu.clientName,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        if (fu.isToday)
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                            decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(6)),
-                                            child: Text(fu.leadType, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                                            decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(6)),
+                                            child: const Text('Today', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
                                           ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          Icon(Icons.calendar_today_outlined, size: 12, color: Colors.grey.shade500),
-                                          const SizedBox(width: 4),
-                                          Text(DateFormat('EEE, d MMM • h:mm a').format(fu.scheduledAt), style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                                          if (fu.mobile.isNotEmpty) ...[
-                                            const SizedBox(width: 10),
-                                            Icon(Icons.phone_outlined, size: 12, color: Colors.grey.shade500),
-                                            const SizedBox(width: 4),
-                                            Text(fu.mobile, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                                          ],
-                                        ],
-                                      ),
-                                      if (fu.remarks.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          fu.remarks,
-                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                          decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(6)),
+                                          child: Text(fu.leadType, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
                                         ),
                                       ],
-                                    ],
-                                  ),
-                                ),
-                                Row(
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      DateFormat('EEE, d MMM • h:mm a').format(fu.scheduledAt),
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                    ),
+                                    if (fu.mobile.isNotEmpty)
+                                      Text(fu.mobile, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                    if (fu.remarks.isNotEmpty)
+                                      Text(
+                                        fu.remarks,
+                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                  ],
+                                );
+                                final actions = Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     if (fu.mobile.isNotEmpty) ...[
-                                      IconButton(
-                                        icon: const Icon(Icons.phone_forwarded, size: 18, color: Color(0xFF059669)),
+                                      _compactIconButton(
+                                        icon: Icons.phone_forwarded,
+                                        color: const Color(0xFF059669),
                                         tooltip: 'Call client',
                                         onPressed: () async {
                                           final uri = Uri.parse('tel:${fu.mobile}');
                                           if (await canLaunchUrl(uri)) await launchUrl(uri);
                                         },
                                       ),
-                                      IconButton(
-                                        icon: const Icon(Icons.chat_outlined, size: 18, color: Color(0xFF25D366)),
+                                      _compactIconButton(
+                                        icon: Icons.chat_outlined,
+                                        color: const Color(0xFF25D366),
                                         tooltip: 'WhatsApp',
                                         onPressed: () async {
                                           final clean = fu.mobile.replaceAll(RegExp(r'\D'), '');
@@ -602,53 +598,49 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                         },
                                       ),
                                     ],
-                                    IconButton(
-                                      icon: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
+                                    _compactIconButton(
+                                      icon: Icons.arrow_forward_ios_rounded,
+                                      color: Colors.grey,
                                       tooltip: 'Open in Follow-ups tab',
                                       onPressed: () => context.go('/campaign/leads?view=followups'),
                                     ),
                                   ],
-                                ),
-                              ],
+                                );
+                                if (narrow) {
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      details,
+                                      Align(alignment: Alignment.centerRight, child: actions),
+                                    ],
+                                  );
+                                }
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
+                                      child: const Icon(Icons.access_time_rounded, color: Color(0xFFD97706), size: 18),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: details),
+                                    actions,
+                                  ],
+                                );
+                              },
                             ),
                           );
                         },
                       ),
                       if (_followups.length > _followupsPerPage) ...[
                         const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Showing ${startIndex + 1}–${min(startIndex + _followupsPerPage, _followups.length)} of ${_followups.length} follow-ups',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                            Row(
-                              children: [
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  onPressed: currentPage > 1 ? () => setState(() => _followupsPage = currentPage - 1) : null,
-                                  icon: const Icon(Icons.chevron_left, size: 16),
-                                  label: const Text('Previous', style: TextStyle(fontSize: 12)),
-                                ),
-                                const SizedBox(width: 8),
-                                Text('Page $currentPage of $safeTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                                const SizedBox(width: 8),
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  onPressed: currentPage < safeTotalPages ? () => setState(() => _followupsPage = currentPage + 1) : null,
-                                  icon: const Icon(Icons.chevron_right, size: 16),
-                                  label: const Text('Next', style: TextStyle(fontSize: 12)),
-                                ),
-                              ],
-                            ),
-                          ],
+                        _pageControls(
+                          label: 'Showing ${startIndex + 1}–${min(startIndex + _followupsPerPage, _followups.length)} of ${_followups.length} follow-ups',
+                          page: currentPage,
+                          totalPages: safeTotalPages,
+                          onPrevious: currentPage > 1 ? () => setState(() => _followupsPage = currentPage - 1) : null,
+                          onNext: currentPage < safeTotalPages ? () => setState(() => _followupsPage = currentPage + 1) : null,
                         ),
                       ],
                     ],
@@ -675,28 +667,21 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.handshake_outlined, color: Color(0xFF059669), size: 20),
-                ),
-                const SizedBox(width: 10),
-                const Text('Recent Leads Transferred to Sales', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(12)),
-                  child: Text('$_transferredTotal', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.refresh_rounded, size: 18),
-                  tooltip: 'Refresh transferred leads',
-                  onPressed: () => _loadTransferredLeads(currentTransferredPage),
-                ),
-              ],
+            _sectionTitle(
+              icon: Icons.handshake_outlined,
+              iconColor: const Color(0xFF059669),
+              iconBg: const Color(0xFFECFDF5),
+              title: 'Recent Leads Transferred to Sales',
+              badge: '$_transferredTotal',
+              badgeColor: const Color(0xFF059669),
+              badgeBg: const Color(0xFFECFDF5),
+              trailing: IconButton(
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                tooltip: 'Refresh transferred leads',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                onPressed: () => _loadTransferredLeads(currentTransferredPage),
+              ),
             ),
             const Divider(height: 24),
             if (_loadingTransferred && _transferredLeads.isEmpty)
@@ -714,7 +699,80 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   ),
                 ),
               )
-            else ...[
+            else if (MediaQuery.sizeOf(context).width < 700) ...[
+              ..._transferredLeads.asMap().entries.map((entry) {
+                final index = (currentTransferredPage - 1) * 10 + entry.key + 1;
+                final lead = entry.value as Map;
+                final clientName = (lead['clientName'] ?? 'Lead').toString();
+                final phone = (lead['phone'] ?? '').toString();
+                final leadType = (lead['leadType'] ?? 'Requirement').toString();
+                final transferredTo = (lead['transferredToName'] ?? 'Sales Rep').toString();
+                final remarks = (lead['remarks'] ?? '').toString();
+                String timeStr = '-';
+                if (lead['transferredAt'] != null) {
+                  final dt = DateTime.tryParse(lead['transferredAt'].toString());
+                  if (dt != null) timeStr = DateFormat('d MMM, h:mm a').format(dt.toLocal());
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text('#$index', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                clientName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(phone.isEmpty ? 'No phone' : phone, style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            Text(leadType, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                            Text('· $transferredTo', style: const TextStyle(fontSize: 12, color: Color(0xFF1E293B))),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(timeStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () => _showTransferRemarkDialog(context, clientName, remarks, transferredTo, timeStr),
+                            child: const Text('View remarks'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+              _pageControls(
+                label: 'Showing ${_transferredTotal == 0 ? 0 : (currentTransferredPage - 1) * 10 + 1}–${min(currentTransferredPage * 10, _transferredTotal)} of $_transferredTotal',
+                page: currentTransferredPage,
+                totalPages: safeTransferredTotalPages,
+                onPrevious: currentTransferredPage > 1 ? () => _loadTransferredLeads(currentTransferredPage - 1) : null,
+                onNext: currentTransferredPage < safeTransferredTotalPages ? () => _loadTransferredLeads(currentTransferredPage + 1) : null,
+              ),
+            ] else ...[
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
@@ -864,8 +922,14 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   child: const Icon(Icons.checklist_rtl_rounded, color: Color(0xFF8B5CF6), size: 20),
                 ),
                 const SizedBox(width: 10),
-                const Text('Personal Notes & Tasks', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-                const Spacer(),
+                const Expanded(
+                  child: Text(
+                    'Personal Notes & Tasks',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                  ),
+                ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(color: const Color(0xFFF3E8FF), borderRadius: BorderRadius.circular(12)),
@@ -1072,8 +1136,14 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   child: const Icon(Icons.history_rounded, color: Color(0xFF2563EB), size: 20),
                 ),
                 const SizedBox(width: 10),
-                const Text('Recent Activity & Call Log', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-                const Spacer(),
+                const Expanded(
+                  child: Text(
+                    'Recent Activity & Call Log',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                  ),
+                ),
                 Text(
                   'Today: ${recentActivities.length}',
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
@@ -1168,11 +1238,18 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                     ),
                                   ),
                                   if (phone.isNotEmpty)
-                                    Text(phone, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                    Flexible(
+                                      child: Text(
+                                        phone,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                      ),
+                                    ),
                                 ],
                               ),
                               const SizedBox(height: 6),
-                              Row(
+                              Wrap(
                                 children: [
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -1243,9 +1320,137 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     );
   }
 
-  Widget _clickableKpi(BuildContext context, String title, String value, IconData icon, String route, {Color? accentColor}) {
+  Widget _sectionTitle({
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required String title,
+    required String badge,
+    required Color badgeColor,
+    required Color badgeBg,
+    Widget? trailing,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(12)),
+          child: Text(badge, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: badgeColor)),
+        ),
+        ?trailing,
+      ],
+    );
+  }
+
+  Widget _compactIconButton({
+    required IconData icon,
+    required Color color,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      icon: Icon(icon, size: 18, color: color),
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+      onPressed: onPressed,
+    );
+  }
+
+  Widget _nextLeadSummary(Map<String, dynamic>? next) {
+    return Row(
+      children: [
+        const CircleAvatar(
+          backgroundColor: Color(0xFFE0E7FF),
+          child: Icon(Icons.phone_forwarded_rounded, color: Color(0xFF4F46E5), size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Next waiting lead', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(
+                next == null
+                    ? 'No actionable lead. Go ACTIVE to receive waiting-queue work.'
+                    : _leadDisplayName(next),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _callQueueButton(BuildContext context) {
+    return ElevatedButton.icon(
+      onPressed: () => context.go('/telecaller/leads'),
+      icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+      label: const Text('Call Queue'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: CRMColors.primary,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      ),
+    );
+  }
+
+  Widget _pageControls({
+    required String label,
+    required int page,
+    required int totalPages,
+    required VoidCallback? onPrevious,
+    required VoidCallback? onNext,
+  }) {
+    final buttons = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+          onPressed: onPrevious,
+          icon: const Icon(Icons.chevron_left),
+        ),
+        Text('$page / $totalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+          onPressed: onNext,
+          icon: const Icon(Icons.chevron_right),
+        ),
+      ],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        Align(alignment: Alignment.centerRight, child: buttons),
+      ],
+    );
+  }
+
+  Widget _clickableKpi(BuildContext context, String title, String value, IconData icon, String route, {Color? accentColor, double width = 220}) {
     return SizedBox(
-      width: 220,
+      width: width,
       child: Material(
         color: Colors.transparent,
         child: InkWell(

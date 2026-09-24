@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../models/report_configuration.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class KpiConfigurationDialog extends StatefulWidget {
   final List<ReportKpiConfig> initialConfigs;
@@ -36,7 +37,7 @@ class _KpiConfigurationDialogState extends State<KpiConfigurationDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       child: Container(
-        width: 520,
+        width: CRMBreakpoints.adaptiveWidth(context, 520),
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.8,
         ),

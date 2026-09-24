@@ -16,10 +16,6 @@ import '../../features/properties/bloc/properties_bloc.dart';
 import '../../features/users/screens/users_screen.dart';
 import '../../features/users/screens/employee_detail_screen.dart';
 import '../../features/requirements/screens/requirements_screen.dart';
-import '../../features/clients/screens/clients_screen.dart';
-
-import '../../features/owners/screens/owners_screen.dart';
-import '../../features/builders/screens/builders_screen.dart';
 import '../../splash.dart';
 import '../../get_started_screen.dart';
 import '../../modules/legal/presentation/terms_and_conditions_page.dart';
@@ -341,25 +337,15 @@ class AppRouter {
           ),
           GoRoute(
             path: '/clients',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const ClientsScreen(),
-            ),
+            redirect: (context, state) => '/dashboard',
           ),
-
           GoRoute(
             path: '/owners',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const OwnersScreen(),
-            ),
+            redirect: (context, state) => '/dashboard',
           ),
           GoRoute(
             path: '/builders',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const BuildersScreen(),
-            ),
+            redirect: (context, state) => '/dashboard',
           ),
           GoRoute(
             path: '/settings',

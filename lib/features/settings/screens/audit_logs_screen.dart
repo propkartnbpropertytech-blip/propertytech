@@ -9,6 +9,7 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/skeletons.dart';
 import '../models/audit_log_model.dart';
 import '../services/audit_logs_service.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class AuditLogsScreen extends StatefulWidget {
   const AuditLogsScreen({super.key});
@@ -904,7 +905,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
           ],
         ),
         content: SizedBox(
-          width: 550,
+          width: CRMBreakpoints.adaptiveWidth(context, 550),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

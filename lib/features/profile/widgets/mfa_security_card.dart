@@ -10,6 +10,7 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 import '../../auth/services/auth_service.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class MfaSecurityCard extends StatefulWidget {
   final UserModel user;
@@ -226,7 +227,7 @@ class _MfaSecurityCardState extends State<MfaSecurityCard> {
               ],
             ),
             content: SizedBox(
-              width: 480,
+              width: CRMBreakpoints.adaptiveWidth(context, 480),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -461,7 +462,7 @@ class _MfaSecurityCardState extends State<MfaSecurityCard> {
               ],
             ),
             content: SizedBox(
-              width: 440,
+              width: CRMBreakpoints.adaptiveWidth(context, 440),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,

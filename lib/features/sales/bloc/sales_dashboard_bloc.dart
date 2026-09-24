@@ -16,6 +16,7 @@ import '../../requirements/repository/requirements_repository.dart';
 import '../../properties/repository/properties_repository.dart';
 import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/theme/theme_manager.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 // --- EVENTS ---
 abstract class SalesDashboardEvent extends Equatable {
@@ -2074,7 +2075,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                 ],
               ),
               content: SizedBox(
-                width: 420,
+                width: CRMBreakpoints.adaptiveWidth(context, 420),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,

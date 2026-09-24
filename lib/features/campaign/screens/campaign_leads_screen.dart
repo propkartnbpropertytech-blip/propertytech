@@ -32,6 +32,7 @@ import '../../users/bloc/users_bloc.dart';
 import '../../users/models/user_model.dart' as users_model;
 import '../../team_messages/services/team_messages_service.dart';
 import '../../../core/utils/team_user_visibility.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class CampaignLeadsScreen extends StatefulWidget {
   final String? initialSource;
@@ -98,6 +99,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   Timer? _searchDebounce;
   Timer? _notInterestedSearchDebounce;
   Timer? _uiDebounce;
+  StreamSubscription<Map<String, dynamic>>? _leadEventsSub;
 
   @override
   void initState() {
@@ -127,6 +129,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     unawaited(_service.fetchHealthAlerts());
     unawaited(_preloadFilterUsers());
     unawaited(_loadFollowups());
+    _leadEventsSub = IntegrationService.leadEvents.stream.listen((event) {
+      if (!mounted) return;
+      final type = event['type']?.toString();
+      if (type == 'PEER_TRANSFER' || type == 'TRANSFER_COMPLETED' || type == 'OUTCOME_RECORDED') {
+        unawaited(_loadFollowups());
+      }
+    });
   }
 
   String _usersFingerprint(List<users_model.UserModel>? users) {
@@ -237,6 +246,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _notInterestedSearchDebounce?.cancel();
     _followupSearchDebounce?.cancel();
     _uiDebounce?.cancel();
+    _leadEventsSub?.cancel();
     _service.unwatchCampaignUi();
     _service.removeListener(_onServiceUpdate);
     _searchController.dispose();
@@ -2766,7 +2776,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ],
         ),
         content: SizedBox(
-          width: 520,
+          width: CRMBreakpoints.adaptiveWidth(context, 520),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3000,10 +3010,34 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final remarks = lead.transferRemarks;
     final isPropertyListing = lead.leadType == 'Property Listing' || _selectedSection == 'Property Listing';
     final hasBadge = isAssigned || isCnr || (lead.assignedTelecallerName != null && lead.assignedTelecallerName!.isNotEmpty);
+    final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (isTelecaller) ...[
+          Tooltip(
+            message: 'Transfer this lead to another telecaller',
+            child: ElevatedButton.icon(
+              onPressed: () => _showPartnerTelecallerDialog(context, lead),
+              icon: const Icon(Icons.swap_horiz_rounded, size: 14, color: Colors.white),
+              label: const Text(
+                'Transfer',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                elevation: 0.5,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
         if (isAssigned) ...[
           Tooltip(
             message: remarks?.isNotEmpty == true
@@ -3141,7 +3175,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               color: Colors.white,
             ),
             label: Text(
-              isAssigned ? 'Re-transfer' : 'Transfer',
+              isTelecaller
+                  ? (isAssigned ? 'Re-assign' : 'Outcome')
+                  : (isAssigned ? 'Re-transfer' : 'Transfer'),
               style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
@@ -3165,6 +3201,191 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         ],
       ],
     );
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPartnerTelecallers() async {
+    final myId = RoleGuard.currentUser?.id.trim();
+    try {
+      final res = await DioClient.dio.get('/telecaller/partner-telecallers');
+      final list = List<dynamic>.from(res.data['data'] ?? []);
+      final partners = list
+          .map((u) => Map<String, dynamic>.from(u as Map))
+          .where((u) => myId == null || myId.isEmpty || u['id']?.toString() != myId)
+          .toList();
+      if (partners.isNotEmpty) return partners;
+    } catch (e) {
+      debugPrint('[PartnerTransfer] partner directory error: $e');
+    }
+
+    try {
+      final allUsers = await _usersRepository.getUsers();
+      return allUsers
+          .where((u) {
+            final role = u.roleName.toLowerCase();
+            if (!role.contains('telecaller')) return false;
+            if (!u.isActive) return false;
+            if (myId != null && myId.isNotEmpty && u.id == myId) return false;
+            return true;
+          })
+          .map((u) => {
+                'id': u.id,
+                'full_name': u.fullName,
+                'email': u.email,
+              })
+          .toList();
+    } catch (e) {
+      debugPrint('[PartnerTransfer] telecaller directory error: $e');
+      return [];
+    }
+  }
+
+  Future<void> _showPartnerTelecallerDialog(BuildContext context, IntegrationLeadModel lead) async {
+    final clientName = lead.getStringValue('full_name').isNotEmpty
+        ? lead.getStringValue('full_name')
+        : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Lead');
+    final phone = lead.getStringValue('phone_number').isNotEmpty
+        ? lead.getStringValue('phone_number')
+        : lead.getStringValue('phone');
+    final noteController = TextEditingController();
+    String? selectedId;
+    var partners = <Map<String, dynamic>>[];
+    var loading = true;
+    var submitting = false;
+    var started = false;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          if (!started) {
+            started = true;
+            _fetchPartnerTelecallers().then((users) {
+              if (!dialogCtx.mounted) return;
+              setDialogState(() {
+                partners = users;
+                loading = false;
+                if (partners.isNotEmpty) {
+                  selectedId = partners.first['id']?.toString();
+                }
+              });
+            });
+          }
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Transfer Lead'),
+            content: SizedBox(
+              width: CRMBreakpoints.adaptiveWidth(ctx, 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$clientName${phone.isNotEmpty ? ' · $phone' : ''}',
+                    style: TextStyle(fontSize: 13, color: CRMColors.textSecondaryOf(ctx)),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'This lead, including its follow-ups, moves to the telecaller you choose. It leaves your My Leads list.',
+                    style: TextStyle(fontSize: 12.5, height: 1.35),
+                  ),
+                  const SizedBox(height: 14),
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (partners.isEmpty)
+                    const Text(
+                      'No other active telecaller is available.',
+                      style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w600),
+                    )
+                  else
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Partner telecaller',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final partner in partners)
+                          DropdownMenuItem<String>(
+                            value: partner['id']?.toString(),
+                            child: Text(
+                              (partner['full_name']?.toString().trim().isNotEmpty == true)
+                                  ? partner['full_name'].toString()
+                                  : (partner['email']?.toString() ?? 'Telecaller'),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: submitting
+                          ? null
+                          : (value) => setDialogState(() => selectedId = value),
+                    ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteController,
+                    enabled: !submitting,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Note for admin (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: submitting ? null : () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: submitting || loading || partners.isEmpty || selectedId == null
+                    ? null
+                    : () => Navigator.pop(ctx, true),
+                child: const Text('Transfer'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (confirmed != true || selectedId == null || !context.mounted) {
+      noteController.dispose();
+      return;
+    }
+
+    Map<String, dynamic>? partner;
+    for (final item in partners) {
+      if (item['id']?.toString() == selectedId) {
+        partner = item;
+        break;
+      }
+    }
+    final partnerName = partner?['full_name']?.toString().trim() ?? '';
+    final destName = partnerName.isNotEmpty ? partnerName : 'Telecaller';
+
+    submitting = true;
+    final result = await _service.transferLeadToPartnerTelecaller(
+      lead.id,
+      toTelecallerId: selectedId!,
+      toTelecallerName: destName,
+      reason: noteController.text,
+    );
+    noteController.dispose();
+    if (!context.mounted) return;
+    final ok = result['success'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text((result['message'] ?? (ok ? 'Lead transferred.' : 'Transfer failed.')).toString()),
+        backgroundColor: ok ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+      ),
+    );
+    if (ok) unawaited(_loadFollowups());
   }
 
   Future<List<Map<String, dynamic>>> _fetchSalesUsersForTransfer() async {
@@ -4148,6 +4369,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     );
   }
 
+  bool _followupBelongsToCurrentTelecaller(CampaignFollowupModel followup) {
+    if (!RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) return true;
+    final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
+    if (myId == null || myId.isEmpty) return true;
+    final local = _service.getLeadById(followup.leadId);
+    final assigned = (local?.assignedTelecallerId ?? followup.lead?.assignedTelecallerId)
+        ?.trim()
+        .toLowerCase();
+    if (assigned == null || assigned.isEmpty) return true;
+    return assigned == myId;
+  }
+
   Future<void> _loadFollowups() async {
     if (_isLoadingFollowups) return;
     setState(() => _isLoadingFollowups = true);
@@ -4163,7 +4396,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 leadStatus != 'Follow-up') {
               return false;
             }
-            return true;
+            return _followupBelongsToCurrentTelecaller(f);
           }).toList();
           _isLoadingFollowups = false;
           _cachedFilteredLeads = null;
@@ -7374,6 +7607,27 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
             child: Row(
               children: [
+                if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) ...[
+                  Expanded(
+                    child: SizedBox(
+                      height: 32,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.swap_horiz_rounded, size: 14),
+                        label: const Text(
+                          'Transfer',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF0284C7),
+                          side: const BorderSide(color: Color(0xFF0284C7)),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        onPressed: () => _showPartnerTelecallerDialog(context, lead),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
                 Expanded(
                   child: SizedBox(
                     height: 32,
@@ -8162,6 +8416,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role))
+                                    IconButton(
+                                      icon: const Icon(Icons.swap_horiz_rounded, size: 18, color: Color(0xFF0284C7)),
+                                      tooltip: 'Transfer to another telecaller',
+                                      onPressed: () => _showPartnerTelecallerDialog(context, lead),
+                                    ),
                                   IconButton(
                                     icon: const Icon(Icons.auto_awesome_rounded, size: 18, color: Color(0xFF6366F1)),
                                     tooltip: '⚡ Lead Intelligence Engine (1-Click WhatsApp & CRM)',
@@ -8530,7 +8790,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ],
         ),
         content: SizedBox(
-          width: 540,
+          width: CRMBreakpoints.adaptiveWidth(context, 540),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -9132,6 +9392,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   /// Drag-and-Drop Column Reordering Dialog
   void _showReorderColumnsDialog(BuildContext context, [List<String>? sectionHeaders, List<IntegrationLeadModel>? sectionLeads]) {
     final targetLeads = sectionLeads ?? _filteredLeads;
+    final orderBefore = List<String>.from(_service.headerOrderFor(_selectedSection));
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -9175,7 +9436,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         label: const Text('Reset to Sheet Order'),
                         onPressed: () async {
                           final messenger = ScaffoldMessenger.of(context);
-                          await _service.resetHeaderOrderToSheet(leadsSubset: targetLeads, section: _selectedSection);
+                          await _service.resetHeaderOrderToSheet(
+                            leadsSubset: targetLeads,
+                            section: _selectedSection,
+                            persist: false,
+                          );
                           setModalState(() {});
                           setState(() {});
                           messenger.showSnackBar(
@@ -9190,7 +9455,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     child: ReorderableListView.builder(
                       itemCount: allHeaders.length,
                       onReorder: (oldIndex, newIndex) async {
-                        await _service.reorderHeaders(oldIndex, newIndex, leadsSubset: targetLeads, section: _selectedSection);
+                        await _service.reorderHeaders(
+                          oldIndex,
+                          newIndex,
+                          leadsSubset: targetLeads,
+                          section: _selectedSection,
+                          persist: false,
+                        );
                         setModalState(() {});
                         setState(() {});
                       },
@@ -9281,7 +9552,38 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ),
           actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final after = _service.headerOrderFor(_selectedSection);
+                  final changed = after.length != orderBefore.length ||
+                      after.asMap().entries.any((entry) => entry.value != orderBefore[entry.key]);
+                  if (!changed || !mounted) return;
+                  final scope = await _showSaveScopeDialog(
+                    context,
+                    actionLabel: 'Reorder $_selectedSection columns',
+                  );
+                  if (!mounted) return;
+                  if (scope == null) {
+                    _service.replaceSectionHeaderOrder(_selectedSection, orderBefore);
+                    setState(() {});
+                    return;
+                  }
+                  final ok = await _service.saveColumnLayoutToServer(
+                    section: _selectedSection,
+                    scope: scope,
+                  );
+                  if (!mounted) return;
+                  setState(() {});
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        ok
+                            ? 'Column order saved ${scope == 'global' ? 'for everyone' : 'only for you'}.'
+                            : 'Could not save the column order. Try again.',
+                      ),
+                    ),
+                  );
+                },
                 child: const Text('Done'),
               ),
             ],
@@ -9592,19 +9894,35 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           TextButton.icon(
                             icon: const Icon(Icons.check_box_rounded, size: 16),
                             label: const Text('Select All'),
-                            onPressed: () {
-                              _service.setAllHeadersVisibility(true, section: _selectedSection);
+                            onPressed: () async {
+                              final scope = await _showSaveScopeDialog(context, actionLabel: 'Show all columns');
+                              if (scope == null) return;
+                              final ok = await _service.setAllHeadersVisibility(true, section: _selectedSection, scope: scope);
                               setModalState(() {});
                               setState(() {});
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(ok
+                                    ? 'All columns shown ${scope == 'global' ? 'for everyone' : 'only for you'}.'
+                                    : 'Could not save this column change.')),
+                              );
                             },
                           ),
                           TextButton.icon(
                             icon: const Icon(Icons.check_box_outline_blank_rounded, size: 16),
                             label: const Text('Deselect All'),
-                            onPressed: () {
-                              _service.setAllHeadersVisibility(false, section: _selectedSection);
+                            onPressed: () async {
+                              final scope = await _showSaveScopeDialog(context, actionLabel: 'Hide all optional columns');
+                              if (scope == null) return;
+                              final ok = await _service.setAllHeadersVisibility(false, section: _selectedSection, scope: scope);
                               setModalState(() {});
                               setState(() {});
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(ok
+                                    ? 'Columns hidden ${scope == 'global' ? 'for everyone' : 'only for you'}.'
+                                    : 'Could not save this column change.')),
+                              );
                             },
                           ),
                         ],
@@ -9642,9 +9960,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               onChanged: (val) async {
                                 final scope = await _showSaveScopeDialog(context, actionLabel: (val == true ? 'Show column "$h"' : 'Hide column "$h"'));
                                 if (scope != null) {
-                                  _service.setHeaderVisibility(h, val ?? false, section: _selectedSection, scope: scope);
+                                  final ok = await _service.setHeaderVisibility(h, val ?? false, section: _selectedSection, scope: scope);
                                   setModalState(() {});
                                   setState(() {});
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(ok
+                                        ? 'Saved ${scope == 'global' ? 'for everyone' : 'only for you'}.'
+                                        : 'Could not save this column change.')),
+                                  );
                                 }
                               },
                             );
@@ -9809,10 +10133,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   Navigator.pop(ctx);
                   final scope = await _showSaveScopeDialog(context, actionLabel: 'Add header "$name"');
                   if (scope != null) {
-                    await _service.addCustomHeader(name, crmField: selectedCrmTarget, section: _selectedSection, scope: scope);
+                    final ok = await _service.addCustomHeader(name, crmField: selectedCrmTarget, section: _selectedSection, scope: scope);
                     if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Added header "$name" to $_selectedSection (${scope == 'global' ? 'for all users' : 'only for me'}).')),
+                      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                        SnackBar(content: Text(ok
+                            ? 'Added header "$name" ${scope == 'global' ? 'for everyone' : 'only for you'}.'
+                            : 'Could not save header "$name".')),
                       );
                     }
                   }
@@ -9901,8 +10227,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         Navigator.pop(ctx);
                         final scope = await _showSaveScopeDialog(context, actionLabel: 'Move "$header" left');
                         if (scope != null) {
-                          await _service.moveHeader(header, -1, leadsSubset: _filteredLeads, section: _selectedSection, scope: scope);
-                          if (mounted) setState(() {});
+                          final ok = await _service.moveHeader(header, -1, leadsSubset: _filteredLeads, section: _selectedSection, scope: scope);
+                          if (mounted) {
+                            setState(() {});
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(ok
+                                  ? 'Column moved ${scope == 'global' ? 'for everyone' : 'only for you'}.'
+                                  : 'Could not save this column change.')),
+                            );
+                          }
                         }
                       },
                     ),
@@ -9915,8 +10248,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         Navigator.pop(ctx);
                         final scope = await _showSaveScopeDialog(context, actionLabel: 'Move "$header" right');
                         if (scope != null) {
-                          await _service.moveHeader(header, 1, leadsSubset: _filteredLeads, section: _selectedSection, scope: scope);
-                          if (mounted) setState(() {});
+                          final ok = await _service.moveHeader(header, 1, leadsSubset: _filteredLeads, section: _selectedSection, scope: scope);
+                          if (mounted) {
+                            setState(() {});
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(ok
+                                  ? 'Column moved ${scope == 'global' ? 'for everyone' : 'only for you'}.'
+                                  : 'Could not save this column change.')),
+                            );
+                          }
                         }
                       },
                     ),
@@ -9950,10 +10290,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         Navigator.pop(ctx);
                         final scope = await _showSaveScopeDialog(context, actionLabel: 'Hide "$header"');
                         if (scope != null) {
-                          _service.setHeaderVisibility(header, false, section: _selectedSection, scope: scope);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Column "$header" hidden (${scope == 'global' ? 'for all users' : 'only for me'}).')),
-                          );
+                          final ok = await _service.setHeaderVisibility(header, false, section: _selectedSection, scope: scope);
+                          if (mounted) {
+                            ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                              SnackBar(content: Text(ok
+                                  ? 'Column "$header" hidden ${scope == 'global' ? 'for everyone' : 'only for you'}.'
+                                  : 'Could not save this column change.')),
+                            );
+                          }
                         }
                       },
                     ),
@@ -9967,10 +10311,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           Navigator.pop(ctx);
                           final scope = await _showSaveScopeDialog(context, actionLabel: 'Delete "$header"');
                           if (scope != null) {
-                            _service.removeCustomHeader(header, section: _selectedSection, scope: scope);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Custom column "$header" removed (${scope == 'global' ? 'for all users' : 'only for me'}).')),
-                            );
+                            final ok = await _service.removeCustomHeader(header, section: _selectedSection, scope: scope);
+                            if (mounted) {
+                              ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                                SnackBar(content: Text(ok
+                                    ? 'Custom column "$header" removed ${scope == 'global' ? 'for everyone' : 'only for you'}.'
+                                    : 'Could not save this column change.')),
+                              );
+                            }
                           }
                         },
                       ),
@@ -10008,15 +10356,21 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final newName = controller.text.trim();
-              if (newName.isNotEmpty && newName != oldHeader) {
-                _service.renameHeader(oldHeader, newName);
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Renamed "$oldHeader" to "$newName"')),
-                );
-              }
+              if (newName.isEmpty || newName == oldHeader) return;
+              Navigator.pop(ctx);
+              final scope = await _showSaveScopeDialog(context, actionLabel: 'Rename "$oldHeader" to "$newName"');
+              if (scope == null || !mounted) return;
+              _service.renameHeader(oldHeader, newName, section: _selectedSection);
+              final ok = await _service.saveColumnLayoutToServer(section: _selectedSection, scope: scope);
+              if (!mounted) return;
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(ok
+                    ? 'Renamed "$oldHeader" to "$newName" ${scope == 'global' ? 'for everyone' : 'only for you'}.'
+                    : 'Could not save the renamed header.')),
+              );
             },
             child: const Text('Rename'),
           ),

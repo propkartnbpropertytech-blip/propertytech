@@ -10,6 +10,7 @@ import '../models/report_kpi_type.dart';
 import '../models/report_data.dart';
 import '../utils/telecaller_report_navigation.dart';
 import 'user_performance_summary_dialog.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class KpiExpandDialog extends StatelessWidget {
   final ReportKpiType kpiType;
@@ -33,7 +34,7 @@ class KpiExpandDialog extends StatelessWidget {
       backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       child: Container(
-        width: 780,
+        width: CRMBreakpoints.adaptiveWidth(context, 780),
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.85,
         ),

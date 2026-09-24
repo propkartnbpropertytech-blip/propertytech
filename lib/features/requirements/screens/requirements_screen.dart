@@ -57,6 +57,7 @@ import '../../../core/telemetry/audit_dwell_tracker.dart';
 import '../../../core/utils/team_user_visibility.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/widgets/app_status_snackbar.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color kWhatsAppGreen = Color(0xFF25D366);
@@ -948,7 +949,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     // Metadata load triggers the first fetch once listing types are available.
     // Avoid a duplicate empty fetch before metadata arrives.
     _loadMetadata();
-    context.read<UsersBloc>().add(const FetchUsers());
+    if (RoleGuard.canManageEmployees(RoleGuard.currentUser?.role)) {
+      context.read<UsersBloc>().add(const FetchUsers());
+    }
     unawaited(_loadAssignUsers());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2988,7 +2991,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _assignUsersLoading = true;
     List<users_model.UserModel> users = [];
     final role = (RoleGuard.currentUser?.role ?? '').toLowerCase();
-    if (role != 'telecaller') {
+    if (role != 'telecaller' && role != 'sales') {
       try {
         users = await _usersRepository.getUsers();
       } catch (_) {}
@@ -7041,7 +7044,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 ],
               ),
               content: SizedBox(
-                width: 450,
+                width: CRMBreakpoints.adaptiveWidth(context, 450),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -10463,10 +10466,11 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
       }
 
       if (mounted) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
         widget.onSavedWithDate?.call(scheduledDateTime);
         widget.onSaved();
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger?.showSnackBar(
           SnackBar(
             content: Text(widget.isSiteVisit ? 'Site visit scheduled successfully!' : 'Followup added successfully!'),
             backgroundColor: CRMColors.success,
@@ -10476,7 +10480,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
     } catch (e) {
       if (mounted) {
         setState(() => _isSavingFollowup = false);
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           SnackBar(
             content: Text(widget.isSiteVisit ? 'Failed to schedule site visit: $e' : 'Failed to add followup: $e'),
             backgroundColor: CRMColors.danger,
@@ -10770,7 +10774,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
                                     debugPrint('Error completing followup: $e');
                                   }
                                   if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
                                       const SnackBar(
                                         content: Text('Followup marked as Completed!'),
                                         backgroundColor: CRMColors.success,

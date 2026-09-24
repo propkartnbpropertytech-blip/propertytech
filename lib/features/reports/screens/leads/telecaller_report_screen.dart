@@ -786,7 +786,7 @@ class _TelecallerReportContentState extends State<_TelecallerReportContent> {
         return AlertDialog(
           title: Text('$title (${items.length})'),
           content: SizedBox(
-            width: 520,
+            width: CRMBreakpoints.adaptiveWidth(context, 520),
             height: 360,
             child: items.isEmpty
                 ? const Center(child: Text('No pending follow-ups for this telecaller.'))

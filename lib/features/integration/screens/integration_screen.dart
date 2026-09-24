@@ -15,6 +15,7 @@ import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/crm_permission_denied.dart';
 import '../services/integration_service.dart';
 import '../models/integration_lead_model.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class IntegrationScreen extends StatefulWidget {
   const IntegrationScreen({super.key});
@@ -1218,7 +1219,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
           ],
         ),
         content: SizedBox(
-          width: 480,
+          width: CRMBreakpoints.adaptiveWidth(context, 480),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1299,7 +1300,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
                 ],
               ),
               content: SizedBox(
-                width: 480,
+                width: CRMBreakpoints.adaptiveWidth(context, 480),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1418,7 +1419,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
                 ],
               ),
               content: SizedBox(
-                width: 440,
+                width: CRMBreakpoints.adaptiveWidth(context, 440),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1500,7 +1501,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
                 ],
               ),
               content: SizedBox(
-                width: 480,
+                width: CRMBreakpoints.adaptiveWidth(context, 480),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1643,7 +1644,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
         return AlertDialog(
           title: const Text('Paste Raw JSON Payload'),
           content: SizedBox(
-            width: 500,
+            width: CRMBreakpoints.adaptiveWidth(context, 500),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1711,7 +1712,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
             ],
           ),
           content: SizedBox(
-            width: 520,
+            width: CRMBreakpoints.adaptiveWidth(context, 520),
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1778,7 +1779,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
         return AlertDialog(
           title: const Text('Meta Lead Ads Webhook Setup Guide'),
           content: SizedBox(
-            width: 550,
+            width: CRMBreakpoints.adaptiveWidth(context, 550),
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1836,7 +1837,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
         return AlertDialog(
           title: const Text('Google Sheets Apps Script Integration Guide'),
           content: SizedBox(
-            width: 550,
+            width: CRMBreakpoints.adaptiveWidth(context, 550),
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1874,7 +1875,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
         return AlertDialog(
           title: const Text('Meta Lead Quality Conversions API'),
           content: SizedBox(
-            width: 500,
+            width: CRMBreakpoints.adaptiveWidth(context, 500),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,

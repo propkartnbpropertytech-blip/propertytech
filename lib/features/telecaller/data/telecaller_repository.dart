@@ -1,5 +1,6 @@
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
+import '../../integration/services/integration_service.dart';
 
 class TelecallerRepository {
   Future<Map<String, dynamic>> dashboard() async {
@@ -35,23 +36,47 @@ class TelecallerRepository {
     return Map<String, dynamic>.from(res.data['data'] ?? {});
   }
 
+  /// Persists a telecaller outcome through the integrations lead API.
+  /// `/telecaller/leads/:id/outcome` returns HTTP 500 in production, so
+  /// assignment and status never stick. Calling Leads already uses transfer
+  /// and follow-up, which do update the lead.
   Future<Map<String, dynamic>> recordOutcome(
     String leadId, {
     required String outcome,
     String? remarks,
     String? salesUserId,
+    String? assignedToName,
     String? callbackAt,
   }) async {
-    final res = await DioClient.dio.post(
-      '/telecaller/leads/$leadId/outcome',
-      data: {
-        'outcome': outcome,
-        if (remarks != null) 'remarks': remarks,
-        if (salesUserId != null) 'salesUserId': salesUserId,
-        if (callbackAt != null) 'callbackAt': callbackAt,
-      },
+    final service = IntegrationService();
+    final code = outcome.trim().toUpperCase();
+
+    if (code == 'CALLBACK') {
+      final when = callbackAt == null ? null : DateTime.tryParse(callbackAt)?.toLocal();
+      if (when == null) {
+        throw Exception('Choose a callback date and time.');
+      }
+      final ok = await service.scheduleFollowup(leadId, when, remarks ?? '');
+      if (!ok) {
+        throw Exception('Failed to schedule the callback.');
+      }
+      return {'success': true};
+    }
+
+    final status = code == 'CNR'
+        ? 'CNR'
+        : (code == 'PICKED_UP' || code == 'PICKED UP' ? 'Picked Up' : outcome);
+    final result = await service.transferLead(
+      leadId,
+      status: status,
+      assignedTo: (code == 'PICKED_UP' || code == 'PICKED UP') ? salesUserId : null,
+      assignedToName: (code == 'PICKED_UP' || code == 'PICKED UP') ? assignedToName : null,
+      remarks: remarks,
     );
-    return Map<String, dynamic>.from(res.data['data'] ?? {});
+    if (result['success'] != true) {
+      throw Exception((result['message'] ?? 'Failed to update this lead.').toString());
+    }
+    return result;
   }
 
   Future<List<dynamic>> callbacks({String? search, String? from, String? to, String? source}) async {

@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../services/telecaller_shift_manager.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class TelecallerShiftGateOverlay extends StatelessWidget {
   final Widget child;
@@ -42,7 +43,7 @@ class TelecallerShiftGateOverlay extends StatelessWidget {
                       elevation: 12,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       child: Container(
-                        width: 420,
+                        width: CRMBreakpoints.adaptiveWidth(context, 420),
                         padding: const EdgeInsets.all(28),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -124,7 +125,7 @@ class TelecallerShiftGateOverlay extends StatelessWidget {
                       elevation: 16,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       child: Container(
-                        width: 440,
+                        width: CRMBreakpoints.adaptiveWidth(context, 440),
                         padding: const EdgeInsets.all(32),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -192,7 +193,7 @@ class TelecallerShiftGateOverlay extends StatelessWidget {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                       color: isDark ? const Color(0xFF1E293B) : Colors.white,
                       child: Container(
-                        width: 440,
+                        width: CRMBreakpoints.adaptiveWidth(context, 440),
                         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 34),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,

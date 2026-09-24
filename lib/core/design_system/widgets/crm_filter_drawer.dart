@@ -23,7 +23,9 @@ void showCRMFilterDrawer({
         child: Material(
           color: Colors.transparent,
           child: Container(
-            width: 400,
+            width: MediaQuery.sizeOf(context).width < 440
+                ? MediaQuery.sizeOf(context).width
+                : 400,
             height: double.infinity,
             decoration: BoxDecoration(
               color: CRMColors.cardBgOf(context),

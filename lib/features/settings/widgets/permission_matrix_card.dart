@@ -7,6 +7,7 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/permission_matrix_service.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 /// Comprehensive interactive Permission Metrics Control Center for Super Admin.
 /// Allows viewing and dynamically managing permissions for Admin, Telecaller, and Sales,
@@ -1509,7 +1510,7 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
           ],
         ),
         content: SizedBox(
-          width: 500,
+          width: CRMBreakpoints.adaptiveWidth(context, 500),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,

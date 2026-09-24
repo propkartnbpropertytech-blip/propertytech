@@ -27,6 +27,7 @@ import '../../../features/properties/services/properties_service.dart';
 import '../../../features/properties/models/property_model.dart';
 import '../../../features/properties/repository/properties_repository.dart';
 import '../../navigation/mobile_system_back_handler.dart';
+import '../tokens/app_breakpoints.dart';
 import '../../../../features/shell/widgets/sidebar.dart';
 import '../../../../features/telecaller/telecaller_heartbeat_service.dart';
 import '../../../../features/telecaller/services/telecaller_shift_manager.dart';
@@ -189,7 +190,7 @@ class _CRMAppShellState extends State<CRMAppShell>
     if (location.startsWith('/properties')) return 1;
     if (location.startsWith('/requirements')) return 3;
     if (location.startsWith('/profile')) return 4;
-    return _tabController.index;
+    return -1;
   }
 
   String _getTabRoutePath(int index) {
@@ -1288,8 +1289,6 @@ class _CRMAppShellState extends State<CRMAppShell>
                   )
                 : (_propertySuggestions.isEmpty &&
                       _requirementSuggestions.isEmpty &&
-                      _ownerSuggestions.isEmpty &&
-                      _builderSuggestions.isEmpty &&
                       _clientSuggestions.isEmpty)
                 ? Padding(
                     padding: const EdgeInsets.all(CRMSpacing.m),
@@ -1381,35 +1380,6 @@ class _CRMAppShellState extends State<CRMAppShell>
                           },
                         ),
                       ],
-                      if (_ownerSuggestions.isNotEmpty) ...[
-                        _buildSuggestionSectionHeader('Owners'),
-                        ..._ownerSuggestions.take(5).map(
-                          (o) => _buildSuggestionTile(
-                            icon: Icons.person_rounded,
-                            title: o['name'] ?? '',
-                            subtitle: 'Mobile: ${o['mobile']}',
-                            onTap: () {
-                              _hideSearchOverlay();
-                              context.go('/owners');
-                            },
-                          ),
-                        ),
-                      ],
-                      if (_builderSuggestions.isNotEmpty) ...[
-                        _buildSuggestionSectionHeader('Builders'),
-                        ..._builderSuggestions.take(5).map(
-                          (b) => _buildSuggestionTile(
-                            icon: Icons.construction_rounded,
-                            title: b['company_name'] ?? '',
-                            subtitle:
-                                'Contact: ${b['contact_person']} • Mobile: ${b['mobile']}',
-                            onTap: () {
-                              _hideSearchOverlay();
-                              context.go('/builders');
-                            },
-                          ),
-                        ),
-                      ],
                       if (_clientSuggestions.isNotEmpty) ...[
                         _buildSuggestionSectionHeader('Clients'),
                         ..._clientSuggestions.take(5).map(
@@ -1435,24 +1405,13 @@ class _CRMAppShellState extends State<CRMAppShell>
                                   }
                                 }
                               } catch (_) {}
-                              if (matchedReqId != null) {
+                              if (matchedReqId != null && context.mounted) {
                                 context.go(
                                   '/requirements?openId=$matchedReqId&t=${DateTime.now().millisecondsSinceEpoch}',
                                 );
-                              } else {
-                                context.go('/clients');
                               }
                             },
                           ),
-                        ),
-                        _buildViewAllTile(
-                          label: activeSearchQuery.isNotEmpty
-                              ? 'View All Clients ("$activeSearchQuery")'
-                              : 'View All Clients',
-                          onTap: () {
-                            _hideSearchOverlay();
-                            context.go('/clients');
-                          },
                         ),
                       ],
                     ],
@@ -1470,7 +1429,7 @@ class _CRMAppShellState extends State<CRMAppShell>
         }
 
         return Positioned(
-          width: 400,
+          width: CRMBreakpoints.adaptiveWidth(context, 400),
           child: CompositedTransformFollower(
             link: _searchLayerLink,
             showWhenUnlinked: false,
@@ -1578,9 +1537,9 @@ class _CRMAppShellState extends State<CRMAppShell>
     }
 
     final targetIndex = _getTabRouteIndex(location);
-    if (_tabController.index != targetIndex) {
+    if (targetIndex >= 0 && _tabController.index != targetIndex) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_tabController.index != targetIndex) {
+        if (targetIndex >= 0 && _tabController.index != targetIndex) {
           _tabController.jumpToTab(targetIndex);
           _previousIndex = targetIndex;
         }
@@ -1588,6 +1547,11 @@ class _CRMAppShellState extends State<CRMAppShell>
     }
 
     final showSidebar = isDesktop || isTablet;
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final showBottomNav = isMobile && !keyboardOpen;
+    final navClearance = showBottomNav
+        ? CRMBreakpoints.mobileNavClearance(context)
+        : 0.0;
 
     return MobileSystemBackHandler(
       onBeforeBack: () async {
@@ -1756,7 +1720,10 @@ class _CRMAppShellState extends State<CRMAppShell>
                                       }
                                       return false;
                                     },
-                                    child: widget.child,
+                                    child: Padding(
+                                      padding: EdgeInsets.only(bottom: navClearance),
+                                      child: widget.child,
+                                    ),
                                   )
                                 : widget.child,
                           ),
@@ -1766,7 +1733,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                   ],
                   ),
                     ),
-                    if (isMobile)
+                    if (showBottomNav)
                       Positioned(
                         left: 0,
                         right: 0,
@@ -3996,7 +3963,10 @@ class CustomBottomNavBar extends StatelessWidget {
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: EdgeInsets.symmetric(
+                horizontal: MediaQuery.sizeOf(context).width < 360 ? 4 : 8,
+                vertical: 4,
+              ),
               decoration: BoxDecoration(
                 color: isSelected
                     ? activeColor.withValues(alpha: CRMColors.isDark ? 0.18 : 0.12)

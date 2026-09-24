@@ -11,6 +11,7 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../integration/services/integration_service.dart';
 import '../bloc/telecaller_list_bloc.dart';
 import '../data/telecaller_repository.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class TelecallerCallbacksScreen extends StatelessWidget {
   const TelecallerCallbacksScreen({super.key});
@@ -475,7 +476,7 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
                 Builder(
                   builder: (context) {
                     final item = Map<String, dynamic>.from(raw as Map);
-                    final leadId = (item['lead_id'] ?? item['id'])?.toString() ?? '';
+                    final leadId = _campaignLeadId(item);
                     final phone = (item['mobile'] ?? '').toString();
                     final clientName = (item['client_name'] ?? 'Callback Client').toString();
                     final scheduledAtRaw = item['scheduled_at']?.toString() ?? '';
@@ -777,7 +778,7 @@ class _CnrCardState extends State<_CnrCard> {
 
   @override
   Widget build(BuildContext context) {
-    final leadId = widget.lead['id'].toString();
+    final leadId = _campaignLeadId(widget.lead);
     final raw = widget.lead['raw_json'];
     final name = raw is Map ? (raw['full_name'] ?? widget.lead['sanitized_phone']) : widget.lead['sanitized_phone'];
     final phone = (widget.lead['sanitized_phone'] ?? '').toString();
@@ -1114,7 +1115,7 @@ Future<void> _showLeadDetailsModal(
         ],
       ),
       content: SizedBox(
-        width: 540,
+        width: CRMBreakpoints.adaptiveWidth(context, 540),
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1274,6 +1275,23 @@ Widget _detailRow(BuildContext context, IconData icon, String label, String valu
   );
 }
 
+/// Campaign lead id used by transfer and follow-up. Callback rows are
+/// follow-up records, so their own `id` is not the lead.
+String _campaignLeadId(Map item) {
+  final nested = item['lead'];
+  final nestedId = nested is Map
+      ? (nested['id'] ?? nested['lead_id'] ?? nested['leadId'])
+      : null;
+  return (item['lead_id'] ??
+          item['leadId'] ??
+          item['campaign_lead_id'] ??
+          item['campaignLeadId'] ??
+          nestedId ??
+          item['id'])
+      ?.toString() ??
+      '';
+}
+
 /// Replaces the old bottom sheet with a unified, animated center dialog
 Future<void> _handleOutcome(BuildContext context, String leadId, VoidCallback onDone) async {
   final res = await showGeneralDialog<bool>(
@@ -1378,10 +1396,17 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
       String? callbackAtIso;
       String? targetSalesId;
 
+      String? targetSalesName;
       if (_selectedStatus == 'Picked Up') {
         outcomeCode = 'PICKED_UP';
         cleanRemarks = _remarksController.text.trim();
         targetSalesId = _selectedSalesUserId;
+        for (final user in _salesUsers) {
+          if (user['id']?.toString() == targetSalesId) {
+            targetSalesName = (user['full_name'] ?? user['fullName'] ?? 'Sales User').toString();
+            break;
+          }
+        }
       } else if (_selectedStatus == 'Callback') {
         outcomeCode = 'CALLBACK';
         final scheduledDateTime = DateTime(
@@ -1403,6 +1428,7 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
         outcome: outcomeCode,
         remarks: cleanRemarks,
         salesUserId: targetSalesId,
+        assignedToName: targetSalesName,
         callbackAt: callbackAtIso,
       );
 
@@ -1412,6 +1438,7 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
         outcome: outcomeCode,
         remarks: cleanRemarks,
         salesUserId: targetSalesId,
+        assignedToName: targetSalesName,
         callbackAt: callbackAtIso,
       );
 
@@ -1505,7 +1532,7 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
         ],
       ),
       content: SizedBox(
-        width: 520,
+        width: CRMBreakpoints.adaptiveWidth(context, 520),
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

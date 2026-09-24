@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
+import '../../integration/services/integration_service.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class TelecallerDetailDialog extends StatefulWidget {
   final String telecallerId;
@@ -66,6 +68,11 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
       );
       if (mounted) {
         final data = Map<String, dynamic>.from(res.data['data'] ?? {});
+        data['history'] = await _withPeerTransfers(
+          widget.telecallerId,
+          List<dynamic>.from(data['history'] ?? []),
+        );
+        if (!mounted) return;
         final cap = (data['workload']?['capacity'] as num?)?.toInt() ?? 10;
         setState(() {
           _data = data;
@@ -82,6 +89,37 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
         });
       }
     }
+  }
+
+  Future<List<dynamic>> _withPeerTransfers(String telecallerId, List<dynamic> serverHistory) async {
+    final local = await IntegrationService().peerTransferHistory();
+    final mine = local.where((entry) {
+      final fromId = entry['from_telecaller_id']?.toString();
+      final toId = entry['to_telecaller_id']?.toString();
+      return fromId == telecallerId || toId == telecallerId;
+    }).toList();
+    if (mine.isEmpty) return serverHistory;
+    final merged = <Map<String, dynamic>>[
+      for (final raw in serverHistory)
+        if (raw is Map) Map<String, dynamic>.from(raw),
+    ];
+    for (final entry in mine) {
+      final exists = merged.any((row) {
+        if (row['lead_id']?.toString() != entry['lead_id']?.toString()) return false;
+        if (row['to_telecaller_id']?.toString() != entry['to_telecaller_id']?.toString()) return false;
+        final serverAt = DateTime.tryParse(row['assigned_at']?.toString() ?? '');
+        final localAt = DateTime.tryParse(entry['assigned_at']?.toString() ?? '');
+        if (serverAt == null || localAt == null) return false;
+        return serverAt.difference(localAt).inMinutes.abs() <= 5;
+      });
+      if (!exists) merged.add(entry);
+    }
+    merged.sort((a, b) {
+      final aTime = DateTime.tryParse(a['assigned_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = DateTime.tryParse(b['assigned_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bTime.compareTo(aTime);
+    });
+    return merged;
   }
 
   Future<void> _updateCapacity(int newCapacity) async {
@@ -228,7 +266,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       child: Container(
-        width: 780,
+        width: CRMBreakpoints.adaptiveWidth(context, 780),
         height: 720,
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -762,33 +800,44 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                 builder: (context) {
                   final h = Map<String, dynamic>.from(rawH as Map);
                   final type = h['assignment_type']?.toString() ?? 'ASSIGNMENT';
-                  final date = h['assigned_at']?.toString().split('.').first ?? '';
+                  final date = h['assigned_at']?.toString().split('.').first.replaceFirst('T', ' ') ?? '';
                   final reason = h['reason']?.toString() ?? '';
+                  final fromName = (h['from_telecaller_name'] ?? '').toString();
+                  final toName = (h['to_telecaller_name'] ?? '').toString();
+                  final isPeer = type == 'PEER_TRANSFER' || fromName.isNotEmpty;
+                  final label = isPeer ? 'TELECALLER TRANSFER' : type;
+                  final detail = isPeer
+                      ? '${fromName.isNotEmpty ? fromName : 'Telecaller'} → ${toName.isNotEmpty ? toName : 'Telecaller'}${reason.isNotEmpty ? ' · $reason' : ''}'
+                      : (reason.isNotEmpty ? reason : 'Assigned');
 
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       children: [
                         Icon(
-                          type.contains('RECOVERY')
-                              ? Icons.restart_alt
-                              : type.contains('OLD')
-                                  ? Icons.history
-                                  : Icons.arrow_forward,
+                          isPeer
+                              ? Icons.swap_horiz_rounded
+                              : type.contains('RECOVERY')
+                                  ? Icons.restart_alt
+                                  : type.contains('OLD')
+                                      ? Icons.history
+                                      : Icons.arrow_forward,
                           size: 14,
-                          color: type.contains('RECOVERY')
-                              ? Colors.red
-                              : CRMColors.primary,
+                          color: isPeer
+                              ? const Color(0xFF0369A1)
+                              : type.contains('RECOVERY')
+                                  ? Colors.red
+                                  : CRMColors.primary,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          type,
+                          label,
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            reason.isNotEmpty ? reason : 'Assigned',
+                            detail,
                             style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                             overflow: TextOverflow.ellipsis,
                           ),

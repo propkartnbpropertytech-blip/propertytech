@@ -7,7 +7,9 @@ import '../../../core/api/dio_client.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/storage/secure_storage.dart';
+import '../../integration/services/integration_service.dart';
 import '../widgets/telecaller_detail_dialog.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 abstract class LeadAllocationMonitorEvent extends Equatable {
   const LeadAllocationMonitorEvent();
@@ -82,7 +84,11 @@ class LeadAllocationMonitorBloc
       emit(LeadAllocationMonitorState(loading: true, data: state.data));
       try {
         final res = await DioClient.dio.get(ApiConstants.adminAllocationMonitor);
-        emit(LeadAllocationMonitorState(data: Map<String, dynamic>.from(res.data['data'] ?? {})));
+        final data = Map<String, dynamic>.from(res.data['data'] ?? {});
+        data['recentAssignments'] = await _mergePeerTransfers(
+          List<dynamic>.from(data['recentAssignments'] ?? []),
+        );
+        emit(LeadAllocationMonitorState(data: data));
       } catch (e) {
         emit(LeadAllocationMonitorState(error: e.toString(), data: state.data));
       }
@@ -182,6 +188,48 @@ class LeadAllocationMonitorBloc
         emit(LeadAllocationMonitorState(error: e.toString(), data: state.data, loading: false));
       }
     });
+  }
+
+  Future<List<dynamic>> _mergePeerTransfers(List<dynamic> serverHistory) async {
+    final local = await IntegrationService().peerTransferHistory();
+    if (local.isEmpty) return serverHistory;
+
+    final merged = <Map<String, dynamic>>[
+      for (final raw in serverHistory)
+        if (raw is Map) Map<String, dynamic>.from(raw),
+    ];
+
+    bool sameMove(Map<String, dynamic> server, Map<String, dynamic> entry) {
+      if (server['lead_id']?.toString() != entry['lead_id']?.toString()) return false;
+      if (server['to_telecaller_id']?.toString() != entry['to_telecaller_id']?.toString()) return false;
+      final serverAt = DateTime.tryParse(server['assigned_at']?.toString() ?? '');
+      final localAt = DateTime.tryParse(entry['assigned_at']?.toString() ?? '');
+      if (serverAt == null || localAt == null) return false;
+      return serverAt.difference(localAt).inMinutes.abs() <= 5;
+    }
+
+    for (final entry in local) {
+      final matchIndex = merged.indexWhere((row) => sameMove(row, entry));
+      if (matchIndex == -1) {
+        merged.add(entry);
+        continue;
+      }
+      final row = merged[matchIndex];
+      if ((row['from_telecaller_name']?.toString() ?? '').isEmpty &&
+          (entry['from_telecaller_name']?.toString() ?? '').isNotEmpty) {
+        row['from_telecaller_id'] = entry['from_telecaller_id'];
+        row['from_telecaller_name'] = entry['from_telecaller_name'];
+        row['assignment_type'] = entry['assignment_type'] ?? row['assignment_type'];
+        row['reason'] = row['reason'] ?? entry['reason'];
+      }
+    }
+
+    merged.sort((a, b) {
+      final aTime = DateTime.tryParse(a['assigned_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = DateTime.tryParse(b['assigned_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bTime.compareTo(aTime);
+    });
+    return merged;
   }
 }
 
@@ -630,16 +678,23 @@ class _LeadAllocationMonitorView extends StatelessWidget {
                     final leadName = (h['lead_name'] != null && h['lead_name'].toString().isNotEmpty)
                         ? h['lead_name'].toString()
                         : (h['lead_phone']?.toString().isNotEmpty == true ? h['lead_phone'].toString() : 'Lead');
-                    final date = h['assigned_at']?.toString().split('.').first ?? '';
+                    final date = h['assigned_at']?.toString().split('.').first.replaceFirst('T', ' ') ?? '';
                     final isOld = type == 'OLD_UNTOUCHED_ALLOCATION';
+                    final fromName = (h['from_telecaller_name'] ?? h['fromTelecallerName'])?.toString() ?? '';
+                    final isPeer = type == 'PEER_TRANSFER' ||
+                        type == 'TELECALLER_TRANSFER' ||
+                        fromName.isNotEmpty;
+                    final movement = fromName.isNotEmpty ? '$fromName → $destName' : destName;
 
                     return Card(
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                         side: BorderSide(
-                          color: isOld ? Colors.amber.shade200 : const Color(0xFFE2E8F0),
-                          width: isOld ? 1.5 : 1.0,
+                          color: isPeer
+                              ? const Color(0xFF0284C7).withValues(alpha: 0.45)
+                              : (isOld ? Colors.amber.shade200 : const Color(0xFFE2E8F0)),
+                          width: isPeer || isOld ? 1.5 : 1.0,
                         ),
                       ),
                       margin: const EdgeInsets.only(bottom: 8),
@@ -648,10 +703,17 @@ class _LeadAllocationMonitorView extends StatelessWidget {
                         onTap: () => _showLeadDetailsDialog(context, h),
                         leading: CircleAvatar(
                           radius: 18,
-                          backgroundColor: (isOld ? Colors.amber : Colors.blue).withValues(alpha: 0.15),
+                          backgroundColor: (isPeer
+                                  ? const Color(0xFF0284C7)
+                                  : (isOld ? Colors.amber : Colors.blue))
+                              .withValues(alpha: 0.15),
                           child: Icon(
-                            isOld ? Icons.history : Icons.person_outline,
-                            color: isOld ? Colors.amber.shade800 : Colors.blue.shade700,
+                            isPeer
+                                ? Icons.swap_horiz_rounded
+                                : (isOld ? Icons.history : Icons.person_outline),
+                            color: isPeer
+                                ? const Color(0xFF0369A1)
+                                : (isOld ? Colors.amber.shade800 : Colors.blue.shade700),
                             size: 18,
                           ),
                         ),
@@ -670,11 +732,25 @@ class _LeadAllocationMonitorView extends StatelessWidget {
                             ),
                             Flexible(
                               child: Text(
-                                destName,
+                                movement,
                                 style: TextStyle(fontWeight: FontWeight.w600, color: CRMColors.primary, fontSize: 14),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            if (isPeer)
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.4)),
+                                ),
+                                child: const Text(
+                                  'Telecaller transfer',
+                                  style: TextStyle(fontSize: 10, color: Color(0xFF0369A1), fontWeight: FontWeight.bold),
+                                ),
+                              ),
                             if (isOld)
                               Container(
                                 margin: const EdgeInsets.only(left: 8),
@@ -694,7 +770,9 @@ class _LeadAllocationMonitorView extends StatelessWidget {
                         subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            '${h['lead_campaign'] != null && h['lead_campaign'].toString().isNotEmpty ? h['lead_campaign'] : "Meta Ads"} · ${h['lead_phone'] ?? ""} · Assigned: $date',
+                            isPeer
+                                ? 'Moved between telecallers · ${h['lead_phone'] ?? ''} · $date${(h['reason']?.toString().isNotEmpty == true) ? ' · ${h['reason']}' : ''}'
+                                : '${h['lead_campaign'] != null && h['lead_campaign'].toString().isNotEmpty ? h['lead_campaign'] : "Meta Ads"} · ${h['lead_phone'] ?? ""} · Assigned: $date',
                             style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                           ),
                         ),
@@ -1002,7 +1080,7 @@ class _LeadAllocationMonitorView extends StatelessWidget {
           ],
         ),
         content: SizedBox(
-          width: 540,
+          width: CRMBreakpoints.adaptiveWidth(context, 540),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

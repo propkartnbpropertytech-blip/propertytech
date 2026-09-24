@@ -1428,7 +1428,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ),
                 content: SizedBox(
-                  width: 400,
+                  width: CRMBreakpoints.adaptiveWidth(context, 400),
                   child: SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,

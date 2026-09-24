@@ -259,6 +259,17 @@ class _MyAppState extends State<MyApp> {
               theme: PropKartTheme.light(),
               darkTheme: PropKartTheme.dark(),
               routerConfig: _appRouter.router,
+              builder: (context, child) {
+                final media = MediaQuery.of(context);
+                final scaler = media.textScaler.clamp(
+                  minScaleFactor: 0.9,
+                  maxScaleFactor: 1.3,
+                );
+                return MediaQuery(
+                  data: media.copyWith(textScaler: scaler),
+                  child: child ?? const SizedBox.shrink(),
+                );
+              },
             );
           },
         ),
