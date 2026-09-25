@@ -29,23 +29,26 @@ class CampaignFollowupModel {
     this.telecallerId,
   });
 
+  DateTime get _localScheduled => scheduledAt.toLocal();
+
   bool get isToday {
+    final dt = _localScheduled;
     final now = DateTime.now();
-    return scheduledAt.year == now.year &&
-        scheduledAt.month == now.month &&
-        scheduledAt.day == now.day;
+    return dt.year == now.year && dt.month == now.month && dt.day == now.day;
   }
 
   bool get isFuture {
+    final dt = _localScheduled;
     final now = DateTime.now();
     final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
-    return scheduledAt.isAfter(endOfToday);
+    return dt.isAfter(endOfToday);
   }
 
   bool get isPast {
+    final dt = _localScheduled;
     final now = DateTime.now();
     final startOfToday = DateTime(now.year, now.month, now.day);
-    return scheduledAt.isBefore(startOfToday) && status == 'Pending';
+    return dt.isBefore(startOfToday) && status == 'Pending';
   }
 
   factory CampaignFollowupModel.fromJson(Map<String, dynamic> json) {

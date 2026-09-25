@@ -1043,12 +1043,16 @@ String _formatScheduledTime(String? raw) {
   return '${DateFormat('d MMM yyyy').format(dt)}, $timeStr';
 }
 
-/// Checks if a scheduled callback is in the past
+/// Due means the scheduled calendar day is before today.
+/// A callback set for today stays on Today until the next date.
 bool _isOverdue(String? raw) {
   if (raw == null || raw.isEmpty) return false;
   final dt = DateTime.tryParse(raw)?.toLocal();
   if (dt == null) return false;
-  return dt.isBefore(DateTime.now());
+  final now = DateTime.now();
+  final scheduledDay = DateTime(dt.year, dt.month, dt.day);
+  final today = DateTime(now.year, now.month, now.day);
+  return scheduledDay.isBefore(today);
 }
 
 Future<void> _handleStartCall(BuildContext context, String leadId, String phone) async {
