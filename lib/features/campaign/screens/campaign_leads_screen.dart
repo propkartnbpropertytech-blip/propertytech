@@ -722,6 +722,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       }
     }
 
+    final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
+    if (isTelecaller) {
+      propListingCount = scopedLeads.where((l) {
+        final t = l.leadType.toLowerCase();
+        return t == 'property listing' || t.contains('property') || t.contains('listing');
+      }).length;
+      reqCount = scopedLeads.where((l) {
+        final t = l.leadType.toLowerCase();
+        return t == 'requirement' || t.contains('requirement');
+      }).length;
+    }
+
     _cachedAllTimeSectionCount = allTimeSectionCount;
     _cachedPropertyListingCount = propListingCount;
     _cachedRequirementCount = reqCount;
@@ -1469,6 +1481,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       badgeBorder = const Color(0xFF10B981).withValues(alpha: 0.45);
       textColor = const Color(0xFF10B981);
       icon = Icons.star_rounded;
+    } else if (status == 'Callback' || status == 'Call Back') {
+      badgeBg = const Color(0xFF0284C7).withValues(alpha: 0.15);
+      badgeBorder = const Color(0xFF0284C7).withValues(alpha: 0.45);
+      textColor = const Color(0xFF0284C7);
+      icon = Icons.phone_callback_rounded;
     } else if (status == 'Follow up' || status == 'Follow-up') {
       badgeBg = const Color(0xFFF59E0B).withValues(alpha: 0.15);
       badgeBorder = const Color(0xFFF59E0B).withValues(alpha: 0.45);
@@ -1514,6 +1531,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     String label = status.isEmpty ? 'New' : status;
     if ((status == 'Follow up' || status == 'Follow-up') && lead.followupScheduledAt != null) {
       label = 'Follow up (${DateFormat('d MMM, h:mm a').format(lead.followupScheduledAt!)})';
+    } else if (status == 'Callback' || status == 'Call Back') {
+      if (lead.followupScheduledAt != null) {
+        label = 'Callback (${DateFormat('d MMM, h:mm a').format(lead.followupScheduledAt!)})';
+      } else if (lead.assignedTelecallerName?.isNotEmpty == true) {
+        label = 'Callback (${lead.assignedTelecallerName})';
+      } else {
+        label = 'Callback';
+      }
     } else if (status == 'CNR') {
       label = lead.assignedTelecallerName?.isNotEmpty == true ? 'CNR (${lead.assignedTelecallerName})' : 'CNR';
     } else if (status == 'Assigned' && lead.assignedToName?.isNotEmpty == true) {
@@ -1542,6 +1567,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           await _unarchiveLead(lead);
         } else if (newStatus == 'Archive Property' || newStatus == 'Archive Requirement') {
           await _archiveLead(lead);
+        } else if (newStatus == 'Call Outcome' || newStatus == 'Update Call Outcome') {
+          _showPropertyListingOutcomeDialog(context, lead);
         } else if (newStatus == 'Follow up') {
           _showScheduleFollowupDialog(context, lead);
         } else if (newStatus == 'Transfer') {
@@ -1764,32 +1791,60 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ],
             ),
           ),
-        PopupMenuItem(
-          value: 'Follow up',
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
+        if (_selectedSection != 'Property Listing' && lead.leadType != 'Property Listing')
+          PopupMenuItem(
+            value: 'Follow up',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.schedule_rounded, size: 16, color: Color(0xFFF59E0B)),
                 ),
-                child: const Icon(Icons.schedule_rounded, size: 16, color: Color(0xFFF59E0B)),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Follow up', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text('Pick date, time & notes', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Follow up', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('Pick date, time & notes', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        if (lead.leadType == 'Property Listing' || _selectedSection == 'Property Listing')
+          PopupMenuItem(
+            value: 'Call Outcome',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.call_split_rounded, size: 16, color: Color(0xFF0284C7)),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Call Outcome', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF0284C7)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('Follow-Ups, Call Back, CNR', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (_selectedSection != 'Property Listing')
         PopupMenuItem(
           value: 'Transfer',
@@ -1818,32 +1873,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ),
         ),
         if (lead.leadType == 'Property Listing' || _selectedSection == 'Property Listing') ...[
-          PopupMenuItem(
-            value: 'CNR',
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD97706).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Icon(Icons.phone_missed_rounded, size: 16, color: Color(0xFFD97706)),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('CNR', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFFD97706)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text('Call Not Received / Busy', style: TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
           PopupMenuItem(
             value: 'Wrong Lead Requirement',
             child: Row(
@@ -2049,6 +2078,685 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     return popup;
   }
 
+  Future<void> _showPropertyListingOutcomeDialog(BuildContext context, IntegrationLeadModel lead) async {
+    final clientName = lead.getStringValue('full_name').isNotEmpty
+        ? lead.getStringValue('full_name')
+        : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Client');
+    final phone = lead.getStringValue('phone_number').isNotEmpty
+        ? lead.getStringValue('phone_number')
+        : lead.getStringValue('phone');
+
+    String selectedOption = 'Follow-Ups';
+    final followupRemarksController = TextEditingController(text: lead.followupRemarks ?? '');
+    final callbackRemarksController = TextEditingController(text: lead.callbackRemarks ?? '');
+    final cnrRemarksController = TextEditingController();
+
+    DateTime selectedFollowupDate = lead.followupScheduledAt ?? DateTime.now().add(const Duration(days: 1));
+    TimeOfDay selectedFollowupTime = lead.followupScheduledAt != null
+        ? TimeOfDay.fromDateTime(lead.followupScheduledAt!)
+        : const TimeOfDay(hour: 11, minute: 0);
+
+    DateTime selectedCallbackDate = lead.callbackScheduledAt ?? DateTime.now().add(const Duration(hours: 2));
+    TimeOfDay selectedCallbackTime = lead.callbackScheduledAt != null
+        ? TimeOfDay.fromDateTime(lead.callbackScheduledAt!)
+        : TimeOfDay.fromDateTime(DateTime.now().add(const Duration(hours: 2)));
+
+    bool remarksError = false;
+    bool isSubmitting = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: !isSubmitting,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+            actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.call_split_rounded, color: Color(0xFF0284C7), size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Update Call Outcome',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$clientName ${phone.isNotEmpty ? '($phone)' : ''}',
+                        style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Call Outcome *',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          // Option 1: Follow-Ups
+                          Expanded(
+                            child: InkWell(
+                              onTap: isSubmitting ? null : () => setDialogState(() => selectedOption = 'Follow-Ups'),
+                              borderRadius: BorderRadius.circular(10),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: selectedOption == 'Follow-Ups'
+                                      ? const Color(0xFFF59E0B).withValues(alpha: 0.12)
+                                      : CRMColors.surfaceElevatedOf(ctx),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: selectedOption == 'Follow-Ups'
+                                        ? const Color(0xFFF59E0B)
+                                        : CRMColors.borderOf(ctx),
+                                    width: selectedOption == 'Follow-Ups' ? 1.8 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.schedule_rounded,
+                                      size: 18,
+                                      color: selectedOption == 'Follow-Ups' ? const Color(0xFFF59E0B) : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Follow-Ups',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: selectedOption == 'Follow-Ups' ? const Color(0xFFF59E0B) : null,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Schedule follow-up',
+                                            style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Option 2: Call Back
+                          Expanded(
+                            child: InkWell(
+                              onTap: isSubmitting ? null : () => setDialogState(() => selectedOption = 'Call Back'),
+                              borderRadius: BorderRadius.circular(10),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: selectedOption == 'Call Back'
+                                      ? const Color(0xFF3B82F6).withValues(alpha: 0.12)
+                                      : CRMColors.surfaceElevatedOf(ctx),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: selectedOption == 'Call Back'
+                                        ? const Color(0xFF3B82F6)
+                                        : CRMColors.borderOf(ctx),
+                                    width: selectedOption == 'Call Back' ? 1.8 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.event_repeat_rounded,
+                                      size: 18,
+                                      color: selectedOption == 'Call Back' ? const Color(0xFF3B82F6) : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Call Back',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: selectedOption == 'Call Back' ? const Color(0xFF3B82F6) : null,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Schedule call',
+                                            style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Option 3: CNR
+                          Expanded(
+                            child: InkWell(
+                              onTap: isSubmitting ? null : () => setDialogState(() => selectedOption = 'CNR'),
+                              borderRadius: BorderRadius.circular(10),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: selectedOption == 'CNR'
+                                      ? const Color(0xFFD97706).withValues(alpha: 0.12)
+                                      : CRMColors.surfaceElevatedOf(ctx),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: selectedOption == 'CNR'
+                                        ? const Color(0xFFD97706)
+                                        : CRMColors.borderOf(ctx),
+                                    width: selectedOption == 'CNR' ? 1.8 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.phone_missed_rounded,
+                                      size: 18,
+                                      color: selectedOption == 'CNR' ? const Color(0xFFD97706) : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'CNR',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: selectedOption == 'CNR' ? const Color(0xFFD97706) : null,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Not received',
+                                            style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // If Follow-Ups or Call Back is selected: Date & Time Picker + Remarks
+                      if (selectedOption == 'Follow-Ups' || selectedOption == 'Call Back') ...[
+                        Text(
+                          selectedOption == 'Follow-Ups' ? 'Follow-up Date & Time *' : 'Callback Date & Time *',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            // Date Picker
+                            Expanded(
+                              flex: 3,
+                              child: InkWell(
+                                onTap: isSubmitting
+                                    ? null
+                                    : () async {
+                                        final isFu = selectedOption == 'Follow-Ups';
+                                        final currentD = isFu ? selectedFollowupDate : selectedCallbackDate;
+                                        final picked = await showDatePicker(
+                                          context: ctx,
+                                          initialDate: currentD,
+                                          firstDate: DateTime.now().subtract(const Duration(days: 7)),
+                                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                                        );
+                                        if (picked != null) {
+                                          setDialogState(() {
+                                            if (isFu) {
+                                              selectedFollowupDate = picked;
+                                            } else {
+                                              selectedCallbackDate = picked;
+                                            }
+                                          });
+                                        }
+                                      },
+                                borderRadius: BorderRadius.circular(10),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.surfaceElevatedOf(ctx),
+                                    border: Border.all(color: CRMColors.borderOf(ctx)),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.event_rounded,
+                                        size: 18,
+                                        color: selectedOption == 'Follow-Ups' ? const Color(0xFFF59E0B) : const Color(0xFF3B82F6),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          DateFormat('EEE, d MMM yyyy').format(
+                                            selectedOption == 'Follow-Ups' ? selectedFollowupDate : selectedCallbackDate,
+                                          ),
+                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Time Picker
+                            Expanded(
+                              flex: 2,
+                              child: InkWell(
+                                onTap: isSubmitting
+                                    ? null
+                                    : () async {
+                                        final isFu = selectedOption == 'Follow-Ups';
+                                        final currentT = isFu ? selectedFollowupTime : selectedCallbackTime;
+                                        final picked = await showTimePicker(
+                                          context: ctx,
+                                          initialTime: currentT,
+                                        );
+                                        if (picked != null) {
+                                          setDialogState(() {
+                                            if (isFu) {
+                                              selectedFollowupTime = picked;
+                                            } else {
+                                              selectedCallbackTime = picked;
+                                            }
+                                          });
+                                        }
+                                      },
+                                borderRadius: BorderRadius.circular(10),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.surfaceElevatedOf(ctx),
+                                    border: Border.all(color: CRMColors.borderOf(ctx)),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.access_time_rounded,
+                                        size: 18,
+                                        color: selectedOption == 'Follow-Ups' ? const Color(0xFFF59E0B) : const Color(0xFF3B82F6),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          (selectedOption == 'Follow-Ups' ? selectedFollowupTime : selectedCallbackTime).format(ctx),
+                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          selectedOption == 'Follow-Ups' ? 'Remarks & Notes *' : 'Callback Notes (Remarks)',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: selectedOption == 'Follow-Ups' ? followupRemarksController : callbackRemarksController,
+                          maxLines: 3,
+                          enabled: !isSubmitting,
+                          onChanged: (_) {
+                            if (remarksError) {
+                              setDialogState(() => remarksError = false);
+                            }
+                          },
+                          decoration: InputDecoration(
+                            hintText: selectedOption == 'Follow-Ups'
+                                ? 'Enter discussion notes, follow-up requirements, client preferences...'
+                                : 'Enter callback discussion notes, preferred callback timing...',
+                            hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                            errorText: remarksError ? 'Remark is required' : null,
+                            filled: true,
+                            fillColor: CRMColors.surfaceElevatedOf(ctx),
+                            contentPadding: const EdgeInsets.all(12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                color: selectedOption == 'Follow-Ups' ? const Color(0xFFF59E0B) : const Color(0xFF3B82F6),
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: (selectedOption == 'Follow-Ups' ? const Color(0xFFF59E0B) : const Color(0xFF3B82F6)).withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: (selectedOption == 'Follow-Ups' ? const Color(0xFFF59E0B) : const Color(0xFF3B82F6)).withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline_rounded,
+                                size: 16,
+                                color: selectedOption == 'Follow-Ups' ? const Color(0xFFF59E0B) : const Color(0xFF3B82F6),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  selectedOption == 'Follow-Ups'
+                                      ? 'Lead will be updated to Follow-Up and scheduled with the selected date and notes.'
+                                      : 'Lead status will become Callback and move to your Callbacks section with scheduled reminder timing.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark ? Colors.grey.shade300 : (selectedOption == 'Follow-Ups' ? const Color(0xFF92400E) : const Color(0xFF1E40AF)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      // If CNR is selected:
+                      if (selectedOption == 'CNR') ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.4)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFFD97706)),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Mark as Interacted (CNR)',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFFD97706)),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Lead status will be updated to CNR and highlighted in warm amber in the table to indicate that this lead has already been interacted with.',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark ? Colors.grey.shade300 : const Color(0xFF78350F),
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Reason / Remarks (Optional)',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: cnrRemarksController,
+                          maxLines: 2,
+                          enabled: !isSubmitting,
+                          decoration: InputDecoration(
+                            hintText: 'Enter any remarks (e.g. Call Not Received, Busy)...',
+                            hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                            filled: true,
+                            fillColor: CRMColors.surfaceElevatedOf(ctx),
+                            contentPadding: const EdgeInsets.all(12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSubmitting ? null : () => Navigator.pop(dialogCtx),
+                child: Text('Cancel', style: TextStyle(color: CRMColors.textSecondaryOf(ctx))),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: selectedOption == 'Follow-Ups'
+                      ? const Color(0xFFF59E0B)
+                      : (selectedOption == 'Call Back'
+                          ? const Color(0xFF3B82F6)
+                          : const Color(0xFFD97706)),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                ),
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        if (selectedOption == 'Follow-Ups') {
+                          final remarks = followupRemarksController.text.trim();
+                          if (remarks.isEmpty) {
+                            setDialogState(() => remarksError = true);
+                            return;
+                          }
+                          final scheduledDateTime = DateTime(
+                            selectedFollowupDate.year,
+                            selectedFollowupDate.month,
+                            selectedFollowupDate.day,
+                            selectedFollowupTime.hour,
+                            selectedFollowupTime.minute,
+                          );
+
+                          Navigator.pop(dialogCtx);
+                          setState(() {
+                            _cachedFilteredLeads = null;
+                          });
+
+                          final success = await _service.scheduleFollowup(
+                            lead.id,
+                            scheduledDateTime,
+                            remarks,
+                            status: 'Follow up',
+                          );
+                          if (mounted) {
+                            if (success) {
+                              _service.notifyOutcomeRecorded(
+                                lead.id,
+                                outcome: 'FOLLOWUP',
+                                remarks: remarks,
+                                callbackAt: scheduledDateTime.toUtc().toIso8601String(),
+                              );
+                            }
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  success
+                                      ? 'Follow-up scheduled for ${DateFormat('d MMM, h:mm a').format(scheduledDateTime)}!'
+                                      : 'Failed to schedule follow-up. Please check connection.',
+                                ),
+                                backgroundColor: success ? const Color(0xFFF59E0B) : CRMColors.danger,
+                              ),
+                            );
+                            _loadFollowups();
+                            unawaited(_service.fetchServerLeads(resetWithServer: true));
+                          }
+                          return;
+                        }
+
+                        if (selectedOption == 'Call Back') {
+                          final scheduledDateTime = DateTime(
+                            selectedCallbackDate.year,
+                            selectedCallbackDate.month,
+                            selectedCallbackDate.day,
+                            selectedCallbackTime.hour,
+                            selectedCallbackTime.minute,
+                          );
+
+                          Navigator.pop(dialogCtx);
+                          setState(() {
+                            _cachedFilteredLeads = null;
+                          });
+
+                          try {
+                            final remarks = callbackRemarksController.text.trim();
+                            final ok = await _service.scheduleFollowup(
+                              lead.id,
+                              scheduledDateTime,
+                              remarks,
+                              status: 'Callback',
+                            );
+                            if (!mounted) return;
+                            setState(() {
+                              _cachedFilteredLeads = null;
+                            });
+                            unawaited(_loadFollowups());
+                            unawaited(_service.fetchServerLeads(resetWithServer: true));
+                            _service.notifyOutcomeRecorded(
+                              lead.id,
+                              outcome: 'CALLBACK',
+                              remarks: remarks,
+                              callbackAt: scheduledDateTime.toUtc().toIso8601String(),
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(ok
+                                    ? 'Callback scheduled for ${DateFormat('dd MMM, hh:mm a').format(scheduledDateTime)}!'
+                                    : 'Failed to schedule callback.'),
+                                backgroundColor: ok ? const Color(0xFF0284C7) : const Color(0xFFEF4444),
+                              ),
+                            );
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to schedule callback: $e'),
+                                  backgroundColor: const Color(0xFFEF4444),
+                                ),
+                              );
+                            }
+                          }
+                          return;
+                        }
+
+                        if (selectedOption == 'CNR') {
+                          Navigator.pop(dialogCtx);
+                          setState(() {
+                            _cachedFilteredLeads = null;
+                          });
+                          final remarks = cnrRemarksController.text.trim();
+                          final result = await _service.transferLead(lead.id, status: 'CNR', remarks: remarks.isNotEmpty ? remarks : 'Marked as CNR');
+                          _service.notifyOutcomeRecorded(
+                            lead.id,
+                            outcome: 'CNR',
+                            remarks: remarks.isNotEmpty ? remarks : 'Marked as CNR',
+                          );
+                          if (mounted) {
+                            setState(() {
+                              _cachedFilteredLeads = null;
+                            });
+                            final ok = result['success'] == true;
+                            unawaited(_loadFollowups());
+                            unawaited(_service.fetchServerLeads(resetWithServer: true));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  ok
+                                      ? 'Lead marked as CNR and updated on CNR page.'
+                                      : (result['message']?.toString() ?? 'Failed to mark lead as CNR.'),
+                                ),
+                                backgroundColor: ok ? const Color(0xFFD97706) : const Color(0xFFEF4444),
+                              ),
+                            );
+                          }
+                          return;
+                        }
+                      },
+                child: Text(
+                  selectedOption == 'Follow-Ups'
+                      ? 'Save Follow-up'
+                      : (selectedOption == 'Call Back' ? 'Schedule Call Back' : 'Mark as CNR'),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _showScheduleFollowupDialog(BuildContext context, IntegrationLeadModel lead) async {
     DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
     TimeOfDay selectedTime = const TimeOfDay(hour: 11, minute: 0);
@@ -2252,13 +2960,24 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   );
 
                   Navigator.pop(ctx);
+                  setState(() {
+                    _cachedFilteredLeads = null;
+                  });
 
-                  final success = await _service.scheduleFollowup(lead.id, scheduledDateTime, remarks);
+                  final success = await _service.scheduleFollowup(
+                    lead.id,
+                    scheduledDateTime,
+                    remarks,
+                    status: 'Follow up',
+                  );
                   if (mounted) {
+                    setState(() {
+                      _cachedFilteredLeads = null;
+                    });
                     if (success) {
                       _service.notifyOutcomeRecorded(
                         lead.id,
-                        outcome: 'CALLBACK',
+                        outcome: 'FOLLOWUP',
                         remarks: remarks,
                         callbackAt: scheduledDateTime.toUtc().toIso8601String(),
                       );
@@ -3010,14 +3729,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final remarks = lead.transferRemarks;
     final isPropertyListing = lead.leadType == 'Property Listing' || _selectedSection == 'Property Listing';
     final hasBadge = isAssigned || isCnr || (lead.assignedTelecallerName != null && lead.assignedTelecallerName!.isNotEmpty);
-    final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
+    final userRole = RoleGuard.currentUser?.role ?? '';
+    final isTelecaller = RoleGuard.isTelecaller(userRole);
+    final isAdminOrSuperAdmin = userRole == 'Admin' || userRole == 'Super Admin';
+    final canTransferLead = isTelecaller || isAdminOrSuperAdmin;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (isTelecaller) ...[
+        if (canTransferLead) ...[
           Tooltip(
-            message: 'Transfer this lead to another telecaller',
+            message: isAdminOrSuperAdmin
+                ? 'Assign or transfer this lead to a telecaller'
+                : 'Transfer this lead to another telecaller',
             child: ElevatedButton.icon(
               onPressed: () => _showPartnerTelecallerDialog(context, lead),
               icon: const Icon(Icons.swap_horiz_rounded, size: 14, color: Colors.white),
@@ -3205,12 +3929,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   Future<List<Map<String, dynamic>>> _fetchPartnerTelecallers() async {
     final myId = RoleGuard.currentUser?.id.trim();
+    final role = RoleGuard.currentUser?.role ?? '';
+    final isAdminOrSuperAdmin = role == 'Admin' || role == 'Super Admin';
     try {
       final res = await DioClient.dio.get('/telecaller/partner-telecallers');
       final list = List<dynamic>.from(res.data['data'] ?? []);
       final partners = list
           .map((u) => Map<String, dynamic>.from(u as Map))
-          .where((u) => myId == null || myId.isEmpty || u['id']?.toString() != myId)
+          .where((u) {
+            if (!isAdminOrSuperAdmin && myId != null && myId.isNotEmpty && u['id']?.toString() == myId) {
+              return false;
+            }
+            return true;
+          })
           .toList();
       if (partners.isNotEmpty) return partners;
     } catch (e) {
@@ -3221,10 +3952,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       final allUsers = await _usersRepository.getUsers();
       return allUsers
           .where((u) {
-            final role = u.roleName.toLowerCase();
-            if (!role.contains('telecaller')) return false;
+            final r = u.roleName.toLowerCase();
+            if (!r.contains('telecaller')) return false;
             if (!u.isActive) return false;
-            if (myId != null && myId.isNotEmpty && u.id == myId) return false;
+            if (!isAdminOrSuperAdmin && myId != null && myId.isNotEmpty && u.id == myId) return false;
             return true;
           })
           .map((u) => {
@@ -3252,6 +3983,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     var loading = true;
     var submitting = false;
     var started = false;
+    final role = RoleGuard.currentUser?.role ?? '';
+    final isAdminOrSuperAdmin = role == 'Admin' || role == 'Super Admin';
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -3265,7 +3998,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 partners = users;
                 loading = false;
                 if (partners.isNotEmpty) {
-                  selectedId = partners.first['id']?.toString();
+                  // If current lead is assigned to someone in the list, preselect or select first alternative
+                  final currentTelecallerId = lead.assignedTelecallerId;
+                  if (isAdminOrSuperAdmin && currentTelecallerId != null && currentTelecallerId.isNotEmpty) {
+                    final altList = partners.where((p) => p['id']?.toString() != currentTelecallerId).toList();
+                    selectedId = (altList.isNotEmpty ? altList.first['id'] : partners.first['id'])?.toString();
+                  } else {
+                    selectedId = partners.first['id']?.toString();
+                  }
                 }
               });
             });
@@ -3273,7 +4013,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('Transfer Lead'),
+            title: Text(isAdminOrSuperAdmin ? 'Assign / Transfer Lead' : 'Transfer Lead'),
             content: SizedBox(
               width: CRMBreakpoints.adaptiveWidth(ctx, 420),
               child: Column(
@@ -3285,9 +4025,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     style: TextStyle(fontSize: 13, color: CRMColors.textSecondaryOf(ctx)),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'This lead, including its follow-ups, moves to the telecaller you choose. It leaves your My Leads list.',
-                    style: TextStyle(fontSize: 12.5, height: 1.35),
+                  Text(
+                    isAdminOrSuperAdmin
+                        ? 'Assign or transfer this lead to a telecaller. The lead and its activities will move to the selected telecaller.'
+                        : 'This lead, including its follow-ups, moves to the telecaller you choose. It leaves your My Leads list.',
+                    style: const TextStyle(fontSize: 12.5, height: 1.35),
                   ),
                   const SizedBox(height: 14),
                   if (loading)
@@ -3297,16 +4039,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     )
                   else if (partners.isEmpty)
                     const Text(
-                      'No other active telecaller is available.',
+                      'No active telecaller is available.',
                       style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w600),
                     )
                   else
                     DropdownButtonFormField<String>(
                       initialValue: selectedId,
                       isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Partner telecaller',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: isAdminOrSuperAdmin ? 'Select Telecaller' : 'Partner telecaller',
+                        border: const OutlineInputBorder(),
                       ),
                       items: [
                         for (final partner in partners)
@@ -3314,7 +4056,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             value: partner['id']?.toString(),
                             child: Text(
                               (partner['full_name']?.toString().trim().isNotEmpty == true)
-                                  ? partner['full_name'].toString()
+                                  ? (partner['id']?.toString() == lead.assignedTelecallerId
+                                      ? '${partner['full_name']} (Currently Assigned)'
+                                      : partner['full_name'].toString())
                                   : (partner['email']?.toString() ?? 'Telecaller'),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -3329,9 +4073,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     controller: noteController,
                     enabled: !submitting,
                     maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Note for admin (optional)',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: isAdminOrSuperAdmin ? 'Assignment Note (optional)' : 'Note for admin (optional)',
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                 ],
@@ -3346,7 +4090,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 onPressed: submitting || loading || partners.isEmpty || selectedId == null
                     ? null
                     : () => Navigator.pop(ctx, true),
-                child: const Text('Transfer'),
+                child: Text(isAdminOrSuperAdmin ? 'Assign / Transfer' : 'Transfer'),
               ),
             ],
           );
@@ -3385,7 +4129,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         backgroundColor: ok ? const Color(0xFF047857) : const Color(0xFFB91C1C),
       ),
     );
-    if (ok) unawaited(_loadFollowups());
+    if (ok) {
+      unawaited(_loadFollowups());
+      unawaited(_service.fetchServerLeads(resetWithServer: true));
+      if (mounted) {
+        setState(() {
+          _cachedFilteredLeads = null;
+        });
+      }
+    }
   }
 
   Future<List<Map<String, dynamic>>> _fetchSalesUsersForTransfer() async {
@@ -3432,11 +4184,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         ? 'CNR'
         : (lead.campaignStatus == 'Follow up' || lead.campaignStatus == 'Follow-up' ? 'Callback' : 'Picked Up');
     final remarksController = TextEditingController(text: lead.transferRemarks ?? '');
-    DateTime selectedCallbackDate = lead.followupScheduledAt ?? DateTime.now().add(const Duration(days: 1));
-    TimeOfDay selectedCallbackTime = lead.followupScheduledAt != null
-        ? TimeOfDay.fromDateTime(lead.followupScheduledAt!)
+    DateTime selectedCallbackDate = lead.callbackScheduledAt ?? DateTime.now().add(const Duration(days: 1));
+    TimeOfDay selectedCallbackTime = lead.callbackScheduledAt != null
+        ? TimeOfDay.fromDateTime(lead.callbackScheduledAt!)
         : const TimeOfDay(hour: 11, minute: 0);
-    final callbackRemarksController = TextEditingController(text: lead.followupRemarks ?? '');
+    final callbackRemarksController = TextEditingController(text: lead.callbackRemarks ?? '');
+    final cnrRemarksController = TextEditingController();
     String? remarksError;
     bool isSubmitting = false;
 
@@ -3718,6 +4471,29 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               ),
                             ],
                           ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Reason / Remarks (Optional)',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: CRMColors.textSecondaryOf(ctx)),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: cnrRemarksController,
+                          maxLines: 2,
+                          enabled: !isSubmitting,
+                          decoration: InputDecoration(
+                            hintText: 'Enter any remarks (e.g. Call Not Received, Busy)...',
+                            hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                            filled: true,
+                            fillColor: CRMColors.surfaceElevatedOf(ctx),
+                            contentPadding: const EdgeInsets.all(12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 13),
                         ),
                       ],
 
@@ -4061,6 +4837,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               lead.id,
                               scheduledDateTime,
                               callbackRemarksController.text.trim(),
+                              status: 'Callback',
                             );
                             if (!context.mounted) return;
                             setState(() {
@@ -4136,17 +4913,22 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             _cachedFilteredLeads = null;
                           });
 
+                          final cnrRemarks = cnrRemarksController.text.trim();
+                          final effectiveRemarks = selectedStatus == 'CNR'
+                              ? (cnrRemarks.isNotEmpty ? cnrRemarks : 'Marked as CNR')
+                              : remarksController.text.trim();
+
                           final result = await _service.transferLead(
                             lead.id,
                             status: selectedStatus,
                             assignedTo: selectedStatus == 'Picked Up' ? selectedUserId : null,
                             assignedToName: selectedStatus == 'Picked Up' ? targetUserName : null,
-                            remarks: remarksController.text.trim(),
+                            remarks: effectiveRemarks,
                           );
                           _service.notifyOutcomeRecorded(
                             lead.id,
                             outcome: selectedStatus == 'Picked Up' ? 'PICKED_UP' : (selectedStatus == 'Callback' ? 'CALLBACK' : 'CNR'),
-                            remarks: remarksController.text.trim(),
+                            remarks: effectiveRemarks,
                             salesUserId: selectedStatus == 'Picked Up' ? selectedUserId : null,
                             assignedToName: selectedStatus == 'Picked Up' ? targetUserName : null,
                           );
@@ -4373,6 +5155,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (!RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) return true;
     final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
     if (myId == null || myId.isEmpty) return true;
+    if (followup.telecallerId != null && followup.telecallerId!.trim().toLowerCase() == myId) {
+      return true;
+    }
     final local = _service.getLeadById(followup.leadId);
     final assigned = (local?.assignedTelecallerId ?? followup.lead?.assignedTelecallerId)
         ?.trim()
@@ -4389,11 +5174,17 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       if (mounted) {
         setState(() {
           _followupsList = list.where((f) {
-            if (f.status == 'Completed' || f.status == 'Cancelled') return false;
-            final leadStatus = f.lead?.campaignStatus;
-            if (leadStatus != null &&
-                leadStatus != 'Follow up' &&
-                leadStatus != 'Follow-up') {
+            if (f.status == 'Completed' || f.status == 'Cancelled' || f.status == 'Callback' || f.status == 'CALLBACK') return false;
+            final local = _service.getLeadById(f.leadId);
+            final leadStatus = (local?.campaignStatus ?? f.lead?.campaignStatus ?? '').trim().toLowerCase();
+            final allocStatus = (local?.allocationStatus ?? f.lead?.allocationStatus ?? '').trim().toUpperCase();
+            if (leadStatus == 'callback' || leadStatus == 'call back' || allocStatus == 'CALLBACK') {
+              return false;
+            }
+            if (leadStatus == 'cnr' || allocStatus == 'CNR') {
+              return false;
+            }
+            if (leadStatus == 'not interested' || allocStatus == 'RELEASED') {
               return false;
             }
             return _followupBelongsToCurrentTelecaller(f);
@@ -4467,12 +5258,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final leadIds = <String>{};
     final serviceLeadMap = {for (final l in _service.leads) l.id: l};
     for (final f in _followupsList) {
-      if (f.status == 'Completed' || f.status == 'Cancelled') continue;
+      if (f.status == 'Completed' || f.status == 'Cancelled' || f.status == 'Callback' || f.status == 'CALLBACK') continue;
       final localLead = serviceLeadMap[f.leadId] ?? f.lead;
-      if (localLead != null &&
-          localLead.campaignStatus != 'Follow up' &&
-          localLead.campaignStatus != 'Follow-up') {
-        continue;
+      if (localLead != null) {
+        final cs = localLead.campaignStatus;
+        final isFollowup = cs == 'Follow up' || cs == 'Follow-up';
+        if (!isFollowup && (cs == 'Callback' || cs == 'Call Back')) continue;
+        if (!isFollowup && cs != null && cs.isNotEmpty) continue;
       }
       leadIds.add(f.leadId);
     }
@@ -7607,7 +8399,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
             child: Row(
               children: [
-                if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) ...[
+                if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ||
+                    RoleGuard.currentUser?.role == 'Admin' ||
+                    RoleGuard.currentUser?.role == 'Super Admin') ...[
                   Expanded(
                     child: SizedBox(
                       height: 32,
@@ -8416,10 +9210,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role))
+                                  if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ||
+                                      RoleGuard.currentUser?.role == 'Admin' ||
+                                      RoleGuard.currentUser?.role == 'Super Admin')
                                     IconButton(
                                       icon: const Icon(Icons.swap_horiz_rounded, size: 18, color: Color(0xFF0284C7)),
-                                      tooltip: 'Transfer to another telecaller',
+                                      tooltip: (RoleGuard.currentUser?.role == 'Admin' || RoleGuard.currentUser?.role == 'Super Admin')
+                                          ? 'Assign / Transfer to telecaller'
+                                          : 'Transfer to another telecaller',
                                       onPressed: () => _showPartnerTelecallerDialog(context, lead),
                                     ),
                                   IconButton(

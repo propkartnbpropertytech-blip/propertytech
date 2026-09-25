@@ -76,7 +76,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
         final cap = (data['workload']?['capacity'] as num?)?.toInt() ?? 10;
         setState(() {
           _data = data;
-          _selectedCapacity = cap;
+          _selectedCapacity = cap.clamp(1, 300);
           _savedCapacity = cap;
           _loading = false;
         });
@@ -122,8 +122,67 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
     return merged;
   }
 
+  Future<void> _showManualCapacityInputDialog() async {
+    final controller = TextEditingController(text: '$_selectedCapacity');
+    final formKey = GlobalKey<FormState>();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Set Max Capacity Limit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter a capacity limit between 1 and 300 leads for this telecaller.',
+                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Max Capacity (1 - 300)',
+                  hintText: 'e.g. 150',
+                  suffixText: 'Leads',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                validator: (val) {
+                  final n = int.tryParse(val?.trim() ?? '');
+                  if (n == null) return 'Please enter a valid number';
+                  if (n < 1 || n > 300) return 'Must be between 1 and 300 leads';
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() == true) {
+                final val = int.parse(controller.text.trim());
+                Navigator.pop(ctx);
+                setState(() => _selectedCapacity = val);
+              }
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _updateCapacity(int newCapacity) async {
-    if (_savingCapacity || newCapacity < 1) return;
+    if (_savingCapacity || newCapacity < 1 || newCapacity > 300) return;
     setState(() => _savingCapacity = true);
     try {
       await DioClient.dio.patch(
@@ -476,18 +535,33 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                           ),
                           const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: CRMColors.primary.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '$_selectedCapacity Leads',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: CRMColors.primary,
+                          InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: _savingCapacity ? null : () => _showManualCapacityInputDialog(),
+                            child: Tooltip(
+                              message: 'Click to enter custom limit (1 - 300)',
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: CRMColors.primary.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '$_selectedCapacity Leads',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: CRMColors.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(Icons.edit, size: 12, color: CRMColors.primary),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -537,10 +611,10 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                       ),
                       Expanded(
                         child: Slider(
-                          value: _selectedCapacity.toDouble().clamp(1.0, 50.0),
+                          value: _selectedCapacity.toDouble().clamp(1.0, 300.0),
                           min: 1.0,
-                          max: 50.0,
-                          divisions: 49,
+                          max: 300.0,
+                          divisions: 299,
                           label: '$_selectedCapacity',
                           activeColor: CRMColors.primary,
                           onChanged: (val) {
@@ -552,7 +626,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.add, size: 16),
                         tooltip: 'Increase by 1',
-                        onPressed: _selectedCapacity < 50
+                        onPressed: _selectedCapacity < 300
                             ? () => setState(() => _selectedCapacity++)
                             : null,
                       ),
@@ -568,7 +642,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                         'Presets:',
                         style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
                       ),
-                      for (final preset in [5, 10, 15, 20, 25, 30, 50])
+                      for (final preset in [5, 10, 15, 20, 25, 30, 50, 100, 200, 300])
                         ActionChip(
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
@@ -643,9 +717,9 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   const SizedBox(height: 2),
-                  const Text(
-                    'These leads count towards the 10-lead capacity until transferred to Sales or finished.',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  Text(
+                    'These leads count towards the $capacity-lead capacity until transferred to Sales or finished.',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                   ),
                 ],
               ),

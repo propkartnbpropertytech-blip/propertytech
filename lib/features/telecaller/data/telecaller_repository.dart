@@ -56,7 +56,7 @@ class TelecallerRepository {
       if (when == null) {
         throw Exception('Choose a callback date and time.');
       }
-      final ok = await service.scheduleFollowup(leadId, when, remarks ?? '');
+      final ok = await service.scheduleFollowup(leadId, when, remarks ?? '', status: 'Callback');
       if (!ok) {
         throw Exception('Failed to schedule the callback.');
       }

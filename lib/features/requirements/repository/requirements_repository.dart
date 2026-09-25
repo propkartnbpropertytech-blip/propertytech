@@ -50,10 +50,16 @@ class RequirementsRepository {
       final uName = currentUser.fullName.trim().toLowerCase();
       if (role == 'Admin') {
         requirements = requirements.where((r) {
+          final s = r.status.trim().toLowerCase();
+          if (s == 'won' || s == 'closed' || s == 'deal won') return true;
+
           final isCreator = r.createdBy == currentUser.id ||
               (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
               (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
-          return isCreator || r.adminId == currentUser.id;
+          final sameOrg = currentUser.organizationId != null &&
+              currentUser.organizationId!.isNotEmpty &&
+              r.organizationId == currentUser.organizationId;
+          return isCreator || r.adminId == currentUser.id || sameOrg;
         }).toList();
       } else if (role == 'Telecaller') {
         // Telecaller: same team leads as their supervisor Admin, including assigned leads.

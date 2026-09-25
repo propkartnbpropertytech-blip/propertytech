@@ -20,6 +20,9 @@ class IntegrationLeadModel {
   final DateTime? followupScheduledAt;
   final String? followupRemarks;
   final String? followupStatus;
+  final DateTime? callbackScheduledAt;
+  final String? callbackRemarks;
+  final String? callbackStatus;
   final CrmMatchInfo? crmMatch;
   final String? assignedTo;
   final String? assignedToName;
@@ -67,6 +70,9 @@ class IntegrationLeadModel {
     this.followupScheduledAt,
     this.followupRemarks,
     this.followupStatus,
+    this.callbackScheduledAt,
+    this.callbackRemarks,
+    this.callbackStatus,
     this.crmMatch,
     this.assignedTo,
     this.assignedToName,
@@ -611,6 +617,9 @@ class IntegrationLeadModel {
     DateTime? followupScheduledAt,
     String? followupRemarks,
     String? followupStatus,
+    DateTime? callbackScheduledAt,
+    String? callbackRemarks,
+    String? callbackStatus,
     CrmMatchInfo? crmMatch,
     String? assignedTo,
     String? assignedToName,
@@ -633,6 +642,7 @@ class IntegrationLeadModel {
     String? archivedById,
     DateTime? archivedAt,
     bool clearFollowup = false,
+    bool clearCallback = false,
   }) {
     final updatedRaw = rawJson != null
         ? Map<String, dynamic>.from(rawJson)
@@ -660,6 +670,9 @@ class IntegrationLeadModel {
       followupScheduledAt: clearFollowup ? null : (followupScheduledAt ?? this.followupScheduledAt),
       followupRemarks: clearFollowup ? null : (followupRemarks ?? this.followupRemarks),
       followupStatus: clearFollowup ? 'Completed' : (followupStatus ?? this.followupStatus),
+      callbackScheduledAt: clearCallback ? null : (callbackScheduledAt ?? this.callbackScheduledAt),
+      callbackRemarks: clearCallback ? null : (callbackRemarks ?? this.callbackRemarks),
+      callbackStatus: clearCallback ? 'Completed' : (callbackStatus ?? this.callbackStatus),
       crmMatch: crmMatch ?? this.crmMatch,
       assignedTo: assignedTo ?? this.assignedTo,
       assignedToName: assignedToName ?? this.assignedToName,
@@ -704,6 +717,9 @@ class IntegrationLeadModel {
       'followup_scheduled_at': followupScheduledAt?.toIso8601String(),
       'followup_remarks': followupRemarks,
       'followup_status': followupStatus,
+      'callback_scheduled_at': callbackScheduledAt?.toIso8601String(),
+      'callback_remarks': callbackRemarks,
+      'callback_status': callbackStatus,
       'crm_match': crmMatch?.toJson(),
       'assigned_to': assignedTo,
       'assigned_to_name': assignedToName,
@@ -836,13 +852,32 @@ class IntegrationLeadModel {
       enquiryCount: int.tryParse(json['enquiry_count']?.toString() ?? '1') ?? 1,
       leadType: type,
       campaignStatus: json['campaign_status']?.toString() ?? 'New',
-      followupScheduledAt: latestFu != null && latestFu['scheduled_at'] != null
+      followupScheduledAt: latestFu != null && latestFu['scheduled_at'] != null && latestFu['outcome'] != 'CALLBACK'
           ? DateTime.tryParse(latestFu['scheduled_at'].toString())
           : (json['followup_scheduled_at'] != null
               ? DateTime.tryParse(json['followup_scheduled_at'].toString())
-              : null),
-      followupRemarks: latestFu?['remarks']?.toString() ?? json['followup_remarks']?.toString(),
-      followupStatus: latestFu?['status']?.toString() ?? json['followup_status']?.toString(),
+              : (raw['_followup'] is Map && raw['_followup']['scheduled_at'] != null
+                  ? DateTime.tryParse(raw['_followup']['scheduled_at'].toString())
+                  : null)),
+      followupRemarks: (latestFu != null && latestFu['outcome'] != 'CALLBACK' ? latestFu['remarks']?.toString() : null) ??
+          json['followup_remarks']?.toString() ??
+          (raw['_followup'] is Map ? raw['_followup']['remarks']?.toString() : null),
+      followupStatus: (latestFu != null && latestFu['outcome'] != 'CALLBACK' ? latestFu['status']?.toString() : null) ??
+          json['followup_status']?.toString() ??
+          (raw['_followup'] is Map ? raw['_followup']['status']?.toString() : null),
+      callbackScheduledAt: json['callback_scheduled_at'] != null
+          ? DateTime.tryParse(json['callback_scheduled_at'].toString())
+          : (raw['_callback'] is Map && raw['_callback']['scheduled_at'] != null
+              ? DateTime.tryParse(raw['_callback']['scheduled_at'].toString())
+              : (latestFu != null && latestFu['outcome'] == 'CALLBACK' && latestFu['scheduled_at'] != null
+                  ? DateTime.tryParse(latestFu['scheduled_at'].toString())
+                  : null)),
+      callbackRemarks: json['callback_remarks']?.toString() ??
+          (raw['_callback'] is Map ? raw['_callback']['remarks']?.toString() : null) ??
+          (latestFu != null && latestFu['outcome'] == 'CALLBACK' ? latestFu['remarks']?.toString() : null),
+      callbackStatus: json['callback_status']?.toString() ??
+          (raw['_callback'] is Map ? raw['_callback']['status']?.toString() : null) ??
+          (latestFu != null && latestFu['outcome'] == 'CALLBACK' ? latestFu['status']?.toString() : null),
       crmMatch: json['crm_match'] is Map<String, dynamic>
           ? CrmMatchInfo.fromJson(Map<String, dynamic>.from(json['crm_match']))
           : null,

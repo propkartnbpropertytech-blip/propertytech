@@ -12,6 +12,7 @@ class CampaignFollowupModel {
   final DateTime createdAt;
   final IntegrationLeadModel? lead;
   final String? telecallerName;
+  final String? telecallerId;
 
   CampaignFollowupModel({
     required this.id,
@@ -25,6 +26,7 @@ class CampaignFollowupModel {
     required this.createdAt,
     this.lead,
     this.telecallerName,
+    this.telecallerId,
   });
 
   bool get isToday {
@@ -72,6 +74,9 @@ class CampaignFollowupModel {
                       json['lead']['raw_json']?['status_updated_by_name'])
                   ?.toString()
               : null),
+      telecallerId: json['telecaller_id']?.toString() ??
+          json['telecallerId']?.toString() ??
+          json['created_by']?.toString(),
     );
   }
 
@@ -87,6 +92,7 @@ class CampaignFollowupModel {
       'status': status,
       'created_at': createdAt.toIso8601String(),
       'telecaller_name': telecallerName,
+      'telecaller_id': telecallerId,
     };
   }
 }

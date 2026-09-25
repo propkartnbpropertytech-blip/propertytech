@@ -1,57 +1,19 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:collection/collection.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/storage/local_repositories.dart';
 import '../../../core/storage/model_mappers.dart';
+import '../../../core/storage/repository_coordinator.dart';
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
+import '../../requirements/services/followup_sync_engine.dart';
+import '../../users/bloc/users_bloc.dart';
 import '../models/dashboard_summary.dart';
-
-DateTime? _parseFollowupDateTime(dynamic raw) {
-  if (raw == null) return null;
-  String str = raw.toString().trim();
-  if (str.isEmpty) return null;
-
-  final parsed = DateTime.tryParse(str);
-  if (parsed != null) {
-    return parsed.isUtc ? parsed.toLocal() : parsed;
-  }
-
-  try {
-    final parts = str.split(RegExp(r'[T\s]'));
-    final dateParts = parts[0].split(RegExp(r'[/\\-]'));
-    if (dateParts.length == 3) {
-      int d, m, y;
-      if (dateParts[0].length == 4) {
-        y = int.parse(dateParts[0]);
-        m = int.parse(dateParts[1]);
-        d = int.parse(dateParts[2]);
-      } else {
-        d = int.parse(dateParts[0]);
-        m = int.parse(dateParts[1]);
-        y = int.parse(dateParts[2]);
-      }
-      int h = 0, min = 0, sec = 0;
-      if (parts.length > 1 && parts[1].isNotEmpty) {
-        final timeParts = parts[1].split(':');
-        if (timeParts.length >= 2) {
-          h = int.tryParse(timeParts[0]) ?? 0;
-          min = int.tryParse(timeParts[1].replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
-          if (timeParts.length >= 3) {
-            sec = int.tryParse(timeParts[2].replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
-          }
-        }
-      }
-      return DateTime(y, m, d, h, min, sec);
-    }
-  } catch (_) {}
-
-  return null;
-}
 
 class FollowupsCard extends StatefulWidget {
   final List<DashboardFollowup> followups;
@@ -77,11 +39,34 @@ class _FollowupsCardState extends State<FollowupsCard> {
   String _mainSection = 'Follow ups';
   String _activeTab = 'Today';
   late Future<List<RequirementModel>> _requirementsFuture;
+  StreamSubscription? _requirementsStreamSub;
+  StreamSubscription? _dashboardStreamSub;
 
   @override
   void initState() {
     super.initState();
     _requirementsFuture = RequirementsRepository().getRequirements(refreshFromServer: false);
+    _requirementsStreamSub = RepositoryCoordinator().requirementsStream.listen((_) {
+      if (mounted) {
+        setState(() {
+          _requirementsFuture = RequirementsRepository().getRequirements(refreshFromServer: false);
+        });
+      }
+    });
+    _dashboardStreamSub = RepositoryCoordinator().dashboardStream.listen((_) {
+      if (mounted) {
+        setState(() {
+          _requirementsFuture = RequirementsRepository().getRequirements(refreshFromServer: false);
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _requirementsStreamSub?.cancel();
+    _dashboardStreamSub?.cancel();
+    super.dispose();
   }
 
   @override
@@ -160,219 +145,39 @@ class _FollowupsCardState extends State<FollowupsCard> {
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
 
     return FutureBuilder<List<RequirementModel>>(
       future: _requirementsFuture,
       builder: (context, snapshot) {
         final reqsList = snapshot.data ?? [];
 
+        List<dynamic>? users;
+        try {
+          final usersState = context.read<UsersBloc>().state;
+          if (usersState is UsersLoaded) {
+            users = usersState.users;
+          }
+        } catch (_) {}
+
         final localFollowups = FollowupLocalRepository.inMemory.values.map((fl) => fl.toModel()).toList();
-        final followups = [
-          ...localFollowups,
-          ...widget.followups,
-        ];
-
-        bool isSameMobile(String m1, String m2) {
-          final d1 = m1.replaceAll(RegExp(r'\D'), '');
-          final d2 = m2.replaceAll(RegExp(r'\D'), '');
-          if (d1.isEmpty || d2.isEmpty) return false;
-          if (d1 == d2) return true;
-          final s1 = d1.length >= 10 ? d1.substring(d1.length - 10) : d1;
-          final s2 = d2.length >= 10 ? d2.substring(d2.length - 10) : d2;
-          return s1 == s2;
-        }
-
-        String getListingTypeLabel(RequirementModel r) {
-          final name = r.listingTypeName ?? '';
-          final id = r.listingTypeId ?? '';
-          final combined = '$name $id'.toLowerCase();
-          if (combined.contains('rent')) {
-            return 'Rent';
-          } else if (combined.contains('sale') || combined.contains('resale')) {
-            return 'Re-Sale';
-          }
-          return 'Rent';
-        }
-
-        bool isSiteVisitStatus(String statusStr) {
-          final s = statusStr.toLowerCase();
-          return s.contains('site visit') || s.contains('site-visit');
-        }
-
-        final isRentMode = ThemeManager().isRentMode;
-        final targetListingType = isRentMode ? 'Rent' : 'Re-Sale';
-
+        final targetListingType = ThemeManager().isRentMode ? 'Rent' : 'Re-Sale';
         final isSiteVisitSection = _mainSection == 'Site Visit Scheduled';
-        final Map<String, DashboardFollowup> itemsMap = {};
 
-        if (isSiteVisitSection) {
-          // A) SITE VISIT SCHEDULED SECTION
-          if (reqsList.isNotEmpty) {
-            for (final req in reqsList) {
-              final reqStatus = req.status;
-              if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') continue;
-              if (getListingTypeLabel(req) != targetListingType) continue;
-
-              if (isSiteVisitStatus(reqStatus)) {
-                final matchingF = followups.firstWhereOrNull((f) =>
-                    (f.requirementId != null && f.requirementId!.isNotEmpty && req.id == f.requirementId) ||
-                    (f.mobile.isNotEmpty && req.clientMobile.isNotEmpty && isSameMobile(req.clientMobile, f.mobile)) ||
-                    (f.clientName.isNotEmpty && req.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
-
-                final dateStr = matchingF?.followupDate ?? req.nextFollowupDate ?? req.createdAt.toIso8601String();
-                final notesStr = matchingF?.notes ?? req.remarks;
-
-                itemsMap[req.id] = DashboardFollowup(
-                  id: matchingF?.id ?? 'sv_${req.id}',
-                  clientName: req.clientName,
-                  mobile: req.clientMobile,
-                  followupDate: dateStr,
-                  notes: notesStr,
-                  status: reqStatus,
-                  propertyTitle: matchingF?.propertyTitle,
-                  requirementCustomerName: req.clientName,
-                  requirementId: req.id,
-                  creatorName: matchingF?.creatorName,
-                );
-              }
-            }
-          }
-          if (widget.siteVisits != null) {
-            for (final sv in widget.siteVisits!) {
-              RequirementModel? req;
-              if (reqsList.isNotEmpty) {
-                req = reqsList.firstWhereOrNull((r) =>
-                    (sv.requirementId != null && sv.requirementId!.isNotEmpty && r.id == sv.requirementId) ||
-                    (sv.requirementCustomerName != null && sv.requirementCustomerName!.isNotEmpty && r.clientName.trim().toLowerCase() == sv.requirementCustomerName!.trim().toLowerCase()));
-
-                if (req != null) {
-                  final reqStatus = req.status;
-                  if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') continue;
-                  if (getListingTypeLabel(req) != targetListingType) continue;
-                }
-              }
-
-              final key = req?.id ?? sv.id;
-              if (!itemsMap.containsKey(key)) {
-                itemsMap[key] = DashboardFollowup(
-                  id: sv.id,
-                  clientName: sv.requirementCustomerName ?? 'Client',
-                  mobile: req?.clientMobile ?? '',
-                  followupDate: sv.visitDate,
-                  notes: sv.remarks,
-                  status: sv.status,
-                  propertyTitle: sv.propertyTitle,
-                  requirementCustomerName: sv.requirementCustomerName,
-                  requirementId: sv.requirementId,
-                  creatorName: sv.creatorName,
-                );
-              }
-            }
-          }
-        } else {
-          // B) FOLLOW UPS SECTION
-          for (final f in followups) {
-            RequirementModel? req;
-            if (reqsList.isNotEmpty) {
-              req = reqsList.firstWhereOrNull((r) =>
-                  (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
-                  (f.mobile.isNotEmpty && r.clientMobile.isNotEmpty && isSameMobile(r.clientMobile, f.mobile)) ||
-                  (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
-
-              if (req == null) continue;
-
-              final reqStatus = req.status;
-              if (reqStatus == 'Bin' || reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') continue;
-
-              // EXCLUDE if lead status is Site Visit!
-              if (isSiteVisitStatus(reqStatus)) continue;
-
-              if (getListingTypeLabel(req) != targetListingType) continue;
-            } else {
-              final statusLower = f.status.toLowerCase();
-              if (statusLower == 'completed' ||
-                  statusLower == 'resolved' ||
-                  statusLower == 'closed' ||
-                  statusLower == 'done' ||
-                  statusLower == 'bin' ||
-                  statusLower == 'deleted' ||
-                  statusLower.contains('site visit')) {
-                continue;
-              }
-            }
-
-            final key = req != null ? req.id : (f.requirementId ?? f.id);
-            final existing = itemsMap[key];
-            if (existing == null) {
-              itemsMap[key] = f;
-            } else {
-              final bool fIsPending = f.status == 'Pending' || f.status == 'Follow-up' || f.status == 'Re-Followup';
-              final bool existingIsPending = existing.status == 'Pending' || existing.status == 'Follow-up' || existing.status == 'Re-Followup';
-
-              if (f.id.startsWith('local_') && !existing.id.startsWith('local_')) {
-                itemsMap[key] = f;
-              } else if (!f.id.startsWith('local_') && existing.id.startsWith('local_')) {
-                // Keep existing local
-              } else if (fIsPending && !existingIsPending) {
-                itemsMap[key] = f;
-              } else {
-                itemsMap[key] = f;
-              }
-            }
-          }
-        }
-
-        final todayList = <DashboardFollowup>[];
-        final dueList = <DashboardFollowup>[];
-        final futureList = <DashboardFollowup>[];
-
-        for (final f in itemsMap.values) {
-          DateTime? parsed = _parseFollowupDateTime(f.followupDate);
-          if (parsed == null && f.followupDate.isNotEmpty) {
-            try {
-              final parts = f.followupDate.split(RegExp(r'[/\\-]'));
-              if (parts.length >= 3) {
-                final d = int.tryParse(parts[0]);
-                final m = int.tryParse(parts[1]);
-                final y = int.tryParse(parts[2]);
-                if (d != null && m != null && y != null) {
-                  parsed = DateTime(y, m, d);
-                }
-              }
-            } catch (_) {}
-          }
-          if (parsed == null) {
-            dueList.add(f);
-            continue;
-          }
-          final fDate = DateTime(parsed.year, parsed.month, parsed.day);
-
-          if (fDate.isBefore(today)) {
-            dueList.add(f);
-          } else if (fDate.isAfter(today)) {
-            futureList.add(f);
-          } else {
-            todayList.add(f);
-          }
-        }
-
-        todayList.sort(
-          (a, b) => (_parseFollowupDateTime(a.followupDate) ?? DateTime(1970)).compareTo(
-            _parseFollowupDateTime(b.followupDate) ?? DateTime(1970),
-          ),
+        final syncResult = FollowupSyncEngine.categorizeFollowups(
+          serverFollowups: widget.followups,
+          localFollowups: localFollowups,
+          reqsList: reqsList,
+          siteVisits: widget.siteVisits,
+          isSiteVisitSection: isSiteVisitSection,
+          targetListingType: targetListingType,
+          currentUser: RoleGuard.currentUser,
+          users: users,
         );
-        dueList.sort(
-          (a, b) => (_parseFollowupDateTime(b.followupDate) ?? DateTime(1970)).compareTo(
-            _parseFollowupDateTime(a.followupDate) ?? DateTime(1970),
-          ),
-        );
-        futureList.sort(
-          (a, b) => (_parseFollowupDateTime(a.followupDate) ?? DateTime(1970)).compareTo(
-            _parseFollowupDateTime(b.followupDate) ?? DateTime(1970),
-          ),
-        );
+
+        final todayList = syncResult.today;
+        final dueList = syncResult.due;
+        final futureList = syncResult.future;
+        final allClients = syncResult.allClients;
 
         List<DashboardFollowup> activeItems;
         if (_activeTab == 'Due') {
@@ -383,7 +188,7 @@ class _FollowupsCardState extends State<FollowupsCard> {
           activeItems = todayList;
         }
 
-        final totalPending = todayList.length + dueList.length;
+        final totalPending = allClients.length;
 
         return Container(
           decoration: BoxDecoration(
@@ -615,7 +420,7 @@ class _FollowupsCardState extends State<FollowupsCard> {
                   child: OutlinedButton(
                     onPressed:
                         widget.onViewAll ??
-                        () => context.go('/requirements?tab=${isSiteVisitSection ? "Leads" : "Follow-ups"}'),
+                        () => context.go('/requirements?tab=Follow-ups&section=${isSiteVisitSection ? "Site Visit Scheduled" : "Follow ups"}'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ThemeManager().primaryColor,
                       side: BorderSide(color: ThemeManager().primaryColor, width: 1),
@@ -693,10 +498,22 @@ class _FollowupsCardState extends State<FollowupsCard> {
       if (item.notes != null && item.notes!.isNotEmpty) item.notes!,
     ].join(' · ');
 
-    final dt = _parseFollowupDateTime(item.followupDate);
+    final dt = parseFollowupDateTime(item.followupDate);
     final timeText = dt != null
         ? DateFormat('d MMM, h:mm a').format(dt)
         : (item.followupDate.isNotEmpty ? item.followupDate : 'Scheduled');
+
+    final displaySalesperson = (item.salespersonName != null &&
+            item.salespersonName!.trim().isNotEmpty &&
+            item.salespersonName != 'System' &&
+            item.salespersonName != 'Unassigned')
+        ? item.salespersonName!.trim()
+        : ((item.creatorName != null &&
+                item.creatorName!.trim().isNotEmpty &&
+                item.creatorName != 'System' &&
+                item.creatorName != 'Unassigned')
+            ? item.creatorName!.trim()
+            : null);
 
     final primaryColor = ThemeManager().primaryColor;
 
@@ -736,20 +553,20 @@ class _FollowupsCardState extends State<FollowupsCard> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (isRealAdmin && item.creatorName != null && item.creatorName!.trim().isNotEmpty) ...[
+                  if (isRealAdmin && displaySalesperson != null && displaySalesperson.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
-                          Icons.support_agent_rounded,
-                          size: 11,
+                          Icons.person_outline_rounded,
+                          size: 12,
                           color: Color(0xFF6366F1),
                         ),
                         const SizedBox(width: 3),
                         Flexible(
                           child: Text(
-                            'Telecaller: ${item.creatorName}',
+                            'Salesperson: $displaySalesperson',
                             style: const TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w600,

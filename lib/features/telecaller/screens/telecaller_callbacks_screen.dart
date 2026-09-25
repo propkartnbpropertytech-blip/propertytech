@@ -9,6 +9,7 @@ import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../integration/services/integration_service.dart';
+import '../../integration/models/integration_lead_model.dart';
 import '../bloc/telecaller_list_bloc.dart';
 import '../data/telecaller_repository.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
@@ -477,10 +478,17 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
                   builder: (context) {
                     final item = Map<String, dynamic>.from(raw as Map);
                     final leadId = _campaignLeadId(item);
-                    final phone = (item['mobile'] ?? '').toString();
-                    final clientName = (item['client_name'] ?? 'Callback Client').toString();
-                    final scheduledAtRaw = item['scheduled_at']?.toString() ?? '';
-                    final remarks = (item['remarks'] ?? '').toString();
+                    final cached = IntegrationService().getLeadById(leadId);
+                    final phone = (cached?.getStringValue('phone_number').isNotEmpty == true
+                        ? cached!.getStringValue('phone_number')
+                        : (item['mobile'] ?? item['sanitized_phone'] ?? '')).toString();
+                    final clientName = resolveLeadClientName(item, cachedLead: cached);
+                    final scheduledAtRaw = (cached?.callbackScheduledAt != null
+                        ? cached!.callbackScheduledAt!.toIso8601String()
+                        : (item['scheduled_at']?.toString() ?? ''));
+                    final remarks = (cached?.callbackRemarks != null && cached!.callbackRemarks!.isNotEmpty
+                        ? cached.callbackRemarks!
+                        : (item['remarks'] ?? '').toString());
                     final formattedTime = _formatScheduledTime(scheduledAtRaw);
                     final overdue = _isOverdue(scheduledAtRaw);
 
@@ -618,6 +626,24 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
                                 spacing: 8,
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
+                                  IconButton(
+                                    tooltip: 'Not Interested',
+                                    icon: const Icon(Icons.thumb_down_alt_rounded, size: 20, color: Color(0xFFEF4444)),
+                                    onPressed: () => _handleNotInterested(
+                                      context,
+                                      leadId: leadId,
+                                      unifiedLeadId: item['id']?.toString(),
+                                      clientName: clientName,
+                                      phone: phone,
+                                      onDone: () {
+                                        context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(leadId));
+                                        if (item['id'] != null) {
+                                          context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(item['id'].toString()));
+                                        }
+                                        context.read<TelecallerCallbacksBloc>().add(TelecallerCallbacksRequested());
+                                      },
+                                    ),
+                                  ),
                                   if (phone.isNotEmpty)
                                     IconButton(
                                       tooltip: 'Call Phone',
@@ -779,9 +805,9 @@ class _CnrCardState extends State<_CnrCard> {
   @override
   Widget build(BuildContext context) {
     final leadId = _campaignLeadId(widget.lead);
-    final raw = widget.lead['raw_json'];
-    final name = raw is Map ? (raw['full_name'] ?? widget.lead['sanitized_phone']) : widget.lead['sanitized_phone'];
-    final phone = (widget.lead['sanitized_phone'] ?? '').toString();
+    final cached = IntegrationService().getLeadById(leadId);
+    final name = resolveLeadClientName(widget.lead, cachedLead: cached);
+    final phone = (widget.lead['sanitized_phone'] ?? widget.lead['phone'] ?? cached?.getStringValue('phone_number') ?? '').toString();
 
     int historyMax = 0;
     for (final h in _history) {
@@ -838,6 +864,26 @@ class _CnrCardState extends State<_CnrCard> {
           spacing: 6,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            IconButton(
+              tooltip: 'Not Interested',
+              icon: const Icon(Icons.thumb_down_alt_rounded, size: 20, color: Color(0xFFEF4444)),
+              onPressed: () => _handleNotInterested(
+                context,
+                leadId: leadId,
+                unifiedLeadId: widget.lead['id']?.toString(),
+                clientName: name,
+                phone: phone,
+                onDone: () {
+                  context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
+                  if (widget.lead['id'] != null) {
+                    context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(widget.lead['id'].toString()));
+                  }
+                  context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                  _load();
+                  widget.onOutcomeRecorded();
+                },
+              ),
+            ),
             IconButton(
               tooltip: 'View Full Lead Details',
               icon: const Icon(Icons.info_outline_rounded, size: 20, color: Color(0xFF3B82F6)),
@@ -983,11 +1029,7 @@ Future<void> _showLeadDetailsModal(
 
   if (cachedLead != null) {
     rawMap = cachedLead.rawJson;
-    name = cachedLead.getStringValue('full_name').isNotEmpty
-        ? cachedLead.getStringValue('full_name')
-        : (cachedLead.getStringValue('Client Name').isNotEmpty
-            ? cachedLead.getStringValue('Client Name')
-            : 'Lead $leadId');
+    name = resolveLeadClientName(cachedLead.rawJson, cachedLead: cachedLead);
     phone = cachedLead.getStringValue('phone_number').isNotEmpty
         ? cachedLead.getStringValue('phone_number')
         : (cachedLead.getStringValue('phone').isNotEmpty
@@ -998,33 +1040,37 @@ Future<void> _showLeadDetailsModal(
     campaignName = cachedLead.getStringValue('campaign_name');
     adName = cachedLead.getStringValue('ad_name');
     formName = cachedLead.getStringValue('form_name');
-    currentStatus = cachedLead.campaignStatus;
-    remarks = cachedLead.followupRemarks ?? cachedLead.transferRemarks ?? '';
-    scheduledAt = cachedLead.followupScheduledAt != null
-        ? _formatScheduledTime(cachedLead.followupScheduledAt!.toIso8601String())
+    currentStatus = cachedLead.callbackStatus ?? (cachedLead.campaignStatus.isNotEmpty ? cachedLead.campaignStatus : 'Callback');
+    remarks = cachedLead.callbackRemarks ?? '';
+    scheduledAt = cachedLead.callbackScheduledAt != null
+        ? _formatScheduledTime(cachedLead.callbackScheduledAt!.toIso8601String())
         : '';
   } else if (fallbackLead != null) {
     final raw = fallbackLead['raw_json'];
     rawMap = raw is Map<String, dynamic> ? raw : (raw is Map ? Map<String, dynamic>.from(raw) : {});
-    name = (rawMap['full_name'] ?? rawMap['Client Name'] ?? rawMap['Name'] ?? fallbackLead['sanitized_phone'] ?? 'Lead').toString();
+    name = resolveLeadClientName(fallbackLead);
     phone = (fallbackLead['sanitized_phone'] ?? rawMap['phone_number'] ?? rawMap['phone'] ?? '').toString();
     email = (fallbackLead['sanitized_email'] ?? rawMap['email'] ?? '').toString();
     leadType = (fallbackLead['lead_type'] ?? 'Requirement').toString();
     campaignName = (fallbackLead['campaign_name'] ?? rawMap['campaign_name'] ?? '').toString();
     adName = (fallbackLead['ad_name'] ?? rawMap['ad_name'] ?? '').toString();
-    currentStatus = (fallbackLead['campaign_status'] ?? fallbackLead['allocation_status'] ?? '').toString();
+    currentStatus = (fallbackLead['campaign_status'] ?? fallbackLead['allocation_status'] ?? 'Callback').toString();
+    remarks = (rawMap['_callback'] is Map ? rawMap['_callback']['remarks']?.toString() : null) ?? '';
+    scheduledAt = (rawMap['_callback'] is Map && rawMap['_callback']['scheduled_at'] != null)
+        ? _formatScheduledTime(rawMap['_callback']['scheduled_at'].toString())
+        : '';
   } else if (fallbackData != null) {
     final leadObj = fallbackData['lead'] is Map ? Map<String, dynamic>.from(fallbackData['lead'] as Map) : null;
     final raw = leadObj?['raw_json'];
     rawMap = raw is Map<String, dynamic> ? raw : (raw is Map ? Map<String, dynamic>.from(raw) : {});
-    name = (fallbackData['client_name'] ?? rawMap['full_name'] ?? 'Lead').toString();
+    name = resolveLeadClientName(fallbackData);
     phone = (fallbackData['mobile'] ?? leadObj?['sanitized_phone'] ?? '').toString();
     email = (rawMap['email'] ?? '').toString();
     leadType = (fallbackData['lead_type'] ?? 'Requirement').toString();
     campaignName = (leadObj?['campaign_name'] ?? rawMap['campaign_name'] ?? '').toString();
     remarks = (fallbackData['remarks'] ?? '').toString();
     scheduledAt = _formatScheduledTime(fallbackData['scheduled_at']?.toString());
-    currentStatus = 'Follow up';
+    currentStatus = 'Callback';
   }
 
   // Extract questionnaire key-values from raw_json
@@ -1185,9 +1231,9 @@ Future<void> _showLeadDetailsModal(
 
               if (scheduledAt.isNotEmpty || remarks.isNotEmpty) ...[
                 const SizedBox(height: 14),
-                _sectionHeader(context, 'Callback & Follow-up Details'),
-                if (scheduledAt.isNotEmpty) _detailRow(context, Icons.access_time_rounded, 'Scheduled Timing', scheduledAt),
-                if (remarks.isNotEmpty) _detailRow(context, Icons.notes_rounded, 'Notes / Remarks', remarks),
+                _sectionHeader(context, 'Callback Details'),
+                if (scheduledAt.isNotEmpty) _detailRow(context, Icons.access_time_rounded, 'Callback Timing', scheduledAt),
+                if (remarks.isNotEmpty) _detailRow(context, Icons.notes_rounded, 'Callback Remarks', remarks),
               ],
 
               if (questionnaire.isNotEmpty) ...[
@@ -1275,21 +1321,285 @@ Widget _detailRow(BuildContext context, IconData icon, String label, String valu
   );
 }
 
+/// Resolves the human-readable client name from all candidate keys in raw_json,
+/// the item itself, or the in-memory cache of IntegrationService.
+String resolveLeadClientName(dynamic itemOrRaw, {IntegrationLeadModel? cachedLead}) {
+  if (cachedLead != null) {
+    for (final k in ['Client Name', 'full_name', 'Client / Owner Name', 'Name', 'Customer Name', 'Owner Name', 'name', 'client_name']) {
+      final v = cachedLead.getStringValue(k).trim();
+      if (v.isNotEmpty && v != 'CNR Client' && v != 'Callback Client' && v != 'Lead') return v;
+    }
+  }
+  final map = itemOrRaw is Map ? itemOrRaw : {};
+  final raw = map['raw_json'] is Map ? map['raw_json'] as Map : (itemOrRaw is Map ? itemOrRaw : {});
+  for (final k in [
+    'Client Name', 'full_name', 'Client / Owner Name', 'Name', 'name',
+    'Customer Name', 'customer_name', 'Owner Name', 'owner_name',
+    'Full Name', 'buyer_name', 'client_name', 'Name of client', 'nameofclient'
+  ]) {
+    final v = (raw[k] ?? map[k] ?? '').toString().trim();
+    if (v.isNotEmpty && v != 'CNR Client' && v != 'Callback Client' && v != 'Lead') return v;
+  }
+  final custName = (map['customer_name'] ?? map['client_name'] ?? '').toString().trim();
+  if (custName.isNotEmpty && custName != 'CNR Client' && custName != 'Callback Client' && custName != 'Lead') {
+    return custName;
+  }
+  final phone = (map['sanitized_phone'] ?? map['phone'] ?? map['mobile'] ?? '').toString().trim();
+  if (phone.isNotEmpty) return 'Lead $phone';
+  return 'Client';
+}
+
 /// Campaign lead id used by transfer and follow-up. Callback rows are
 /// follow-up records, so their own `id` is not the lead.
 String _campaignLeadId(Map item) {
   final nested = item['lead'];
   final nestedId = nested is Map
-      ? (nested['id'] ?? nested['lead_id'] ?? nested['leadId'])
+      ? (nested['legacy_integration_lead_id'] ?? nested['legacyIntegrationLeadId'] ?? nested['id'] ?? nested['lead_id'] ?? nested['leadId'])
       : null;
-  return (item['lead_id'] ??
+  return (item['legacy_integration_lead_id'] ??
+          item['legacyIntegrationLeadId'] ??
+          nestedId ??
+          item['lead_id'] ??
           item['leadId'] ??
           item['campaign_lead_id'] ??
           item['campaignLeadId'] ??
-          nestedId ??
           item['id'])
       ?.toString() ??
       '';
+}
+
+/// Displays the existing Not Interested dialog and marks the selected client as Not Interested
+Future<void> _handleNotInterested(
+  BuildContext context, {
+  required String leadId,
+  String? unifiedLeadId,
+  required String clientName,
+  required String phone,
+  required VoidCallback onDone,
+}) async {
+  final notesController = TextEditingController();
+  bool hasError = false;
+  bool isSubmitting = false;
+
+  await showDialog(
+    context: context,
+    barrierDismissible: !isSubmitting,
+    builder: (dialogCtx) => StatefulBuilder(
+      builder: (ctx, setDialogState) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.thumb_down_alt_rounded, color: Color(0xFFEF4444), size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Mark as Not Interested',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$clientName ${phone.isNotEmpty ? '($phone)' : ''}',
+                      style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RichText(
+                    text: TextSpan(
+                      text: 'Reason / Notes ',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: CRMColors.textOf(ctx),
+                      ),
+                      children: const [
+                        TextSpan(
+                          text: '*',
+                          style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: notesController,
+                    maxLines: 3,
+                    autofocus: true,
+                    enabled: !isSubmitting,
+                    onChanged: (val) {
+                      if (hasError && val.trim().isNotEmpty) {
+                        setDialogState(() => hasError = false);
+                      }
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'Enter reason why client is not interested (e.g., budget mismatch, not looking, bought elsewhere)...',
+                      hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                      errorText: hasError ? 'Please enter a reason or note. This field is mandatory.' : null,
+                      errorStyle: const TextStyle(fontSize: 11, color: Color(0xFFEF4444)),
+                      filled: true,
+                      fillColor: CRMColors.surfaceElevatedOf(ctx),
+                      contentPadding: const EdgeInsets.all(12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: CRMColors.borderOf(ctx)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: hasError ? const Color(0xFFEF4444) : CRMColors.borderOf(ctx),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                          color: Color(0xFFEF4444),
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFEF4444)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'This client will be marked as Not Interested and removed from your calling queue.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey.shade300 : const Color(0xFF991B1B),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSubmitting ? null : () => Navigator.pop(dialogCtx),
+              child: Text('Cancel', style: TextStyle(color: CRMColors.textSecondaryOf(ctx))),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              ),
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      final note = notesController.text.trim();
+                      if (note.isEmpty) {
+                        setDialogState(() => hasError = true);
+                        return;
+                      }
+
+                      setDialogState(() => isSubmitting = true);
+                      Navigator.pop(dialogCtx);
+
+                      try {
+                        final ok = await IntegrationService().updateLeadCampaignStatus(
+                          leadId,
+                          'Not interested',
+                          reason: note,
+                        );
+                        if (!ok) {
+                          throw Exception('Failed to update lead status on server');
+                        }
+
+                        IntegrationService().notifyOutcomeRecorded(
+                          leadId,
+                          outcome: 'NOT_INTERESTED',
+                          remarks: note,
+                        );
+
+                        if (unifiedLeadId != null && unifiedLeadId.isNotEmpty && unifiedLeadId != leadId) {
+                          IntegrationService().notifyOutcomeRecorded(
+                            unifiedLeadId,
+                            outcome: 'NOT_INTERESTED',
+                            remarks: note,
+                          );
+                        }
+
+                        await IntegrationService().fetchServerLeads(resetWithServer: true);
+
+                        onDone();
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('$clientName marked as Not Interested.'),
+                              backgroundColor: const Color(0xFFEF4444),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to mark client as Not Interested: $e'),
+                              backgroundColor: const Color(0xFFEF4444),
+                            ),
+                          );
+                        }
+                      }
+                    },
+              child: isSubmitting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Mark Not Interested', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    ),
+  );
 }
 
 /// Replaces the old bottom sheet with a unified, animated center dialog

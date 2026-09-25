@@ -1044,6 +1044,7 @@ class IntegrationService extends ChangeNotifier {
                   mergedStatus = inc.campaignStatus.isNotEmpty ? inc.campaignStatus : 'New';
                 }
                 final incomingIsFollowup = mergedStatus == 'Follow up' || mergedStatus == 'Follow-up';
+                final incomingIsCallback = mergedStatus == 'Callback' || mergedStatus == 'Call Back';
                 final merged = inc.copyWith(
                   leadType: (local.leadType != inc.leadType && local.leadType.isNotEmpty) ? local.leadType : inc.leadType,
                   campaignStatus: mergedStatus,
@@ -1065,9 +1066,16 @@ class IntegrationService extends ChangeNotifier {
                   followupStatus: incomingIsFollowup
                       ? ((inc.followupStatus != null && inc.followupStatus!.isNotEmpty) ? inc.followupStatus : local.followupStatus)
                       : (inc.followupStatus ?? 'Completed'),
+                  callbackScheduledAt: incomingIsCallback ? (inc.callbackScheduledAt ?? local.callbackScheduledAt) : (inc.callbackScheduledAt ?? local.callbackScheduledAt),
+                  callbackRemarks: incomingIsCallback
+                      ? ((inc.callbackRemarks != null && inc.callbackRemarks!.isNotEmpty) ? inc.callbackRemarks : local.callbackRemarks)
+                      : (inc.callbackRemarks ?? local.callbackRemarks),
+                  callbackStatus: incomingIsCallback
+                      ? ((inc.callbackStatus != null && inc.callbackStatus!.isNotEmpty) ? inc.callbackStatus : local.callbackStatus)
+                      : (inc.callbackStatus ?? local.callbackStatus),
                   importStatus: local.importStatus == 'Imported' || inc.importStatus == 'Imported' ? 'Imported' : inc.importStatus,
                   importedClientId: (inc.importedClientId != null && inc.importedClientId!.isNotEmpty) ? inc.importedClientId : local.importedClientId,
-                  clearFollowup: !incomingIsFollowup,
+                  clearFollowup: false,
                 );
                 mergedIncoming.add(merged);
               } else {
@@ -1268,7 +1276,16 @@ class IntegrationService extends ChangeNotifier {
   Future<bool> updateLeadCampaignStatus(String leadId, String status, {String? reason}) async {
     try {
       // 1. Optimistically update in memory & persist to local DB immediately
-      final idx = _leads.indexWhere((l) => l.id == leadId);
+      final target = leadId.trim().toLowerCase();
+      final idx = _leads.indexWhere((l) {
+        if (l.id.toLowerCase() == target) return true;
+        if (l.externalLeadId != null && l.externalLeadId!.toLowerCase() == target) return true;
+        final rawId = l.rawJson['id']?.toString().toLowerCase();
+        if (rawId != null && rawId == target) return true;
+        final legacyId = (l.rawJson['legacy_integration_lead_id'] ?? l.rawJson['legacyIntegrationLeadId'])?.toString().toLowerCase();
+        if (legacyId != null && legacyId == target) return true;
+        return false;
+      });
       if (idx != -1) {
         final isFollowup = status == 'Follow up' || status == 'Follow-up';
         final currentUserName = RoleGuard.currentUser?.fullName ?? RoleGuard.currentUser?.email ?? '';
@@ -1281,6 +1298,7 @@ class IntegrationService extends ChangeNotifier {
         }
         _leads[idx] = _leads[idx].copyWith(
           campaignStatus: status,
+          allocationStatus: status == 'Not interested' ? 'RELEASED' : _leads[idx].allocationStatus,
           rawJson: currentRaw,
           statusUpdatedByName: currentUserName.isNotEmpty ? currentUserName : _leads[idx].statusUpdatedByName,
           statusUpdatedById: currentUserId ?? _leads[idx].statusUpdatedById,
@@ -1314,12 +1332,21 @@ class IntegrationService extends ChangeNotifier {
         if (res.data is Map && res.data['lead'] is Map) {
           try {
             final updatedLead = IntegrationLeadModel.fromJson(Map<String, dynamic>.from(res.data['lead']));
-            final leadIdx = _leads.indexWhere((l) => l.id == leadId);
+            final leadIdx = _leads.indexWhere((l) {
+              if (l.id.toLowerCase() == target) return true;
+              if (l.externalLeadId != null && l.externalLeadId!.toLowerCase() == target) return true;
+              final rawId = l.rawJson['id']?.toString().toLowerCase();
+              if (rawId != null && rawId == target) return true;
+              final legacyId = (l.rawJson['legacy_integration_lead_id'] ?? l.rawJson['legacyIntegrationLeadId'])?.toString().toLowerCase();
+              if (legacyId != null && legacyId == target) return true;
+              return false;
+            });
             if (leadIdx != -1) {
               final isFollowup = status == 'Follow up' || status == 'Follow-up';
               final cleanReason = reason?.trim();
               _leads[leadIdx] = updatedLead.copyWith(
                 campaignStatus: status,
+                allocationStatus: status == 'Not interested' ? 'RELEASED' : (updatedLead.allocationStatus ?? _leads[leadIdx].allocationStatus),
                 notInterestedReason: (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty)
                     ? cleanReason
                     : (updatedLead.notInterestedReason ?? _leads[leadIdx].notInterestedReason),
@@ -1384,18 +1411,47 @@ class IntegrationService extends ChangeNotifier {
     }
   }
 
-  /// Schedule a follow-up for a campaign lead
-  Future<bool> scheduleFollowup(String leadId, DateTime scheduledAt, String remarks) async {
+  /// Schedule a follow-up or callback for a campaign lead
+  Future<bool> scheduleFollowup(
+    String leadId,
+    DateTime scheduledAt,
+    String remarks, {
+    String status = 'Follow up',
+  }) async {
     try {
+      final isCb = status.trim().toLowerCase() == 'callback' || status.trim().toLowerCase() == 'call back';
+      final finalStatus = isCb ? 'Callback' : 'Follow up';
+      final finalAllocStatus = isCb ? 'CALLBACK' : 'FOLLOWUP';
+      final outcomeName = isCb ? 'CALLBACK' : 'FOLLOWUP';
+
       // 1. Optimistically update in memory
       final idx = _leads.indexWhere((l) => l.id == leadId);
       if (idx != -1) {
-        _leads[idx] = _leads[idx].copyWith(
-          campaignStatus: 'Follow up',
-          followupScheduledAt: scheduledAt,
-          followupRemarks: remarks,
-          followupStatus: 'Pending',
-        );
+        if (isCb) {
+          _leads[idx] = _leads[idx].copyWith(
+            campaignStatus: finalStatus,
+            allocationStatus: finalAllocStatus,
+            callbackScheduledAt: scheduledAt,
+            callbackRemarks: remarks,
+            callbackStatus: 'Pending',
+            interactedAt: DateTime.now(),
+          );
+        } else {
+          _leads[idx] = _leads[idx].copyWith(
+            campaignStatus: finalStatus,
+            allocationStatus: finalAllocStatus,
+            followupScheduledAt: scheduledAt,
+            followupRemarks: remarks,
+            followupStatus: 'Pending',
+            assignedTelecallerId: RoleGuard.isTelecaller(RoleGuard.currentUser?.role)
+                ? (RoleGuard.currentUser?.id ?? _leads[idx].assignedTelecallerId)
+                : _leads[idx].assignedTelecallerId,
+            assignedTelecallerName: RoleGuard.isTelecaller(RoleGuard.currentUser?.role)
+                ? (RoleGuard.currentUser?.fullName ?? _leads[idx].assignedTelecallerName)
+                : _leads[idx].assignedTelecallerName,
+            interactedAt: DateTime.now(),
+          );
+        }
         notifyListeners();
         unawaited(_persistLeads());
       }
@@ -1404,13 +1460,15 @@ class IntegrationService extends ChangeNotifier {
       final res = await _apiClient.post('/integrations/leads/$leadId/followups', {
         'scheduledAt': scheduledAt.toIso8601String(),
         'remarks': remarks,
+        'status': finalStatus,
+        'outcome': outcomeName,
       });
 
       final scheduledOk = res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
       if (scheduledOk) {
         notifyOutcomeRecorded(
           leadId,
-          outcome: 'CALLBACK',
+          outcome: outcomeName,
           remarks: remarks,
           callbackAt: scheduledAt.toUtc().toIso8601String(),
         );
@@ -1424,9 +1482,9 @@ class IntegrationService extends ChangeNotifier {
             : '';
         final display = name.isNotEmpty ? name : 'client';
         unawaited(NotificationCenter.addNotification(
-          title: 'Follow-up scheduled',
-          message: 'Follow-up for client "$display" has been scheduled.',
-          type: 'followup',
+          title: isCb ? 'Callback scheduled' : 'Follow-up scheduled',
+          message: '${isCb ? "Callback" : "Follow-up"} for client "$display" has been scheduled.',
+          type: isCb ? 'callback' : 'followup',
           route: '/campaign/leads',
         ));
       }
@@ -1447,9 +1505,10 @@ class IntegrationService extends ChangeNotifier {
     String? remarks,
   }) async {
       final isCnr = status.trim().toUpperCase() == 'CNR';
-      final isCallback = status.trim().toUpperCase() == 'CALLBACK' || status.trim().toLowerCase() == 'follow up';
-      final finalStatus = isCnr ? 'CNR' : (isCallback ? 'Follow up' : 'Assigned');
-      final finalAllocationStatus = isCnr ? 'CNR' : (isCallback ? 'CALLBACK' : 'HANDED_TO_SALES');
+      final isCallback = status.trim().toUpperCase() == 'CALLBACK' || status.trim().toLowerCase() == 'callback' || status.trim().toLowerCase() == 'call back';
+      final isFollowup = status.trim().toLowerCase() == 'follow up' || status.trim().toLowerCase() == 'follow-up' || status.trim().toLowerCase() == 'follow-ups';
+      final finalStatus = isCnr ? 'CNR' : (isCallback ? 'Callback' : (isFollowup ? 'Follow up' : 'Assigned'));
+      final finalAllocationStatus = isCnr ? 'CNR' : (isCallback ? 'CALLBACK' : (isFollowup ? 'FOLLOWUP' : 'HANDED_TO_SALES'));
       final now = DateTime.now();
       final user = RoleGuard.currentUser;
 
@@ -1485,16 +1544,28 @@ class IntegrationService extends ChangeNotifier {
       // 1. Optimistically update in memory & notify UI immediately (0ms delay)
       if (idx != -1) {
         previousLead = _leads[idx];
+        final currentRaw = Map<String, dynamic>.from(_leads[idx].rawJson);
+        if (isCnr) {
+          currentRaw['_transfer'] = {
+            'status': 'CNR',
+            'remarks': remarks ?? 'Marked as CNR',
+            'interacted_at': now.toIso8601String(),
+            'interacted_by': user?.id,
+          };
+        }
         _leads[idx] = _leads[idx].copyWith(
           campaignStatus: finalStatus,
           allocationStatus: finalAllocationStatus,
-          assignedTo: (isCnr || isCallback) ? _leads[idx].assignedTo : assignedTo,
-          assignedToName: (isCnr || isCallback) ? _leads[idx].assignedToName : assignedToName,
-          transferRemarks: (isCnr || isCallback) ? _leads[idx].transferRemarks : remarks,
+          assignedTelecallerId: (RoleGuard.isTelecaller(user?.role) ? (user?.id ?? _leads[idx].assignedTelecallerId) : (_leads[idx].assignedTelecallerId ?? user?.id)),
+          assignedTo: (isCnr || isCallback || isFollowup) ? _leads[idx].assignedTo : assignedTo,
+          assignedToName: (isCnr || isCallback || isFollowup) ? _leads[idx].assignedToName : assignedToName,
+          transferRemarks: (isCnr || isCallback || isFollowup) ? _leads[idx].transferRemarks : remarks,
           interactedAt: now,
           interactedBy: user?.fullName,
-          importStatus: (isCnr || isCallback) ? _leads[idx].importStatus : 'Imported',
-          clearFollowup: !isCallback,
+          importStatus: (isCnr || isCallback || isFollowup) ? _leads[idx].importStatus : 'Imported',
+          clearFollowup: isCnr,
+          clearCallback: isCnr,
+          rawJson: currentRaw,
         );
         notifyListeners();
         unawaited(_persistLeads());
@@ -1787,33 +1858,101 @@ class IntegrationService extends ChangeNotifier {
   }) {
     final normOutcome = outcome.trim().toUpperCase();
     final isCnr = normOutcome == 'CNR';
-    final isCallback = normOutcome == 'CALLBACK' || normOutcome == 'FOLLOW UP' || normOutcome == 'FOLLOW-UP';
+    final isCallback = normOutcome == 'CALLBACK' || normOutcome == 'CALL BACK';
+    final isFollowup = normOutcome == 'FOLLOWUP' || normOutcome == 'FOLLOW UP' || normOutcome == 'FOLLOW-UP';
     final isPickedUp = normOutcome == 'PICKED_UP' || normOutcome == 'PICKED UP' || normOutcome == 'ASSIGNED';
+    final isNotInterested = normOutcome == 'NOT_INTERESTED' || normOutcome == 'NOT INTERESTED';
 
-    final finalStatus = isCnr ? 'CNR' : (isCallback ? 'Follow up' : (isPickedUp ? 'Assigned' : normOutcome));
-    final finalAllocStatus = isCnr ? 'CNR' : (isCallback ? 'CALLBACK' : (isPickedUp ? 'HANDED_TO_SALES' : normOutcome));
+    final finalStatus = isCnr
+        ? 'CNR'
+        : (isCallback
+            ? 'Callback'
+            : (isFollowup
+                ? 'Follow up'
+                : (isPickedUp ? 'Assigned' : (isNotInterested ? 'Not interested' : normOutcome))));
+    final finalAllocStatus = isCnr
+        ? 'CNR'
+        : (isCallback
+            ? 'CALLBACK'
+            : (isFollowup
+                ? 'FOLLOWUP'
+                : (isPickedUp ? 'HANDED_TO_SALES' : (isNotInterested ? 'RELEASED' : normOutcome))));
     final now = DateTime.now();
     final user = RoleGuard.currentUser;
 
-    final idx = _leads.indexWhere((l) => l.id == leadId || (l.externalLeadId != null && l.externalLeadId == leadId));
+    final target = leadId.trim().toLowerCase();
+    final idx = _leads.indexWhere((l) {
+      if (l.id.toLowerCase() == target) return true;
+      if (l.externalLeadId != null && l.externalLeadId!.toLowerCase() == target) return true;
+      final rawId = l.rawJson['id']?.toString().toLowerCase();
+      if (rawId != null && rawId == target) return true;
+      final legacyId = (l.rawJson['legacy_integration_lead_id'] ?? l.rawJson['legacyIntegrationLeadId'])?.toString().toLowerCase();
+      if (legacyId != null && legacyId == target) return true;
+      return false;
+    });
     if (idx != -1) {
       final lead = _leads[idx];
       DateTime? parsedCallback;
       if (callbackAt != null) {
         parsedCallback = DateTime.tryParse(callbackAt);
       }
+      final currentRaw = Map<String, dynamic>.from(lead.rawJson);
+      if (isNotInterested) {
+        if (remarks != null && remarks.isNotEmpty) {
+          currentRaw['not_interested_reason'] = remarks;
+          currentRaw['not_interested_notes'] = remarks;
+        }
+        if (user != null) {
+          currentRaw['not_interested_by_id'] = user.id;
+          currentRaw['not_interested_by_name'] = user.fullName.isNotEmpty ? user.fullName : user.email;
+          currentRaw['not_interested_at'] = now.toIso8601String();
+        }
+      }
+      if (isCnr) {
+        currentRaw['_transfer'] = {
+          'status': 'CNR',
+          'remarks': remarks ?? 'Marked as CNR',
+          'interacted_at': now.toIso8601String(),
+          'interacted_by': user?.id,
+        };
+      }
+      if (isCallback) {
+        currentRaw['_callback'] = {
+          'scheduled_at': callbackAt,
+          'remarks': remarks,
+          'status': 'Pending',
+          'interacted_at': now.toIso8601String(),
+        };
+      } else if (isFollowup) {
+        currentRaw['_followup'] = {
+          'scheduled_at': callbackAt,
+          'remarks': remarks,
+          'status': 'Pending',
+          'interacted_at': now.toIso8601String(),
+        };
+      }
       _leads[idx] = lead.copyWith(
         campaignStatus: finalStatus,
         allocationStatus: finalAllocStatus,
+        assignedTelecallerId: (RoleGuard.isTelecaller(user?.role) ? (user?.id ?? lead.assignedTelecallerId) : (lead.assignedTelecallerId ?? user?.id)),
+        rawJson: currentRaw,
+        notInterestedReason: isNotInterested ? (remarks ?? lead.notInterestedReason) : lead.notInterestedReason,
+        notInterestedByName: isNotInterested ? (user != null && user.fullName.isNotEmpty ? user.fullName : lead.notInterestedByName) : lead.notInterestedByName,
+        notInterestedById: isNotInterested ? (user?.id ?? lead.notInterestedById) : lead.notInterestedById,
+        notInterestedAt: isNotInterested ? now : lead.notInterestedAt,
         assignedTo: isPickedUp ? (salesUserId ?? lead.assignedTo) : lead.assignedTo,
         assignedToName: isPickedUp ? (assignedToName ?? lead.assignedToName) : lead.assignedToName,
-        transferRemarks: remarks ?? lead.transferRemarks,
+        transferRemarks: (isPickedUp || isCnr) ? (remarks ?? lead.transferRemarks) : lead.transferRemarks,
         interactedAt: now,
         interactedBy: user?.fullName ?? lead.interactedBy,
-        followupScheduledAt: isCallback ? (parsedCallback ?? lead.followupScheduledAt) : (isPickedUp || isCnr ? null : lead.followupScheduledAt),
-        followupRemarks: isCallback ? (remarks ?? lead.followupRemarks) : lead.followupRemarks,
-        followupStatus: isCallback ? 'Pending' : (isPickedUp || isCnr ? 'Completed' : lead.followupStatus),
-        clearFollowup: isPickedUp || isCnr,
+        followupScheduledAt: isFollowup ? (parsedCallback ?? lead.followupScheduledAt) : (isPickedUp || isNotInterested || isCnr ? null : lead.followupScheduledAt),
+        followupRemarks: isFollowup ? (remarks ?? lead.followupRemarks) : (isPickedUp || isNotInterested || isCnr ? null : lead.followupRemarks),
+        followupStatus: isFollowup ? 'Pending' : (isPickedUp || isNotInterested ? 'Completed' : (isCnr ? null : lead.followupStatus)),
+        callbackScheduledAt: isCallback ? (parsedCallback ?? lead.callbackScheduledAt) : (isPickedUp || isNotInterested || isCnr ? null : lead.callbackScheduledAt),
+        callbackRemarks: isCallback ? (remarks ?? lead.callbackRemarks) : (isPickedUp || isNotInterested || isCnr ? null : lead.callbackRemarks),
+        callbackStatus: isCallback ? 'Pending' : (isPickedUp || isNotInterested ? 'Completed' : (isCnr ? null : lead.callbackStatus)),
+        clearFollowup: isPickedUp || isNotInterested || isCnr,
+        clearCallback: isPickedUp || isNotInterested || isCnr,
       );
       notifyListeners();
       unawaited(_persistLeads());

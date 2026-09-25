@@ -270,6 +270,7 @@ class DashboardFollowup {
   final String? requirementCustomerName;
   final String? requirementId;
   final String? creatorName;
+  final String? salespersonName;
 
   const DashboardFollowup({
     required this.id,
@@ -283,12 +284,49 @@ class DashboardFollowup {
     this.requirementCustomerName,
     this.requirementId,
     this.creatorName,
+    this.salespersonName,
   });
+
+  DashboardFollowup copyWith({
+    String? id,
+    String? clientName,
+    String? mobile,
+    String? followupDate,
+    String? notes,
+    String? status,
+    String? propertyCode,
+    String? propertyTitle,
+    String? requirementCustomerName,
+    String? requirementId,
+    String? creatorName,
+    String? salespersonName,
+  }) {
+    return DashboardFollowup(
+      id: id ?? this.id,
+      clientName: clientName ?? this.clientName,
+      mobile: mobile ?? this.mobile,
+      followupDate: followupDate ?? this.followupDate,
+      notes: notes ?? this.notes,
+      status: status ?? this.status,
+      propertyCode: propertyCode ?? this.propertyCode,
+      propertyTitle: propertyTitle ?? this.propertyTitle,
+      requirementCustomerName: requirementCustomerName ?? this.requirementCustomerName,
+      requirementId: requirementId ?? this.requirementId,
+      creatorName: creatorName ?? this.creatorName,
+      salespersonName: salespersonName ?? this.salespersonName,
+    );
+  }
 
   factory DashboardFollowup.fromJson(Map<String, dynamic> json) {
     final property = json['property'] as Map<String, dynamic>?;
     final requirement = json['requirement'] as Map<String, dynamic>?;
     final creator = json['creator'] as Map<String, dynamic>?;
+    final assignee = requirement?['assignee'] as Map<String, dynamic>?;
+    final resolvedSalesperson = requirement?['assignee_name'] ??
+        assignee?['full_name'] ??
+        json['salesperson_name'] ??
+        json['assignee_name'];
+
     return DashboardFollowup(
       id: json['id'] ?? '',
       clientName: json['client_name'] ?? '',
@@ -301,6 +339,7 @@ class DashboardFollowup {
       requirementCustomerName: requirement?['customer_name'],
       requirementId: json['requirement_id'] ?? requirement?['id'],
       creatorName: creator?['full_name'],
+      salespersonName: resolvedSalesperson?.toString(),
     );
   }
 }
@@ -316,6 +355,7 @@ class DashboardSiteVisit {
   final String? requirementCustomerName;
   final String? requirementId;
   final String? creatorName;
+  final String? salespersonName;
 
   const DashboardSiteVisit({
     required this.id,
@@ -328,13 +368,48 @@ class DashboardSiteVisit {
     this.requirementCustomerName,
     this.requirementId,
     this.creatorName,
+    this.salespersonName,
   });
+
+  DashboardSiteVisit copyWith({
+    String? id,
+    String? visitDate,
+    String? remarks,
+    String? status,
+    String? propertyId,
+    String? propertyCode,
+    String? propertyTitle,
+    String? requirementCustomerName,
+    String? requirementId,
+    String? creatorName,
+    String? salespersonName,
+  }) {
+    return DashboardSiteVisit(
+      id: id ?? this.id,
+      visitDate: visitDate ?? this.visitDate,
+      remarks: remarks ?? this.remarks,
+      status: status ?? this.status,
+      propertyId: propertyId ?? this.propertyId,
+      propertyCode: propertyCode ?? this.propertyCode,
+      propertyTitle: propertyTitle ?? this.propertyTitle,
+      requirementCustomerName: requirementCustomerName ?? this.requirementCustomerName,
+      requirementId: requirementId ?? this.requirementId,
+      creatorName: creatorName ?? this.creatorName,
+      salespersonName: salespersonName ?? this.salespersonName,
+    );
+  }
 
   factory DashboardSiteVisit.fromJson(Map<String, dynamic> json) {
     final property = json['property'] as Map<String, dynamic>?;
     final requirement = json['requirement'] as Map<String, dynamic>?;
     final creator = json['creator'] as Map<String, dynamic>?;
     final propertyId = (json['property_id'] ?? property?['id'])?.toString();
+    final assignee = requirement?['assignee'] as Map<String, dynamic>?;
+    final resolvedSalesperson = requirement?['assignee_name'] ??
+        assignee?['full_name'] ??
+        json['salesperson_name'] ??
+        json['assignee_name'];
+
     return DashboardSiteVisit(
       id: json['id'] ?? '',
       visitDate: json['visit_date'] ?? '',
@@ -346,6 +421,7 @@ class DashboardSiteVisit {
       requirementCustomerName: requirement?['customer_name'],
       requirementId: json['requirement_id'] ?? requirement?['id'],
       creatorName: creator?['full_name'],
+      salespersonName: resolvedSalesperson?.toString(),
     );
   }
 }

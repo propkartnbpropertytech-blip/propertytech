@@ -507,6 +507,7 @@ extension DashboardDataExtensions on DashboardData {
         'requirement': f.requirementCustomerName != null ? {'customer_name': f.requirementCustomerName, 'id': f.requirementId} : null,
         'requirement_id': f.requirementId,
         'creator': f.creatorName != null ? {'full_name': f.creatorName} : null,
+        'salesperson_name': f.salespersonName,
       }).toList())
       ..siteVisitsJson = jsonEncode(siteVisits.map((sv) => {
         'id': sv.id,
@@ -570,11 +571,11 @@ extension DashboardLocalExtensions on DashboardLocal {
         topProperty: summary.topProperty ?? 'N/A',
         monthlyGrowth: summary.monthlyGrowth ?? '0.0%',
       ),
-      activity: actList.whereType<Map<String, dynamic>>().map((item) => RecentActivity.fromJson(item)).toList(),
-      recentProperties: propList.whereType<Map<String, dynamic>>().map((item) => RecentProperty.fromJson(item)).toList(),
-      checklist: checkList.whereType<Map<String, dynamic>>().map((item) => ChecklistItem.fromJson(item)).toList(),
-      followups: follList.whereType<Map<String, dynamic>>().map((item) => DashboardFollowup.fromJson(item)).toList(),
-      siteVisits: svList.whereType<Map<String, dynamic>>().map((item) => DashboardSiteVisit.fromJson(item)).toList(),
+      activity: actList.whereType<Map>().map((item) => RecentActivity.fromJson(Map<String, dynamic>.from(item))).toList(),
+      recentProperties: propList.whereType<Map>().map((item) => RecentProperty.fromJson(Map<String, dynamic>.from(item))).toList(),
+      checklist: checkList.whereType<Map>().map((item) => ChecklistItem.fromJson(Map<String, dynamic>.from(item))).toList(),
+      followups: follList.whereType<Map>().map((item) => DashboardFollowup.fromJson(Map<String, dynamic>.from(item))).toList(),
+      siteVisits: svList.whereType<Map>().map((item) => DashboardSiteVisit.fromJson(Map<String, dynamic>.from(item))).toList(),
     );
   }
 }

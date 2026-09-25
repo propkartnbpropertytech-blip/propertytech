@@ -519,7 +519,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _togglePill('Rent Mode', _isRentMode, () {
+          _togglePill('Rent', _isRentMode, () {
             setState(() {
               _isRentMode = true;
               _subScheduledTab = 'Due';
@@ -531,7 +531,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
             });
             ThemeManager().setRentMode(true);
           }),
-          _togglePill('Re-Sale Mode', !_isRentMode, () {
+          _togglePill('Re-sale', !_isRentMode, () {
             setState(() {
               _isRentMode = false;
               _subScheduledTab = 'Due';
