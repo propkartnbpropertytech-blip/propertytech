@@ -204,6 +204,44 @@ String resolveSalespersonName({
   return 'Unassigned';
 }
 
+void _placeOnSchedule({
+  required DashboardFollowup item,
+  required DateTime now,
+  required List<DashboardFollowup> today,
+  required List<DashboardFollowup> due,
+  required List<DashboardFollowup> future,
+  required List<DashboardFollowup> allClients,
+}) {
+  allClients.add(item);
+  var parsed = parseFollowupDateTime(item.followupDate);
+  if (parsed == null && item.followupDate.trim().isNotEmpty) {
+    final parts = item.followupDate.split(RegExp(r'[/\\-]'));
+    if (parts.length >= 3) {
+      final d = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      final y = int.tryParse(parts[2].split(RegExp(r'[T\s]')).first);
+      if (d != null && m != null && y != null) {
+        parsed = DateTime(y, m, d);
+      }
+    }
+  }
+  final status = item.status.toLowerCase();
+  final isPending = status != 'completed' && status != 'cancelled' && status != 'done';
+  if (parsed == null) {
+    if (isPending) due.add(item);
+    return;
+  }
+  final day = DateTime(parsed.year, parsed.month, parsed.day);
+  final todayDate = DateTime(now.year, now.month, now.day);
+  if (day == todayDate) {
+    today.add(item);
+  } else if (day.isBefore(todayDate)) {
+    if (isPending) due.add(item);
+  } else {
+    future.add(item);
+  }
+}
+
 class CategorizedFollowupsResult {
   final List<DashboardFollowup> today;
   final List<DashboardFollowup> due;
@@ -270,7 +308,9 @@ class FollowupSyncEngine {
         final matchingFollowups = allFollowups.where((f) =>
             (f.requirementId != null && f.requirementId!.isNotEmpty && req.id == f.requirementId) ||
             (f.mobile.isNotEmpty && req.clientMobile.isNotEmpty && isSameMobile(req.clientMobile, f.mobile)) ||
-            (f.clientName.isNotEmpty && req.clientName.trim().toLowerCase() == req.clientName.trim().toLowerCase())
+            (f.clientName.isNotEmpty &&
+                req.clientName.trim().isNotEmpty &&
+                f.clientName.trim().toLowerCase() == req.clientName.trim().toLowerCase())
         ).toList();
 
         matchingFollowups.sort((a, b) {
@@ -337,12 +377,17 @@ class FollowupSyncEngine {
             (sv.requirementId != null && sv.requirementId!.isNotEmpty && r.id == sv.requirementId) ||
             (sv.requirementCustomerName != null && r.clientName.trim().toLowerCase() == sv.requirementCustomerName!.trim().toLowerCase()));
 
+        final visitStatus = sv.status.trim().toLowerCase();
+        final visitIsOpen = isSiteVisitStatus(sv.status) ||
+            visitStatus == 'scheduled' ||
+            visitStatus == 'active' ||
+            visitStatus == 'pending';
         if (req != null) {
-          final reqStatus = req.status;
-          if (!isSiteVisitStatus(reqStatus)) continue;
+          if (!isSiteVisitStatus(req.status) && !visitIsOpen) continue;
+          if (!isSiteVisitStatus(req.status) && !isSiteVisitStatus(sv.status)) continue;
           if (getListingTypeLabel(req) != targetListingType) continue;
-        } else {
-          if (!isSiteVisitStatus(sv.status)) continue;
+        } else if (!visitIsOpen) {
+          continue;
         }
 
         final key = sv.requirementId ?? sv.id;
@@ -398,22 +443,14 @@ class FollowupSyncEngine {
           if (!matchesCreator && !matchesReqCreator) continue;
         }
 
-        unfilteredAllClients.add(f);
-
-        DateTime? parsed = parseFollowupDateTime(f.followupDate);
-        if (parsed != null) {
-          final isSameDay = parsed.year == now.year && parsed.month == now.month && parsed.day == now.day;
-          final isPending = f.status.toLowerCase() != 'completed' && f.status.toLowerCase() != 'cancelled';
-          if (isSameDay) {
-            unfilteredToday.add(f);
-          }
-          if (parsed.isBefore(now) && isPending) {
-            unfilteredDue.add(f);
-          }
-          if (parsed.isAfter(now)) {
-            unfilteredFuture.add(f);
-          }
-        }
+        _placeOnSchedule(
+          item: f,
+          now: now,
+          today: unfilteredToday,
+          due: unfilteredDue,
+          future: unfilteredFuture,
+          allClients: unfilteredAllClients,
+        );
       }
     } else {
       // Follow ups Section
@@ -457,25 +494,22 @@ class FollowupSyncEngine {
           final currentUserName = currentUser.fullName.trim().toLowerCase();
           final currentUserId = currentUser.id.trim();
 
-          final fCreator = (f.creatorName ?? '').trim().toLowerCase();
-          final fSalesperson = (f.salespersonName ?? '').trim().toLowerCase();
-          final matchesFCreator = (fCreator.isNotEmpty && fCreator == currentUserName) ||
-              (fSalesperson.isNotEmpty && fSalesperson == currentUserName);
-
           final reqAssigned = (req.assignedTo ?? '').trim();
           final reqAssigneeName = (req.assigneeName ?? '').trim().toLowerCase();
           final reqCreatedBy = (req.createdBy ?? '').trim();
           final reqCreatorName = (req.creatorName ?? '').trim().toLowerCase();
 
-          final matchesReq = (reqAssigned.isNotEmpty && reqAssigned == currentUserId) ||
-              (reqAssigneeName.isNotEmpty && reqAssigneeName == currentUserName) ||
-              ((reqAssigned.isEmpty || reqAssigned.toLowerCase() == 'unassigned') &&
-                  (reqCreatedBy == currentUserId || reqCreatorName == currentUserName));
+          final assignedToUser = (reqAssigned.isNotEmpty && reqAssigned == currentUserId) ||
+              (currentUserName.isNotEmpty && reqAssigned.toLowerCase() == currentUserName) ||
+              (reqAssigneeName.isNotEmpty && reqAssigneeName == currentUserName);
+          final createdByUser = reqCreatedBy == currentUserId ||
+              (currentUserName.isNotEmpty && reqCreatorName == currentUserName);
+          final assignedAway = reqAssigned.isNotEmpty &&
+              reqAssigned.toLowerCase() != 'unassigned' &&
+              !assignedToUser;
+          final matchesReq = assignedToUser || (createdByUser && !assignedAway);
 
           if (!matchesReq) continue;
-          if (!matchesFCreator && reqCreatedBy != currentUserId && reqCreatorName != currentUserName) {
-            continue;
-          }
         } else if (currentUser != null && currentUser.role == 'Telecaller') {
           final currentUserName = currentUser.fullName.trim().toLowerCase();
           final currentUserId = currentUser.id.trim();
@@ -539,12 +573,16 @@ class FollowupSyncEngine {
           final reqCreatedBy = (req.createdBy ?? '').trim();
           final reqCreatorName = (req.creatorName ?? '').trim().toLowerCase();
 
-          final matchesReq = (reqAssigned.isNotEmpty && reqAssigned == currentUserId) ||
-              (reqAssigneeName.isNotEmpty && reqAssigneeName == currentUserName) ||
-              ((reqAssigned.isEmpty || reqAssigned.toLowerCase() == 'unassigned') &&
-                  (reqCreatedBy == currentUserId || reqCreatorName == currentUserName));
+          final assignedToUser = (reqAssigned.isNotEmpty && reqAssigned == currentUserId) ||
+              (currentUserName.isNotEmpty && reqAssigned.toLowerCase() == currentUserName) ||
+              (reqAssigneeName.isNotEmpty && reqAssigneeName == currentUserName);
+          final createdByUser = reqCreatedBy == currentUserId ||
+              (currentUserName.isNotEmpty && reqCreatorName == currentUserName);
+          final assignedAway = reqAssigned.isNotEmpty &&
+              reqAssigned.toLowerCase() != 'unassigned' &&
+              !assignedToUser;
+          final matchesReq = assignedToUser || (createdByUser && !assignedAway);
           if (!matchesReq) continue;
-          if (reqCreatedBy != currentUserId && reqCreatorName != currentUserName) continue;
         } else if (currentUser != null && currentUser.role == 'Telecaller') {
           final currentUserName = currentUser.fullName.trim().toLowerCase();
           if (req.createdBy != currentUser.id && (req.creatorName ?? '').trim().toLowerCase() != currentUserName) {
@@ -585,47 +623,15 @@ class FollowupSyncEngine {
         followupItems.add(synthItem);
       }
 
-      // Classify all follow-up items
       for (final item in followupItems) {
-        unfilteredAllClients.add(item);
-
-        DateTime? parsed = parseFollowupDateTime(item.followupDate);
-        if (parsed == null && item.followupDate.isNotEmpty) {
-          try {
-            final parts = item.followupDate.split(RegExp(r'[/\\-]'));
-            if (parts.length >= 3) {
-              final d = int.tryParse(parts[0]);
-              final m = int.tryParse(parts[1]);
-              final y = int.tryParse(parts[2]);
-              if (d != null && m != null && y != null) {
-                parsed = DateTime(y, m, d);
-              }
-            }
-          } catch (_) {}
-        }
-
-        if (parsed == null) {
-          final isPending = item.status.toLowerCase() != 'completed' &&
-                            item.status.toLowerCase() != 'cancelled';
-          if (isPending) {
-            unfilteredDue.add(item);
-          }
-          continue;
-        }
-
-        final isSameDay = parsed.year == now.year && parsed.month == now.month && parsed.day == now.day;
-        final isPending = item.status.toLowerCase() != 'completed' &&
-                          item.status.toLowerCase() != 'cancelled';
-
-        if (isSameDay) {
-          unfilteredToday.add(item);
-        }
-        if (parsed.isBefore(now) && isPending) {
-          unfilteredDue.add(item);
-        }
-        if (parsed.isAfter(now)) {
-          unfilteredFuture.add(item);
-        }
+        _placeOnSchedule(
+          item: item,
+          now: now,
+          today: unfilteredToday,
+          due: unfilteredDue,
+          future: unfilteredFuture,
+          allClients: unfilteredAllClients,
+        );
       }
     }
 

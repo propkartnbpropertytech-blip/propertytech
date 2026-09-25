@@ -2310,6 +2310,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         if (_isLeadRejected(req)) return false;
         if (_selectedStatus != 'Won' && _isLeadWon(req)) return false;
         if (currentUser != null && currentUser.role == 'Sales') {
+          if (_activeMainTab == 'Leads' && isFollowupLeadStatus(req.status)) return false;
           if (_salesLeadGroupFilter == 'assigned' && (!_isUserAssignee(req, currentUser) || _isUserCreator(req, currentUser))) {
             return false;
           }
@@ -4768,6 +4769,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             }
             if (currentUser != null && currentUser.role == 'Sales') {
               if (!_salesCanViewRequirement(r, currentUser)) {
+                return false;
+              }
+              if (_activeMainTab == 'Leads' && isFollowupLeadStatus(r.status)) {
                 return false;
               }
               if (_activeMainTab == 'Leads') {
