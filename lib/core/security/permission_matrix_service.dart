@@ -855,6 +855,7 @@ class PermissionMatrixService extends ChangeNotifier {
   String? _featureKeyForPermission(String permissionKey) {
     if (permissionKey.startsWith('page.dashboard')) return 'dashboard';
     if (permissionKey.startsWith('page.properties')) return 'properties';
+    if (permissionKey == 'leads.create') return 'leads_create';
     if (permissionKey.startsWith('page.leads') || permissionKey.startsWith('page.telecaller_leads')) {
       return 'leads';
     }

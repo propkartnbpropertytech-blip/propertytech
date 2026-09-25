@@ -56,6 +56,7 @@ import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/telemetry/audit_dwell_tracker.dart';
 import '../../../core/utils/team_user_visibility.dart';
+import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
@@ -1909,14 +1910,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       children: [
         CRMPageHeader(
           title: isTelecaller ? 'All Leads (Track)' : 'Leads',
-          trailing: isTelecaller
-              ? null
-              : CRMButton(
-                  label: 'Add Lead',
-                  prefixIcon: Icons.add_rounded,
-                  height: 40,
-                  onPressed: () => _showAddEditDialog(),
-                ),
+          trailing: ListenableBuilder(
+            listenable: PermissionMatrixService.instance,
+            builder: (context, _) {
+              final canAddLead = !isTelecaller ||
+                  RoleGuard.hasPermission(currentUser?.role, 'leads.create');
+              if (!canAddLead) return const SizedBox.shrink();
+              return CRMButton(
+                label: 'Add Lead',
+                prefixIcon: Icons.add_rounded,
+                height: 40,
+                onPressed: () => _showAddEditDialog(),
+              );
+            },
+          ),
         ),
         const SizedBox(height: CRMSpacing.s),
         listingToggle,
