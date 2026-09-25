@@ -38,7 +38,8 @@ class CampaignLeadsScreen extends StatefulWidget {
   final String? initialSource;
   final String? lockSource;
   final String? initialView;
-  const CampaignLeadsScreen({super.key, this.initialSource, this.lockSource, this.initialView});
+  final String? initialSearch;
+  const CampaignLeadsScreen({super.key, this.initialSource, this.lockSource, this.initialView, this.initialSearch});
 
   @override
   State<CampaignLeadsScreen> createState() => _CampaignLeadsScreenState();
@@ -114,6 +115,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       _selectedSourceFilter = widget.lockSource!;
     } else if (widget.initialSource != null && widget.initialSource!.isNotEmpty) {
       _selectedSourceFilter = widget.initialSource!;
+    }
+    final incomingSearch = widget.initialSearch?.trim() ?? '';
+    if (incomingSearch.isNotEmpty) {
+      _searchQuery = incomingSearch.toLowerCase();
+      _searchController.text = incomingSearch;
     }
     _service.addListener(_onServiceUpdate);
     _service.watchCampaignUi();
@@ -424,7 +430,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (lead.assignedTo != null && lead.assignedTo!.isNotEmpty && lead.assignedTo != 'Unassigned') {
       return false;
     }
+    if (_leftCallingQueue(lead)) return false;
     return true;
+  }
+
+  /// CNR and scheduled callbacks live on their own pages. New and Follow up stay here.
+  bool _leftCallingQueue(IntegrationLeadModel lead) {
+    if (!RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) return false;
+    final status = lead.campaignStatus.trim().toLowerCase();
+    final alloc = (lead.allocationStatus ?? '').trim().toUpperCase();
+    if (status == 'follow up' || status == 'follow-up' || alloc == 'FOLLOWUP') return false;
+    if (status == 'cnr' || alloc == 'CNR') return true;
+    if (status == 'callback' || status == 'call back' || alloc == 'CALLBACK') return true;
+    return false;
   }
 
   /// Telecallers land on an empty Property Listing tab when their queue is requirements.
@@ -511,7 +529,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 ? scopedLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed')).toList()
                 : scopedLeads.where((l) {
                     if (l.leadType != _selectedSection) return false;
-                    return !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned');
+                    return !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned') && !_leftCallingQueue(l);
                   }).toList()));
     if (userFilterActive && selectedUser != null) {
       list = list.where((l) => TeamUserVisibility.campaignLeadBelongsToUser(l, selectedUser)).toList();
@@ -559,16 +577,20 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     // Search query across all cell values
     final query = _searchQuery;
     if (query.isNotEmpty) {
+      final queryDigits = query.replaceAll(RegExp(r'\D'), '');
       list = list.where((lead) {
-        if (lead.source.toLowerCase().contains(query)) return true;
-        if (lead.campaignStatus.toLowerCase().contains(query)) return true;
-        if (lead.qualityStatus.toLowerCase().contains(query)) return true;
+        final blob = StringBuffer()
+          ..write(lead.source)
+          ..write(' ')
+          ..write(lead.campaignStatus)
+          ..write(' ')
+          ..write(lead.qualityStatus);
         for (final val in lead.rawJson.values) {
-          if (val != null && val.toString().toLowerCase().contains(query)) {
-            return true;
-          }
+          if (val != null) blob.write(' $val');
         }
-        return false;
+        final text = blob.toString().toLowerCase();
+        if (text.contains(query)) return true;
+        return queryDigits.length >= 4 && text.replaceAll(RegExp(r'\D'), '').contains(queryDigits);
       }).toList();
     }
 
@@ -720,18 +742,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               customStart: _customStartDate, customEnd: _customEndDate)) {
         reqCount++;
       }
-    }
-
-    final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
-    if (isTelecaller) {
-      propListingCount = scopedLeads.where((l) {
-        final t = l.leadType.toLowerCase();
-        return t == 'property listing' || t.contains('property') || t.contains('listing');
-      }).length;
-      reqCount = scopedLeads.where((l) {
-        final t = l.leadType.toLowerCase();
-        return t == 'requirement' || t.contains('requirement');
-      }).length;
     }
 
     _cachedAllTimeSectionCount = allTimeSectionCount;
@@ -5278,6 +5288,18 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     return leadIds.length;
   }
 
+  String _followupDisplayName(CampaignFollowupModel item) {
+    IntegrationLeadModel? live;
+    try {
+      live = _service.leads.firstWhere((lead) => lead.id == item.leadId);
+    } catch (_) {}
+    live ??= item.lead;
+    final fromLead = live?.getStringValue('full_name').trim() ?? '';
+    if (fromLead.isNotEmpty) return fromLead;
+    final stored = item.clientName.trim();
+    return stored.isNotEmpty ? stored : 'Client';
+  }
+
   Widget _buildFollowupsView(BuildContext context) {
     final allItems = List<CampaignFollowupModel>.from(_followupsList);
 
@@ -5759,7 +5781,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          item.clientName,
+                          _followupDisplayName(item),
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                         Container(
@@ -9860,7 +9882,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final distinctValueCounts = <String, int>{};
     final sectionLeads = _viewMode == 'not_interested'
         ? _scopedLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList()
-        : _scopedLeads.where((l) => l.leadType == _selectedSection && !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned')).toList();
+        : _scopedLeads.where((l) => l.leadType == _selectedSection && !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned') && !_leftCallingQueue(l)).toList();
 
     for (final lead in sectionLeads) {
       String val;

@@ -193,9 +193,10 @@ class AppRouter {
             path: '/telecaller/leads',
             pageBuilder: (context, state) {
               final view = state.uri.queryParameters['view'];
+              final search = state.uri.queryParameters['search'];
               return crmFadeSlidePage(
                 key: state.pageKey,
-                child: CampaignLeadsScreen(initialView: view),
+                child: CampaignLeadsScreen(initialView: view, initialSearch: search),
               );
             },
           ),
@@ -203,14 +204,22 @@ class AppRouter {
             path: '/telecaller/callbacks',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const TelecallerCallbacksScreen(),
+              child: TelecallerCallbacksScreen(
+                telecallerId: state.uri.queryParameters['telecallerId'],
+                telecallerName: state.uri.queryParameters['telecallerName'],
+                initialSearch: state.uri.queryParameters['q'],
+              ),
             ),
           ),
           GoRoute(
             path: '/telecaller/cnr',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const TelecallerCnrScreen(),
+              child: TelecallerCnrScreen(
+                telecallerId: state.uri.queryParameters['telecallerId'],
+                telecallerName: state.uri.queryParameters['telecallerName'],
+                initialSearch: state.uri.queryParameters['q'],
+              ),
             ),
           ),
           GoRoute(
@@ -293,6 +302,7 @@ class AppRouter {
                   initialSource: source,
                   lockSource: source,
                   initialView: view,
+                  initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
                 ),
               );
             },

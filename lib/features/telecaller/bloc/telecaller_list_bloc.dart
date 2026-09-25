@@ -52,7 +52,7 @@ class TelecallerListState extends Equatable {
 }
 
 class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
-  TelecallerCallbacksBloc({TelecallerRepository? repository})
+  TelecallerCallbacksBloc({this.telecallerId, TelecallerRepository? repository})
       : _repository = repository ?? TelecallerRepository(),
         super(const TelecallerListState(loading: true)) {
     _leadEventsSub = IntegrationService.leadEvents.stream.listen((_) {
@@ -67,6 +67,7 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
           from: event.from,
           to: event.to,
           source: event.source,
+          telecallerId: telecallerId,
         );
         final items = _keptForCurrentTelecaller(serverItems);
 
@@ -85,7 +86,11 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
           }
           final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
           final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
-          if (isTelecaller && myId != null && myId.isNotEmpty) {
+          final focusId = (telecallerId ?? '').trim().toLowerCase();
+          if (focusId.isNotEmpty) {
+            final assigned = l.assignedTelecallerId?.trim().toLowerCase();
+            if (assigned != focusId) return false;
+          } else if (isTelecaller && myId != null && myId.isNotEmpty) {
             final assigned = l.assignedTelecallerId?.trim().toLowerCase();
             if (assigned != null && assigned.isNotEmpty && assigned != myId) {
               return false;
@@ -95,15 +100,9 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
         });
 
         for (final l in localCbLeads) {
-          String clientName = '';
-          for (final k in ['Client Name', 'full_name', 'Client / Owner Name', 'Name', 'Customer Name', 'Owner Name', 'name', 'client_name']) {
-            final v = l.getStringValue(k).trim();
-            if (v.isNotEmpty && v != 'Callback Client' && v != 'Lead') {
-              clientName = v;
-              break;
-            }
-          }
-          if (clientName.isEmpty) clientName = 'Lead ${l.getStringValue('phone_number')}';
+          final clientName = l.getStringValue('full_name').trim().isNotEmpty
+              ? l.getStringValue('full_name').trim()
+              : 'Lead ${l.getStringValue('phone_number')}';
 
           final phone = l.getStringValue('phone_number').isNotEmpty
               ? l.getStringValue('phone_number')
@@ -171,6 +170,7 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
     });
   }
 
+  final String? telecallerId;
   final TelecallerRepository _repository;
   StreamSubscription? _leadEventsSub;
 
@@ -182,7 +182,7 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
 }
 
 class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
-  TelecallerCnrBloc({TelecallerRepository? repository})
+  TelecallerCnrBloc({this.telecallerId, TelecallerRepository? repository})
       : _repository = repository ?? TelecallerRepository(),
         super(const TelecallerListState(loading: true)) {
     _leadEventsSub = IntegrationService.leadEvents.stream.listen((_) {
@@ -197,6 +197,7 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
           from: event.from,
           to: event.to,
           source: event.source,
+          telecallerId: telecallerId,
         );
         final items = _keptForCurrentTelecaller(serverItems);
 
@@ -211,7 +212,11 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
           if (!isCnr) return false;
           final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
           final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
-          if (isTelecaller && myId != null && myId.isNotEmpty) {
+          final focusId = (telecallerId ?? '').trim().toLowerCase();
+          if (focusId.isNotEmpty) {
+            final assigned = l.assignedTelecallerId?.trim().toLowerCase();
+            if (assigned != focusId) return false;
+          } else if (isTelecaller && myId != null && myId.isNotEmpty) {
             final assigned = l.assignedTelecallerId?.trim().toLowerCase();
             final interacted = (l.rawJson['_transfer']?['interacted_by'] ?? l.rawJson['interacted_by'])?.toString().trim().toLowerCase();
             if (assigned != null && assigned.isNotEmpty && assigned != myId && interacted != null && interacted.isNotEmpty && interacted != myId) {
@@ -222,15 +227,9 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
         });
 
         for (final l in localCnrLeads) {
-          String clientName = '';
-          for (final k in ['Client Name', 'full_name', 'Client / Owner Name', 'Name', 'Customer Name', 'Owner Name', 'name', 'client_name']) {
-            final v = l.getStringValue(k).trim();
-            if (v.isNotEmpty && v != 'CNR Client' && v != 'Lead') {
-              clientName = v;
-              break;
-            }
-          }
-          if (clientName.isEmpty) clientName = 'Lead ${l.getStringValue('phone_number')}';
+          final clientName = l.getStringValue('full_name').trim().isNotEmpty
+              ? l.getStringValue('full_name').trim()
+              : 'Lead ${l.getStringValue('phone_number')}';
 
           final phone = l.getStringValue('phone_number').isNotEmpty
               ? l.getStringValue('phone_number')
@@ -290,6 +289,7 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
     });
   }
 
+  final String? telecallerId;
   final TelecallerRepository _repository;
   StreamSubscription? _leadEventsSub;
 

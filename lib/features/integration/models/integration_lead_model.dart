@@ -182,6 +182,14 @@ class IntegrationLeadModel {
   }
 
   /// Extract cell value by dynamic key with intelligent alias resolution
+  static bool _isPlaceholderLeadName(String value) {
+    final lower = value.trim().toLowerCase();
+    if (lower.isEmpty || lower == 'lead' || lower == 'client' || lower == 'cnr client' || lower == 'callback client' || lower == 'campaign lead' || lower == 'meta lead') {
+      return true;
+    }
+    return RegExp(r'^lead\s*\d{6,}$').hasMatch(lower);
+  }
+
   dynamic getValue(String key) {
     if (rawJson.containsKey(key)) {
       final val = rawJson[key];
@@ -207,7 +215,9 @@ class IntegrationLeadModel {
         normKey == 'ownername' ||
         normKey == 'nameofclient') {
       const candidates = [
+        'Full Name',
         'full_name',
+        'lead_name',
         'name',
         'Name',
         'Client Name',
@@ -218,8 +228,19 @@ class IntegrationLeadModel {
       ];
       for (final c in candidates) {
         if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
-          return rawJson[c];
+          final text = rawJson[c].toString().trim();
+          if (!_isPlaceholderLeadName(text)) return rawJson[c];
         }
+      }
+      for (final entry in rawJson.entries) {
+        final nk = entry.key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (nk != 'fullname' && nk != 'leadname' && nk != 'clientname' && nk != 'customername' && nk != 'ownername' && nk != 'buyername') {
+          continue;
+        }
+        final val = entry.value;
+        if (val == null || val is Map || val is List) continue;
+        final text = val.toString().trim();
+        if (text.isNotEmpty && !_isPlaceholderLeadName(text)) return val;
       }
     }
 

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:persistent_bottom_nav_bar_v2/persistent_bottom_nav_bar_v2.dart';
 import '../../security/role_guard.dart';
+import '../../../features/integration/services/integration_service.dart';
 import '../../security/permission_matrix_service.dart';
 import '../../../../features/auth/bloc/auth_bloc.dart';
 import '../../theme/theme_manager.dart';
@@ -172,6 +173,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   List<dynamic> _ownerSuggestions = [];
   List<dynamic> _builderSuggestions = [];
   List<dynamic> _clientSuggestions = [];
+  List<Map<String, String>> _callingLeadSuggestions = [];
   bool _isSearching = false;
   Timer? _searchDebounce;
   List<dynamic> _notifications = [];
@@ -774,6 +776,11 @@ class _CRMAppShellState extends State<CRMAppShell>
     }
 
     final isNumericToken = RegExp(r'^\d+$').hasMatch(token);
+    if (isNumericToken && token.length >= 4) {
+      for (final fs in fieldStrings) {
+        if (fs.replaceAll(RegExp(r'\D'), '').contains(token)) return true;
+      }
+    }
 
     // Word level matching
     for (final w in fieldWords) {
@@ -1182,12 +1189,62 @@ class _CRMAppShellState extends State<CRMAppShell>
           .take(8)
           .toList();
 
+      if (IntegrationService().leads.isEmpty) {
+        try {
+          await IntegrationService().ensureLoaded();
+        } catch (_) {}
+      }
+      final callingLeads = IntegrationService().leads.where((lead) {
+        final buffer = StringBuffer()
+          ..write(lead.campaignStatus)
+          ..write(' ')
+          ..write(lead.source)
+          ..write(' ')
+          ..write(lead.leadType)
+          ..write(' ')
+          ..write(lead.assignedToName ?? '')
+          ..write(' ')
+          ..write(lead.assignedTelecallerName ?? '');
+        for (final value in lead.rawJson.values) {
+          if (value != null && value is! Map && value is! List) buffer.write(' $value');
+        }
+        final text = buffer.toString().toLowerCase();
+        final digits = text.replaceAll(RegExp(r'\D'), '');
+        final qDigits = queryNorm.replaceAll(RegExp(r'\D'), '');
+        if (text.contains(queryNorm)) return true;
+        return qDigits.length >= 4 && digits.contains(qDigits);
+      }).take(8).map((lead) {
+        final status = lead.campaignStatus.trim().toLowerCase();
+        final alloc = (lead.allocationStatus ?? '').toUpperCase();
+        final queue = (status == 'cnr' || alloc == 'CNR')
+            ? 'CNR'
+            : ((status == 'callback' || status == 'call back' || alloc == 'CALLBACK') ? 'Callback' : (status == 'follow up' || status == 'follow-up' ? 'Follow up' : 'New'));
+        String name = '';
+        for (final key in ['Full Name', 'Client Name', 'full_name', 'lead_name', 'Name', 'Customer Name']) {
+          final value = lead.rawJson[key]?.toString().trim() ?? '';
+          if (value.isNotEmpty) {
+            name = value;
+            break;
+          }
+        }
+        if (name.isEmpty) name = 'Lead';
+        final phone = (lead.rawJson['Phone Number'] ?? lead.rawJson['phone_number'] ?? lead.rawJson['lead_phone'] ?? '').toString();
+        return {
+          'id': lead.id,
+          'name': name,
+          'phone': phone,
+          'queue': queue,
+          'status': lead.campaignStatus.isEmpty ? 'New' : lead.campaignStatus,
+        };
+      }).toList();
+
       setState(() {
         _propertySuggestions = allMatchedProps;
         _requirementSuggestions = matchedReqs;
         _ownerSuggestions = matchedOwners;
         _builderSuggestions = matchedBuilders;
         _clientSuggestions = matchedClients;
+        _callingLeadSuggestions = callingLeads;
         _isSearching = false;
       });
       _searchOverlayEntry?.markNeedsBuild();
@@ -1289,7 +1346,8 @@ class _CRMAppShellState extends State<CRMAppShell>
                   )
                 : (_propertySuggestions.isEmpty &&
                       _requirementSuggestions.isEmpty &&
-                      _clientSuggestions.isEmpty)
+                      _clientSuggestions.isEmpty &&
+                      _callingLeadSuggestions.isEmpty)
                 ? Padding(
                     padding: const EdgeInsets.all(CRMSpacing.m),
                     child: Text(
@@ -1345,6 +1403,33 @@ class _CRMAppShellState extends State<CRMAppShell>
                             );
                             context.go(uri.toString());
                           },
+                        ),
+                      ],
+                      if (_callingLeadSuggestions.isNotEmpty) ...[
+                        _buildSuggestionSectionHeader('Calling leads'),
+                        ..._callingLeadSuggestions.take(5).map(
+                          (lead) => _buildSuggestionTile(
+                            icon: Icons.support_agent_rounded,
+                            title: lead['name'] ?? '',
+                            subtitle: '${lead['queue']} · ${lead['status']}${((lead['phone'] ?? '').isNotEmpty) ? ' · ${lead['phone']}' : ''}',
+                            onTap: () {
+                              _hideSearchOverlay();
+                              final queue = lead['queue'];
+                              final path = queue == 'CNR'
+                                  ? '/telecaller/cnr'
+                                  : queue == 'Callback'
+                                      ? '/telecaller/callbacks'
+                                      : (RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ? '/telecaller/leads' : '/campaign/leads');
+                              final uri = Uri(
+                                path: path,
+                                queryParameters: {
+                                  if (activeSearchQuery.trim().isNotEmpty)
+                                    (path.contains('/leads') ? 'search' : 'q'): activeSearchQuery.trim(),
+                                },
+                              );
+                              context.go(uri.toString());
+                            },
+                          ),
                         ),
                       ],
                       if (_requirementSuggestions.isNotEmpty) ...[

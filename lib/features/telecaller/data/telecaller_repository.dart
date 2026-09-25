@@ -79,7 +79,7 @@ class TelecallerRepository {
     return result;
   }
 
-  Future<List<dynamic>> callbacks({String? search, String? from, String? to, String? source}) async {
+  Future<List<dynamic>> callbacks({String? search, String? from, String? to, String? source, String? telecallerId}) async {
     final res = await DioClient.dio.get(
       ApiConstants.telecallerCallbacks,
       queryParameters: {
@@ -87,12 +87,13 @@ class TelecallerRepository {
         if (from != null) 'from': from,
         if (to != null) 'to': to,
         if (source != null && source.isNotEmpty) 'source': source,
+        if (telecallerId != null && telecallerId.isNotEmpty) 'telecallerId': telecallerId,
       },
     );
     return List<dynamic>.from(res.data['data'] ?? []);
   }
 
-  Future<List<dynamic>> cnr({String? search, String? from, String? to, String? source}) async {
+  Future<List<dynamic>> cnr({String? search, String? from, String? to, String? source, String? telecallerId}) async {
     final res = await DioClient.dio.get(
       ApiConstants.telecallerCnr,
       queryParameters: {
@@ -100,6 +101,7 @@ class TelecallerRepository {
         if (from != null) 'from': from,
         if (to != null) 'to': to,
         if (source != null && source.isNotEmpty) 'source': source,
+        if (telecallerId != null && telecallerId.isNotEmpty) 'telecallerId': telecallerId,
       },
     );
     return List<dynamic>.from(res.data['data'] ?? []);

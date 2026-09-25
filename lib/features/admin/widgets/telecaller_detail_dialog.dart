@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
@@ -675,31 +676,60 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
             children: [
               _metricBox(
                 'Assigned',
-                '${_data?['leadStats']?['activeAssigned'] ?? currentLeads.length}',
+                _directory.isEmpty
+                    ? '${_data?['leadStats']?['activeAssigned'] ?? currentLeads.length}'
+                    : '${_callingQueue.length}',
                 Icons.assignment_outlined,
                 Colors.blue,
                 isDark,
+                onTap: () => _showLeadList(
+                  'Assigned now',
+                  _callingQueue,
+                  subtitle: 'New and follow-up leads still on this telecaller\'s calling queue.',
+                ),
               ),
               _metricBox(
                 'Overall Assigned',
-                '${_data?['leadStats']?['overallAssigned'] ?? _data?['leadStats']?['totalAssigned'] ?? 0}',
+                _directory.isEmpty
+                    ? '${_data?['leadStats']?['overallAssigned'] ?? _data?['leadStats']?['totalAssigned'] ?? 0}'
+                    : '${_directory.length}',
                 Icons.history_rounded,
                 Colors.indigo,
                 isDark,
+                onTap: () => _showLeadList(
+                  'Every lead assigned to ${widget.telecallerName ?? 'this telecaller'}',
+                  _directory,
+                  subtitle: 'Current status of each lead. One row per customer.',
+                ),
               ),
               _metricBox(
-                'CNR | Callback',
-                '${outcomes['cnr'] ?? 0} | ${outcomes['callbacks'] ?? 0}',
+                'CNR',
+                '${outcomes['cnr'] ?? 0}',
                 Icons.phone_missed,
                 Colors.orange,
                 isDark,
+                onTap: () => _openTelecallerQueue('/telecaller/cnr'),
+              ),
+              _metricBox(
+                'Callbacks',
+                '${outcomes['callbacks'] ?? 0}',
+                Icons.phone_callback_rounded,
+                Colors.blue,
+                isDark,
+                onTap: () => _openTelecallerQueue('/telecaller/callbacks'),
               ),
               _metricBox(
                 'Assigned to Sales',
-                '${outcomes['salesHandoffs'] ?? 0}',
+                _directory.isEmpty ? '${outcomes['salesHandoffs'] ?? 0}' : '${_salesHandoffs.length}',
                 Icons.check_circle_outline,
                 Colors.green,
                 isDark,
+                onTap: () => _showLeadList(
+                  'Handed to sales',
+                  _salesHandoffs,
+                  subtitle: 'The lead and the sales person it was handed to.',
+                  showHandedTo: true,
+                ),
               ),
             ],
           ),
@@ -713,13 +743,13 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Active Leads Occupying Capacity (${currentLeads.length})',
+                    'Calling queue (${_directory.isEmpty ? currentLeads.length : _callingQueue.length})',
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    'These leads count towards the $capacity-lead capacity until transferred to Sales or finished.',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  const Text(
+                    'New and follow-up leads still on My Calling Leads. CNR and Callback are counted on their own cards.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                   ),
                 ],
               ),
@@ -927,8 +957,117 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
     );
   }
 
-  Widget _metricBox(String label, String value, IconData icon, Color color, bool isDark) {
-    return Container(
+  List<Map<String, dynamic>> get _directory {
+    final raw = _data?['leadDirectory'];
+    if (raw is! List) return const [];
+    return raw.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+  bool _isCnrRow(Map<String, dynamic> lead) {
+    final status = (lead['campaignStatus'] ?? '').toString().trim().toLowerCase();
+    final alloc = (lead['allocationStatus'] ?? '').toString();
+    return alloc == 'CNR' || status == 'cnr';
+  }
+
+  bool _isCallbackRow(Map<String, dynamic> lead) {
+    if (_isCnrRow(lead)) return false;
+    final status = (lead['campaignStatus'] ?? '').toString().trim().toLowerCase();
+    final alloc = (lead['allocationStatus'] ?? '').toString();
+    return alloc == 'CALLBACK' || status == 'callback' || status == 'call back';
+  }
+
+  List<Map<String, dynamic>> get _callingQueue => _directory.where((lead) {
+    final status = (lead['campaignStatus'] ?? '').toString().trim().toLowerCase();
+    final alloc = (lead['allocationStatus'] ?? '').toString().toUpperCase();
+    if (status.contains('not interest') || status == 'archived' || status == 'closed' || status == 'won' || status == 'property listed' || status == 'listed') {
+      return false;
+    }
+    if (alloc == 'HANDED_TO_SALES' || status == 'assigned' || status == 'picked up') return false;
+    if ((lead['handedToName'] ?? '').toString().trim().isNotEmpty) return false;
+    if (status == 'follow up' || status == 'follow-up' || alloc == 'FOLLOWUP') return true;
+    if (_isCnrRow(lead) || _isCallbackRow(lead)) return false;
+    return true;
+  }).toList();
+
+  List<Map<String, dynamic>> get _salesHandoffs => _directory.where((lead) {
+    final status = (lead['campaignStatus'] ?? '').toString().trim().toLowerCase();
+    final alloc = (lead['allocationStatus'] ?? '').toString();
+    return alloc == 'HANDED_TO_SALES' || status == 'assigned';
+  }).toList();
+
+  void _openTelecallerQueue(String path) {
+    final name = (widget.telecallerName ?? _data?['profile']?['name']?.toString() ?? '').trim();
+    final uri = Uri(
+      path: path,
+      queryParameters: {
+        'telecallerId': widget.telecallerId,
+        if (name.isNotEmpty) 'telecallerName': name,
+      },
+    );
+    Navigator.of(context).pop();
+    context.go(uri.toString());
+  }
+
+  void _showLeadList(String title, List<Map<String, dynamic>> leads, {String? subtitle, bool showHandedTo = false}) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (subtitle != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  ),
+                if (leads.isEmpty)
+                  const Text('No leads in this list.')
+                else
+                  SizedBox(
+                    height: 360,
+                    child: ListView.separated(
+                      itemCount: leads.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, index) {
+                        final lead = leads[index];
+                        final status = (lead['campaignStatus'] ?? 'New').toString();
+                        final handed = (lead['handedToName'] ?? '').toString();
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text((lead['name'] ?? 'Lead').toString()),
+                          subtitle: Text(
+                            [
+                              if ((lead['phone'] ?? '').toString().isNotEmpty) lead['phone'],
+                              lead['leadType'] ?? 'Requirement',
+                              'Status: $status',
+                              if (showHandedTo && handed.isNotEmpty) 'Handed to $handed',
+                            ].join(' · '),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _metricBox(String label, String value, IconData icon, Color color, bool isDark, {VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
       width: 170,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -969,6 +1108,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
           ),
         ],
       ),
+    ),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/api/dio_client.dart';
@@ -15,29 +16,40 @@ import '../data/telecaller_repository.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class TelecallerCallbacksScreen extends StatelessWidget {
-  const TelecallerCallbacksScreen({super.key});
+  final String? telecallerId;
+  final String? telecallerName;
+  final String? initialSearch;
+  const TelecallerCallbacksScreen({super.key, this.telecallerId, this.telecallerName, this.initialSearch});
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => TelecallerCallbacksBloc()..add(TelecallerCallbacksRequested()),
-      child: const _TelecallerCallbacksView(),
+      create: (_) => TelecallerCallbacksBloc(telecallerId: telecallerId)
+        ..add(const TelecallerCallbacksRequested()),
+      child: _TelecallerCallbacksView(initialSearch: initialSearch, focusName: telecallerName),
     );
   }
 }
 
 class _LeadQueueFilters extends StatefulWidget {
   final void Function({String? search, String? source, DateTimeRange? range}) onChanged;
-  const _LeadQueueFilters({required this.onChanged});
+  final String? initialSearch;
+  const _LeadQueueFilters({required this.onChanged, this.initialSearch});
 
   @override
   State<_LeadQueueFilters> createState() => _LeadQueueFiltersState();
 }
 
 class _LeadQueueFiltersState extends State<_LeadQueueFilters> {
-  final _search = TextEditingController();
+  late final TextEditingController _search;
   String _source = 'All';
   DateTimeRange? _range;
+
+  @override
+  void initState() {
+    super.initState();
+    _search = TextEditingController(text: widget.initialSearch ?? '');
+  }
 
   @override
   void dispose() {
@@ -119,7 +131,9 @@ class _LeadQueueFiltersState extends State<_LeadQueueFilters> {
 }
 
 class _TelecallerCallbacksView extends StatefulWidget {
-  const _TelecallerCallbacksView();
+  final String? initialSearch;
+  final String? focusName;
+  const _TelecallerCallbacksView({this.initialSearch, this.focusName});
 
   @override
   State<_TelecallerCallbacksView> createState() => _TelecallerCallbacksViewState();
@@ -141,6 +155,17 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
   };
   String _source = 'All';
   DateTimeRange? _range;
+  String _section = 'Requirement';
+
+  @override
+  void initState() {
+    super.initState();
+    final incoming = widget.initialSearch?.trim() ?? '';
+    if (incoming.isNotEmpty) {
+      _tabSearchQueries['all'] = incoming;
+      _tabSearchControllers['all']!.text = incoming;
+    }
+  }
 
   @override
   void dispose() {
@@ -189,27 +214,7 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
   }
 
   bool _matchesCallbackSearch(dynamic raw, String query) {
-    if (query.isEmpty) return true;
-    final q = query.trim().toLowerCase();
-    final cleanQ = q.replaceAll(RegExp(r'\D'), '');
-    if (raw is! Map) return false;
-
-    final clientName = (raw['client_name'] ?? '').toString().toLowerCase();
-    final mobile = (raw['mobile'] ?? '').toString().toLowerCase();
-    final cleanMobile = mobile.replaceAll(RegExp(r'\D'), '');
-    final remarks = (raw['remarks'] ?? '').toString().toLowerCase();
-    final lead = raw['lead'] is Map ? raw['lead'] as Map : null;
-    final campaignName = (lead?['campaign_name'] ?? '').toString().toLowerCase();
-    final source = (lead?['source'] ?? '').toString().toLowerCase();
-    final leadType = (raw['lead_type'] ?? lead?['lead_type'] ?? '').toString().toLowerCase();
-
-    return clientName.contains(q) ||
-        remarks.contains(q) ||
-        mobile.contains(q) ||
-        (cleanQ.isNotEmpty && cleanMobile.contains(cleanQ)) ||
-        campaignName.contains(q) ||
-        source.contains(q) ||
-        leadType.contains(q);
+    return queueItemMatchesSearch(raw, query);
   }
 
   String _getTabDisplayName(String tab) {
@@ -313,6 +318,12 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
         if (currentQuery.isNotEmpty) {
           filteredItems = filteredItems.where((raw) => _matchesCallbackSearch(raw, currentQuery)).toList();
         }
+        final requirementCount = filteredItems.where((raw) => queueLeadType(raw) != 'Property Listing').length;
+        final listingCount = filteredItems.where((raw) => queueLeadType(raw) == 'Property Listing').length;
+        filteredItems = filteredItems.where((raw) {
+          final listing = queueLeadType(raw) == 'Property Listing';
+          return _section == 'Property Listing' ? listing : !listing;
+        }).toList();
 
         return RefreshIndicator(
           onRefresh: () async {
@@ -327,9 +338,18 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              const CRMPageHeader(
+              CRMPageHeader(
                 title: 'Callbacks',
-                benefit: 'Callbacks stay with you even on Break or Inactive.',
+                benefit: (widget.focusName ?? '').trim().isEmpty
+                    ? 'Call Back leads leave My Calling Leads. Follow up stays there.'
+                    : 'Call Back leads for ${widget.focusName}. Follow ups stay on My Calling Leads.',
+                trailing: (widget.focusName ?? '').trim().isEmpty
+                    ? null
+                    : TextButton.icon(
+                        onPressed: () => context.go('/admin/lead-allocation'),
+                        icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                        label: const Text('Lead Allocation'),
+                      ),
               ),
 
               // Category Tabs: All Callbacks, Today, Due, Future
@@ -346,6 +366,13 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
                     _buildTabChip('Future', 'future', futureCount),
                   ],
                 ),
+              ),
+              const SizedBox(height: 12),
+              _QueueSectionSwitch(
+                section: _section,
+                requirementCount: requirementCount,
+                listingCount: listingCount,
+                onChanged: (value) => setState(() => _section = value),
               ),
               const SizedBox(height: 16),
 
@@ -437,10 +464,13 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
               if (state.error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(state.error!, style: const TextStyle(color: Colors.red)),
+                  child: Text(
+                    'Could not load callbacks. Refresh the page.',
+                    style: const TextStyle(color: Colors.red),
+                  ),
                 ),
 
-              if (filteredItems.isEmpty)
+              if (state.error == null && filteredItems.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(32),
                   alignment: Alignment.center,
@@ -466,7 +496,7 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
                       Text(
                         currentQuery.isNotEmpty
                             ? 'Try searching with a different client name, phone number, or remark.'
-                            : 'When leads are marked for follow-up, they will appear here with scheduled reminders.',
+                            : 'Leads marked Call Back leave My Calling Leads and appear in this ${_section == 'Property Listing' ? 'listing' : 'requirement'} table.',
                         style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade500 : Colors.grey.shade500),
                         textAlign: TextAlign.center,
                       ),
@@ -683,19 +713,40 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
 }
 
 class TelecallerCnrScreen extends StatelessWidget {
-  const TelecallerCnrScreen({super.key});
+  final String? telecallerId;
+  final String? telecallerName;
+  final String? initialSearch;
+  const TelecallerCnrScreen({super.key, this.telecallerId, this.telecallerName, this.initialSearch});
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => TelecallerCnrBloc()..add(TelecallerCnrRequested()),
-      child: const _TelecallerCnrView(),
+      create: (_) => TelecallerCnrBloc(telecallerId: telecallerId)..add(const TelecallerCnrRequested()),
+      child: _TelecallerCnrView(initialSearch: initialSearch, focusName: telecallerName),
     );
   }
 }
 
-class _TelecallerCnrView extends StatelessWidget {
-  const _TelecallerCnrView();
+class _TelecallerCnrView extends StatefulWidget {
+  final String? initialSearch;
+  final String? focusName;
+  const _TelecallerCnrView({this.initialSearch, this.focusName});
+
+  @override
+  State<_TelecallerCnrView> createState() => _TelecallerCnrViewState();
+}
+
+class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
+  String _query = '';
+  String _section = 'Requirement';
+  String _loadedSource = 'All';
+  DateTimeRange? _loadedRange;
+
+  @override
+  void initState() {
+    super.initState();
+    _query = widget.initialSearch?.trim() ?? '';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -713,28 +764,54 @@ class _TelecallerCnrView extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              const CRMPageHeader(
+              CRMPageHeader(
                 title: 'CNR / Retry',
-                benefit: 'CNR leads remain yours. Other Telecallers cannot claim them.',
+                benefit: (widget.focusName ?? '').trim().isEmpty
+                    ? 'CNR leads leave My Calling Leads and stay here for retry.'
+                    : 'CNR leads for ${widget.focusName}. They are not on My Calling Leads.',
+                trailing: (widget.focusName ?? '').trim().isEmpty
+                    ? null
+                    : TextButton.icon(
+                        onPressed: () => context.go('/admin/lead-allocation'),
+                        icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                        label: const Text('Lead Allocation'),
+                      ),
               ),
               _LeadQueueFilters(
+                initialSearch: _query,
                 onChanged: ({search, source, range}) {
+                  setState(() => _query = search ?? '');
+                  final nextSource = source ?? 'All';
+                  final sameSource = nextSource == _loadedSource;
+                  final sameRange = range?.start == _loadedRange?.start && range?.end == _loadedRange?.end;
+                  if (sameSource && sameRange) return;
+                  _loadedSource = nextSource;
+                  _loadedRange = range;
                   context.read<TelecallerCnrBloc>().add(
                     TelecallerCnrRequested(
-                      search: search,
-                      source: source,
+                      source: nextSource,
                       from: range?.start.toIso8601String(),
                       to: range?.end.toIso8601String(),
                     ),
                   );
                 },
               ),
+              _QueueSectionSwitch(
+                section: _section,
+                requirementCount: state.items.where((raw) => queueItemMatchesSearch(raw, _query) && queueLeadType(raw) != 'Property Listing').length,
+                listingCount: state.items.where((raw) => queueItemMatchesSearch(raw, _query) && queueLeadType(raw) == 'Property Listing').length,
+                onChanged: (value) => setState(() => _section = value),
+              ),
+              const SizedBox(height: 12),
               if (state.error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(state.error!, style: const TextStyle(color: Colors.red)),
+                  child: Text(
+                    'Could not load CNR leads. Refresh the page.',
+                    style: const TextStyle(color: Colors.red),
+                  ),
                 ),
-              if (state.items.isEmpty)
+              if (state.error == null && state.items.where((raw) => queueItemMatchesSearch(raw, _query) && (queueLeadType(raw) == 'Property Listing') == (_section == 'Property Listing')).isEmpty)
                 Container(
                   padding: const EdgeInsets.all(32),
                   alignment: Alignment.center,
@@ -759,7 +836,7 @@ class _TelecallerCnrView extends StatelessWidget {
                     ],
                   ),
                 ),
-              for (final raw in state.items)
+              for (final raw in state.items.where((raw) => queueItemMatchesSearch(raw, _query) && (queueLeadType(raw) == 'Property Listing') == (_section == 'Property Listing')))
                 _CnrCard(
                   lead: Map<String, dynamic>.from(raw as Map),
                   onOutcomeRecorded: () {
@@ -1321,30 +1398,149 @@ Widget _detailRow(BuildContext context, IconData icon, String label, String valu
   );
 }
 
+class _QueueSectionSwitch extends StatelessWidget {
+  final String section;
+  final int requirementCount;
+  final int listingCount;
+  final ValueChanged<String> onChanged;
+  const _QueueSectionSwitch({
+    required this.section,
+    required this.requirementCount,
+    required this.listingCount,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget chip(String label, int count) {
+      final selected = section == label;
+      return InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => onChanged(label),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFF2563EB)
+                : (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            '$label ($count)',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: selected
+                  ? Colors.white
+                  : (Theme.of(context).brightness == Brightness.dark ? const Color(0xFFE2E8F0) : const Color(0xFF334155)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        chip('Requirement', requirementCount),
+        chip('Property Listing', listingCount),
+      ],
+    );
+  }
+}
+
+String queueLeadType(dynamic raw) {
+  if (raw is! Map) return 'Requirement';
+  String? explicit;
+  final sources = <Map>[raw];
+  if (raw['lead'] is Map) sources.add(raw['lead'] as Map);
+  for (final source in sources) {
+    final value = (source['lead_type'] ?? source['leadType'] ?? '').toString().trim();
+    if (value == 'Property Listing' || value == 'Requirement') return value;
+    if (value.isNotEmpty && explicit == null) explicit = value;
+  }
+  Map<String, dynamic> json = {};
+  if (raw['raw_json'] is Map) {
+    json = Map<String, dynamic>.from(raw['raw_json'] as Map);
+  } else if (raw['lead'] is Map && (raw['lead'] as Map)['raw_json'] is Map) {
+    json = Map<String, dynamic>.from((raw['lead'] as Map)['raw_json'] as Map);
+  }
+  return IntegrationLeadModel.resolveLeadType(explicit, json);
+}
+
+bool queueItemMatchesSearch(dynamic raw, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  final qDigits = q.replaceAll(RegExp(r'\D'), '');
+  final map = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+  final cached = IntegrationService().getLeadById(_campaignLeadId(map));
+  final parts = <String>[resolveLeadClientName(raw, cachedLead: cached).toLowerCase()];
+  void add(dynamic value) {
+    if (value == null) return;
+    if (value is Map) {
+      for (final entry in value.values) {
+        add(entry);
+      }
+      return;
+    }
+    if (value is List) return;
+    final text = value.toString().trim();
+    if (text.isNotEmpty) parts.add(text.toLowerCase());
+  }
+
+  add(map['client_name']);
+  add(map['customer_name']);
+  add(map['mobile']);
+  add(map['phone']);
+  add(map['sanitized_phone']);
+  add(map['remarks']);
+  add(map['campaign_name']);
+  add(map['source']);
+  add(map['campaign_status']);
+  add(map['raw_json']);
+  add(map['lead']);
+  final text = parts.join(' ');
+  if (text.contains(q)) return true;
+  return qDigits.length >= 4 && text.replaceAll(RegExp(r'\D'), '').contains(qDigits);
+}
+
 /// Resolves the human-readable client name from all candidate keys in raw_json,
 /// the item itself, or the in-memory cache of IntegrationService.
+bool isPlaceholderLeadName(String value) {
+  final lower = value.trim().toLowerCase();
+  if (lower.isEmpty || lower == 'lead' || lower == 'client' || lower == 'cnr client' || lower == 'callback client' || lower == 'campaign lead' || lower == 'meta lead') {
+    return true;
+  }
+  return RegExp(r'^lead\s*\d{6,}$').hasMatch(lower);
+}
+
 String resolveLeadClientName(dynamic itemOrRaw, {IntegrationLeadModel? cachedLead}) {
   if (cachedLead != null) {
-    for (final k in ['Client Name', 'full_name', 'Client / Owner Name', 'Name', 'Customer Name', 'Owner Name', 'name', 'client_name']) {
-      final v = cachedLead.getStringValue(k).trim();
-      if (v.isNotEmpty && v != 'CNR Client' && v != 'Callback Client' && v != 'Lead') return v;
+    final fromLead = cachedLead.getStringValue('full_name').trim();
+    if (!isPlaceholderLeadName(fromLead)) return fromLead;
+  }
+  final map = itemOrRaw is Map ? Map<String, dynamic>.from(itemOrRaw) : <String, dynamic>{};
+  final sources = <Map>[];
+  if (map['raw_json'] is Map) sources.add(map['raw_json'] as Map);
+  if (map['lead'] is Map) {
+    final nested = map['lead'] as Map;
+    if (nested['raw_json'] is Map) sources.add(nested['raw_json'] as Map);
+    sources.add(nested);
+  }
+  sources.add(map);
+  const keys = [
+    'Full Name', 'lead_name', 'full_name', 'Client Name', 'Client / Owner Name',
+    'Customer Name', 'customer_name', 'Owner Name', 'owner_name', 'buyer_name',
+    'Name of client', 'client_name', 'Name', 'name',
+  ];
+  for (final source in sources) {
+    for (final key in keys) {
+      final value = (source[key] ?? '').toString().trim();
+      if (!isPlaceholderLeadName(value)) return value;
     }
   }
-  final map = itemOrRaw is Map ? itemOrRaw : {};
-  final raw = map['raw_json'] is Map ? map['raw_json'] as Map : (itemOrRaw is Map ? itemOrRaw : {});
-  for (final k in [
-    'Client Name', 'full_name', 'Client / Owner Name', 'Name', 'name',
-    'Customer Name', 'customer_name', 'Owner Name', 'owner_name',
-    'Full Name', 'buyer_name', 'client_name', 'Name of client', 'nameofclient'
-  ]) {
-    final v = (raw[k] ?? map[k] ?? '').toString().trim();
-    if (v.isNotEmpty && v != 'CNR Client' && v != 'Callback Client' && v != 'Lead') return v;
-  }
-  final custName = (map['customer_name'] ?? map['client_name'] ?? '').toString().trim();
-  if (custName.isNotEmpty && custName != 'CNR Client' && custName != 'Callback Client' && custName != 'Lead') {
-    return custName;
-  }
-  final phone = (map['sanitized_phone'] ?? map['phone'] ?? map['mobile'] ?? '').toString().trim();
+  final phone = (map['sanitized_phone'] ?? map['phone'] ?? map['mobile'] ?? cachedLead?.getStringValue('phone_number') ?? '').toString().trim();
   if (phone.isNotEmpty) return 'Lead $phone';
   return 'Client';
 }
