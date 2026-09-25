@@ -14,6 +14,7 @@ import '../../integration/services/integration_service.dart';
 import 'campaign_subshell_header.dart';
 import '../bloc/campaign_connections_bloc.dart';
 import '../models/campaign_connection_model.dart';
+import '../services/portal_integrations_service.dart';
 
 class ConnectionsScreen extends StatefulWidget {
   final String? providerFocus;
@@ -25,8 +26,10 @@ class ConnectionsScreen extends StatefulWidget {
 
 class _ConnectionsScreenState extends State<ConnectionsScreen> {
   final IntegrationService _service = IntegrationService();
+  final PortalIntegrationsService _portals = PortalIntegrationsService();
   final TextEditingController _sheetUrlController = TextEditingController();
   bool _isSyncing = false;
+  List<Map<String, dynamic>> _portalIntegrations = [];
 
   @override
   void initState() {
@@ -37,6 +40,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
       if (!mounted) return;
       _sheetUrlController.text = _service.googleSheetUrl;
     });
+    _loadPortals();
   }
 
   @override
@@ -49,6 +53,13 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
 
   void _onServiceUpdate() {
     if (mounted) setState(() {});
+  }
+
+  Future<void> _loadPortals() async {
+    try {
+      final rows = await _portals.list();
+      if (mounted) setState(() => _portalIntegrations = rows);
+    } catch (_) {}
   }
 
   Future<void> _syncSheetToLeads(BuildContext context) async {
@@ -123,10 +134,11 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                     ? 'meta'
                     : (widget.providerFocus == 'HOUSING' ? 'housing' : 'connections'),
                 trailing: widget.providerFocus == null
-                    ? IconButton(
-                        tooltip: 'Manage connections',
-                        onPressed: () => _showManageConnectionsSheet(context),
-                        icon: const Icon(Icons.add_rounded),
+                    ? CRMButton(
+                        label: 'Add Integration',
+                        prefixIcon: Icons.add_rounded,
+                        height: 40,
+                        onPressed: () => _showAddIntegration(context),
                       )
                     : CRMButton(
                         label: 'Back to Connections',
@@ -230,6 +242,8 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                                   : 'Ready',
                             ),
                           ],
+                          const SizedBox(height: CRMSpacing.l),
+                          _buildPortalSection(context, isWide),
                         ],
                       );
                     },
@@ -242,6 +256,201 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPortalSection(BuildContext context, bool isWide) {
+    final savedProviders = _portalIntegrations
+        .map((row) => row['provider']?.toString().toLowerCase())
+        .whereType<String>()
+        .toSet();
+    final placeholders = <Map<String, String>>[
+      if (!savedProviders.contains('99acres')) {'title': '99acres', 'provider': '99acres'},
+      if (!savedProviders.contains('magicbricks')) {'title': 'MagicBricks', 'provider': 'magicbricks'},
+      if (!savedProviders.contains('nobroker')) {'title': 'NoBroker', 'provider': 'nobroker'},
+    ];
+    final tiles = <Widget>[
+      for (final item in placeholders)
+        _buildPortalTile(
+          context,
+          title: item['title']!,
+          subtitle: 'API Pull',
+          status: 'Not configured',
+          color: const Color(0xFF3D6B8C),
+          onTap: () => context.go('/campaign/connections/portal/new?provider=${item['provider']}'),
+        ),
+      for (final row in _portalIntegrations)
+        _buildPortalTile(
+          context,
+          title: row['name']?.toString() ?? 'Integration',
+          subtitle: _portalSubtitle(row),
+          status: _portalStatusLabel(row['status']?.toString()),
+          color: _portalStatusColor(row['status']?.toString()),
+          onTap: () => context.go('/campaign/connections/portal/${row['id']}'),
+        ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Property portal APIs', style: CRMTypography.title),
+        const SizedBox(height: 4),
+        Text(
+          'Configure 99acres, MagicBricks, NoBroker, or any custom portal from the official API details you receive.',
+          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+        ),
+        const SizedBox(height: CRMSpacing.m),
+        if (isWide)
+          Wrap(
+            spacing: CRMSpacing.l,
+            runSpacing: CRMSpacing.l,
+            children: tiles.map((tile) => SizedBox(width: 420, child: tile)).toList(),
+          )
+        else
+          ...tiles.expand((tile) => [tile, const SizedBox(height: CRMSpacing.l)]),
+      ],
+    );
+  }
+
+  String _portalSubtitle(Map<String, dynamic> row) {
+    final kind = row['integrationType'] == 'WEBHOOK' ? 'Webhook / Push' : 'API Pull';
+    final last = row['lastSuccessfulSyncAt']?.toString();
+    if (last == null || last.isEmpty) return kind;
+    return '$kind · Last sync ${last.replaceFirst('T', ' ').split('.').first}';
+  }
+
+  String _portalStatusLabel(String? status) {
+    switch ((status ?? '').toUpperCase()) {
+      case 'ACTIVE':
+        return 'Active';
+      case 'PAUSED':
+        return 'Paused';
+      case 'ERROR':
+        return 'Error';
+      case 'DRAFT':
+        return 'Draft';
+      default:
+        return 'Not configured';
+    }
+  }
+
+  Color _portalStatusColor(String? status) {
+    switch ((status ?? '').toUpperCase()) {
+      case 'ACTIVE':
+        return CRMColors.success;
+      case 'ERROR':
+        return CRMColors.danger;
+      case 'PAUSED':
+        return const Color(0xFFB45309);
+      default:
+        return const Color(0xFF3D6B8C);
+    }
+  }
+
+  Widget _buildPortalTile(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required String status,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: CRMCard(
+        elevated: true,
+        accentBorder: color.withValues(alpha: 0.35),
+        title: title,
+        subtitle: subtitle,
+        headerAction: Text(
+          status.toUpperCase(),
+          style: CRMTypography.captionBold.copyWith(color: color, fontSize: 11),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.hub_outlined, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Configure',
+                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: CRMColors.textSecondaryOf(context)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddIntegration(BuildContext context) {
+    const options = [
+      ('99acres', '99acres', 'API Pull'),
+      ('magicbricks', 'MagicBricks', 'API Pull'),
+      ('nobroker', 'NoBroker', 'API Pull'),
+      ('housing', 'Housing', 'API Pull'),
+      ('custom', 'Custom API', 'Any HTTP API'),
+    ];
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Add integration', style: CRMTypography.headline),
+              const SizedBox(height: 8),
+              Text(
+                'Choose a portal. You will enter the official endpoint, credentials, and field names yourself.',
+                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(ctx)),
+              ),
+              const SizedBox(height: 12),
+              for (final option in options)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.hub_outlined),
+                  title: Text(option.$2),
+                  subtitle: Text(option.$3),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    context.go('/campaign/connections/portal/new?provider=${option.$1}');
+                  },
+                ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.table_chart_rounded),
+                title: const Text('Google Sheets'),
+                subtitle: const Text('Existing inbox import'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showGoogleSheetsSheet(context);
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.tune_rounded),
+                title: const Text('Existing connectors'),
+                subtitle: const Text('Meta, Housing, and inbox import'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showManageConnectionsSheet(context);
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -304,7 +513,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             children: [
               Text('Manage connections', style: CRMTypography.headline),
               const SizedBox(height: 8),
-              const Text('Active connectors appear as Meta and Housing. Additional channels are not implemented yet.'),
+              const Text('Meta and Housing keep their existing connectors. Property portal APIs are added from Add Integration.'),
               const SizedBox(height: 16),
               ListTile(
                 leading: const Icon(Icons.campaign_rounded),

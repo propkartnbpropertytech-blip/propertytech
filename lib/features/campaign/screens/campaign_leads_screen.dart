@@ -37,9 +37,10 @@ import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 class CampaignLeadsScreen extends StatefulWidget {
   final String? initialSource;
   final String? lockSource;
+  final String? portalTabId;
   final String? initialView;
   final String? initialSearch;
-  const CampaignLeadsScreen({super.key, this.initialSource, this.lockSource, this.initialView, this.initialSearch});
+  const CampaignLeadsScreen({super.key, this.initialSource, this.lockSource, this.portalTabId, this.initialView, this.initialSearch});
 
   @override
   State<CampaignLeadsScreen> createState() => _CampaignLeadsScreenState();
@@ -895,9 +896,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               children: [
                 // Page Header
                 CampaignSubshellHeader(
-                  activeTab: (widget.lockSource ?? _selectedSourceFilter).toUpperCase().contains('HOUSING')
-                      ? 'housing'
-                      : ((widget.lockSource ?? _selectedSourceFilter).toUpperCase().contains('META') ? 'meta' : 'connections'),
+                  activeTab: widget.portalTabId ??
+                      ((widget.lockSource ?? _selectedSourceFilter).toUpperCase() == 'HOUSING.COM' ||
+                              (widget.lockSource ?? _selectedSourceFilter).toUpperCase() == 'HOUSING'
+                          ? 'housing'
+                          : ((widget.lockSource ?? _selectedSourceFilter).toUpperCase() == 'META ADS' ||
+                                  (widget.lockSource ?? _selectedSourceFilter).toUpperCase() == 'META'
+                              ? 'meta'
+                              : 'connections')),
                   trailing: _buildHeaderActions(context),
                 ),
 

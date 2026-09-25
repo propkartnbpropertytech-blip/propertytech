@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:persistent_bottom_nav_bar_v2/persistent_bottom_nav_bar_v2.dart';
 import '../../security/role_guard.dart';
 import '../../../features/integration/services/integration_service.dart';
+import '../../../features/campaign/services/portal_integrations_service.dart';
 import '../../security/permission_matrix_service.dart';
 import '../../../../features/auth/bloc/auth_bloc.dart';
 import '../../theme/theme_manager.dart';
@@ -61,6 +62,9 @@ class _CRMAppShellState extends State<CRMAppShell>
   late AnimationController _entryController;
   bool _notificationsPanelOpen = false;
   bool _isBottomBarVisible = true;
+  List<Map<String, dynamic>> _portalNav = [];
+  bool _portalNavLoading = false;
+  DateTime? _portalNavAt;
 
   @override
   void initState() {
@@ -3059,6 +3063,25 @@ class _CRMAppShellState extends State<CRMAppShell>
     );
   }
 
+  void _ensurePortalNav() {
+    if (_portalNavLoading) return;
+    final cacheAt = PortalIntegrationsService.cachedAt;
+    if (cacheAt != null && _portalNavAt == cacheAt) return;
+    if (cacheAt == null && _portalNavAt != null && DateTime.now().difference(_portalNavAt!).inSeconds < 20) {
+      return;
+    }
+    _portalNavLoading = true;
+    PortalIntegrationsService().listCached().then((rows) {
+      _portalNavLoading = false;
+      _portalNavAt = PortalIntegrationsService.cachedAt ?? DateTime.now();
+      if (!mounted) return;
+      setState(() => _portalNav = rows);
+    }).catchError((_) {
+      _portalNavLoading = false;
+      _portalNavAt = DateTime.now();
+    });
+  }
+
   Widget _buildSidebarContent(
     String currentPath,
     AuthState userState, {
@@ -3073,6 +3096,9 @@ class _CRMAppShellState extends State<CRMAppShell>
       userRole = userState.user.role;
       userFullName = userState.user.fullName;
       userProfilePhoto = userState.user.profilePhoto;
+      if (userRole == 'Admin' || userRole == 'Super Admin') {
+        _ensurePortalNav();
+      }
     }
 
     final isExpanded =
@@ -3146,22 +3172,28 @@ class _CRMAppShellState extends State<CRMAppShell>
                     currentPath: currentPath,
                     isMobile: isMobile,
                     isExpanded: isExpanded,
-                    subItems: const [
-                      _SidebarSubItemData(
+                    subItems: [
+                      const _SidebarSubItemData(
                         icon: Icons.hub_rounded,
                         label: 'Connections',
                         route: '/campaign/connections',
                       ),
-                      _SidebarSubItemData(
+                      const _SidebarSubItemData(
                         icon: Icons.campaign_rounded,
                         label: 'Meta',
                         route: '/campaign/meta',
                       ),
-                      _SidebarSubItemData(
+                      const _SidebarSubItemData(
                         icon: Icons.apartment_rounded,
                         label: 'Housing',
                         route: '/campaign/housing',
                       ),
+                      for (final row in _portalNav)
+                        _SidebarSubItemData(
+                          icon: Icons.hub_outlined,
+                          label: row['name']?.toString() ?? 'Portal',
+                          route: '/campaign/portal-leads/${row['id']}',
+                        ),
                     ],
                   ),
                 ],

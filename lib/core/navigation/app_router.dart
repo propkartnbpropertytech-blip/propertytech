@@ -38,6 +38,8 @@ import '../../features/library/screens/rental_library_screen.dart';
 import '../../features/library/screens/resale_library_screen.dart';
 import '../../features/library/screens/service_agent_library_screen.dart';
 import '../../features/campaign/screens/connections_screen.dart';
+import '../../features/campaign/screens/portal_integration_screen.dart';
+import '../../features/campaign/screens/portal_leads_screen.dart';
 import '../../features/campaign/screens/campaign_leads_screen.dart';
 import '../../features/reports/screens/reports_shell.dart';
 import '../../features/reports/screens/leads/overall_business_insight_screen.dart';
@@ -278,6 +280,24 @@ class AppRouter {
             ),
           ),
           GoRoute(
+            path: '/campaign/connections/portal/new',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: PortalIntegrationScreen(
+                initialProvider: state.uri.queryParameters['provider'],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/connections/portal/:id',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: PortalIntegrationScreen(
+                integrationId: state.pathParameters['id'],
+              ),
+            ),
+          ),
+          GoRoute(
             path: '/campaign/connections/meta',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
@@ -306,6 +326,15 @@ class AppRouter {
                 ),
               );
             },
+          ),
+          GoRoute(
+            path: '/campaign/portal-leads/:id',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: PortalLeadsScreen(
+                integrationId: state.pathParameters['id'] ?? '',
+              ),
+            ),
           ),
           GoRoute(
             path: '/campaign/housing',

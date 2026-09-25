@@ -6,6 +6,7 @@ import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/security/role_guard.dart';
 import '../bloc/campaign_connections_bloc.dart';
 import '../models/campaign_connection_model.dart';
+import '../services/portal_integrations_service.dart';
 
 class CampaignSubshellHeader extends StatelessWidget {
   final String activeTab; // 'connections', 'leads', 'housing', 'meta'
@@ -114,7 +115,14 @@ class CampaignSubshellHeader extends StatelessWidget {
             BlocBuilder<CampaignConnectionsBloc, CampaignConnectionsState>(
               bloc: CampaignConnectionsBloc()..add(const FetchCampaignConnectionsEvent(silent: true)),
               builder: (context, connState) {
-                final tabs = _buildDynamicTabs(context, connState.connections);
+                return FutureBuilder<List<Map<String, dynamic>>>(
+                  future: PortalIntegrationsService().listCached(),
+                  builder: (context, portalSnapshot) {
+                final tabs = _buildDynamicTabs(
+                  context,
+                  connState.connections,
+                  portalSnapshot.data ?? const [],
+                );
 
                 return SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -148,6 +156,8 @@ class CampaignSubshellHeader extends StatelessWidget {
                     ),
                   ),
                 );
+                  },
+                );
               },
             ),
           ],
@@ -159,6 +169,7 @@ class CampaignSubshellHeader extends StatelessWidget {
   List<_TabConfig> _buildDynamicTabs(
     BuildContext context,
     List<CampaignConnectionModel> connections,
+    List<Map<String, dynamic>> portals,
   ) {
     final normActive = activeTab.toLowerCase().trim();
 
@@ -197,6 +208,23 @@ class CampaignSubshellHeader extends StatelessWidget {
         },
       ),
     ];
+
+    for (final row in portals) {
+      final id = row['id']?.toString() ?? '';
+      final title = row['name']?.toString() ?? 'Portal';
+      if (id.isEmpty) continue;
+      tabs.add(
+        _TabConfig(
+          id: id,
+          title: title,
+          icon: Icons.hub_outlined,
+          isActive: normActive == id.toLowerCase(),
+          onTap: () {
+            context.go('/campaign/portal-leads/$id');
+          },
+        ),
+      );
+    }
 
     // Check for any other dynamic connections configured that aren't Meta or Housing
     for (final conn in connections) {

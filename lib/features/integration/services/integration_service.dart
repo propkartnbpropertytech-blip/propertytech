@@ -27,12 +27,14 @@ class IntegrationService extends ChangeNotifier {
     if (filter == null || filter.isEmpty || filter == 'All') return true;
     final src = leadSource.toUpperCase().trim();
     final sel = filter.toUpperCase().trim();
-    if (sel.contains('HOUSING')) return src.contains('HOUSING');
-    if (sel.contains('META') || sel.contains('FACEBOOK')) {
-      return src.contains('META') || src.contains('FACEBOOK') || src.contains('INSTAGRAM');
+    if (sel == 'HOUSING' || sel == 'HOUSING.COM') {
+      return src == 'HOUSING' || src == 'HOUSING.COM';
     }
-    if (sel.contains('SHEET') || sel.contains('GOOGLE')) {
-      return src.contains('SHEET') || src.contains('GOOGLE');
+    if (sel == 'META' || sel == 'META ADS' || sel == 'FACEBOOK') {
+      return src == 'META' || src == 'META ADS' || src == 'FACEBOOK' || src == 'INSTAGRAM';
+    }
+    if (sel == 'GOOGLE' || sel == 'GOOGLE SHEETS' || sel == 'GOOGLE SHEET') {
+      return src == 'GOOGLE' || src == 'GOOGLE SHEETS' || src == 'GOOGLE SHEET';
     }
     return src == sel;
   }
