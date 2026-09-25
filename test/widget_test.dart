@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:propkart/main.dart';
@@ -20,6 +21,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
+    GoogleFonts.config.allowRuntimeFetching = false;
     PackageInfo.setMockInitialValues(
       appName: 'PropKart',
       packageName: 'com.propkart.app',
