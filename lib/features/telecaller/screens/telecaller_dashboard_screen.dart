@@ -221,7 +221,8 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
           if (seenLeadIds.contains(lead.id)) continue;
           final cs = lead.campaignStatus.trim().toLowerCase();
           final alloc = (lead.allocationStatus ?? '').trim().toUpperCase();
-          final markedFollowup = cs == 'follow up' || cs == 'follow-up' || alloc == 'FOLLOWUP';
+          final normalized = cs.replaceAll(RegExp(r'[\s_-]'), '');
+          final markedFollowup = normalized == 'followup' || normalized == 'refollowup' || alloc == 'FOLLOWUP';
           if (!markedFollowup) continue;
           if (cs == 'callback' || cs == 'call back' || alloc == 'CALLBACK') continue;
           if (cs == 'cnr' || alloc == 'CNR') continue;
@@ -465,7 +466,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                       flex: 6,
                       child: Column(
                         children: [
-                          _buildFollowupsCard(context),
+                          _buildFollowupsCard(context, _visibleFollowups(data)),
                           const SizedBox(height: 24),
                           _buildTransferredLeadsCard(context),
                         ],
@@ -487,7 +488,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               else
                 Column(
                   children: [
-                    _buildFollowupsCard(context),
+                    _buildFollowupsCard(context, _visibleFollowups(data)),
                     const SizedBox(height: 24),
                     _buildPersonalNotesCard(context),
                     const SizedBox(height: 24),
@@ -504,8 +505,36 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     );
   }
 
+  List<CampaignFollowupModel> _visibleFollowups(Map<String, dynamic> data) {
+    final raw = data['scheduledFollowups'];
+    if (raw is! List || raw.isEmpty) return _followups;
+    final parsed = <CampaignFollowupModel>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final status = map['status']?.toString() ?? 'Pending';
+      if (status == 'Completed' || status == 'Cancelled') continue;
+      parsed.add(CampaignFollowupModel(
+        id: map['id']?.toString() ?? '',
+        leadId: map['lead_id']?.toString() ?? '',
+        leadType: map['lead_type']?.toString() ?? 'Requirement',
+        clientName: (map['client_name']?.toString().trim().isNotEmpty ?? false)
+            ? map['client_name'].toString().trim()
+            : 'Campaign Lead',
+        mobile: map['mobile']?.toString() ?? '',
+        scheduledAt: DateTime.tryParse(map['scheduled_at']?.toString() ?? '')?.toLocal() ?? DateTime.now(),
+        remarks: map['remarks']?.toString() ?? '',
+        status: status,
+        createdAt: DateTime.tryParse(map['scheduled_at']?.toString() ?? '')?.toLocal() ?? DateTime.now(),
+        telecallerId: map['telecaller_id']?.toString(),
+      ));
+    }
+    parsed.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+    return parsed.isEmpty ? _followups : parsed;
+  }
+
   // --- WIDGET 1: FOLLOW-UPS PREVIEW CARD ---
-  Widget _buildFollowupsCard(BuildContext context) {
+  Widget _buildFollowupsCard(BuildContext context, List<CampaignFollowupModel> followups) {
     return Card(
       elevation: 0.5,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -519,7 +548,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               iconColor: const Color(0xFFD97706),
               iconBg: const Color(0xFFFEF3C7),
               title: 'My Scheduled Follow-ups',
-              badge: '${_followups.length}',
+              badge: '${followups.length}',
               badgeColor: const Color(0xFF475569),
               badgeBg: const Color(0xFFF1F5F9),
               trailing: MediaQuery.sizeOf(context).width < 700
@@ -537,9 +566,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                     ),
             ),
             const Divider(height: 24),
-            if (_loadingFollowups && _followups.isEmpty)
+            if (_loadingFollowups && followups.isEmpty)
               const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
-            else if (_followups.isEmpty)
+            else if (followups.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
@@ -555,11 +584,11 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
             else ...[
               Builder(
                 builder: (context) {
-                  final totalPages = (_followups.isEmpty ? 1 : (_followups.length / _followupsPerPage).ceil());
+                  final totalPages = (followups.isEmpty ? 1 : (followups.length / _followupsPerPage).ceil());
                   final safeTotalPages = totalPages < 1 ? 1 : totalPages;
                   final currentPage = _followupsPage.clamp(1, safeTotalPages);
                   final startIndex = (currentPage - 1) * _followupsPerPage;
-                  final pagedFollowups = _followups.skip(startIndex).take(_followupsPerPage).toList();
+                  final pagedFollowups = followups.skip(startIndex).take(_followupsPerPage).toList();
 
                   return Column(
                     children: [
@@ -682,10 +711,10 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                           );
                         },
                       ),
-                      if (_followups.length > _followupsPerPage) ...[
+                      if (followups.length > _followupsPerPage) ...[
                         const SizedBox(height: 12),
                         _pageControls(
-                          label: 'Showing ${startIndex + 1}–${min(startIndex + _followupsPerPage, _followups.length)} of ${_followups.length} follow-ups',
+                          label: 'Showing ${startIndex + 1}–${min(startIndex + _followupsPerPage, followups.length)} of ${followups.length} follow-ups',
                           page: currentPage,
                           totalPages: safeTotalPages,
                           onPrevious: currentPage > 1 ? () => setState(() => _followupsPage = currentPage - 1) : null,
