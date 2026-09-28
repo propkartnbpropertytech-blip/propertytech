@@ -38,18 +38,63 @@ class TeamUserVisibility {
       }
       if (role == 'telecaller') {
         if (u.id == currentUserId) return false;
-        return _isTelecallerRole(r) || _isSalesRole(r);
+        return _isSalesRole(r);
       }
       return false;
     }).toList()
       ..sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
   }
 
-  static bool _matchesPerson(String? value, UserModel user) {
-    if (value == null || value.trim().isEmpty) return false;
+  static bool _matchesPerson(String? value, dynamic user) {
+    if (value == null || value.trim().isEmpty || user == null) return false;
     final v = value.trim().toLowerCase();
     if (v == 'unassigned') return false;
-    return v == user.id.toLowerCase() || v == user.fullName.trim().toLowerCase();
+    final id = (user.id ?? '').toString().toLowerCase();
+    final name = (user is UserModel
+            ? user.fullName
+            : (user.fullName ?? user.name ?? ''))
+        .toString()
+        .trim()
+        .toLowerCase();
+    return v == id || (name.isNotEmpty && v == name);
+  }
+
+  static bool telecallerLeadSentToSalesperson(
+    RequirementModel req,
+    UserModel salesperson,
+    dynamic currentTelecaller,
+  ) {
+    final isAssignedToSales = _matchesPerson(req.assignedTo, salesperson) ||
+        _matchesPerson(req.assigneeName, salesperson);
+
+    final history = req.metaCustomFields?['assignment_history'];
+    bool historyMatches = false;
+    if (history is List) {
+      for (final item in history) {
+        if (item is Map) {
+          final toId = item['user_id']?.toString();
+          final toName = item['user_name']?.toString();
+          final byId = item['assigned_by']?.toString();
+          final byName = item['assigned_by_name']?.toString();
+          if ((_matchesPerson(toId, salesperson) || _matchesPerson(toName, salesperson)) &&
+              (_matchesPerson(byId, currentTelecaller) || _matchesPerson(byName, currentTelecaller))) {
+            historyMatches = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!isAssignedToSales && !historyMatches) return false;
+
+    final createdByMe = _matchesPerson(req.createdBy, currentTelecaller) ||
+        _matchesPerson(req.creatorName, currentTelecaller);
+    final metaTcId = req.metaCustomFields?['telecaller_id']?.toString() ??
+        req.metaCustomFields?['assigned_telecaller_id']?.toString() ??
+        req.metaCustomFields?['telecaller_by']?.toString();
+    final tcMatches = metaTcId != null && _matchesPerson(metaTcId, currentTelecaller);
+
+    return createdByMe || tcMatches || historyMatches || isAssignedToSales;
   }
 
   static bool requirementBelongsToUser(RequirementModel req, UserModel user) {

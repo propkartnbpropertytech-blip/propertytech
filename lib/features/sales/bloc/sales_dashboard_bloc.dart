@@ -121,6 +121,41 @@ class SalesDashboardBloc extends Bloc<SalesDashboardEvent, SalesDashboardState> 
         } catch (_) {}
       }
 
+      if (resData['rentalSiteVisitsDone'] == null && resData['resaleSiteVisitsDone'] == null) {
+        try {
+          final reqs = await RequirementsRepository().getRequirements(refreshFromServer: false);
+          final currentUser = RoleGuard.currentUser;
+          final currentUserName = currentUser?.fullName.trim().toLowerCase() ?? '';
+
+          int localRentalSiteVisitsDone = 0;
+          int localResaleSiteVisitsDone = 0;
+          for (final req in reqs) {
+            final st = req.status.trim().toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
+            final isSiteVisitDone = st == 'sitevisitdone' || st == 'sitevisitcompleted' || st == 'visitdone';
+            if (!isSiteVisitDone) continue;
+
+            if (currentUser != null && currentUser.role == 'Sales') {
+              final isAssignedToUser = (req.assignedTo != null && (req.assignedTo == currentUser.id || (currentUserName.isNotEmpty && req.assignedTo!.trim().toLowerCase() == currentUserName))) ||
+                  (req.assigneeName != null && currentUserName.isNotEmpty && req.assigneeName!.trim().toLowerCase() == currentUserName);
+              final isUnassignedCreatedByUser = (req.assignedTo == null || req.assignedTo!.trim().isEmpty || req.assignedTo!.trim().toLowerCase() == 'unassigned') &&
+                  (req.createdBy == currentUser.id || (req.creatorName != null && currentUserName.isNotEmpty && req.creatorName!.trim().toLowerCase() == currentUserName));
+              if (!isAssignedToUser && !isUnassignedCreatedByUser) continue;
+            }
+
+            final isRent = (req.listingTypeName ?? '').toLowerCase().contains('rent');
+            if (isRent) {
+              localRentalSiteVisitsDone++;
+            } else {
+              localResaleSiteVisitsDone++;
+            }
+          }
+
+          resData['rentalSiteVisitsDone'] = localRentalSiteVisitsDone;
+          resData['resaleSiteVisitsDone'] = localResaleSiteVisitsDone;
+          resData['siteVisitsDone'] = localRentalSiteVisitsDone + localResaleSiteVisitsDone;
+        } catch (_) {}
+      }
+
       emit(SalesDashboardState(data: resData));
     });
 

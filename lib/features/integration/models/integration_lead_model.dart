@@ -872,7 +872,13 @@ class IntegrationLeadModel {
           : null,
       enquiryCount: int.tryParse(json['enquiry_count']?.toString() ?? '1') ?? 1,
       leadType: type,
-      campaignStatus: json['campaign_status']?.toString() ?? 'New',
+      campaignStatus: (() {
+        final rawStatus = json['campaign_status']?.toString() ?? 'New';
+        if ((rawStatus == 'New' || rawStatus == 'Assigned' || rawStatus.isEmpty) && latestFu != null && latestFu['status'] == 'Pending') {
+          return latestFu['outcome'] == 'CALLBACK' ? 'Callback' : 'Follow up';
+        }
+        return rawStatus;
+      })(),
       followupScheduledAt: latestFu != null && latestFu['scheduled_at'] != null && latestFu['outcome'] != 'CALLBACK'
           ? DateTime.tryParse(latestFu['scheduled_at'].toString())
           : (json['followup_scheduled_at'] != null

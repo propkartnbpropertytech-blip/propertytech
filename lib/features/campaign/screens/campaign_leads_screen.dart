@@ -437,12 +437,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   /// CNR and scheduled callbacks live on their own pages. New and Follow up stay here.
   bool _leftCallingQueue(IntegrationLeadModel lead) {
-    if (!RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) return false;
     final status = lead.campaignStatus.trim().toLowerCase();
     final alloc = (lead.allocationStatus ?? '').trim().toUpperCase();
     if (status == 'follow up' || status == 'follow-up' || alloc == 'FOLLOWUP') return false;
     if (status == 'cnr' || alloc == 'CNR') return true;
     if (status == 'callback' || status == 'call back' || alloc == 'CALLBACK') return true;
+    if (lead.callbackScheduledAt != null && (lead.callbackStatus?.toLowerCase() == 'pending')) return true;
     return false;
   }
 
@@ -753,7 +753,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _cachedCountLast7Days = countLast7Days;
     _cachedCountThisMonth = countThisMonth;
     _cachedCountAllTime = allTimeSectionCount;
-    _cachedFollowupCount = followupCount;
+    _cachedFollowupCount = _getScopedFollowupItems().length;
     _cachedNotInterestedCount = notInterestedCount;
     _cachedNotInterestedTodayCount = notInterestedTodayCount;
     _cachedTotalActiveCount = totalActiveCount;
@@ -2666,7 +2666,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 backgroundColor: success ? const Color(0xFFF59E0B) : CRMColors.danger,
                               ),
                             );
-                            _loadFollowups();
+                            await _loadFollowups();
                             unawaited(_service.fetchServerLeads(resetWithServer: true));
                           }
                           return;
@@ -3008,7 +3008,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         backgroundColor: success ? const Color(0xFFF59E0B) : CRMColors.danger,
                       ),
                     );
-                    _loadFollowups();
+                    await _loadFollowups();
                     unawaited(_service.fetchServerLeads(resetWithServer: true));
                   }
                 },
@@ -5270,43 +5270,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     );
   }
 
-  int _pendingDueFollowupLeadCount() {
-    final leadIds = <String>{};
-    final serviceLeadMap = {for (final l in _service.leads) l.id: l};
-    for (final f in _followupsList) {
-      if (f.status == 'Completed' || f.status == 'Cancelled' || f.status == 'Callback' || f.status == 'CALLBACK') continue;
-      final localLead = serviceLeadMap[f.leadId] ?? f.lead;
-      if (localLead != null) {
-        final cs = localLead.campaignStatus;
-        final isFollowup = cs == 'Follow up' || cs == 'Follow-up';
-        if (!isFollowup && (cs == 'Callback' || cs == 'Call Back')) continue;
-        if (!isFollowup && cs != null && cs.isNotEmpty) continue;
-      }
-      leadIds.add(f.leadId);
-    }
-    for (final lead in _service.leads) {
-      if (lead.campaignStatus == 'Follow up' || lead.campaignStatus == 'Follow-up') {
-        final fuStatus = (lead.followupStatus ?? 'Pending').trim().toLowerCase();
-        if (fuStatus == 'completed' || fuStatus == 'cancelled') continue;
-        leadIds.add(lead.id);
-      }
-    }
-    return leadIds.length;
-  }
-
-  String _followupDisplayName(CampaignFollowupModel item) {
-    IntegrationLeadModel? live;
-    try {
-      live = _service.leads.firstWhere((lead) => lead.id == item.leadId);
-    } catch (_) {}
-    live ??= item.lead;
-    final fromLead = live?.getStringValue('full_name').trim() ?? '';
-    if (fromLead.isNotEmpty) return fromLead;
-    final stored = item.clientName.trim();
-    return stored.isNotEmpty ? stored : 'Client';
-  }
-
-  Widget _buildFollowupsView(BuildContext context) {
+  List<CampaignFollowupModel> _getAllFollowupItems() {
     final allItems = List<CampaignFollowupModel>.from(_followupsList);
 
     // If items empty or incomplete, incorporate leads in memory that have scheduled followups
@@ -5340,6 +5304,54 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         ));
       }
     }
+    return allItems;
+  }
+
+  List<CampaignFollowupModel> _getScopedFollowupItems() {
+    final allItems = _getAllFollowupItems();
+    final role = (RoleGuard.currentUser?.role ?? '').toLowerCase().trim();
+    String currentRoleStr = '';
+    if (mounted) {
+      try {
+        final currentAuth = context.read<AuthBloc>().state;
+        currentRoleStr = (currentAuth is Authenticated ? currentAuth.user.role : null)?.toLowerCase().trim() ?? '';
+      } catch (_) {}
+    }
+    final isAdminOnly = role == 'admin' || role == 'super admin' || currentRoleStr == 'admin' || currentRoleStr == 'super admin';
+
+    if (isAdminOnly && _selectedFollowupTelecaller != 'All' && _selectedFollowupTelecaller.isNotEmpty) {
+      return allItems.where((f) {
+        final tcName = (f.telecallerName ??
+                f.lead?.assignedTelecallerName ??
+                f.lead?.rawJson['assigned_telecaller_name'] ??
+                '')
+            .toString()
+            .trim()
+            .toLowerCase();
+        return tcName == _selectedFollowupTelecaller.toLowerCase();
+      }).toList();
+    }
+    return allItems;
+  }
+
+  int _pendingDueFollowupLeadCount() {
+    return _getScopedFollowupItems().length;
+  }
+
+  String _followupDisplayName(CampaignFollowupModel item) {
+    IntegrationLeadModel? live;
+    try {
+      live = _service.leads.firstWhere((lead) => lead.id == item.leadId);
+    } catch (_) {}
+    live ??= item.lead;
+    final fromLead = live?.getStringValue('full_name').trim() ?? '';
+    if (fromLead.isNotEmpty) return fromLead;
+    final stored = item.clientName.trim();
+    return stored.isNotEmpty ? stored : 'Client';
+  }
+
+  Widget _buildFollowupsView(BuildContext context) {
+    final allItems = _getAllFollowupItems();
 
     final role = (RoleGuard.currentUser?.role ?? '').toLowerCase().trim();
     final currentAuth = context.read<AuthBloc>().state;
@@ -5386,19 +5398,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
     // Filter by telecaller only if Admin and a specific telecaller is selected
-    List<CampaignFollowupModel> telecallerScopedItems = List.from(allItems);
-    if (isAdminOnly && _selectedFollowupTelecaller != 'All' && _selectedFollowupTelecaller.isNotEmpty) {
-      telecallerScopedItems = telecallerScopedItems.where((f) {
-        final tcName = (f.telecallerName ??
-                f.lead?.assignedTelecallerName ??
-                f.lead?.rawJson['assigned_telecaller_name'] ??
-                '')
-            .toString()
-            .trim()
-            .toLowerCase();
-        return tcName == _selectedFollowupTelecaller.toLowerCase();
-      }).toList();
-    }
+    final telecallerScopedItems = _getScopedFollowupItems();
 
     final totalCount = telecallerScopedItems.length;
     final todayCount = telecallerScopedItems.where((f) => f.isToday).length;

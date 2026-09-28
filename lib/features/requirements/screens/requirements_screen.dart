@@ -1504,6 +1504,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         builder: (dialogContext) => RequirementStepperDialog(
           requirement: baseReq,
           initialStep: 1,
+          updateStatusOnSave: true,
           onSavedWithDate: (scheduledDate) {
             final now = DateTime.now();
             final todayDate = DateTime(now.year, now.month, now.day);
@@ -2632,13 +2633,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
-        final users = state is UsersLoaded
-            ? TeamUserVisibility.visibleUsers(
-                users: state.users,
-                currentRole: currentUser.role,
-                currentUserId: currentUser.id,
-              )
-            : <users_model.UserModel>[];
+        final rawUsers = state is UsersLoaded
+            ? _mergedAssignUsers(state.users)
+            : _assignUsers;
+        final users = TeamUserVisibility.visibleUsers(
+          users: rawUsers,
+          currentRole: currentUser.role,
+          currentUserId: currentUser.id,
+        );
         final items = <DropdownMenuItem<String>>[
           const DropdownMenuItem(value: 'All', child: Text('All Users')),
           ...users.map(
@@ -4814,26 +4816,38 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             final bool viewAllRejected =
                 _activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser);
 
-            if (_activeMainTab == 'Rejected') {
+            final bool isWonTab = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
+            if (isWonTab) {
+              if (!_isLeadWon(r) && mappedStatus != 'Won' && r.status != 'Won' && r.status != 'Closed') {
+                return false;
+              }
+            } else if (_activeMainTab == 'Rejected') {
               if (!_isLeadRejected(r)) return false;
-            } else if (_activeMainTab == 'Leads' && _isLeadRejected(r)) {
-              return false;
+            } else if (_activeMainTab == 'Leads') {
+              if (_isLeadRejected(r)) return false;
+              if (_isLeadWon(r) || mappedStatus == 'Won' || r.status == 'Won' || r.status == 'Closed') {
+                if (_selectedStatus != 'Won') return false;
+              }
             }
 
             // Exclude Won requirements from the active Requirements view unless user explicitly selected "Won"
             // or is viewing a specific team member's complete lead set.
             final bool unassignFilter =
                 !viewAllRejected &&
+                !isWonTab &&
                 _selectedStatus == 'Unassign' &&
                 _canSeeUnassignStatusFilter(currentUser);
 
             if (_activeMainTab != 'Leads Added by Me' &&
+                !isWonTab &&
                 !userFilterActive &&
                 _selectedStatus != 'Won' &&
                 !unassignFilter &&
                 mappedStatus == 'Won') return false;
 
-            final matchesStatus = viewAllRejected
+            final matchesStatus = isWonTab
+                ? true
+                : viewAllRejected
                 ? true
                 : unassignFilter
                 ? _isLeadUnassigned(r)
@@ -4850,15 +4864,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             final matchesDate = _matchesLeadDateFilter(r);
 
             bool matchesUser = true;
-            if (!viewAllRejected && _activeMainTab != 'Leads Added by Me' && userFilterActive) {
+            if (_activeMainTab != 'Leads Added by Me' && userFilterActive) {
               users_model.UserModel? selectedUser;
               try {
                 final usersState = context.read<UsersBloc>().state;
-                if (usersState is UsersLoaded) {
-                  selectedUser = usersState.users.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
-                }
+                final allKnownUsers = usersState is UsersLoaded ? _mergedAssignUsers(usersState.users) : _assignUsers;
+                selectedUser = allKnownUsers.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
               } catch (_) {}
-              matchesUser = selectedUser != null && TeamUserVisibility.requirementBelongsToUser(r, selectedUser);
+              matchesUser = selectedUser != null &&
+                  (currentUser != null && currentUser.role == 'Telecaller'
+                      ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedUser, currentUser)
+                      : TeamUserVisibility.requirementBelongsToUser(r, selectedUser));
             }
 
             bool matchesSearch = true;
@@ -5445,8 +5461,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
         List<RequirementModel> requirements;
 
-        if (isAdminOrSuperAdmin) {
-          // Admin & Super Admin: see all Won leads from every person/user with full filters
+        if (isAdminOrSuperAdmin || currentUser?.role == 'Telecaller') {
+          // Admin, Super Admin & Telecaller: see Won leads with full filters
           requirements = rawLoadedList.where((r) {
             if (!_isLeadWon(r)) return false;
 
@@ -5475,11 +5491,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               users_model.UserModel? selectedUser;
               try {
                 final usersState = context.read<UsersBloc>().state;
-                if (usersState is UsersLoaded) {
-                  selectedUser = usersState.users.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
-                }
+                final allKnownUsers = usersState is UsersLoaded ? _mergedAssignUsers(usersState.users) : _assignUsers;
+                selectedUser = allKnownUsers.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
               } catch (_) {}
-              final matchesUser = selectedUser != null && TeamUserVisibility.requirementBelongsToUser(r, selectedUser);
+              final matchesUser = selectedUser != null &&
+                  (currentUser?.role == 'Telecaller'
+                      ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedUser, currentUser!)
+                      : TeamUserVisibility.requirementBelongsToUser(r, selectedUser));
               if (!matchesUser) return false;
             }
 
@@ -5581,7 +5599,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ? requirements.sublist(startIndex, endIndex)
             : <RequirementModel>[];
 
-        final filterWidget = isAdminOrSuperAdmin
+        final filterWidget = (isAdminOrSuperAdmin || currentUser?.role == 'Telecaller')
             ? LayoutBuilder(
                 builder: (context, constraints) {
                   final bool isMobile = constraints.maxWidth < 600;
@@ -7518,6 +7536,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           requirement: req,
           initialStep: initialStep,
           isSiteVisit: isSiteVisitMode,
+          updateStatusOnSave: true,
           onSavedWithDate: (scheduledDate) {
             final now = DateTime.now();
             final todayDate = DateTime(now.year, now.month, now.day);

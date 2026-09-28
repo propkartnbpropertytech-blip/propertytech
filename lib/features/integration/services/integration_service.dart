@@ -1006,12 +1006,27 @@ class IntegrationService extends ChangeNotifier {
             final existingLocalMap = <String, IntegrationLeadModel>{for (final l in _leads) l.id: l};
             incoming = incoming.map((inc) {
               final local = existingLocalMap[inc.id] ?? (inc.externalLeadId != null ? existingLocalMap[inc.externalLeadId!] : null);
-              if (local?.notInterestedReason != null &&
-                  local!.notInterestedReason!.trim().isNotEmpty &&
-                  (inc.notInterestedReason == null || inc.notInterestedReason!.trim().isEmpty)) {
-                return inc.copyWith(notInterestedReason: local.notInterestedReason);
+              var res = inc;
+              if (local != null) {
+                if (local.notInterestedReason != null &&
+                    local.notInterestedReason!.trim().isNotEmpty &&
+                    (res.notInterestedReason == null || res.notInterestedReason!.trim().isEmpty)) {
+                  res = res.copyWith(notInterestedReason: local.notInterestedReason);
+                }
+                final isIncDefault = res.campaignStatus.isEmpty || res.campaignStatus == 'New' || res.campaignStatus == 'Pending';
+                if (isIncDefault && (local.campaignStatus == 'Follow up' || local.campaignStatus == 'Callback')) {
+                  res = res.copyWith(
+                    campaignStatus: local.campaignStatus,
+                    followupScheduledAt: local.followupScheduledAt ?? res.followupScheduledAt,
+                    followupRemarks: local.followupRemarks ?? res.followupRemarks,
+                    followupStatus: local.followupStatus ?? res.followupStatus,
+                    callbackScheduledAt: local.callbackScheduledAt ?? res.callbackScheduledAt,
+                    callbackRemarks: local.callbackRemarks ?? res.callbackRemarks,
+                    callbackStatus: local.callbackStatus ?? res.callbackStatus,
+                  );
+                }
               }
-              return inc;
+              return res;
             }).toList();
 
             if (source != null && source.isNotEmpty && source != 'All') {
@@ -1423,7 +1438,7 @@ class IntegrationService extends ChangeNotifier {
     try {
       final isCb = status.trim().toLowerCase() == 'callback' || status.trim().toLowerCase() == 'call back';
       final finalStatus = isCb ? 'Callback' : 'Follow up';
-      final finalAllocStatus = isCb ? 'CALLBACK' : 'FOLLOWUP';
+      final finalAllocStatus = isCb ? 'CALLBACK' : 'ASSIGNED_TO_TELECALLER';
       final outcomeName = isCb ? 'CALLBACK' : 'FOLLOWUP';
 
       // 1. Optimistically update in memory
@@ -1436,6 +1451,12 @@ class IntegrationService extends ChangeNotifier {
             callbackScheduledAt: scheduledAt,
             callbackRemarks: remarks,
             callbackStatus: 'Pending',
+            assignedTelecallerId: RoleGuard.isTelecaller(RoleGuard.currentUser?.role)
+                ? (RoleGuard.currentUser?.id ?? _leads[idx].assignedTelecallerId)
+                : _leads[idx].assignedTelecallerId,
+            assignedTelecallerName: RoleGuard.isTelecaller(RoleGuard.currentUser?.role)
+                ? (RoleGuard.currentUser?.fullName ?? _leads[idx].assignedTelecallerName)
+                : _leads[idx].assignedTelecallerName,
             interactedAt: DateTime.now(),
           );
         } else {
@@ -1548,6 +1569,14 @@ class IntegrationService extends ChangeNotifier {
         previousLead = _leads[idx];
         final currentRaw = Map<String, dynamic>.from(_leads[idx].rawJson);
         if (isCnr) {
+          currentRaw['_cnr'] = {
+            'status': 'CNR',
+            'remarks': remarks ?? 'Marked as CNR',
+            'interacted_at': now.toIso8601String(),
+            'interacted_by': user?.id,
+            'telecaller_id': user?.id,
+            'telecaller_name': user?.fullName,
+          };
           currentRaw['_transfer'] = {
             'status': 'CNR',
             'remarks': remarks ?? 'Marked as CNR',
@@ -1565,8 +1594,8 @@ class IntegrationService extends ChangeNotifier {
           interactedAt: now,
           interactedBy: user?.fullName,
           importStatus: (isCnr || isCallback || isFollowup) ? _leads[idx].importStatus : 'Imported',
-          clearFollowup: isCnr,
-          clearCallback: isCnr,
+          clearFollowup: false,
+          clearCallback: false,
           rawJson: currentRaw,
         );
         notifyListeners();
