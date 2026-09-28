@@ -17,8 +17,8 @@ if (hasReleaseKeystore) {
 }
 
 android {
-    namespace = "com.nbpropertytech.propkart.propkart"
-    compileSdk = flutter.compileSdkVersion
+    namespace = "com.nbpropertytech.propkart"
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -32,9 +32,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.nbpropertytech.propkart.propkart"
+        applicationId = "com.nbpropertytech.propkart"
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
