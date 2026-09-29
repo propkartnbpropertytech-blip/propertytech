@@ -1,10 +1,12 @@
+import '../config/app_env.dart';
+
 class AppConstants {
   // App Info
-  static const String appVersion = '2.0.0';
-  static const String buildNumber = '8';
+  static const String appVersion = '3.0.0';
+  static const String buildNumber = '14';
 
-  // API Config
-  static const String baseUrl = 'https://api-propkart.nbpropertytech.com/api/v1';
+  // API Config — same isolation rules as ApiConstants (no silent production fallback).
+  static String get baseUrl => AppEnv.apiBaseUrl;
   static const Duration connectTimeout = Duration(seconds: 15);
   static const Duration receiveTimeout = Duration(seconds: 15);
 

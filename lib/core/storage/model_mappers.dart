@@ -83,8 +83,10 @@ extension PropertyLocalExtensions on PropertyLocal {
       videos: safeVideos,
       googlePlaceId: googlePlaceId,
       brokerageTypeId: brokerageTypeId,
+      brokerageTypeName: brokerageTypeName,
       adminId: adminId,
       organizationId: organizationId,
+      portalStatus: portalStatus ?? 'None',
     );
   }
 }
@@ -152,7 +154,8 @@ extension PropertyModelExtensions on PropertyModel {
       ..brokerageTypeId = brokerageTypeId
       ..brokerageTypeName = brokerageTypeName
       ..adminId = adminId
-      ..organizationId = organizationId;
+      ..organizationId = organizationId
+      ..portalStatus = portalStatus;
   }
 }
 
@@ -185,14 +188,14 @@ extension RequirementLocalExtensions on RequirementLocal {
             }
           }
           decodedRemarks = remarks!.substring(closeBracketIdx + 1).trim();
-          if (decodedRemarks!.isEmpty) decodedRemarks = null;
+          if (decodedRemarks.isEmpty) decodedRemarks = null;
         }
       }
     }
 
-    if (parsedListingTypeId == null || parsedListingTypeId.isEmpty) {
-      parsedListingTypeId = 'Unknown';
-      parsedListingTypeName = 'Unknown';
+    if (parsedListingTypeId != null && parsedListingTypeId.isEmpty) {
+      parsedListingTypeId = null;
+      parsedListingTypeName = null;
     }
 
     return RequirementModel(
@@ -227,6 +230,9 @@ extension RequirementLocalExtensions on RequirementLocal {
       assigneeName: assigneeName,
       createdBy: createdBy,
       assignedTo: assignedTo,
+      leadSource: leadSource,
+      referralName: referralName,
+      nextFollowupDate: nextFollowupDate,
     );
   }
 }
@@ -265,7 +271,10 @@ extension RequirementModelExtensions on RequirementModel {
       ..listingTypeName = listingTypeName
       ..creatorName = creatorName
       ..assigneeName = assigneeName
-      ..createdBy = createdBy;
+      ..createdBy = createdBy
+      ..leadSource = leadSource
+      ..referralName = referralName
+      ..nextFollowupDate = nextFollowupDate;
   }
 }
 
@@ -281,6 +290,8 @@ extension FollowupLocalExtensions on FollowupLocal {
       propertyCode: propertyCode,
       propertyTitle: propertyTitle,
       requirementCustomerName: requirementCustomerName,
+      requirementId: requirementId,
+      creatorName: createdBy,
     );
   }
 }
@@ -496,6 +507,7 @@ extension DashboardDataExtensions on DashboardData {
         'requirement': f.requirementCustomerName != null ? {'customer_name': f.requirementCustomerName, 'id': f.requirementId} : null,
         'requirement_id': f.requirementId,
         'creator': f.creatorName != null ? {'full_name': f.creatorName} : null,
+        'salesperson_name': f.salespersonName,
       }).toList())
       ..siteVisitsJson = jsonEncode(siteVisits.map((sv) => {
         'id': sv.id,
@@ -520,12 +532,21 @@ extension DashboardDataExtensions on DashboardData {
 
 extension DashboardLocalExtensions on DashboardLocal {
   DashboardData toModel() {
-    final List<dynamic> actList = jsonDecode(activityJson);
-    final List<dynamic> propList = jsonDecode(recentPropertiesJson);
-    final List<dynamic> checkList = jsonDecode(checklistJson);
-    final List<dynamic> follList = jsonDecode(followupsJson);
-    final List<dynamic> svList = siteVisitsJson != null ? jsonDecode(siteVisitsJson!) : [];
- 
+    List<dynamic> safeDecodeList(String? jsonStr) {
+      if (jsonStr == null || jsonStr.isEmpty) return [];
+      try {
+        final decoded = jsonDecode(jsonStr);
+        if (decoded is List) return decoded;
+      } catch (_) {}
+      return [];
+    }
+
+    final List<dynamic> actList = safeDecodeList(activityJson);
+    final List<dynamic> propList = safeDecodeList(recentPropertiesJson);
+    final List<dynamic> checkList = safeDecodeList(checklistJson);
+    final List<dynamic> follList = safeDecodeList(followupsJson);
+    final List<dynamic> svList = safeDecodeList(siteVisitsJson);
+
     return DashboardData(
       summary: DashboardSummary(
         totalProperties: summary.totalProperties ?? 0,
@@ -550,11 +571,11 @@ extension DashboardLocalExtensions on DashboardLocal {
         topProperty: summary.topProperty ?? 'N/A',
         monthlyGrowth: summary.monthlyGrowth ?? '0.0%',
       ),
-      activity: actList.map((item) => RecentActivity.fromJson(item)).toList(),
-      recentProperties: propList.map((item) => RecentProperty.fromJson(item)).toList(),
-      checklist: checkList.map((item) => ChecklistItem.fromJson(item)).toList(),
-      followups: follList.map((item) => DashboardFollowup.fromJson(item)).toList(),
-      siteVisits: svList.map((item) => DashboardSiteVisit.fromJson(item)).toList(),
+      activity: actList.whereType<Map>().map((item) => RecentActivity.fromJson(Map<String, dynamic>.from(item))).toList(),
+      recentProperties: propList.whereType<Map>().map((item) => RecentProperty.fromJson(Map<String, dynamic>.from(item))).toList(),
+      checklist: checkList.whereType<Map>().map((item) => ChecklistItem.fromJson(Map<String, dynamic>.from(item))).toList(),
+      followups: follList.whereType<Map>().map((item) => DashboardFollowup.fromJson(Map<String, dynamic>.from(item))).toList(),
+      siteVisits: svList.whereType<Map>().map((item) => DashboardSiteVisit.fromJson(Map<String, dynamic>.from(item))).toList(),
     );
   }
 }

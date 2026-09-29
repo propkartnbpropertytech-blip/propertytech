@@ -234,39 +234,48 @@ class CloudinaryUploader {
         return;
       }
 
-      final int timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final String toSign = 'public_id=$publicId&timestamp=$timestamp${ApiConstants.cloudinaryApiSecret}';
-      final List<int> bytesToSign = utf8.encode(toSign);
-      final String signature = sha1.convert(bytesToSign).toString();
+      final sigResponse = await DioClient.dio.post(
+        '/properties/cloudinary-signature',
+        data: {
+          'action': 'destroy',
+          'public_id': publicId,
+          'resource_type': resourceType,
+        },
+      );
 
-      final String apiKey = ApiConstants.cloudinaryApiKey;
-      final String cloudName = ApiConstants.cloudinaryCloudName;
+      if (sigResponse.data != null && sigResponse.data['success'] == true) {
+        final data = sigResponse.data['data'] as Map<String, dynamic>;
+        final String signature = data['signature'];
+        final int timestamp = data['timestamp'];
+        final String apiKey = data['apiKey'];
+        final String cloudName = data['cloudName'];
 
-      final deleteUrl = 'https://api.cloudinary.com/v1_1/$cloudName/$resourceType/destroy';
+        final deleteUrl = 'https://api.cloudinary.com/v1_1/$cloudName/$resourceType/destroy';
 
-      final formData = FormData.fromMap({
-        'public_id': publicId,
-        'api_key': apiKey,
-        'timestamp': timestamp,
-        'signature': signature,
-      });
+        final formData = FormData.fromMap({
+          'public_id': publicId,
+          'api_key': apiKey,
+          'timestamp': timestamp,
+          'signature': signature,
+        });
 
-      final cleanDio = Dio();
-      final response = await cleanDio.post(deleteUrl, data: formData);
-      if (response.statusCode == 200) {
-        final result = response.data['result'];
-        if (result == 'ok') {
-          if (kDebugMode) {
-            print('✅ Cloudinary asset deleted: $publicId');
+        final cleanDio = Dio();
+        final response = await cleanDio.post(deleteUrl, data: formData);
+        if (response.statusCode == 200) {
+          final result = response.data['result'];
+          if (result == 'ok') {
+            if (kDebugMode) {
+              print('✅ Cloudinary asset deleted: $publicId');
+            }
+          } else {
+            if (kDebugMode) {
+              print('⚠️ Cloudinary delete result for $publicId: $result');
+            }
           }
         } else {
           if (kDebugMode) {
-            print('⚠️ Cloudinary delete result for $publicId: $result');
+            print('⚠️ Cloudinary delete failed for $publicId: ${response.statusCode}');
           }
-        }
-      } else {
-        if (kDebugMode) {
-          print('⚠️ Cloudinary delete failed for $publicId: ${response.statusCode}');
         }
       }
     } catch (e) {

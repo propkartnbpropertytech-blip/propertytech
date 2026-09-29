@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../core/storage/local_repositories.dart';
+import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/model_mappers.dart';
+import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
@@ -41,6 +44,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   List<PropertyModel> _binProperties = [];
   List<RequirementModel> _binRequirements = [];
   final Map<String, user_settings_model.UserModel> _usersMap = {};
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   int _propertiesPerPage = 15;
   int _requirementsPerPage = 15;
@@ -58,10 +63,31 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   List<PropertyModel> get _visibleBinProperties {
-    if (_propertiesSubTab == 'Rent') {
-      return _binProperties.where(_isRentProperty).toList();
-    }
-    return _binProperties.where((p) => !_isRentProperty(p)).toList();
+    final byListing = _propertiesSubTab == 'Rent'
+        ? _binProperties.where(_isRentProperty).toList()
+        : _binProperties.where((p) => !_isRentProperty(p)).toList();
+    return byListing.where(_propertyMatchesSearch).toList();
+  }
+
+  bool _propertyMatchesSearch(PropertyModel p) {
+    final q = _searchQuery;
+    if (q.isEmpty) return true;
+    final haystack = [
+      p.propertyCode,
+      p.title,
+      p.ownerName,
+      p.ownerMobile,
+      p.areaName,
+      p.cityName,
+      p.address,
+      p.createdByName,
+      p.propertyTypeName,
+      p.configurationName ?? '',
+      p.listingTypeName,
+      CRMCurrencyFormatter.formatShort(p.price),
+      p.price.toString(),
+    ].join(' ').toLowerCase();
+    return haystack.contains(q);
   }
 
   bool _isRentRequirement(RequirementModel r) {
@@ -75,10 +101,33 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   List<RequirementModel> get _visibleBinRequirements {
-    if (_requirementsListingSubTab == 'Rent') {
-      return _binRequirements.where(_isRentRequirement).toList();
-    }
-    return _binRequirements.where((r) => !_isRentRequirement(r)).toList();
+    final byListing = _requirementsListingSubTab == 'Rent'
+        ? _binRequirements.where(_isRentRequirement).toList()
+        : _binRequirements.where((r) => !_isRentRequirement(r)).toList();
+    return byListing.where(_requirementMatchesSearch).toList();
+  }
+
+  bool _requirementMatchesSearch(RequirementModel r) {
+    final q = _searchQuery;
+    if (q.isEmpty) return true;
+    final salesperson = r.creatorName ?? r.assigneeName ?? '';
+    final mappedUser = r.assignedTo != null ? _usersMap[r.assignedTo]?.fullName ?? '' : '';
+    final haystack = [
+      r.clientName,
+      r.clientMobile,
+      r.propertyTypeName,
+      r.configurationName ?? '',
+      r.listingTypeName ?? '',
+      r.areaNames.join(' '),
+      salesperson,
+      mappedUser,
+      r.creatorMobile ?? '',
+      r.creatorEmail ?? '',
+      r.remarks ?? '',
+      CRMCurrencyFormatter.formatShort(r.minBudget),
+      CRMCurrencyFormatter.formatShort(r.maxBudget),
+    ].join(' ').toLowerCase();
+    return haystack.contains(q);
   }
 
   @override
@@ -86,6 +135,67 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     super.initState();
     _loadAutoDeleteDays();
     _fetchBinData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildBinSearchField({required bool isMobile}) {
+    final hint = _selectedTab == 'Properties'
+        ? 'Search code, property name, owner, area...'
+        : 'Search client name, mobile, specs, area, salesperson...';
+    return SizedBox(
+      width: double.infinity,
+      height: isMobile ? 42 : 38,
+      child: TextField(
+        controller: _searchController,
+        style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchQuery = '';
+                      _currentPropertiesPage = 1;
+                      _currentRequirementsPage = 1;
+                    });
+                  },
+                ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: CRMColors.primaryOf(context)),
+          ),
+          filled: true,
+          fillColor: CRMColors.cardBgOf(context),
+        ),
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value.trim().toLowerCase();
+            _currentPropertiesPage = 1;
+            _currentRequirementsPage = 1;
+          });
+        },
+      ),
+    );
   }
 
   Future<void> _loadAutoDeleteDays() async {
@@ -122,6 +232,20 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       final data = res['data'] as Map<String, dynamic>? ?? {};
       final list = data['properties'] as List? ?? [];
 
+      list.sort((a, b) {
+        DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
+        DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
+        if (a is Map) {
+          final strA = a['deleted_at'] ?? a['deletedAt'] ?? a['updated_at'] ?? a['updatedAt'] ?? a['created_at'] ?? a['createdAt'];
+          if (strA != null) dateA = DateTime.tryParse(strA.toString()) ?? dateA;
+        }
+        if (b is Map) {
+          final strB = b['deleted_at'] ?? b['deletedAt'] ?? b['updated_at'] ?? b['updatedAt'] ?? b['created_at'] ?? b['createdAt'];
+          if (strB != null) dateB = DateTime.tryParse(strB.toString()) ?? dateB;
+        }
+        return dateB.compareTo(dateA);
+      });
+
       List<PropertyModel> parsedList = list.map((p) => PropertyModel.fromJson(p)).toList();
 
       setState(() {
@@ -156,6 +280,20 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       final data = res['data'] as Map<String, dynamic>? ?? {};
       final list = data['requirements'] as List? ?? [];
 
+      list.sort((a, b) {
+        DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
+        DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
+        if (a is Map) {
+          final strA = a['deleted_at'] ?? a['deletedAt'] ?? a['updated_at'] ?? a['updatedAt'] ?? a['created_at'] ?? a['createdAt'];
+          if (strA != null) dateA = DateTime.tryParse(strA.toString()) ?? dateA;
+        }
+        if (b is Map) {
+          final strB = b['deleted_at'] ?? b['deletedAt'] ?? b['updated_at'] ?? b['updatedAt'] ?? b['created_at'] ?? b['createdAt'];
+          if (strB != null) dateB = DateTime.tryParse(strB.toString()) ?? dateB;
+        }
+        return dateB.compareTo(dateA);
+      });
+
       final authState = context.read<AuthBloc>().state;
       auth_model.UserModel? currentUser;
       if (authState is Authenticated) {
@@ -168,18 +306,30 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
       if (currentUser != null) {
         final role = currentUser.role;
+        final uName = currentUser.fullName.trim().toLowerCase();
         if (role == 'Admin') {
-          parsedList = parsedList.where((r) =>
-            r.createdBy == currentUserId || r.adminId == currentUserId
-          ).toList();
+          parsedList = parsedList.where((r) {
+            final isCreator = r.createdBy == currentUserId ||
+                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+            return isCreator || r.adminId == currentUserId;
+          }).toList();
         } else if (role == 'Telecaller') {
-          parsedList = parsedList.where((r) =>
-            r.createdBy == currentUserId || r.adminId == currentUser?.adminId
-          ).toList();
+          parsedList = parsedList.where((r) {
+            final isCreator = r.createdBy == currentUserId ||
+                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+            return isCreator || r.adminId == currentUser?.adminId;
+          }).toList();
         } else if (role != 'Super Admin') {
-          parsedList = parsedList.where((r) =>
-            r.createdBy == currentUserId
-          ).toList();
+          parsedList = parsedList.where((r) {
+            final isCreator = r.createdBy == currentUserId ||
+                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+            final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUserId || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+                (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
+            return isCreator || isAssignee;
+          }).toList();
         }
       }
 
@@ -198,48 +348,89 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   Future<void> _restoreProperty(String id) async {
+    final itemToRestore = _binProperties.firstWhereOrNull((p) => p.id == id);
+    setState(() {
+      _binProperties.removeWhere((p) => p.id == id);
+    });
+
+    if (itemToRestore != null) {
+      try {
+        final restoredItem = itemToRestore.copyWith(portalStatus: 'Active');
+        await RepositoryCoordinator().propertyLocal.saveProperties([restoredItem.toLocal()]);
+        RepositoryCoordinator().refreshProperties();
+        RepositoryCoordinator().refreshDashboard();
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Property restored successfully'),
+          backgroundColor: CRMColors.success,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
     try {
       await _propertiesService.restoreProperty(id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Property restored successfully'), backgroundColor: CRMColors.success),
-      );
-      _fetchBinProperties();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to restore property: $e'), backgroundColor: CRMColors.danger),
-      );
+      debugPrint('⚠️ Restore property API error: $e');
     }
   }
 
   Future<void> _restoreRequirement(RequirementModel r) async {
+    setState(() {
+      _binRequirements.removeWhere((item) => item.id == r.id);
+    });
+
+    final String newStatus = r.status == 'Bin' || r.status.startsWith('Rejected') ? 'Follow-up' : (r.status.isEmpty ? 'Active' : r.status);
+    final restoredReq = r.copyWith(status: newStatus);
+    try {
+      await RepositoryCoordinator().requirementLocal.saveRequirements([restoredReq.toLocal()]);
+      RepositoryCoordinator().refreshRequirements();
+      RepositoryCoordinator().refreshDashboard();
+    } catch (_) {}
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Requirement restored successfully'),
+          backgroundColor: CRMColors.success,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
     try {
       if (_requirementsSubTab == 'Bin') {
         await _requirementsService.restoreRequirement(r.id);
       } else {
-        await _requirementsService.updateRequirement(r.id, {'status': 'Interested'});
+        await _requirementsService.updateRequirement(r.id, {'status': newStatus});
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Requirement restored successfully'), backgroundColor: CRMColors.success),
-      );
-      _fetchBinRequirements();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to restore requirement: $e'), backgroundColor: CRMColors.danger),
-      );
+      debugPrint('⚠️ Restore requirement API error: $e');
     }
   }
 
   Future<void> _deleteRequirement(RequirementModel r) async {
+    setState(() {
+      _binRequirements.removeWhere((item) => item.id == r.id);
+    });
+
     try {
       await _requirementsService.deleteRequirement(r.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Requirement moved to Recycle Bin'), backgroundColor: CRMColors.success),
-      );
-      _fetchBinRequirements();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Requirement moved to Recycle Bin'), backgroundColor: CRMColors.success),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete requirement: $e'), backgroundColor: CRMColors.danger),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete requirement: $e'), backgroundColor: CRMColors.danger),
+        );
+      }
     }
   }
 
@@ -258,16 +449,25 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
     if (confirm != true) return;
 
+    setState(() {
+      _binProperties.removeWhere((p) => p.id == id);
+    });
+
     try {
-      await _propertiesService.permanentDeleteProperty(id);
+      await RepositoryCoordinator().propertyLocal.deleteProperty(id);
+      RepositoryCoordinator().refreshProperties();
+    } catch (_) {}
+
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Property permanently deleted'), backgroundColor: CRMColors.success),
       );
-      _fetchBinProperties();
+    }
+
+    try {
+      await _propertiesService.permanentDeleteProperty(id);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete property: $e'), backgroundColor: CRMColors.danger),
-      );
+      debugPrint('⚠️ Permanent delete property error: $e');
     }
   }
 
@@ -286,16 +486,25 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
     if (confirm != true) return;
 
+    setState(() {
+      _binRequirements.removeWhere((r) => r.id == id);
+    });
+
     try {
-      await _requirementsService.permanentDeleteRequirement(id);
+      await RepositoryCoordinator().requirementLocal.deleteRequirement(id);
+      RepositoryCoordinator().refreshRequirements();
+    } catch (_) {}
+
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Requirement permanently deleted'), backgroundColor: CRMColors.success),
       );
-      _fetchBinRequirements();
+    }
+
+    try {
+      await _requirementsService.permanentDeleteRequirement(id);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete requirement: $e'), backgroundColor: CRMColors.danger),
-      );
+      debugPrint('⚠️ Permanent delete requirement error: $e');
     }
   }
 
@@ -686,6 +895,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                 ],
               ),
             ],
+            const SizedBox(height: CRMSpacing.m),
+            _buildBinSearchField(isMobile: isMobile),
             const SizedBox(height: CRMSpacing.l),
             Builder(
               builder: (context) {
@@ -693,7 +904,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                     ? const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
                     : _selectedTab == 'Properties'
                         ? _visibleBinProperties.isEmpty
-                            ? _buildEmptyState('No deleted ${_propertiesSubTab.toLowerCase()} properties found in bin.')
+                            ? _buildEmptyState(_searchQuery.isEmpty
+                                ? 'No deleted ${_propertiesSubTab.toLowerCase()} properties found in bin.'
+                                : 'No properties match your search.')
                             : Builder(
                                 builder: (context) {
                                   final authState = context.read<AuthBloc>().state;
@@ -705,8 +918,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
                                   final targetProperties = _visibleBinProperties;
                                   final totalItems = targetProperties.length;
-                                  final totalPages = (totalItems / _propertiesPerPage).ceil().clamp(1, double.infinity).toInt();
-                                  final startIndex = (_currentPropertiesPage - 1) * _propertiesPerPage;
+                                  final totalPages = totalItems <= 0 ? 1 : (totalItems / _propertiesPerPage).ceil();
+                                  final safePage = _currentPropertiesPage.clamp(1, totalPages);
+                                  final startIndex = (safePage - 1) * _propertiesPerPage;
                                   final endIndex = (startIndex + _propertiesPerPage).clamp(0, totalItems);
                                   final paginatedProperties = targetProperties.sublist(startIndex, endIndex);
 
@@ -791,16 +1005,18 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                       _buildPropertiesPagination(
                                         totalItems,
                                         totalPages,
-                                        _currentPropertiesPage,
+                                        safePage,
                                       ),
                                     ],
                                   );
                                 },
                               )
                         : _visibleBinRequirements.isEmpty
-                            ? _buildEmptyState(_requirementsSubTab == 'Bin'
+                            ? _buildEmptyState(_searchQuery.isNotEmpty
+                                ? 'No leads match your search.'
+                                : (_requirementsSubTab == 'Bin'
                                 ? 'No deleted ${_requirementsListingSubTab.toLowerCase()} leads found.'
-                                : 'No ${_requirementsListingSubTab.toLowerCase()} leads marked as "Not Interested".')
+                                : 'No ${_requirementsListingSubTab.toLowerCase()} leads marked as "Not Interested".'))
                             : Builder(
                                 builder: (context) {
                                   final authState = context.read<AuthBloc>().state;
@@ -815,8 +1031,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
                                   final targetRequirements = _visibleBinRequirements;
                                   final totalItems = targetRequirements.length;
-                                  final totalPages = (totalItems / _requirementsPerPage).ceil().clamp(1, double.infinity).toInt();
-                                  final startIndex = (_currentRequirementsPage - 1) * _requirementsPerPage;
+                                  final totalPages = totalItems <= 0 ? 1 : (totalItems / _requirementsPerPage).ceil();
+                                  final safePage = _currentRequirementsPage.clamp(1, totalPages);
+                                  final startIndex = (safePage - 1) * _requirementsPerPage;
                                   final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalItems);
                                   final paginatedRequirements = targetRequirements.sublist(startIndex, endIndex);
 
@@ -968,7 +1185,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                       _buildRequirementsPagination(
                                         totalItems,
                                         totalPages,
-                                        _currentRequirementsPage,
+                                        safePage,
                                       ),
                                     ],
                                   );
@@ -1115,7 +1332,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
             ),
             const SizedBox(height: 4),
           ],
-          if (isUserAdminOrSuperAdmin && p.createdByName.isNotEmpty) ...[
+          if (isUserAdminOrSuperAdmin && p.showsAddedBy) ...[
             Row(
               children: [
                 Icon(Icons.badge_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),

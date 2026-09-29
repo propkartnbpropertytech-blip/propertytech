@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/storage/repository_coordinator.dart';
 import '../models/client_model.dart';
 import '../repository/clients_repository.dart';
 
@@ -52,28 +54,56 @@ class ClientsSuccess extends ClientsState {
 // --- BLoC ---
 class ClientsBloc extends Bloc<ClientsEvent, ClientsState> {
   final ClientsRepository clientsRepository;
+  FetchClientsEvent? _lastFetchEvent;
+  StreamSubscription? _clientsSubscription;
+  List<ClientModel> _cachedClients = [];
 
   ClientsBloc({required this.clientsRepository}) : super(ClientsInitial()) {
     on<FetchClientsEvent>(_onFetchClients);
     on<CreateClientEvent>(_onCreateClient);
     on<UpdateClientEvent>(_onUpdateClient);
     on<DeleteClientEvent>(_onDeleteClient);
+
+    _clientsSubscription = RepositoryCoordinator().clientsStream.listen((_) {
+      if (_lastFetchEvent != null) {
+        add(_lastFetchEvent!);
+      }
+    });
+  }
+
+  @override
+  Future<void> close() {
+    _clientsSubscription?.cancel();
+    return super.close();
   }
 
   Future<void> _onFetchClients(
     FetchClientsEvent event,
     Emitter<ClientsState> emit,
   ) async {
-    emit(ClientsLoading());
+    _lastFetchEvent = event;
+    if (state is! ClientsLoaded) {
+      emit(ClientsLoading());
+    }
     try {
       final list = await clientsRepository.getClients(
         search: event.search,
         stage: event.stage,
         source: event.source,
       );
+      _cachedClients = list;
       emit(ClientsLoaded(clients: list));
     } catch (e) {
       emit(ClientsError(e.toString()));
+      if (_cachedClients.isNotEmpty) {
+        emit(ClientsLoaded(clients: _cachedClients));
+      }
+    }
+  }
+
+  void _restoreLoaded(Emitter<ClientsState> emit) {
+    if (_cachedClients.isNotEmpty) {
+      emit(ClientsLoaded(clients: _cachedClients));
     }
   }
 
@@ -81,12 +111,13 @@ class ClientsBloc extends Bloc<ClientsEvent, ClientsState> {
     CreateClientEvent event,
     Emitter<ClientsState> emit,
   ) async {
-    emit(ClientsLoading());
     try {
       await clientsRepository.createClient(event.client);
       emit(ClientsSuccess("Client created successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(ClientsError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 
@@ -94,12 +125,13 @@ class ClientsBloc extends Bloc<ClientsEvent, ClientsState> {
     UpdateClientEvent event,
     Emitter<ClientsState> emit,
   ) async {
-    emit(ClientsLoading());
     try {
       await clientsRepository.updateClient(event.client);
       emit(ClientsSuccess("Client updated successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(ClientsError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 
@@ -107,12 +139,13 @@ class ClientsBloc extends Bloc<ClientsEvent, ClientsState> {
     DeleteClientEvent event,
     Emitter<ClientsState> emit,
   ) async {
-    emit(ClientsLoading());
     try {
       await clientsRepository.deleteClient(event.id);
       emit(ClientsSuccess("Client deleted successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(ClientsError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 }

@@ -12,9 +12,19 @@ class PropertyLocalRepository {
 
   Future<PropertyLocal?> getPropertyById(String id) async {
     if (kIsWeb) {
-      return inMemory[id];
+      if (inMemory.containsKey(id)) return inMemory[id];
+      for (final p in inMemory.values) {
+        if (p.id == id || p.propertyCode == id) return p;
+      }
+      return null;
     }
-    return await _isar.propertyLocals.filter().idEqualTo(id).findFirst();
+    final byId = await _isar.propertyLocals.filter().idEqualTo(id).findFirst();
+    if (byId != null) return byId;
+    return await _isar.propertyLocals.filter().propertyCodeEqualTo(id).findFirst();
+  }
+
+  Future<PropertyLocal?> getPropertyByIdOrCode(String idOrCode) async {
+    return getPropertyById(idOrCode);
   }
 
   Future<PropertyLocal?> getPropertyByIdOrCode(String idOrCode) async {
@@ -147,7 +157,8 @@ class PropertyLocalRepository {
             ..images = List<String>.from(map['images'] ?? [])
             ..amenities = List<String>.from(map['amenities'] ?? [])
             ..adminId = map['adminId']
-            ..organizationId = map['organizationId'];
+            ..organizationId = map['organizationId']
+            ..portalStatus = map['portalStatus'] ?? 'None';
           inMemory[p.id] = p;
         }
         print("Loaded ${inMemory.length} properties from local storage cache.");
@@ -221,6 +232,7 @@ class PropertyLocalRepository {
         'amenities': item.amenities,
         'adminId': item.adminId,
         'organizationId': item.organizationId,
+        'portalStatus': item.portalStatus,
       })).toList();
       await prefs.setStringList('cached_properties', jsonList);
     } catch (e) {
@@ -265,6 +277,26 @@ class RequirementLocalRepository {
   Isar get _isar => IsarService().isar;
 
   static final Map<String, RequirementLocal> inMemory = {};
+  static final Map<String, Map<String, dynamic>> metaCustomFieldsById = {};
+
+  static void rememberMetaCustomFields(String id, Map<String, dynamic>? meta) {
+    if (id.trim().isEmpty || meta == null || meta.isEmpty) return;
+    metaCustomFieldsById[id] = {
+      ...?metaCustomFieldsById[id],
+      ...meta,
+    };
+  }
+
+  Future<RequirementLocal?> getRequirementById(String id) async {
+    if (kIsWeb) {
+      if (inMemory.containsKey(id)) return inMemory[id];
+      for (final r in inMemory.values) {
+        if (r.id == id) return r;
+      }
+      return null;
+    }
+    return await _isar.requirementLocals.filter().idEqualTo(id).findFirst();
+  }
 
   Future<List<RequirementLocal>> getRequirements({
     String? search,
@@ -284,7 +316,20 @@ class RequirementLocalRepository {
       }
       if (configurationId != null) list = list.where((r) => r.configurationId == configurationId).toList();
       if (propertyTypeId != null) list = list.where((r) => r.propertyTypeId == propertyTypeId).toList();
-      if (status != null && status != 'All') list = list.where((r) => r.status == status).toList();
+      if (status != null && status != 'All') {
+        if (status == 'Rejected') {
+          list = list.where((r) =>
+            r.status == 'Rejected' ||
+            r.status.startsWith('Rejected') ||
+            r.status == 'Suspended' ||
+            r.status == 'Dead' ||
+            r.status == 'Not Interested' ||
+            r.status == 'Bin'
+          ).toList();
+        } else {
+          list = list.where((r) => r.status == status).toList();
+        }
+      }
       return list;
     }
 
@@ -337,8 +382,23 @@ class RequirementLocalRepository {
             ..createdAt = DateTime.tryParse(map['createdAt'] ?? '') ?? DateTime.now()
             ..budget = map['budget'] != null ? double.tryParse(map['budget'].toString()) : null
             ..adminId = map['adminId']
-            ..organizationId = map['organizationId'];
+            ..organizationId = map['organizationId']
+            ..leadSource = map['leadSource']
+            ..referralName = map['referralName']
+            ..listingTypeId = map['listingTypeId']
+            ..listingTypeName = map['listingTypeName']
+            ..creatorName = map['creatorName']
+            ..assigneeName = map['assigneeName']
+            ..createdBy = map['createdBy']
+            ..assignedTo = map['assignedTo']
+            ..nextFollowupDate = map['nextFollowupDate'];
           inMemory[r.id] = r;
+          if (map['metaCustomFields'] is Map) {
+            rememberMetaCustomFields(
+              r.id,
+              Map<String, dynamic>.from(map['metaCustomFields'] as Map),
+            );
+          }
         }
         print("Loaded ${inMemory.length} requirements from local storage cache.");
       }
@@ -352,8 +412,8 @@ class RequirementLocalRepository {
       final prefs = await SharedPreferences.getInstance();
       final jsonList = inMemory.values.map((item) => jsonEncode({
         'id': item.id,
-        'clientName': kIsWeb ? '' : item.clientName,
-        'clientMobile': kIsWeb ? '' : item.clientMobile,
+        'clientName': item.clientName,
+        'clientMobile': item.clientMobile,
         'categoryId': item.categoryId,
         'categoryName': item.categoryName,
         'propertyTypeId': item.propertyTypeId,
@@ -373,6 +433,17 @@ class RequirementLocalRepository {
         'budget': item.budget,
         'adminId': item.adminId,
         'organizationId': item.organizationId,
+        'leadSource': item.leadSource,
+        'referralName': item.referralName,
+        'listingTypeId': item.listingTypeId,
+        'listingTypeName': item.listingTypeName,
+        'creatorName': item.creatorName,
+        'assigneeName': item.assigneeName,
+        'createdBy': item.createdBy,
+        'assignedTo': item.assignedTo,
+        'nextFollowupDate': item.nextFollowupDate,
+        if (metaCustomFieldsById[item.id] != null)
+          'metaCustomFields': metaCustomFieldsById[item.id],
       })).toList();
       await prefs.setStringList('cached_requirements', jsonList);
     } catch (e) {
@@ -381,10 +452,10 @@ class RequirementLocalRepository {
   }
 
   Future<void> saveRequirements(List<RequirementLocal> requirements) async {
+    for (final r in requirements) {
+      inMemory[r.id] = r;
+    }
     if (kIsWeb) {
-      for (final r in requirements) {
-        inMemory[r.id] = r;
-      }
       await _saveAllToPrefs();
       return;
     }
@@ -419,6 +490,68 @@ class FollowupLocalRepository {
 
   static final Map<String, FollowupLocal> inMemory = {};
 
+  Future<void> loadInMemoryCache() async {
+    if (!kIsWeb) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = prefs.getStringList('cached_followups');
+      if (jsonList != null) {
+        for (final jsonStr in jsonList) {
+          final map = jsonDecode(jsonStr);
+          final f = FollowupLocal()
+            ..id = map['id']
+            ..propertyId = map['propertyId']
+            ..propertyCode = map['propertyCode']
+            ..propertyTitle = map['propertyTitle']
+            ..requirementId = map['requirementId']
+            ..requirementCustomerName = map['requirementCustomerName']
+            ..createdBy = map['createdBy'] ?? ''
+            ..clientName = map['clientName'] ?? ''
+            ..mobile = map['mobile'] ?? ''
+            ..followupDate = DateTime.tryParse(map['followupDate'] ?? '') ?? DateTime.now()
+            ..notes = map['notes']
+            ..status = map['status'] ?? 'Pending'
+            ..createdAt = DateTime.tryParse(map['createdAt'] ?? '') ?? DateTime.now();
+          inMemory[f.id] = f;
+        }
+        print("Loaded ${inMemory.length} followups from local storage cache.");
+      }
+    } catch (e) {
+      print("Error loading cached followups: $e");
+    }
+  }
+
+  Future<void> _saveAllToPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = inMemory.values.map((item) => jsonEncode({
+        'id': item.id,
+        'propertyId': item.propertyId,
+        'propertyCode': item.propertyCode,
+        'propertyTitle': item.propertyTitle,
+        'requirementId': item.requirementId,
+        'requirementCustomerName': item.requirementCustomerName,
+        'createdBy': item.createdBy,
+        'clientName': item.clientName,
+        'mobile': item.mobile,
+        'followupDate': item.followupDate.toIso8601String(),
+        'notes': item.notes,
+        'status': item.status,
+        'createdAt': item.createdAt.toIso8601String(),
+      })).toList();
+      await prefs.setStringList('cached_followups', jsonList);
+    } catch (e) {
+      print("Error saving followups to preferences: $e");
+    }
+  }
+
+  Future<List<FollowupLocal>> getAllFollowups() async {
+    if (kIsWeb) {
+      return inMemory.values.toList();
+    }
+    return await _isar.followupLocals.where().findAll();
+  }
+
   Future<List<FollowupLocal>> getFollowupsByClient(String clientName) async {
     if (kIsWeb) {
       return inMemory.values.where((f) => f.clientName == clientName).toList();
@@ -428,10 +561,11 @@ class FollowupLocalRepository {
   }
 
   Future<void> saveFollowups(List<FollowupLocal> followups) async {
+    for (final f in followups) {
+      inMemory[f.id] = f;
+    }
     if (kIsWeb) {
-      for (final f in followups) {
-        inMemory[f.id] = f;
-      }
+      await _saveAllToPrefs();
       return;
     }
 
@@ -443,6 +577,7 @@ class FollowupLocalRepository {
   Future<void> deleteFollowup(String id) async {
     if (kIsWeb) {
       inMemory.remove(id);
+      await _saveAllToPrefs();
       return;
     }
 
@@ -789,6 +924,137 @@ class ClientLocalRepository {
 
     await _isar.writeTxn(() async {
       await _isar.clientLocals.filter().idEqualTo(id).deleteAll();
+    });
+  }
+}
+
+class CampaignLeadLocalRepository {
+  Isar get _isar => IsarService().isar;
+  bool get _useInMemory => kIsWeb || !IsarService().isInitialized;
+
+  static final Map<String, CampaignLeadLocal> inMemory = {};
+  static const String _webLeadsKey = 'isar_campaign_leads_web_v1';
+
+  Future<void> _persistWebLeads() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = inMemory.values.map((l) => {
+        'id': l.id,
+        'source': l.source,
+        'receivedAt': l.receivedAt.toIso8601String(),
+        'rawJsonString': l.rawJsonString,
+        'externalLeadId': l.externalLeadId,
+        'isDuplicate': l.isDuplicate,
+        'duplicateReason': l.duplicateReason,
+        'qualityStatus': l.qualityStatus,
+        'importStatus': l.importStatus,
+        'importedClientId': l.importedClientId,
+        'metaFeedbackEventId': l.metaFeedbackEventId,
+        'metaFeedbackSentAt': l.metaFeedbackSentAt?.toIso8601String(),
+      }).toList();
+      await prefs.setString(_webLeadsKey, jsonEncode(list));
+    } catch (_) {}
+  }
+
+  Future<List<CampaignLeadLocal>> getLeads() async {
+    if (_useInMemory) {
+      if (inMemory.isEmpty) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final stored = prefs.getString(_webLeadsKey);
+          if (stored != null && stored.isNotEmpty) {
+            final list = jsonDecode(stored) as List<dynamic>;
+            for (final item in list) {
+              final m = item as Map<String, dynamic>;
+              final l = CampaignLeadLocal()
+                ..id = m['id']?.toString() ?? ''
+                ..source = m['source']?.toString() ?? ''
+                ..receivedAt = DateTime.tryParse(m['receivedAt']?.toString() ?? '') ?? DateTime.now()
+                ..rawJsonString = m['rawJsonString']?.toString() ?? '{}'
+                ..externalLeadId = m['externalLeadId']?.toString()
+                ..isDuplicate = m['isDuplicate'] as bool? ?? false
+                ..duplicateReason = m['duplicateReason']?.toString()
+                ..qualityStatus = m['qualityStatus']?.toString() ?? 'Pending'
+                ..importStatus = m['importStatus']?.toString() ?? 'New'
+                ..importedClientId = m['importedClientId']?.toString()
+                ..metaFeedbackEventId = m['metaFeedbackEventId']?.toString()
+                ..metaFeedbackSentAt = m['metaFeedbackSentAt'] != null
+                    ? DateTime.tryParse(m['metaFeedbackSentAt'].toString())
+                    : null;
+              inMemory[l.id] = l;
+            }
+          }
+        } catch (_) {}
+      }
+      final list = inMemory.values.toList();
+      list.sort((a, b) => b.receivedAt.compareTo(a.receivedAt));
+      return list;
+    }
+    return await _isar.campaignLeadLocals
+        .filter()
+        .idIsNotEmpty()
+        .sortByReceivedAtDesc()
+        .findAll();
+  }
+
+  Future<void> saveLeads(List<CampaignLeadLocal> leads) async {
+    if (_useInMemory) {
+      for (final l in leads) {
+        inMemory[l.id] = l;
+      }
+      await _persistWebLeads();
+      return;
+    }
+    await _isar.writeTxn(() async {
+      await _isar.campaignLeadLocals.putAll(leads);
+    });
+  }
+
+  Future<void> saveLead(CampaignLeadLocal lead) async {
+    if (_useInMemory) {
+      inMemory[lead.id] = lead;
+      await _persistWebLeads();
+      return;
+    }
+    await _isar.writeTxn(() async {
+      await _isar.campaignLeadLocals.put(lead);
+    });
+  }
+
+  Future<void> deleteLead(String id) async {
+    if (_useInMemory) {
+      inMemory.remove(id);
+      await _persistWebLeads();
+      return;
+    }
+    await _isar.writeTxn(() async {
+      await _isar.campaignLeadLocals.filter().idEqualTo(id).deleteAll();
+    });
+  }
+
+  Future<void> deleteLeads(List<String> ids) async {
+    if (_useInMemory) {
+      for (final id in ids) {
+        inMemory.remove(id);
+      }
+      await _persistWebLeads();
+      return;
+    }
+    await _isar.writeTxn(() async {
+      for (final id in ids) {
+        await _isar.campaignLeadLocals.filter().idEqualTo(id).deleteAll();
+      }
+    });
+  }
+
+  Future<void> clearAll() async {
+    if (_useInMemory) {
+      inMemory.clear();
+      await _persistWebLeads();
+      return;
+    }
+    await _isar.writeTxn(() async {
+      await _isar.campaignLeadLocals.clear();
     });
   }
 }

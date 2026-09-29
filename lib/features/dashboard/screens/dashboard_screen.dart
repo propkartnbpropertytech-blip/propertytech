@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/model_mappers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -21,12 +22,14 @@ import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/skeletons.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../auth/bloc/auth_bloc.dart';
+import '../../telecaller/screens/telecaller_dashboard_screen.dart';
+import '../../sales/bloc/sales_dashboard_bloc.dart';
 import '../bloc/dashboard_bloc.dart';
 import '../models/dashboard_summary.dart';
+import '../models/kpi_models.dart';
+import '../widgets/kpi_drilldown_dialogs.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/utils/currency.dart';
-import '../../../core/storage/repository_coordinator.dart';
-import '../../../core/storage/model_mappers.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
 import '../widgets/welcome_header.dart';
@@ -57,7 +60,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // Pagination states
   int _propertyPage = 1;
-  static const int _propertiesPerPage = 5;
+  static const int _propertiesPerPage = 8;
 
   int _followupPage = 1;
   static const int _followupsPerPage = 5;
@@ -138,6 +141,17 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final role = context.select<AuthBloc, String>((bloc) {
+      final state = bloc.state;
+      return state is Authenticated ? state.user.role : '';
+    });
+    if (RoleGuard.isTelecaller(role)) {
+      return const TelecallerDashboardScreen();
+    }
+    if (RoleGuard.isSales(role)) {
+      return const SalesDashboardScreen();
+    }
+
     Theme.of(context);
     final userName = context.select<AuthBloc, String>((bloc) {
       final state = bloc.state;
@@ -176,6 +190,15 @@ class _DashboardScreenState extends State<DashboardScreen>
               final data = (state is DashboardLoadedState)
                   ? state.data
                   : (state as DashboardRefreshing).data;
+              final kpis = (state is DashboardLoadedState)
+                  ? state.kpis
+                  : (state as DashboardRefreshing).kpis;
+              final kpiFilters = (state is DashboardLoadedState)
+                  ? state.kpiFilters
+                  : (state as DashboardRefreshing).kpiFilters;
+              final isKpiLoading = (state is DashboardLoadedState)
+                  ? state.isKpiLoading
+                  : false;
 
               return RefreshIndicator(
                 onRefresh: () async {
@@ -204,31 +227,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                           const SizedBox(height: 20),
 
-                          // Atmosphere (Desk Mode) Switch Header
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  _isRent
-                                      ? 'Rental Desk Overview'
-                                      : 'Re-Sale Desk Overview',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: ThemeManager().isDarkMode
-                                        ? const Color(0xFFF8FAFC)
-                                        : const Color(0xFF14213D),
-                                    letterSpacing: -0.2,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _buildModernAtmosphereToggle(),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
+                          // Global Filter Bar (Business Type, Date, Lead Type)
+                          _buildGlobalFilterBar(kpiFilters, isKpiLoading),
+                          const SizedBox(height: 20),
 
                           // 2. Responsive Main Content Area
                           LayoutBuilder(
@@ -285,6 +286,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 tabFiltered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
                               }
 
+                              if (tabFiltered.length > 16) {
+                                tabFiltered = tabFiltered.sublist(0, 16);
+                              }
+
                               final totalCount = tabFiltered.length;
                               final totalPages =
                                   (totalCount / _propertiesPerPage).ceil();
@@ -339,6 +344,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                               final followupsWidget = FollowupsCard(
                                 followups: data.followups,
+                                siteVisits: data.siteVisits,
                                 onFollowupTap: (f) => _showEditFollowupDialog(f),
                                 onAddFollowup: () => _showCreateFollowupDialog(),
                                 onViewAll: () =>
@@ -351,12 +357,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   // KPI Cards (Strictly NO percentage values)
                                   _buildModernKpiCards(
                                     data,
+                                    kpis,
+                                    kpiFilters,
                                     isDesktop,
                                     isTablet,
                                   ),
                                   const SizedBox(height: 24),
 
-                                  // Middle Section: Recent Properties & (Today's Schedule + Follow-ups)
+                                  // Middle Section: Recent Properties & (Note + Follow-ups)
                                   if (isDesktop)
                                     Row(
                                       crossAxisAlignment:
@@ -420,6 +428,243 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildGlobalFilterBar(KpiFilterParams kpiFilters, bool isKpiLoading) {
+    final isDark = ThemeManager().isDarkMode;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 10,
+        children: [
+          // 1. Business Type Filter: Rent (default), Re-sale, Both
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Business:',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                height: 32,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildFilterPill('Rent', kpiFilters.businessType == 'Rent', () {
+                      ThemeManager().setRentMode(true);
+                      setState(() => _propertyPage = 1);
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(businessType: 'Rent'));
+                    }, isDark),
+                    _buildFilterPill('Re-sale', kpiFilters.businessType == 'Re-sale', () {
+                      ThemeManager().setRentMode(false);
+                      setState(() => _propertyPage = 1);
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(businessType: 'Re-sale'));
+                    }, isDark),
+                    _buildFilterPill('Both', kpiFilters.businessType == 'Both', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(businessType: 'Both'));
+                    }, isDark),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // 2. Date Filter: Today, Weekly (default), Monthly, Yearly, Custom Range
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Date:',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                height: 32,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildFilterPill('Today', kpiFilters.dateFilter == 'Today', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(dateFilter: 'Today'));
+                    }, isDark),
+                    _buildFilterPill('Weekly', kpiFilters.dateFilter == 'Weekly', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(dateFilter: 'Weekly'));
+                    }, isDark),
+                    _buildFilterPill('Monthly', kpiFilters.dateFilter == 'Monthly', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(dateFilter: 'Monthly'));
+                    }, isDark),
+                    _buildFilterPill('Yearly', kpiFilters.dateFilter == 'Yearly', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(dateFilter: 'Yearly'));
+                    }, isDark),
+                    _buildFilterPill(
+                      kpiFilters.dateFilter.startsWith('Custom') && kpiFilters.startDate != null
+                          ? '${kpiFilters.startDate} ~ ${kpiFilters.endDate}'
+                          : 'Custom Range',
+                      kpiFilters.dateFilter.startsWith('Custom'),
+                      () => _pickCustomDateRange(context, kpiFilters),
+                      isDark,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // 3. Lead Type Filter & Loading Indicator
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Lead Type:',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                height: 32,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildFilterPill('Both', kpiFilters.leadType == 'Both', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(leadType: 'Both'));
+                    }, isDark),
+                    _buildFilterPill('Listing', kpiFilters.leadType == 'Listing', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(leadType: 'Listing'));
+                    }, isDark),
+                    _buildFilterPill('Requirement', kpiFilters.leadType == 'Requirement', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(leadType: 'Requirement'));
+                    }, isDark),
+                  ],
+                ),
+              ),
+              if (isKpiLoading) ...[
+                const SizedBox(width: 10),
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickCustomDateRange(BuildContext context, KpiFilterParams current) async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 2),
+      initialDateRange: current.startDate != null && current.endDate != null
+          ? DateTimeRange(
+              start: DateTime.tryParse(current.startDate!) ?? now.subtract(const Duration(days: 7)),
+              end: DateTime.tryParse(current.endDate!) ?? now,
+            )
+          : DateTimeRange(start: now.subtract(const Duration(days: 7)), end: now),
+    );
+
+    if (picked != null) {
+      if (picked.start.isAfter(picked.end)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Start Date must be less than or equal to End Date.'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+        return;
+      }
+
+      final startStr = DateFormat('yyyy-MM-dd').format(picked.start);
+      final endStr = DateFormat('yyyy-MM-dd').format(picked.end);
+
+      context.read<DashboardBloc>().add(UpdateKpiFilter(
+        dateFilter: 'Custom Range',
+        startDate: startStr,
+        endDate: endStr,
+      ));
+    }
+  }
+
+  Widget _buildFilterPill(
+    String label,
+    bool isSelected,
+    VoidCallback onTap,
+    bool isDark,
+  ) {
+    final primaryColor = ThemeManager().primaryColor;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDark ? const Color(0xFF1E293B) : Colors.white)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected
+                ? primaryColor
+                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+          ),
+        ),
+      ),
     );
   }
 
@@ -494,131 +739,223 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _buildModernKpiCards(
     DashboardData data,
+    DashboardKpisResponse? kpis,
+    KpiFilterParams kpiFilters,
     bool isDesktop,
     bool isTablet,
   ) {
     final themeManager = ThemeManager();
     final primaryColor = themeManager.primaryColor;
 
-    final filteredAvailable = data.recentProperties.where((p) {
-      final isType = _isRent ? p.listingType.toLowerCase().contains('rent') : !p.listingType.toLowerCase().contains('rent');
-      final isAvailable = p.status.toLowerCase() == 'available';
-      return isType && isAvailable;
-    }).toList();
-    final availableCount = data.recentProperties.isNotEmpty
-        ? filteredAvailable.length
+    // Check enabled KPIs from database configuration
+    final bool enableInv = kpis?.isKpiEnabled('available_inventory') ?? true;
+    final bool enableLeads = kpis?.isKpiEnabled('total_leads') ?? true;
+    final bool enableTelecallers = kpis?.isKpiEnabled('telecallers') ?? true;
+    final bool enableAlloc = kpis?.isKpiEnabled('leads_allocated') ?? true;
+    final bool enableSales = kpis?.isKpiEnabled('assigned_to_sales') ?? true;
+    final bool enableVisits = kpis?.isKpiEnabled('site_visits_done') ?? true;
+    final bool enableDealWon = kpis?.isKpiEnabled('deal_won') ?? true;
+    final bool enableSalesUsers = kpis?.isKpiEnabled('sales_users') ?? true;
+
+    // Database-authoritative exact counts
+    final invCount = kpis != null
+        ? kpis.counts.availableInventory
         : (_isRent ? data.summary.rentalAvailable : data.summary.resaleAvailable);
-    final siteVisitsCount = _isRent
-        ? data.summary.rentalRented
-        : data.summary.resaleSold;
-    final reqsCount = _isRent
-        ? data.summary.rentalRequirements
-        : data.summary.resaleRequirements;
-    final wonDealsCount = _isRent
-        ? data.summary.rentalWonRequirements
-        : data.summary.resaleWonRequirements;
+    final leadsCount = kpis != null
+        ? kpis.counts.totalLeads
+        : (_isRent ? data.summary.rentalRequirements : data.summary.resaleRequirements);
+    final telecallersCount = kpis != null ? kpis.counts.telecallers : 0;
+    final allocCount = kpis != null ? kpis.counts.leadsAllocated : 0;
+    final assignedSalesCount = kpis != null ? kpis.counts.assignedToSales : 0;
+    final visitsCount = kpis != null ? kpis.counts.siteVisitsDone : 0;
+    final dealWonCount = kpis != null ? kpis.counts.dealWon : 0;
+    final salesUsersCount = kpis != null ? kpis.counts.salesUsers : 0;
 
-    final card1 = StatCard(
-      title: 'Available Inventory',
-      value: '$availableCount',
-      icon: Icons.home_work_outlined,
-      accentColor: primaryColor,
-      onTap: () => context.go('/properties'),
-    );
+    final cards = <Widget>[];
 
-    final card2 = StatCard(
-      title: 'Site Visits Done',
-      value: '$siteVisitsCount',
-      icon: Icons.location_on_outlined,
-      accentColor: const Color(0xFF3B82F6),
-      onTap: () => context.go('/dashboard'),
-    );
-
-    final card3 = StatCard(
-      title: 'Leads',
-      value: '$reqsCount',
-      icon: Icons.assignment_outlined,
-      accentColor: const Color(0xFF8B5CF6),
-      onTap: () => context.go('/requirements'),
-    );
-
-    final card4 = StatCard(
-      title: 'Deals Won',
-      value: '$wonDealsCount',
-      icon: Icons.handshake_outlined,
-      accentColor: const Color(0xFFF97316),
-      onTap: () => context.go('/requirements'),
-    );
-
-    if (isDesktop) {
-      return Row(
-        children: [
-          Expanded(child: card1),
-          const SizedBox(width: 16),
-          Expanded(child: card2),
-          const SizedBox(width: 16),
-          Expanded(child: card3),
-          const SizedBox(width: 16),
-          Expanded(child: card4),
-        ],
-      );
-    } else if (isTablet) {
-      return Column(
-        children: [
-          Row(
-            children: [
-              Expanded(child: card1),
-              const SizedBox(width: 16),
-              Expanded(child: card2),
-            ],
+    // 1. Available Inventory
+    if (enableInv) {
+      cards.add(
+        StatCard(
+          title: 'Available Inventory',
+          value: '$invCount',
+          icon: Icons.home_work_rounded,
+          accentColor: primaryColor,
+          onTap: () => KpiDrilldownDialogs.showInventoryDrilldown(
+            context,
+            params: kpiFilters,
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: card3),
-              const SizedBox(width: 16),
-              Expanded(child: card4),
-            ],
-          ),
-        ],
-      );
-    } else {
-      // Mobile 2x2 responsive grid
-      final isVeryNarrow = MediaQuery.of(context).size.width < 340;
-      if (isVeryNarrow) {
-        return Column(
-          children: [
-            card1,
-            const SizedBox(height: 10),
-            card2,
-            const SizedBox(height: 10),
-            card3,
-            const SizedBox(height: 10),
-            card4,
-          ],
-        );
-      }
-      return Column(
-        children: [
-          Row(
-            children: [
-              Expanded(child: card1),
-              const SizedBox(width: 10),
-              Expanded(child: card2),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(child: card3),
-              const SizedBox(width: 10),
-              Expanded(child: card4),
-            ],
-          ),
-        ],
+        ),
       );
     }
   }
+
+    // 2. Total Leads
+    if (enableLeads) {
+      cards.add(
+        StatCard(
+          title: 'Total Leads',
+          value: '$leadsCount',
+          icon: Icons.assignment_rounded,
+          accentColor: const Color(0xFF6366F1),
+          onTap: () => KpiDrilldownDialogs.showLeadsDrilldown(
+            context,
+            params: kpiFilters,
+          ),
+        ),
+      );
+    }
+
+    // 3. Telecallers
+    if (enableTelecallers) {
+      cards.add(
+        StatCard(
+          title: 'Telecallers',
+          value: '$telecallersCount',
+          icon: Icons.support_agent_rounded,
+          accentColor: const Color(0xFF0EA5E9),
+          onTap: () => KpiDrilldownDialogs.showTelecallersDrilldown(
+            context,
+            params: kpiFilters,
+          ),
+        ),
+      );
+    }
+
+    // 4. Leads Allocated
+    if (enableAlloc) {
+      cards.add(
+        StatCard(
+          title: 'Leads Allocated',
+          value: '$allocCount',
+          icon: Icons.assignment_ind_rounded,
+          accentColor: const Color(0xFF8B5CF6),
+          onTap: () => KpiDrilldownDialogs.showLeadsAllocatedDrilldown(
+            context,
+            params: kpiFilters,
+          ),
+        ),
+      );
+    }
+
+    // 5. Assigned to Sales
+    if (enableSales) {
+      cards.add(
+        StatCard(
+          title: 'Assigned to Sales',
+          value: '$assignedSalesCount',
+          icon: Icons.badge_rounded,
+          accentColor: const Color(0xFF10B981),
+          onTap: () => KpiDrilldownDialogs.showAssignedToSalesDrilldown(
+            context,
+            params: kpiFilters,
+          ),
+        ),
+      );
+    }
+
+    // 6. Site Visits Done
+    if (enableVisits) {
+      cards.add(
+        StatCard(
+          title: 'Site Visits Done',
+          value: '$visitsCount',
+          icon: Icons.location_on_rounded,
+          accentColor: const Color(0xFFEC4899),
+          onTap: () => KpiDrilldownDialogs.showSiteVisitsDrilldown(
+            context,
+            params: kpiFilters,
+          ),
+        ),
+      );
+    }
+
+    // 7. Deal Won
+    if (enableDealWon) {
+      cards.add(
+        StatCard(
+          title: 'Deal Won',
+          value: '$dealWonCount',
+          icon: Icons.emoji_events_rounded,
+          accentColor: const Color(0xFFF59E0B),
+          onTap: () => KpiDrilldownDialogs.showDealWonDrilldown(
+            context,
+            params: kpiFilters,
+          ),
+        ),
+      );
+    }
+
+    // 8. Sales Users
+    if (enableSalesUsers) {
+      cards.add(
+        StatCard(
+          title: 'Sales Users',
+          value: '$salesUsersCount',
+          icon: Icons.groups_rounded,
+          accentColor: const Color(0xFF10B981),
+          onTap: () => KpiDrilldownDialogs.showSalesUsersDrilldown(
+            context,
+            params: kpiFilters,
+          ),
+        ),
+      );
+    }
+
+    if (cards.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final int cols;
+        if (availableWidth >= 1050) {
+          cols = cards.length >= 8 ? 4 : 3;
+        } else if (availableWidth >= 700) {
+          cols = 3;
+        } else if (availableWidth >= 360) {
+          cols = 2;
+        } else {
+          cols = 1;
+        }
+
+        final List<Widget> rows = [];
+        for (int i = 0; i < cards.length; i += cols) {
+          final rowCards = cards.sublist(i, (i + cols).clamp(0, cards.length));
+          final rowChildren = <Widget>[];
+          for (final c in rowCards) {
+            rowChildren.add(
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  child: c,
+                ),
+              ),
+            );
+          }
+          while (rowChildren.length < cols) {
+            rowChildren.add(
+              const Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 5),
+                  child: SizedBox.shrink(),
+                ),
+              ),
+            );
+          }
+          rows.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: rowChildren),
+            ),
+          );
+        }
+        return Column(children: rows);
+      },
+    );
+  }
+
 
   Widget _buildWelcomeHeader(String name, String dateString, String greeting) {
     return LayoutBuilder(
@@ -1417,7 +1754,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ),
                 content: SizedBox(
-                  width: 400,
+                  width: CRMBreakpoints.adaptiveWidth(context, 400),
                   child: SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -2875,6 +3212,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     final formattedTime =
         "${displayHour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $amPm";
     final formattedDate = "${date.day}/${date.month}/${date.year}";
+    final currentRole = (RoleGuard.currentUser?.role ??
+            (context.read<AuthBloc>().state is Authenticated
+                ? (context.read<AuthBloc>().state as Authenticated).user.role
+                : ''))
+        .toLowerCase();
+    final isRealAdmin = currentRole == 'admin' || currentRole == 'super admin';
 
     return InkWell(
       onTap: () => _showEditFollowupDialog(f),
@@ -2940,27 +3283,23 @@ class _DashboardScreenState extends State<DashboardScreen>
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (context.read<AuthBloc>().state is Authenticated &&
-                      (context.read<AuthBloc>().state as Authenticated)
-                              .user
-                              .role !=
-                          'Sales' &&
+                  if (isRealAdmin &&
                       f.creatorName != null &&
                       f.creatorName!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(
-                          Icons.person_outline_rounded,
-                          size: 12,
-                          color: CRMColors.textSecondaryOf(context),
+                        const Icon(
+                          Icons.support_agent_rounded,
+                          size: 13,
+                          color: Color(0xFF6366F1),
                         ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            'Assigned to: ${f.creatorName}',
+                            'Telecaller: ${f.creatorName}',
                             style: CRMTypography.captionBold.copyWith(
-                              color: CRMColors.textSecondaryOf(context),
+                              color: const Color(0xFF6366F1),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

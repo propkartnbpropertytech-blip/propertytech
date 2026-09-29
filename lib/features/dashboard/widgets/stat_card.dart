@@ -30,7 +30,7 @@ class _StatCardState extends State<StatCard> {
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
     final screenWidth = MediaQuery.of(context).size.width;
-    final bool compact = widget.isCompact || screenWidth < 500;
+    final bool compact = widget.isCompact || screenWidth < 600;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -43,12 +43,12 @@ class _StatCardState extends State<StatCard> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: EdgeInsets.symmetric(
-            horizontal: compact ? 12 : 18,
-            vertical: compact ? 12 : 16,
+            horizontal: compact ? 10 : 14,
+            vertical: compact ? 9 : 11,
           ),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E293B) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: _isHovered
                   ? widget.accentColor.withValues(alpha: 0.5)
@@ -62,8 +62,8 @@ class _StatCardState extends State<StatCard> {
                 color: _isHovered
                     ? widget.accentColor.withValues(alpha: isDark ? 0.15 : 0.08)
                     : Colors.black.withValues(alpha: isDark ? 0.2 : 0.02),
-                blurRadius: _isHovered ? 12 : 6,
-                offset: const Offset(0, 2),
+                blurRadius: _isHovered ? 8 : 4,
+                offset: const Offset(0, 1.5),
               ),
             ],
           ),
@@ -75,17 +75,17 @@ class _StatCardState extends State<StatCard> {
                 top: 2,
                 bottom: 2,
                 child: Container(
-                  width: 3.5,
+                  width: 3.0,
                   decoration: BoxDecoration(
                     color: widget.accentColor,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
               ),
 
               // Content inside card
               Padding(
-                padding: EdgeInsets.only(left: compact ? 8 : 12),
+                padding: EdgeInsets.only(left: compact ? 8 : 10),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -102,23 +102,23 @@ class _StatCardState extends State<StatCard> {
                               color: isDark
                                   ? const Color(0xFF94A3B8)
                                   : const Color(0xFF68738A),
-                              fontSize: compact ? 11.5 : 13,
+                              fontSize: compact ? 11 : 12,
                               fontWeight: FontWeight.w500,
                               letterSpacing: -0.1,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          SizedBox(height: compact ? 3 : 6),
+                          const SizedBox(height: 2),
                           Text(
                             widget.value,
                             style: TextStyle(
                               color: isDark
                                   ? const Color(0xFFF8FAFC)
                                   : const Color(0xFF14213D),
-                              fontSize: compact ? 22 : 28,
+                              fontSize: compact ? 18 : 22,
                               fontWeight: FontWeight.bold,
-                              letterSpacing: -0.8,
+                              letterSpacing: -0.6,
                               fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
@@ -130,8 +130,8 @@ class _StatCardState extends State<StatCard> {
 
                     // Circular tinted icon background
                     Container(
-                      width: compact ? 36 : 46,
-                      height: compact ? 36 : 46,
+                      width: compact ? 32 : 38,
+                      height: compact ? 32 : 38,
                       decoration: BoxDecoration(
                         color: widget.accentColor.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
@@ -139,7 +139,7 @@ class _StatCardState extends State<StatCard> {
                       child: Icon(
                         widget.icon,
                         color: widget.accentColor,
-                        size: compact ? 18 : 22,
+                        size: compact ? 16 : 19,
                       ),
                     ),
                   ],

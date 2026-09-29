@@ -193,7 +193,14 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       backgroundColor: CRMColors.backgroundOf(context),
       body: BuildPropertyDetailWidget(
         property: _property!,
-        showHeaderClose: false,
+        showHeaderClose: true,
+        onClose: () {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/properties');
+          }
+        },
       ),
     );
   }

@@ -11,6 +11,7 @@ class IsarService {
   IsarService._internal();
 
   Isar? _isar;
+  bool get isInitialized => _isar != null;
 
   Isar get isar {
     if (_isar == null) {
@@ -30,6 +31,7 @@ class IsarService {
       await LookupLocalRepository().loadInMemoryCache();
       await PropertyLocalRepository().loadInMemoryCache();
       await RequirementLocalRepository().loadInMemoryCache();
+      await FollowupLocalRepository().loadInMemoryCache();
       return;
     }
 
@@ -51,6 +53,7 @@ class IsarService {
       ClientLocalSchema,
       OutboxLocalSchema,
       DashboardLocalSchema,
+      CampaignLeadLocalSchema,
     ];
 
     try {

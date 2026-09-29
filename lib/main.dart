@@ -14,6 +14,8 @@ import 'features/requirements/bloc/requirements_bloc.dart';
 import 'features/clients/bloc/clients_bloc.dart';
 import 'features/owners/bloc/owners_bloc.dart';
 import 'features/builders/bloc/builders_bloc.dart';
+import 'features/campaign/bloc/campaign_leads_bloc.dart';
+import 'features/integration/services/integration_service.dart';
 import 'core/navigation/app_router.dart';
 import 'core/design_system/theme/propkart_theme.dart';
 import 'core/theme/theme_manager.dart';
@@ -29,6 +31,8 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:flutter/foundation.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_web_plugins/url_strategy.dart';
+import 'core/platform/video_player_init.dart';
+import 'core/services/push_notification_service.dart';
 
 void main() async {
   if (kIsWeb) {
@@ -37,6 +41,13 @@ void main() async {
 
   Future<void> bootstrap() async {
     WidgetsFlutterBinding.ensureInitialized();
+    ApiConstants.assertConfig();
+    initWindowsVideoPlayer();
+    try {
+      await PushNotificationService.initialize();
+    } catch (e) {
+      debugPrint('[PushNotificationService] startup init skipped: $e');
+    }
 
     // Keep Isar on the critical path (offline reads). Defer logging/sync
     // until after the first frame so Android cold start stays responsive.
@@ -70,15 +81,34 @@ void main() async {
     runApp(MyApp(authRepository: authRepository));
   }
 
-  if (ApiConstants.sentryDsn != 'YOUR_SENTRY_DSN') {
+  final errorMonitoringDsn = ApiConstants.errorMonitoringDsn.trim();
+  final enableErrorMonitoring = !kDebugMode &&
+      errorMonitoringDsn.isNotEmpty &&
+      errorMonitoringDsn != 'YOUR_SENTRY_DSN';
+
+  if (enableErrorMonitoring) {
     await SentryFlutter.init(
       (options) {
-        options.dsn = ApiConstants.sentryDsn;
-        // Full 1.0 sampling adds measurable overhead on real devices.
-        options.tracesSampleRate = kReleaseMode ? 0.15 : 0.4;
+        options.dsn = errorMonitoringDsn;
+        options.tracesSampleRate = kReleaseMode ? 0.15 : 0.2;
         // ignore: experimental_member_use
-        options.profilesSampleRate = kReleaseMode ? 0.05 : 0.2;
+        options.profilesSampleRate = kReleaseMode ? 0.05 : 0.1;
         options.environment = kReleaseMode ? 'production' : 'development';
+        options.beforeSend = (event, hint) {
+          final blob = [
+            event.message?.formatted,
+            event.throwable?.toString(),
+            ...(event.exceptions ?? const []).map((e) => '${e.type} ${e.value}'),
+          ].whereType<String>().join(' ').toLowerCase();
+          // Layout overflows fire every frame in Flutter web; never ship them.
+          if (blob.contains('overflowed') ||
+              blob.contains('renderflex') ||
+              blob.contains('rate limit') ||
+              blob.contains('429')) {
+            return null;
+          }
+          return event;
+        };
       },
       appRunner: bootstrap,
     );
@@ -212,6 +242,11 @@ class _MyAppState extends State<MyApp> {
               buildersRepository: context.read<BuildersRepository>(),
             ),
           ),
+          BlocProvider(
+            create: (context) => CampaignLeadsBloc(
+              integrationService: IntegrationService(),
+            ),
+          ),
         ],
         child: ListenableBuilder(
           listenable: ThemeManager(),
@@ -224,6 +259,17 @@ class _MyAppState extends State<MyApp> {
               theme: PropKartTheme.light(),
               darkTheme: PropKartTheme.dark(),
               routerConfig: _appRouter.router,
+              builder: (context, child) {
+                final media = MediaQuery.of(context);
+                final scaler = media.textScaler.clamp(
+                  minScaleFactor: 0.9,
+                  maxScaleFactor: 1.3,
+                );
+                return MediaQuery(
+                  data: media.copyWith(textScaler: scaler),
+                  child: child ?? const SizedBox.shrink(),
+                );
+              },
             );
           },
         ),

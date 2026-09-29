@@ -4,25 +4,31 @@ import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:dio/dio.dart';
-import 'package:propkart/core/api/api_constants.dart';
-import 'package:propkart/core/api/api_client.dart';
-import 'package:propkart/core/storage/isar_service.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
-import 'package:propkart/core/storage/local_repositories.dart';
-import 'package:propkart/core/storage/performance_logger.dart';
-import 'package:propkart/core/storage/isar_collections.dart';
-import 'package:propkart/features/properties/models/property_model.dart';
-import 'package:propkart/features/properties/services/properties_service.dart';
-import 'package:propkart/features/requirements/models/requirement_model.dart';
-import 'package:propkart/features/requirements/services/requirements_service.dart';
-import 'package:propkart/features/dashboard/models/dashboard_summary.dart';
-import 'package:propkart/features/builders/models/builder_model.dart';
-import 'package:propkart/features/builders/services/builders_service.dart';
-import 'package:propkart/features/owners/models/owner_model.dart';
-import 'package:propkart/features/owners/services/owners_service.dart';
-import 'package:propkart/core/storage/model_mappers.dart';
+import '../api/api_client.dart';
+import '../storage/isar_service.dart';
+import '../storage/repository_coordinator.dart';
+import '../storage/local_repositories.dart';
+import '../storage/performance_logger.dart';
+import '../storage/isar_collections.dart';
+import '../../features/properties/models/property_model.dart';
+import '../../features/properties/services/properties_service.dart';
+import '../../features/requirements/models/requirement_model.dart';
+import '../../features/requirements/services/requirements_service.dart';
+import '../../features/dashboard/models/dashboard_summary.dart';
+import '../../features/builders/models/builder_model.dart';
+import '../../features/builders/services/builders_service.dart';
+import '../../features/owners/models/owner_model.dart';
+import '../../features/owners/services/owners_service.dart';
+import '../storage/model_mappers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:propkart/features/properties/repository/properties_repository.dart';
+import '../../features/clients/models/client_model.dart';
+import '../../features/clients/services/clients_service.dart';
+import '../../features/dashboard/services/dashboard_service.dart';
+import '../../features/properties/repository/properties_repository.dart';
+import '../../features/integration/services/integration_service.dart';
+import '../../features/requirements/services/match_criteria_manager.dart';
+import '../../features/settings/services/upload_limits_manager.dart';
+import '../../features/campaign/bloc/campaign_connections_bloc.dart';
 import '../utils/app_logger.dart';
 
 enum SyncState {
@@ -62,7 +68,10 @@ class SyncManager {
   }
 
   Future<void> performStartupSync() async {
-    isSyncing.value = true;
+    final hasCache = await hasLocalCache();
+    if (!hasCache) {
+      isSyncing.value = true;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final clientVersion = prefs.getInt('last_lookup_version') ?? 0;
@@ -91,6 +100,19 @@ class SyncManager {
       }
       
       await triggerDeltaSync();
+
+      // Ensure authoritative match criteria is loaded from backend DB for the team
+      unawaited(MatchCriteriaManager().fetchFromBackend(silent: true));
+      unawaited(UploadLimitsManager().fetchFromBackend(silent: true));
+
+      // Prewarm campaign leads so they are ready before navigating to Campaign tab
+      try {
+        await IntegrationService().ensureLoaded();
+        unawaited(IntegrationService().fetchServerLeads(silent: true));
+        unawaited(IntegrationService().fetchHealthAlerts());
+      } catch (e) {
+        AppLogger.w("Campaign leads startup prefetch error: $e");
+      }
       isSyncCompleted = true;
     } finally {
       isSyncing.value = false;
@@ -139,6 +161,10 @@ class SyncManager {
       'notifications',
       'followups',
       'site_visits',
+      'integration_leads',
+      'leads',
+      'campaign_connections',
+      'campaign_lead_followups',
     ];
     _sendJson({
       "topic": "realtime:propkart",
@@ -244,6 +270,20 @@ class SyncManager {
 
       tablesToRefresh.add(table);
 
+      if (table == "integration_leads" || table == "leads") {
+        IntegrationService().handleRealtimeEvent(type, record, oldRecord);
+        continue;
+      } else if (table == "campaign_connections") {
+        CampaignConnectionsBloc().add(const FetchCampaignConnectionsEvent(silent: true));
+        continue;
+      } else if (table == "campaign_lead_followups") {
+        IntegrationService().handleFollowupRealtimeEvent(type, record, oldRecord);
+        continue;
+      } else if (table == "settings") {
+        unawaited(MatchCriteriaManager().fetchFromBackend(silent: true));
+        continue;
+      }
+
       if (type == "DELETE" && oldRecord != null) {
         final id = oldRecord['id'] as String?;
         if (id != null) {
@@ -252,9 +292,18 @@ class SyncManager {
           else if (table == "followups") followupsToDelete.add(id);
           else if (table == "builders") buildersToDelete.add(id);
           else if (table == "owners") ownersToDelete.add(id);
+          else if (table == "integration_leads" || table == "leads") {
+            unawaited(IntegrationService().fetchServerLeads(silent: true));
+          } else if (table == "campaign_connections") {
+            CampaignConnectionsBloc().add(const FetchCampaignConnectionsEvent(silent: true));
+          }
         }
       } else if (record != null) {
-        if (table == "properties") {
+        if (table == "integration_leads" || table == "leads") {
+          unawaited(IntegrationService().fetchServerLeads(silent: true));
+        } else if (table == "campaign_connections") {
+          CampaignConnectionsBloc().add(const FetchCampaignConnectionsEvent(silent: true));
+        } else if (table == "properties") {
           try {
             final id = record['id'] as String;
             final response = await apiClient.get('/properties/$id');
@@ -514,6 +563,152 @@ class SyncManager {
 
     } catch (e) {
       AppLogger.e("Delta Sync failed: $e");
+    }
+  }
+
+  bool _isPingInProgress = false;
+
+  /// Lightweight, non-blocking 9-second periodic database ping.
+  /// Replays outbox, checks for server deltas across all core entities in parallel,
+  /// merges them into local Isar storage, and notifies reactive UI streams.
+  Future<int> pingDatabase() async {
+    if (_isPingInProgress) {
+      AppLogger.d("SyncManager: Ping already in progress, skipping tick.");
+      return 0;
+    }
+    _isPingInProgress = true;
+    final start = DateTime.now();
+
+    try {
+      // 1. Replay queued offline mutations first
+      await processOutboxQueue();
+
+      // 2. Fetch server data across all core entities in parallel
+      final coreFutures = Future.wait<Map<String, dynamic>>([
+        PropertiesService().getProperties().catchError((e) => <String, dynamic>{}),
+        RequirementsService().getRequirements().catchError((e) => <String, dynamic>{}),
+        BuildersService().getBuilders().catchError((e) => <String, dynamic>{}),
+        OwnersService().getOwners().catchError((e) => <String, dynamic>{}),
+        ClientsService().getClients().catchError((e) => <String, dynamic>{}),
+        DashboardService().getDashboardData().catchError((e) => <String, dynamic>{}),
+      ]);
+      final campaignFuture = IntegrationService().fetchServerLeads(silent: true).catchError((e) => 0);
+      unawaited(MatchCriteriaManager().fetchFromBackend(silent: true));
+
+      final results = await coreFutures;
+      final campaignCount = await campaignFuture;
+
+      final propRes = results[0];
+      final reqRes = results[1];
+      final builderRes = results[2];
+      final ownerRes = results[3];
+      final clientRes = results[4];
+      final dashRes = results[5];
+
+      final List<dynamic> serverProperties = propRes['data']?['properties'] ?? [];
+      final List<dynamic> serverRequirements = reqRes['data']?['requirements'] ?? [];
+      final List<dynamic> serverBuilders = builderRes['data']?['builders'] ?? [];
+      final List<dynamic> serverOwners = ownerRes['data']?['owners'] ?? [];
+      final List<dynamic> serverClients = clientRes['data']?['clients'] ?? [];
+
+      final pList = serverProperties.map((item) => PropertyModel.fromJson(item).toLocal()).toList();
+      final rList = serverRequirements.map((item) => RequirementModel.fromJson(item).toLocal()).toList();
+      final bList = serverBuilders.map((item) => BuilderModel.fromJson(item).toLocal()).toList();
+      final oList = serverOwners.map((item) => OwnerModel.fromJson(item).toLocal()).toList();
+      final cList = serverClients.map((item) => ClientModel.fromJson(item).toLocal()).toList();
+
+      DashboardData? freshDashboard;
+      List<FollowupLocal> fList = [];
+      if (dashRes.isNotEmpty && (dashRes['summary'] != null || dashRes['metrics'] != null)) {
+        try {
+          freshDashboard = DashboardData.fromJson(dashRes);
+          final listData = dashRes['followups'] as List? ?? [];
+          final freshFollowups = listData.map((item) => DashboardFollowup.fromJson(item)).toList();
+          fList = freshFollowups.map((f) => f.toLocal('System')).toList();
+        } catch (_) {}
+      }
+
+      if (kIsWeb) {
+        if (pList.isNotEmpty) {
+          PropertyLocalRepository.inMemory.clear();
+          for (final p in pList) PropertyLocalRepository.inMemory[p.id] = p;
+        }
+        if (rList.isNotEmpty) {
+          RequirementLocalRepository.inMemory.clear();
+          for (final r in rList) RequirementLocalRepository.inMemory[r.id] = r;
+        }
+        if (bList.isNotEmpty) {
+          BuilderLocalRepository.inMemory.clear();
+          for (final b in bList) BuilderLocalRepository.inMemory[b.id] = b;
+        }
+        if (oList.isNotEmpty) {
+          OwnerLocalRepository.inMemory.clear();
+          for (final o in oList) OwnerLocalRepository.inMemory[o.id] = o;
+        }
+        if (cList.isNotEmpty) {
+          ClientLocalRepository.inMemory.clear();
+          for (final c in cList) ClientLocalRepository.inMemory[c.id] = c;
+        }
+        if (fList.isNotEmpty) {
+          FollowupLocalRepository.inMemory.clear();
+          for (final f in fList) FollowupLocalRepository.inMemory[f.id] = f;
+        }
+        if (freshDashboard != null) {
+          DashboardLocalRepository.inMemoryDashboard = freshDashboard.toLocal();
+        }
+      } else {
+        final isar = IsarService().isar;
+        await isar.writeTxn(() async {
+          if (pList.isNotEmpty) {
+            await isar.propertyLocals.clear();
+            await isar.propertyLocals.putAll(pList);
+          }
+          if (rList.isNotEmpty) {
+            await isar.requirementLocals.clear();
+            await isar.requirementLocals.putAll(rList);
+          }
+          if (bList.isNotEmpty) {
+            await isar.builderLocals.clear();
+            await isar.builderLocals.putAll(bList);
+          }
+          if (oList.isNotEmpty) {
+            await isar.ownerLocals.clear();
+            await isar.ownerLocals.putAll(oList);
+          }
+          if (cList.isNotEmpty) {
+            await isar.clientLocals.clear();
+            await isar.clientLocals.putAll(cList);
+          }
+          if (fList.isNotEmpty) {
+            await isar.followupLocals.clear();
+            await isar.followupLocals.putAll(fList);
+          }
+          if (freshDashboard != null) {
+            final localDash = freshDashboard.toLocal();
+            await isar.dashboardLocals.clear();
+            await isar.dashboardLocals.put(localDash);
+          }
+        });
+      }
+
+      // Notify debounced UI streams
+      if (pList.isNotEmpty) _coordinator.refreshProperties();
+      if (rList.isNotEmpty) _coordinator.refreshRequirements();
+      if (bList.isNotEmpty) _coordinator.refreshBuilders();
+      if (oList.isNotEmpty) _coordinator.refreshOwners();
+      if (cList.isNotEmpty) _coordinator.refreshClients();
+      if (freshDashboard != null || fList.isNotEmpty) _coordinator.refreshDashboard();
+
+      final totalUpdated = pList.length + rList.length + bList.length + oList.length + cList.length + campaignCount;
+      final elapsedMs = DateTime.now().difference(start).inMilliseconds;
+      AppLogger.sync("SyncManager: 9s database ping completed in ${elapsedMs}ms ($totalUpdated records refreshed)");
+
+      return totalUpdated;
+    } catch (e) {
+      AppLogger.w("SyncManager: 9s database ping encountered issue: $e");
+      return 0;
+    } finally {
+      _isPingInProgress = false;
     }
   }
 

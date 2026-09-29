@@ -19,6 +19,7 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
+import '../../../core/design_system/widgets/crm_embedded_video_player.dart';
 import '../../../core/design_system/widgets/data_table.dart';
 import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
@@ -34,11 +35,25 @@ import '../../../core/utils/budget_formatter.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/utils/file_downloader.dart';
+import '../../../core/utils/formatters.dart';
 import '../../requirements/utils/property_share_pdf.dart';
+import '../../requirements/widgets/pdf_option_selection_dialog.dart';
 
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
 import '../../../core/theme/theme_manager.dart';
+import '../../../core/telemetry/audit_telemetry_service.dart';
+import '../../../core/telemetry/audit_dwell_tracker.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
+
+enum PropertyDateFilterPreset {
+  today,
+  yesterday,
+  last7Days,
+  thisMonth,
+  customRange,
+  allTime,
+}
 
 class PropertiesScreen extends StatefulWidget {
   final String? openPropertyId;
@@ -52,6 +67,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String? _highlightedPropertyId;
+  PropertyDateFilterPreset _selectedPropertyDateFilter = PropertyDateFilterPreset.allTime;
+  DateTime? _propertyCustomStartDate;
+  DateTime? _propertyCustomEndDate;
   String _activeTab = 'All';
   String get _activeListingTab => ThemeManager().isRentMode ? 'Rent' : 'Re-Sale';
   set _activeListingTab(String value) {
@@ -67,6 +85,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   String? _selectedListingType;
   bool? _selectedVerification;
   PropertyMetadataModel? _cachedMetadata;
+  List<PropertyModel> _cachedProperties = [];
+  Set<String> _cachedBookmarkedIds = {};
   String? _selectedPriceSortOrRange;
   double? _minPrice;
   double? _maxPrice;
@@ -78,6 +98,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   String? _selectedStatusFilter;
   bool _isMobileFiltersExpanded = false;
   bool _noImagesOnly = false;
+  String? _imageFilter; // null, 'with_images', 'no_images'
   bool _isTableView = false;
   final Set<String> _selectedPropertyIds = {};
 
@@ -119,6 +140,29 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             activeTab: _activeTab,
           ),
         );
+  }
+
+  void _onPropertyEntered(PropertyModel property) {
+    if (!mounted) return;
+    setState(() {
+      _highlightedPropertyId = property.id;
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOut,
+      );
+    }
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          if (_highlightedPropertyId == property.id) {
+            _highlightedPropertyId = null;
+          }
+        });
+      }
+    });
   }
 
   Future<void> _launchWhatsApp(PropertyModel property) async {
@@ -449,7 +493,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       style: CRMTypography.sectionTitle
                           .copyWith(color: CRMColors.textOf(context))),
                   content: SizedBox(
-                    width: 400,
+                    width: CRMBreakpoints.adaptiveWidth(context, 400),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -502,84 +546,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           onPressed: (isGeneratingLink || isSharingPdf)
                               ? null
                               : () async {
-                                  setDialogState(() => isSharingPdf = true);
-                                  try {
-                                    final bytes =
-                                        await PropertySharePdf.build([p]);
-                                    final fileName =
-                                        PropertySharePdf.fileName(p);
-
-                                    await FileDownloader.download(
-                                        bytes, fileName);
-
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Property PDF ready to share.'),
-                                        ),
-                                      );
-                                    }
-
-                                    final phone = p.ownerMobile;
-                                    final cleanPhone =
-                                        phone.replaceAll(RegExp(r'\D'), '');
-                                    String formattedPhone = cleanPhone;
-                                    if (cleanPhone.length == 10) {
-                                      formattedPhone = '91$cleanPhone';
-                                    }
-
-                                    final text = Uri.encodeComponent(
-                                        "Hello, please find property details for ${p.title ?? 'Property'} (${p.propertyCode}).");
-                                    final nativeUrl = formattedPhone.isNotEmpty
-                                        ? "whatsapp://send?phone=$formattedPhone&text=$text"
-                                        : "whatsapp://send?text=$text";
-                                    final nativeUri = Uri.parse(nativeUrl);
-
-                                    if (await canLaunchUrl(nativeUri)) {
-                                      await launchUrl(nativeUri,
-                                          mode:
-                                              LaunchMode.externalApplication);
-                                    } else {
-                                      final webUrl = formattedPhone.isNotEmpty
-                                          ? "https://web.whatsapp.com/send?phone=$formattedPhone&text=$text"
-                                          : "https://wa.me/?text=$text";
-                                      final webUri = Uri.parse(webUrl);
-                                      if (await canLaunchUrl(webUri)) {
-                                        await launchUrl(webUri,
-                                            mode: LaunchMode
-                                                .externalApplication);
-                                      } else {
-                                        final fallbackUrl =
-                                            "https://wa.me/$formattedPhone?text=$text";
-                                        final fallbackUri =
-                                            Uri.parse(fallbackUrl);
-                                        if (await canLaunchUrl(fallbackUri)) {
-                                          await launchUrl(fallbackUri,
-                                              mode: LaunchMode
-                                                  .externalApplication);
-                                        }
-                                      }
-                                    }
-                                  } catch (e) {
-                                    debugPrint('Share PDF failed: $e');
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Failed to create property PDF.'),
-                                          backgroundColor: CRMColors.danger,
-                                        ),
-                                      );
-                                    }
-                                  } finally {
-                                    if (context.mounted) {
-                                      setDialogState(
-                                          () => isSharingPdf = false);
-                                    }
-                                  }
+                                  await PdfOptionSelectionDialog.show(
+                                    context,
+                                    properties: [p],
+                                    recipientPhone: p.ownerMobile,
+                                  );
                                 },
                           child: const Text("Share PDF"),
                         ),
@@ -908,7 +879,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       style: CRMTypography.sectionTitle
                           .copyWith(color: CRMColors.textOf(context))),
                   content: SizedBox(
-                    width: 450,
+                    width: CRMBreakpoints.adaptiveWidth(context, 450),
                     height: 320,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -981,66 +952,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                   isSharingPdf
                               ? null
                               : () async {
-                                  setDialogState(() => isSharingPdf = true);
-                                  try {
-                                    final bytes = await PropertySharePdf.build(
-                                        currentlySelected);
-                                    final fileName = currentlySelected.length == 1
-                                        ? PropertySharePdf.fileName(
-                                            currentlySelected.first)
-                                        : 'Selected_Properties_Details.pdf';
-
-                                    await FileDownloader.download(
-                                        bytes, fileName);
-
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Property PDF ready to share.'),
-                                        ),
-                                      );
-                                    }
-
-                                    final text = Uri.encodeComponent(
-                                        "Hello, please find property details for selected properties.");
-                                    final nativeUrl =
-                                        "whatsapp://send?text=$text";
-                                    final nativeUri = Uri.parse(nativeUrl);
-
-                                    if (await canLaunchUrl(nativeUri)) {
-                                      await launchUrl(nativeUri,
-                                          mode:
-                                              LaunchMode.externalApplication);
-                                    } else {
-                                      final webUrl =
-                                          "https://web.whatsapp.com/send?text=$text";
-                                      final webUri = Uri.parse(webUrl);
-                                      if (await canLaunchUrl(webUri)) {
-                                        await launchUrl(webUri,
-                                            mode: LaunchMode
-                                                .externalApplication);
-                                      }
-                                    }
-                                  } catch (e) {
-                                    debugPrint('Share PDF failed: $e');
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Failed to create property PDF.'),
-                                          backgroundColor: CRMColors.danger,
-                                        ),
-                                      );
-                                    }
-                                  } finally {
-                                    if (context.mounted) {
-                                      setDialogState(
-                                          () => isSharingPdf = false);
-                                    }
-                                  }
+                                  await PdfOptionSelectionDialog.show(
+                                    context,
+                                    properties: currentlySelected,
+                                  );
                                 },
                           child: const Text("Share PDF"),
                         ),
@@ -1486,172 +1401,376 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       PropertyModel p,
       String statusName,
       PropertyMetadataModel? metadata) async {
-    if (statusName == 'Available') {
-      final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
-      final isCurrentlyRentedOrSold =
-          currentStatus.contains('rented') || currentStatus.contains('sold');
-
-      if (isCurrentlyRentedOrSold) {
-        final clientName =
-            await PropertyDealClientStore.getClientName(p.id, property: p);
-        final bool hasClient =
-            clientName != null && clientName.trim().isNotEmpty;
-
-        if (!context.mounted) return;
-
-        final bool? confirm = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            backgroundColor: CRMColors.cardBgOf(context),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-            ),
-            title: Text(
-              "Confirm Status Change",
-              style: CRMTypography.sectionTitle.copyWith(
-                color: CRMColors.textOf(context),
-              ),
-            ),
-            content: Text.rich(
-              TextSpan(
-                style: CRMTypography.body.copyWith(
-                  color: CRMColors.textSecondaryOf(context),
-                  height: 1.5,
-                ),
-                children: hasClient
-                    ? [
-                        const TextSpan(
-                            text: "This property is currently assigned to client "),
-                        TextSpan(
-                          text: "'$clientName'",
-                          style: TextStyle(
-                            color: CRMColors.primaryOf(context),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        TextSpan(
-                          text: " (${p.propertyStatusName}).\n\n",
-                          style: TextStyle(
-                            color: CRMColors.textOf(context),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const TextSpan(
-                          text: "Are you sure you want to change its status to ",
-                        ),
-                        TextSpan(
-                          text: "Available",
-                          style: const TextStyle(
-                            color: CRMColors.success,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const TextSpan(text: "?"),
-                      ]
-                    : [
-                        const TextSpan(
-                          text:
-                              "Are you sure you want to change the status of this property from ",
-                        ),
-                        TextSpan(
-                          text: p.propertyStatusName ?? 'Rented Out',
-                          style: TextStyle(
-                            color: CRMColors.textOf(context),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const TextSpan(text: " to "),
-                        TextSpan(
-                          text: "Available",
-                          style: const TextStyle(
-                            color: CRMColors.success,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const TextSpan(text: "?"),
-                      ],
-              ),
-            ),
-            actions: [
-              CRMButton(
-                label: "Cancel",
-                variant: CRMButtonVariant.outline,
-                onPressed: () => Navigator.pop(dialogContext, false),
-              ),
-              const SizedBox(width: CRMSpacing.xs),
-              CRMButton(
-                label: "Yes",
-                variant: CRMButtonVariant.primary,
-                onPressed: () => Navigator.pop(dialogContext, true),
-              ),
-            ],
-          ),
-        );
-
-        if (confirm != true) return;
-
-        await PropertyDealClientStore.removeClientName(p.id);
+    try {
+      if (metadata == null) {
+        final blocState = context.read<PropertiesBloc>().state;
+        if (blocState is PropertiesLoaded) {
+          metadata = blocState.metadata;
+        }
+        metadata ??= _cachedMetadata;
       }
-    }
 
-    if (statusName == 'To Be Available') {
-      if (!context.mounted) return;
-      final DateTime? pickedDate = await showDatePicker(
-        context: context,
-        initialDate: DateTime.now().add(const Duration(days: 1)),
-        firstDate: DateTime.now(),
-        lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
-        helpText: 'Select Available Date',
-      );
-      if (pickedDate == null) return;
+      if (statusName == 'Available') {
+        final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
+        final isCurrentlyRentedOrSold =
+            currentStatus.contains('rented') || currentStatus.contains('sold');
+
+        if (isCurrentlyRentedOrSold) {
+          final clientName =
+              await PropertyDealClientStore.getClientName(p.id, property: p);
+          final bool hasClient =
+              clientName != null && clientName.trim().isNotEmpty;
+
+          if (!context.mounted) return;
+
+          final bool? confirm = await showDialog<bool>(
+            context: context,
+            barrierDismissible: true,
+            builder: (dialogContext) => AlertDialog(
+              backgroundColor: CRMColors.cardBgOf(context),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+              ),
+              title: Text(
+                "Confirm Status Change",
+                style: CRMTypography.sectionTitle.copyWith(
+                  color: CRMColors.textOf(context),
+                ),
+              ),
+              content: Text.rich(
+                TextSpan(
+                  style: CRMTypography.body.copyWith(
+                    color: CRMColors.textSecondaryOf(context),
+                    height: 1.5,
+                  ),
+                  children: hasClient
+                      ? [
+                          const TextSpan(
+                              text: "This property is currently assigned to client "),
+                          TextSpan(
+                            text: "'$clientName'",
+                            style: TextStyle(
+                              color: CRMColors.primaryOf(context),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          TextSpan(
+                            text: " (${p.propertyStatusName}).\n\n",
+                            style: TextStyle(
+                              color: CRMColors.textOf(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const TextSpan(
+                            text: "Are you sure you want to change its status to ",
+                          ),
+                          TextSpan(
+                            text: "Available",
+                            style: const TextStyle(
+                              color: CRMColors.success,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const TextSpan(text: "?"),
+                        ]
+                      : [
+                          const TextSpan(
+                            text:
+                                "Are you sure you want to change the status of this property from ",
+                          ),
+                          TextSpan(
+                            text: p.propertyStatusName ?? 'Rented Out',
+                            style: TextStyle(
+                              color: CRMColors.textOf(context),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const TextSpan(text: " to "),
+                          TextSpan(
+                            text: "Available",
+                            style: const TextStyle(
+                              color: CRMColors.success,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const TextSpan(text: "?"),
+                        ],
+                ),
+              ),
+              actions: [
+                CRMButton(
+                  label: "Cancel",
+                  variant: CRMButtonVariant.outline,
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                ),
+                const SizedBox(width: CRMSpacing.xs),
+                CRMButton(
+                  label: "Yes",
+                  variant: CRMButtonVariant.primary,
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                ),
+              ],
+            ),
+          );
+
+          if (confirm != true) return;
+
+          await PropertyDealClientStore.removeClientName(p.id);
+        }
+      }
+
+      if (statusName == 'To Be Available') {
+        if (!context.mounted) return;
+        final DateTime? pickedDate = await showDatePicker(
+          context: context,
+          initialDate: DateTime.now().add(const Duration(days: 1)),
+          firstDate: DateTime.now(),
+          lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+          helpText: 'Select Available Date',
+        );
+        if (pickedDate == null) return;
+
+        LookupItem? targetLookup;
+        if (metadata != null) {
+          for (final s in metadata.statuses) {
+            if (s.name.toLowerCase().contains('to be available')) {
+              targetLookup = s;
+              break;
+            }
+          }
+        }
+        final statusId =
+            targetLookup?.id ?? '05a73434-e99b-425b-99b2-1825d529ac35';
+        if (context.mounted) {
+          context.read<PropertiesBloc>().add(
+                UpdatePropertyEvent(
+                  p.id,
+                  {
+                    'property_status_id': statusId,
+                    'possession_date':
+                        pickedDate.toIso8601String().substring(0, 10),
+                  },
+                  activeTab: _activeTab,
+                ),
+              );
+        }
+        return;
+      }
 
       LookupItem? targetLookup;
       if (metadata != null) {
         for (final s in metadata.statuses) {
-          if (s.name.toLowerCase().contains('to be available')) {
+          if (s.name.toLowerCase().replaceAll(' ', '') ==
+              statusName.toLowerCase().replaceAll(' ', '')) {
             targetLookup = s;
             break;
           }
         }
       }
-      final statusId =
-          targetLookup?.id ?? '05a73434-e99b-425b-99b2-1825d529ac35';
+      String statusId = targetLookup?.id ?? '';
+      if (statusId.isEmpty) {
+        final lower = statusName.toLowerCase().replaceAll(' ', '');
+        if (lower == 'available') {
+          statusId = '09521e45-e731-4517-8129-1866f0991ee8';
+        } else if (lower.contains('rented')) {
+          statusId = '7c1d9611-8cad-4058-a9fa-3d68b8adb6f6';
+        } else if (lower.contains('sold')) {
+          statusId = '33fa8cf3-910d-4f0b-9142-8862974311ab';
+        } else if (lower.contains('tobeavailable')) {
+          statusId = '05a73434-e99b-425b-99b2-1825d529ac35';
+        } else {
+          statusId = statusName;
+        }
+      }
+
       if (context.mounted) {
         context.read<PropertiesBloc>().add(
               UpdatePropertyEvent(
                 p.id,
                 {
                   'property_status_id': statusId,
-                  'possession_date':
-                      pickedDate.toIso8601String().substring(0, 10),
                 },
                 activeTab: _activeTab,
               ),
             );
       }
-      return;
+    } catch (e, stack) {
+      debugPrint("Error changing property status: $e\n$stack");
     }
+  }
 
-    LookupItem? targetLookup;
-    if (metadata != null) {
-      for (final s in metadata.statuses) {
-        if (s.name.toLowerCase().replaceAll(' ', '') ==
-            statusName.toLowerCase().replaceAll(' ', '')) {
-          targetLookup = s;
-          break;
+  Widget _buildCardPortalBadge(PropertyModel p) {
+    final rawPortalText = (p.portalStatus != null && p.portalStatus!.isNotEmpty)
+        ? p.portalStatus!
+        : 'None';
+    final isNone = rawPortalText.toLowerCase() == 'none';
+    final displayPortalText = "Listed On: $rawPortalText";
+
+    final badgeColor = isNone
+        ? CRMColors.primaryOf(context).withOpacity(0.08)
+        : CRMColors.primaryOf(context);
+
+    final textColor = isNone
+        ? CRMColors.primaryOf(context)
+        : Colors.white;
+
+    return PopupMenuButton<String>(
+      tooltip: 'Listed On Portal',
+      onSelected: (String choice) {
+        if (choice == 'Other') {
+          _showOtherPortalDialog(context, p);
+        } else {
+          _updatePortalStatus(context, p, choice);
         }
-      }
-    }
-    final statusId = targetLookup?.id ?? statusName;
-    if (context.mounted) {
-      context.read<PropertiesBloc>().add(
-            UpdatePropertyEvent(
-              p.id,
-              {'property_status_id': statusId},
-              activeTab: _activeTab,
+      },
+      itemBuilder: (BuildContext context) {
+        return <PopupMenuEntry<String>>[
+          PopupMenuItem<String>(
+            value: 'None',
+            child: Row(
+              children: [
+                Icon(Icons.block_outlined, color: CRMColors.textMutedOf(context), size: 16),
+                const SizedBox(width: 8),
+                const Text('None'),
+              ],
             ),
-          );
-    }
+          ),
+          PopupMenuItem<String>(
+            value: 'MagicBricks',
+            child: Row(
+              children: [
+                Icon(Icons.language_rounded, color: CRMColors.primaryOf(context), size: 16),
+                const SizedBox(width: 8),
+                const Text('MagicBricks'),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: '99acres',
+            child: Row(
+              children: [
+                Icon(Icons.language_rounded, color: CRMColors.primaryOf(context), size: 16),
+                const SizedBox(width: 8),
+                const Text('99acres'),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'housing.com',
+            child: Row(
+              children: [
+                Icon(Icons.language_rounded, color: CRMColors.primaryOf(context), size: 16),
+                const SizedBox(width: 8),
+                const Text('housing.com'),
+              ],
+            ),
+          ),
+          const PopupMenuDivider(),
+          PopupMenuItem<String>(
+            value: 'Other',
+            child: Row(
+              children: [
+                Icon(Icons.edit_note_rounded, color: CRMColors.primaryOf(context), size: 16),
+                const SizedBox(width: 8),
+                const Text('Other...'),
+              ],
+            ),
+          ),
+        ];
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: badgeColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: CRMColors.primaryOf(context).withOpacity(0.25),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              displayPortalText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.arrow_drop_down, color: textColor, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _updatePortalStatus(BuildContext context, PropertyModel p, String portalStatus) {
+    context.read<PropertiesBloc>().add(
+      UpdatePropertyEvent(
+        p.id,
+        {
+          'portal_status': portalStatus,
+        },
+        activeTab: _activeTab,
+      ),
+    );
+  }
+
+  void _showOtherPortalDialog(BuildContext context, PropertyModel p) {
+    final textController = TextEditingController(
+      text: (p.portalStatus != null && p.portalStatus!.toLowerCase() != 'none' &&
+              p.portalStatus! != 'MagicBricks' &&
+              p.portalStatus! != '99acres' &&
+              p.portalStatus! != 'housing.com')
+          ? p.portalStatus
+          : '',
+    );
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: const Text('Enter Custom Portal Name', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: textController,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'e.g. OLX, NoBroker, etc.',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final customVal = textController.text.trim();
+                Navigator.pop(dialogContext);
+                if (customVal.isNotEmpty) {
+                  _updatePortalStatus(context, p, customVal);
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildCardStatusBadge(
@@ -1857,7 +1976,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               children: [
                 titleWidget,
                 const SizedBox(height: 10),
-                sortWidget,
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: sortWidget,
+                ),
               ],
             );
           }
@@ -1880,23 +2002,53 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       UserModel? currentUser,
       Set<String> bookmarkedIds,
       PropertyMetadataModel? metadata) {
-    final isMine = _hasEditAccess(p, currentUser);
-    final bhkText = p.configurationName ?? "${p.bedrooms} BHK";
+    final catLower = p.categoryName.toLowerCase();
+    final isCommercialOrLand = catLower.contains('commercial') ||
+        catLower.contains('industrial') ||
+        catLower.contains('land') ||
+        catLower.contains('plot');
+    final bhkText = isCommercialOrLand
+        ? ((p.propertyTypeName.isNotEmpty && p.propertyTypeName != 'N/A')
+            ? p.propertyTypeName
+            : p.categoryName)
+        : (p.configurationName ?? "${p.bedrooms} BHK");
     final propertyTitle = "$bhkText ${p.listingTypeName} in ${p.areaName}";
     final addressText =
         (p.title != null && p.title!.isNotEmpty) ? p.title! : p.areaName;
     final isUserAdminOrSuperAdmin =
         currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin';
+    final isMine = currentUser != null &&
+        p.isOwnTeamListing(
+          userId: currentUser.id,
+          role: currentUser.role,
+          adminId: currentUser.adminId,
+        );
+    final isRent = p.listingTypeName.toLowerCase().contains('rent');
     final rawPriceFormatted = CRMCurrencyFormatter.formatShort(p.price);
     final priceText = rawPriceFormatted.startsWith('₹')
         ? rawPriceFormatted
         : "₹ $rawPriceFormatted";
-    final hasImages = p.images.isNotEmpty;
+    final hasMedia = p.images.isNotEmpty || p.videos.isNotEmpty;
     final formattedDateText = _formatPropertyDate(p.createdAt);
+    final bool isHighlighted = p.id == _highlightedPropertyId;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: CRMSpacing.m),
-      child: CRMCard(
+    return AuditHoverDwell(
+      targetType: 'PropertyCard',
+      targetId: p.id,
+      page: '/properties',
+      metadata: {
+        'title': propertyTitle,
+        'property_code': p.propertyCode,
+        'category': p.categoryName,
+        'city': p.cityName,
+        'area': p.areaName,
+        'price': p.price,
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+        child: CRMCard(
+        borderColor: isHighlighted ? CRMColors.primaryOf(context) : null,
+        backgroundColor: isHighlighted ? CRMColors.primaryOf(context).withOpacity(0.08) : null,
         padding: const EdgeInsets.all(16),
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -1915,9 +2067,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (hasImages) ...[
+                  if (hasMedia) ...[
                     _MobilePropertyImageCarousel(
                       images: p.images,
+                      videos: p.videos,
                       height: isNarrow ? 220 : 210,
                       onTap: () => _openPropertyDetails(context, p),
                     ),
@@ -2034,67 +2187,63 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                    Builder(
+                      builder: (context) {
+                        final titleBlock = Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              propertyTitle,
+                              style: CRMTypography.sectionTitle.copyWith(
+                                color: CRMColors.textOf(context),
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (p.title.isNotEmpty && p.title != propertyTitle) ...[
+                              const SizedBox(height: 2),
                               Text(
-                                propertyTitle,
-                                style: CRMTypography.sectionTitle.copyWith(
-                                  color: CRMColors.textOf(context),
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.bold,
+                                p.title,
+                                style: TextStyle(
+                                  color: CRMColors.primaryOf(context),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              if (p.title.isNotEmpty && p.title != propertyTitle) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  p.title,
-                                  style: TextStyle(
-                                    color: CRMColors.primaryOf(context),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
+                            ],
+                            const SizedBox(height: 3),
+                            Row(
+                              children: [
+                                Icon(Icons.location_on_outlined, size: 14, color: CRMColors.primaryOf(context)),
+                                const SizedBox(width: 3),
+                                Expanded(
+                                  child: Text(
+                                    locationFullText.isNotEmpty ? locationFullText : addressText,
+                                    style: CRMTypography.caption.copyWith(
+                                      color: CRMColors.textMutedOf(context),
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
-                              const SizedBox(height: 3),
-                              Row(
-                                children: [
-                                  Icon(Icons.location_on_outlined, size: 14, color: CRMColors.primaryOf(context)),
-                                  const SizedBox(width: 3),
-                                  Expanded(
-                                    child: Text(
-                                      locationFullText.isNotEmpty ? locationFullText : addressText,
-                                      style: CRMTypography.caption.copyWith(
-                                        color: CRMColors.textMutedOf(context),
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
+                            ),
+                          ],
+                        );
+
+                        final badges = Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            // Interactive Status Dropdown Toggle Button
+                            _buildCardPortalBadge(p),
                             _buildCardStatusBadge(p, metadata),
-                            const SizedBox(width: 8),
-                            // Glassmorphism Box for Property Code ID
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 5),
@@ -2127,8 +2276,29 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                               ),
                             ),
                           ],
-                        ),
-                      ],
+                        );
+
+                        if (isNarrow) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              titleBlock,
+                              const SizedBox(height: 8),
+                              badges,
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: titleBlock),
+                            const SizedBox(width: 12),
+                            badges,
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 10),
 
@@ -2138,7 +2308,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          "$priceText / month",
+                          isRent ? "$priceText / month" : priceText,
                           style: TextStyle(
                             color: CRMColors.primaryOf(context),
                             fontSize: 17,
@@ -2199,7 +2369,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           Icons.person_outline_rounded,
                           "Owner: ${p.ownerName} (${p.ownerMobile})",
                         ),
-                        if (isUserAdminOrSuperAdmin)
+                        if (isUserAdminOrSuperAdmin && p.showsAddedBy)
                           _buildMetaChip(
                             Icons.badge_outlined,
                             "Added By: ${p.createdByName}",
@@ -2215,9 +2385,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 const SizedBox(height: 12),
 
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    TextButton.icon(
+                    Flexible(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
                       style: TextButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
@@ -2232,8 +2404,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       label: const Text('View Details',
                           style: TextStyle(
                               fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
                     ),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildPropertyActionsMenu(
                             context, p, metadata, isMine),
@@ -2266,23 +2441,33 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           },
         ),
       ),
+    ),
     );
   }
 
   Widget _buildMetaChip(IconData icon, String text) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 13, color: CRMColors.textMutedOf(context)),
-        const SizedBox(width: 4),
-        Text(
-          text,
-          style: TextStyle(
-            color: CRMColors.textSecondaryOf(context),
-            fontSize: 11.5,
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width - 64,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: CRMColors.textMutedOf(context)),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: CRMColors.textSecondaryOf(context),
+                fontSize: 11.5,
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -2290,8 +2475,19 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       Set<String> bookmarkedIds, PropertyMetadataModel? metadata) {
     final isMine = _hasEditAccess(p, currentUser);
     final isHighlighted = p.id == _highlightedPropertyId;
-
-    return AnimatedContainer(
+    return AuditHoverDwell(
+      targetType: 'PropertyCard',
+      targetId: p.id,
+      page: '/properties',
+      metadata: {
+        'title': p.title ?? 'Property #${p.propertyCode}',
+        'property_code': p.propertyCode,
+        'category': p.categoryName,
+        'city': p.cityName,
+        'area': p.areaName,
+        'price': p.price,
+      },
+      child: AnimatedContainer(
       duration: CRMMotion.medium,
       curve: CRMMotion.easeOut,
       decoration: BoxDecoration(
@@ -2542,6 +2738,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       ],
                     ),
                     const SizedBox(height: CRMSpacing.xs),
+                    if (p.showsAddedBy)
                     Row(
                       children: [
                         Icon(Icons.badge_outlined,
@@ -2554,7 +2751,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         ),
                         Expanded(
                           child: Text(
-                            p.createdByName.isNotEmpty ? p.createdByName : 'N/A',
+                            p.createdByName,
                             style: CRMTypography.captionBold.copyWith(
                               color: CRMColors.textOf(context),
                               fontWeight: FontWeight.w600,
@@ -2619,6 +2816,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -2640,10 +2838,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             current is PropertiesLoaded ||
             current is PropertiesLoading ||
             current is PropertiesInitial ||
-            current is PropertiesError ||
-            current is PropertyCreatedState,
+            current is PropertiesError,
         listenWhen: (previous, current) =>
-            current is PropertiesError || current is PropertyCreatedState,
+            current is PropertiesError ||
+            current is PropertyCreatedState ||
+            (current is PropertiesLoaded && current.newlyAdded != null),
         listener: (context, state) {
           if (state is PropertiesError) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -2654,150 +2853,63 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           } else if (state is PropertyCreatedState) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _openPropertyDetails(context, state.property);
-              if (_scrollController.hasClients) {
-                _scrollController.animateTo(0,
-                    duration: const Duration(milliseconds: 500),
-                    curve: Curves.easeOut);
-              }
-              setState(() {
-                _highlightedPropertyId = state.property.id;
-              });
-              Future.delayed(const Duration(seconds: 2), () {
-                if (mounted) {
-                  setState(() {
-                    _highlightedPropertyId = null;
-                  });
-                }
-              });
+              _onPropertyEntered(state.property);
+            });
+          } else if (state is PropertiesLoaded && state.newlyAdded != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _onPropertyEntered(state.newlyAdded!);
             });
           }
         },
         builder: (context, state) {
-          final isLoading =
-              state is PropertiesLoading || state is PropertiesInitial;
-          List<PropertyModel> properties = [];
-          PropertyMetadataModel? metadata;
-          Set<String> bookmarkedIds = {};
-
           if (state is PropertiesLoaded) {
-            properties = state.properties.where((p) {
-              final ltName = p.listingTypeName.toLowerCase();
-              final matchesListing = _activeListingTab == 'Rent'
-                  ? ltName.contains('rent')
-                  : (ltName.contains('sale') ||
-                      ltName.contains('resale') ||
-                      !ltName.contains('rent'));
+            _cachedProperties = state.properties;
+            if (state.metadata != null) _cachedMetadata = state.metadata;
+            _cachedBookmarkedIds = state.bookmarkedIds;
+          }
 
-              final matchesCategory = _selectedCategory == null ||
-                  p.categoryId == _selectedCategory;
+          final rawLoadedList = state is PropertiesLoaded ? state.properties : _cachedProperties;
+          final isInitialLoad =
+              (state is PropertiesLoading || state is PropertiesInitial) && rawLoadedList.isEmpty;
+          List<PropertyModel> properties = [];
+          PropertyMetadataModel? metadata = state is PropertiesLoaded ? (state.metadata ?? _cachedMetadata) : _cachedMetadata;
+          Set<String> bookmarkedIds = state is PropertiesLoaded ? state.bookmarkedIds : _cachedBookmarkedIds;
 
-              final matchesCategoryTab = _matchesActiveCategory(p);
+          final bhkParam = GoRouterState.of(context).uri.queryParameters['bhk'];
+          if (bhkParam != null && bhkParam.isNotEmpty) {
+            if (bhkParam == '1' || bhkParam == '2' || bhkParam == '3' || bhkParam == '4') {
+              _activeBhkFilter = '$bhkParam BHK';
+            } else if (bhkParam == '5') {
+              _activeBhkFilter = '5+ BHK';
+            }
+          }
 
-              final matchesConfig = _selectedConfigurations.isEmpty ||
-                  _selectedConfigurations.contains(p.configurationId);
+          final searchQuery = GoRouterState.of(context).uri.queryParameters['search'] ??
+              GoRouterState.of(context).uri.queryParameters['q'];
+          if (searchQuery != null && searchQuery.isNotEmpty && _searchController.text != searchQuery) {
+            _searchController.text = searchQuery;
+            final sqLower = searchQuery.toLowerCase();
+            if (sqLower.contains('commercial') || sqLower.contains('office') || sqLower.contains('shop') || sqLower.contains('showroom')) {
+              _activeCategoryTab = 'Commercial';
+            } else if (sqLower.contains('industrial') || sqLower.contains('factory') || sqLower.contains('warehouse')) {
+              _activeCategoryTab = 'Industrial';
+            } else if (sqLower.contains('land') || sqLower.contains('plot')) {
+              _activeCategoryTab = 'Land & Plot';
+            }
+          }
 
-              final matchesArea = _selectedAreas.isEmpty ||
-                  _selectedAreas.contains(p.areaId);
+          final listingParam = GoRouterState.of(context).uri.queryParameters['listingType'];
+          if (listingParam != null && listingParam.isNotEmpty) {
+            if (listingParam.toLowerCase() == 'rent' && _activeListingTab != 'Rent') {
+              _activeListingTab = 'Rent';
+            } else if ((listingParam.toLowerCase().contains('sale') || listingParam.toLowerCase().contains('re-sale')) && _activeListingTab != 'Re-Sale') {
+              _activeListingTab = 'Re-Sale';
+            }
+          }
 
-              bool matchesPrice = true;
-              if (_selectedPriceSortOrRange == 'custom') {
-                if (_minPrice != null && p.price < _minPrice!) {
-                  matchesPrice = false;
-                }
-                if (_maxPrice != null && p.price > _maxPrice!) {
-                  matchesPrice = false;
-                }
-              }
-
-              bool matchesSearch = true;
-              if (_searchController.text.trim().isNotEmpty) {
-                final query = _searchController.text.trim().toLowerCase();
-                final words = query.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-                matchesSearch = words.every((word) =>
-                    p.propertyCode.toLowerCase().contains(word) ||
-                    p.title.toLowerCase().contains(word) ||
-                    (p.description?.toLowerCase().contains(word) ?? false) ||
-                    p.ownerName.toLowerCase().contains(word) ||
-                    p.ownerMobile.toLowerCase().contains(word) ||
-                    p.areaName.toLowerCase().contains(word) ||
-                    p.cityName.toLowerCase().contains(word) ||
-                    p.categoryName.toLowerCase().contains(word) ||
-                    (p.configurationName?.toLowerCase().contains(word) ?? false) ||
-                    p.propertyTypeName.toLowerCase().contains(word) ||
-                    (isUserAdminOrSuperAdmin &&
-                     (currentUser?.role == 'Super Admin' ||
-                      (currentUser?.role == 'Admin' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.id)) ||
-                      (currentUser?.role == 'Telecaller' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.adminId))) &&
-                     p.createdByName.toLowerCase().contains(word)));
-              }
-
-              final matchesMyAdded = !_myAddedOnly || (p.createdBy == currentUserId);
-              final matchesArchive = _archiveTabOnly
-                  ? _archivedPropertyIds.contains(p.id)
-                  : !_archivedPropertyIds.contains(p.id);
-              final matchesStatus = _selectedStatusFilter == null ||
-                  (p.propertyStatusName ?? '').toLowerCase() == _selectedStatusFilter!.toLowerCase();
-
-              final cat = p.categoryName.toLowerCase();
-              bool matchesTabCategory = false;
-              if (_activeCategoryTab == 'All') {
-                matchesTabCategory = true;
-              } else if (_activeCategoryTab == 'Residential') {
-                matchesTabCategory = cat.contains('resident') ||
-                    cat.contains('apartment') ||
-                    cat.contains('flat') ||
-                    cat.contains('villa') ||
-                    cat.contains('house') ||
-                    cat.contains('bhk') ||
-                    (!cat.contains('commercial') &&
-                        !cat.contains('industrial') &&
-                        !cat.contains('land') &&
-                        !cat.contains('plot'));
-              } else if (_activeCategoryTab == 'Commercial') {
-                matchesTabCategory = cat.contains('commercial') ||
-                    cat.contains('office') ||
-                    cat.contains('shop') ||
-                    cat.contains('showroom') ||
-                    cat.contains('retail');
-              } else if (_activeCategoryTab == 'Industrial') {
-                matchesTabCategory = cat.contains('industrial') ||
-                    cat.contains('factory') ||
-                    cat.contains('warehouse') ||
-                    cat.contains('shed');
-              } else if (_activeCategoryTab == 'Land & Plot') {
-                matchesTabCategory = cat.contains('land') || cat.contains('plot');
-              }
-
-              bool matchesBhk = true;
-              if (_activeBhkFilter != null && _activeBhkFilter != 'All BHK') {
-                if (_activeBhkFilter == '1 BHK') {
-                  matchesBhk = p.bedrooms == 1 || (p.configurationName?.contains('1') ?? false);
-                } else if (_activeBhkFilter == '2 BHK') {
-                  matchesBhk = p.bedrooms == 2 || (p.configurationName?.contains('2') ?? false);
-                } else if (_activeBhkFilter == '3 BHK') {
-                  matchesBhk = p.bedrooms == 3 || (p.configurationName?.contains('3') ?? false);
-                } else if (_activeBhkFilter == '4 BHK') {
-                  matchesBhk = p.bedrooms == 4 || (p.configurationName?.contains('4') ?? false);
-                } else if (_activeBhkFilter == '5+ BHK') {
-                  matchesBhk = p.bedrooms >= 5 || (p.configurationName?.contains('5') ?? false);
-                }
-              }
-
-              final matchesNoImages = !_noImagesOnly || p.images.isEmpty;
-
-              return matchesListing &&
-                  matchesCategory &&
-                  matchesTabCategory &&
-                  matchesConfig &&
-                  matchesArea &&
-                  matchesSearch &&
-                  matchesPrice &&
-                  matchesMyAdded &&
-                  matchesArchive &&
-                  matchesStatus &&
-                  matchesCategoryTab &&
-                  matchesBhk &&
-                  matchesNoImages;
+          if (rawLoadedList.isNotEmpty) {
+            properties = rawLoadedList.where((p) {
+              return _matchesPropertyFilters(p, metadata, currentUserId);
             }).toList();
 
             // Default sorting: Newest first (latest property appears first)
@@ -2809,51 +2921,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             } else if (_selectedPriceSortOrRange == 'h2l') {
               properties.sort((a, b) => b.price.compareTo(a.price));
             }
-
-            metadata = state.metadata;
-            _cachedMetadata = state.metadata;
-            bookmarkedIds = state.bookmarkedIds;
-
-            final bhkParam = GoRouterState.of(context).uri.queryParameters['bhk'];
-            if (bhkParam != null && bhkParam.isNotEmpty) {
-              if (bhkParam == '1' || bhkParam == '2' || bhkParam == '3' || bhkParam == '4') {
-                _activeBhkFilter = '$bhkParam BHK';
-              } else if (bhkParam == '5') {
-                _activeBhkFilter = '5+ BHK';
-              }
-            }
-
-            final searchQuery = GoRouterState.of(context).uri.queryParameters['search'] ??
-                GoRouterState.of(context).uri.queryParameters['q'];
-            if (searchQuery != null && searchQuery.isNotEmpty && _searchController.text != searchQuery) {
-              _searchController.text = searchQuery;
-              final sqLower = searchQuery.toLowerCase();
-              if (sqLower.contains('commercial') || sqLower.contains('office') || sqLower.contains('shop') || sqLower.contains('showroom')) {
-                _activeCategoryTab = 'Commercial';
-              } else if (sqLower.contains('industrial') || sqLower.contains('factory') || sqLower.contains('warehouse')) {
-                _activeCategoryTab = 'Industrial';
-              } else if (sqLower.contains('land') || sqLower.contains('plot')) {
-                _activeCategoryTab = 'Land & Plot';
-              }
-            }
-
-            final listingParam = GoRouterState.of(context).uri.queryParameters['listingType'];
-            if (listingParam != null && listingParam.isNotEmpty) {
-              if (listingParam.toLowerCase() == 'rent' && _activeListingTab != 'Rent') {
-                _activeListingTab = 'Rent';
-              } else if ((listingParam.toLowerCase().contains('sale') || listingParam.toLowerCase().contains('re-sale')) && _activeListingTab != 'Re-Sale') {
-                _activeListingTab = 'Re-Sale';
-              }
-            }
-
             final action =
                 GoRouterState.of(context).uri.queryParameters['action'];
             if (action == 'add' &&
                 !_hasAutoOpenedAdd &&
-                state.metadata != null) {
+                metadata != null) {
               _hasAutoOpenedAdd = true;
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                _showAddEditPropertyDialog(context, state.metadata!);
+                _showAddEditPropertyDialog(context, metadata!);
               });
             }
 
@@ -2909,8 +2984,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
                 // Rent vs Re-Sale Toggle Tabs
                 Wrap(
-                  spacing: CRMSpacing.s,
-                  runSpacing: CRMSpacing.s,
+                  spacing: 12,
+                  runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Container(
@@ -2939,11 +3014,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 const SizedBox(height: CRMSpacing.l),
 
                 // 2. Statistics Row (Overflow Fixed Layout)
-                _buildStatisticsRow(state is PropertiesLoaded ? state.properties : const []),
+                _buildStatisticsRow(rawLoadedList),
                 const SizedBox(height: CRMSpacing.l),
 
                 // 3. Search & 4. Advanced Filters
-                _buildSearchAndFilters(_cachedMetadata),
+                _buildSearchAndFilters(metadata, rawLoadedList, currentUserId),
                 const SizedBox(height: CRMSpacing.l),
 
                 // 5. Action Toolbar (Responsive choice chips)
@@ -2955,7 +3030,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
                 // 6. Property Cards View / Table View & 7. Pagination
                 if (!_isTableView) ...[
-                  if (isLoading)
+                  if (isInitialLoad)
                     const Center(
                         child: Padding(
                             padding: EdgeInsets.all(32),
@@ -2963,21 +3038,32 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   else ...[
                     _buildHousingStyleResultsHeader(context, properties.length, pageStart, pageEnd),
                     if (pagedProperties.isEmpty)
-                      CRMCard(
-                        child: Padding(
-                          padding: const EdgeInsets.all(CRMSpacing.xl),
-                          child: Column(
-                            children: [
-                              Text('No Properties Found',
-                                  style: CRMTypography.sectionTitle
-                                      .copyWith(color: CRMColors.textOf(context))),
-                              const SizedBox(height: CRMSpacing.s),
-                              Text(_noImagesOnly
-                                  ? 'No properties without images found.'
-                                  : 'No records match your active search terms.',
-                                  style: CRMTypography.body
-                                      .copyWith(color: CRMColors.textSecondaryOf(context))),
-                            ],
+                      SizedBox(
+                        width: double.infinity,
+                        child: CRMCard(
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(CRMSpacing.xl),
+                            alignment: Alignment.center,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'No Properties Found',
+                                  style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: CRMSpacing.s),
+                                Text(
+                                  _noImagesOnly
+                                      ? 'No properties without images found.'
+                                      : 'No records match your active search terms.',
+                                  style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       )
@@ -2991,7 +3077,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   ],
                 ] else ...[
                   CRMDataTable(
-                    isLoading: isLoading,
+                    isLoading: isInitialLoad,
                     emptyTitle: 'No Properties Found',
                     emptyDescription:
                         'No records match your active search terms.',
@@ -3066,11 +3152,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                   fontWeight: FontWeight.bold))),
                           if (isUserAdminOrSuperAdmin)
                             DataCell(Text(
-                              (currentUser?.role == 'Super Admin' ||
-                                      (currentUser?.role == 'Admin' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.id)) ||
-                                      (currentUser?.role == 'Telecaller' && (p.createdBy == currentUser?.id || p.adminId == currentUser?.adminId)))
-                                  ? p.createdByName
-                                  : '-',
+                              p.showsAddedBy ? p.createdByName : '-',
                             )),
                           DataCell(
                             Column(
@@ -3140,173 +3222,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           DataCell(
                             PopupMenuButton<String>(
                               tooltip: 'Change Status',
-                              onSelected: (String statusName) async {
-                                if (statusName == 'Available') {
-                                  final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
-                                  final isCurrentlyRentedOrSold = currentStatus.contains('rented') || currentStatus.contains('sold');
-
-                                  if (isCurrentlyRentedOrSold) {
-                                    final clientName = await PropertyDealClientStore.getClientName(p.id, property: p);
-                                    final bool hasClient = clientName != null && clientName.trim().isNotEmpty;
-
-                                    final bool? confirm = await showDialog<bool>(
-                                      context: context,
-                                      builder: (dialogContext) => AlertDialog(
-                                        backgroundColor: CRMColors.cardBgOf(context),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-                                        ),
-                                        title: Text(
-                                          "Confirm Status Change",
-                                          style: CRMTypography.sectionTitle.copyWith(
-                                            color: CRMColors.textOf(context),
-                                          ),
-                                        ),
-                                         content: Text.rich(
-                                           TextSpan(
-                                             style: CRMTypography.body.copyWith(
-                                               color: CRMColors.textSecondaryOf(context),
-                                               height: 1.5,
-                                             ),
-                                             children: hasClient
-                                                 ? [
-                                                     const TextSpan(text: "This property is currently assigned to client "),
-                                                     TextSpan(
-                                                       text: "'$clientName'",
-                                                       style: TextStyle(
-                                                         color: CRMColors.primaryOf(context),
-                                                         fontWeight: FontWeight.bold,
-                                                       ),
-                                                     ),
-                                                     TextSpan(
-                                                       text: " (${p.propertyStatusName}).\n\n",
-                                                       style: TextStyle(
-                                                         color: CRMColors.textOf(context),
-                                                         fontWeight: FontWeight.w600,
-                                                       ),
-                                                     ),
-                                                     const TextSpan(
-                                                       text: "Are you sure you want to change its status to ",
-                                                     ),
-                                                     TextSpan(
-                                                       text: "Available",
-                                                       style: const TextStyle(
-                                                         color: CRMColors.success,
-                                                         fontWeight: FontWeight.bold,
-                                                       ),
-                                                     ),
-                                                     const TextSpan(text: "?"),
-                                                   ]
-                                                 : [
-                                                     const TextSpan(
-                                                       text: "Are you sure you want to change the status of this property from ",
-                                                     ),
-                                                     TextSpan(
-                                                       text: p.propertyStatusName ?? 'Rented Out',
-                                                       style: TextStyle(
-                                                         color: CRMColors.textOf(context),
-                                                         fontWeight: FontWeight.bold,
-                                                       ),
-                                                     ),
-                                                     const TextSpan(text: " to "),
-                                                     TextSpan(
-                                                       text: "Available",
-                                                       style: const TextStyle(
-                                                         color: CRMColors.success,
-                                                         fontWeight: FontWeight.bold,
-                                                       ),
-                                                     ),
-                                                     const TextSpan(text: "?"),
-                                                   ],
-                                           ),
-                                         ),
-                                        actions: [
-                                          CRMButton(
-                                            label: "Cancel",
-                                            variant: CRMButtonVariant.outline,
-                                            onPressed: () => Navigator.pop(dialogContext, false),
-                                          ),
-                                          const SizedBox(width: CRMSpacing.xs),
-                                          CRMButton(
-                                            label: "Yes",
-                                            variant: CRMButtonVariant.primary,
-                                            onPressed: () => Navigator.pop(dialogContext, true),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-
-                                    if (confirm != true) return;
-
-                                    await PropertyDealClientStore.removeClientName(p.id);
-                                  }
-                                }
-
-                                if (statusName == 'To Be Available') {
-                                  final DateTime? pickedDate =
-                                      await showDatePicker(
-                                    context: context,
-                                    initialDate: DateTime.now()
-                                        .add(const Duration(days: 1)),
-                                    firstDate: DateTime.now(),
-                                    lastDate: DateTime.now()
-                                        .add(const Duration(days: 365 * 5)),
-                                    helpText: 'Select Available Date',
-                                  );
-                                  if (pickedDate == null) return;
-
-                                  LookupItem? targetLookup;
-                                  if (metadata != null) {
-                                    for (final s in metadata.statuses) {
-                                      if (s.name
-                                          .toLowerCase()
-                                          .contains('to be available')) {
-                                        targetLookup = s;
-                                        break;
-                                      }
-                                    }
-                                  }
-                                  final statusId = targetLookup?.id ??
-                                      '05a73434-e99b-425b-99b2-1825d529ac35';
-                                  if (context.mounted) {
-                                    context.read<PropertiesBloc>().add(
-                                          UpdatePropertyEvent(
-                                            p.id,
-                                            {
-                                              'property_status_id': statusId,
-                                              'possession_date': pickedDate
-                                                  .toIso8601String()
-                                                  .substring(0, 10),
-                                            },
-                                            activeTab: _activeTab,
-                                          ),
-                                        );
-                                  }
-                                  return;
-                                }
-
-                                LookupItem? targetLookup;
-                                if (metadata != null) {
-                                  for (final s in metadata.statuses) {
-                                    if (s.name
-                                            .toLowerCase()
-                                            .replaceAll(' ', '') ==
-                                        statusName
-                                            .toLowerCase()
-                                            .replaceAll(' ', '')) {
-                                      targetLookup = s;
-                                      break;
-                                    }
-                                  }
-                                }
-                                final statusId = targetLookup?.id ?? statusName;
-                                context.read<PropertiesBloc>().add(
-                                      UpdatePropertyEvent(
-                                        p.id,
-                                        {'property_status_id': statusId},
-                                        activeTab: _activeTab,
-                                      ),
-                                    );
+                              onSelected: (String statusName) {
+                                _onPropertyStatusChanged(
+                                    context, p, statusName, metadata);
                               },
                               itemBuilder: (BuildContext context) {
                                 final isRent = p.listingTypeName
@@ -3535,12 +3453,15 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       }
     }).toList();
 
-    final filteredByListingAndCategory = filteredByListingTab.where(_matchesActiveCategory).toList();
+    final filteredByListingAndCategory = filteredByListingTab
+        .where(_matchesActiveCategory)
+        .where(_matchesPropertyDateFilter)
+        .toList();
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 600;
 
     final double cardWidth = isMobile
-        ? (screenWidth - (CRMSpacing.m * 2) - CRMSpacing.m).clamp(0.0, double.infinity) / 2
+        ? math.max(0.0, screenWidth - (CRMSpacing.m * 2) - CRMSpacing.m) / 2
         : 180.0;
     final double chartCardWidth = isMobile
         ? (screenWidth - (CRMSpacing.m * 2))
@@ -3749,6 +3670,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             return Padding(
               padding: const EdgeInsets.only(right: CRMSpacing.s),
               child: ChoiceChip(
+                showCheckmark: false,
                 label: Text(
                   cat,
                   style: TextStyle(
@@ -3810,7 +3732,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     );
   }
 
-  Widget _buildSearchFiltersCard(PropertyMetadataModel? metadata) {
+  Widget _buildSearchFiltersCard(
+    PropertyMetadataModel? metadata,
+    List<PropertyModel> rawLoadedList,
+    String? currentUserId,
+  ) {
     final categories = metadata != null ? metadata.categories : <LookupItem>[];
     final areas = metadata != null ? metadata.areas.cast<LookupItem>().toList() : <LookupItem>[];
     final listingTypes =
@@ -3839,12 +3765,26 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         borderRadius: BorderRadius.circular(CRMBorderRadius.s),
                         borderSide: BorderSide.none),
                   ),
-                  onChanged: (_) => _loadProperties(),
+                  onChanged: (val) {
+                    AuditTelemetryService.instance.trackSearch(
+                      query: val,
+                      module: 'Properties',
+                    );
+                    _loadProperties();
+                  },
                 );
 
                 final searchButton = CRMButton(
                   label: 'Search',
-                  onPressed: _loadProperties,
+                  onPressed: () {
+                    AuditTelemetryService.instance.trackButtonClick(
+                      buttonId: 'btn_search_properties',
+                      buttonLabel: 'Search Properties',
+                      page: '/properties',
+                      extra: {'query': _searchController.text.trim()},
+                    );
+                    _loadProperties();
+                  },
                 );
 
                 if (isCompactSearch) {
@@ -3883,78 +3823,86 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 }
 
                 final List<LookupItem> configurations = [];
-                if (metadata != null) {
-                  if (_selectedCategory == null) {
-                    configurations.addAll(metadata.configurations);
-                  } else {
-                    final cat = categories.firstWhere(
-                      (cat) => cat.id == _selectedCategory,
-                      orElse: () => LookupItem(id: '', name: ''),
-                    );
-                    final catName = cat.name.toLowerCase();
+                String activeCategoryName = '';
+                if (_selectedCategory != null) {
+                  final cat = categories.firstWhere(
+                    (cat) => cat.id == _selectedCategory,
+                    orElse: () => LookupItem(id: '', name: ''),
+                  );
+                  activeCategoryName = cat.name.toLowerCase();
+                } else {
+                  activeCategoryName = _activeCategoryTab.toLowerCase();
+                }
 
-                    if (catName.contains('commercial')) {
-                      final matches = <LookupItem>[];
-                      matches.addAll(metadata.configurations.where((c) {
-                        final name = c.name.toLowerCase();
-                        return name.contains('office') || name.contains('shop') || name.contains('showroom');
-                      }));
-                      matches.addAll(metadata.types.where((t) {
-                        final name = t.name.toLowerCase();
-                        return name.contains('office') || name.contains('shop') || name.contains('showroom');
-                      }));
-                      for (final m in matches) {
-                        if (!configurations.any((c) => c.name.toLowerCase() == m.name.toLowerCase())) {
-                          configurations.add(m);
-                        }
+                if (metadata != null) {
+                  if (activeCategoryName.contains('commercial')) {
+                    final matches = <LookupItem>[];
+                    matches.addAll(metadata.configurations.where((c) {
+                      final name = c.name.toLowerCase();
+                      return name.contains('office') || name.contains('shop') || name.contains('showroom');
+                    }));
+                    matches.addAll(metadata.types.where((t) {
+                      final name = t.name.toLowerCase();
+                      return name.contains('office') || name.contains('shop') || name.contains('showroom') || name.contains('commercial');
+                    }));
+                    for (final m in matches) {
+                      if (!configurations.any((c) => c.name.toLowerCase() == m.name.toLowerCase())) {
+                        configurations.add(m);
                       }
-                    } else if (catName.contains('land') || catName.contains('plot')) {
-                      final matches = <LookupItem>[];
-                      matches.addAll(metadata.configurations.where((c) {
-                        return c.name.toLowerCase().contains('plot');
-                      }));
-                      matches.addAll(metadata.types.where((t) {
-                        return t.name.toLowerCase().contains('plot');
-                      }));
-                      for (final m in matches) {
-                        if (!configurations.any((c) => c.name.toLowerCase() == m.name.toLowerCase())) {
-                          configurations.add(m);
-                        }
-                      }
-                    } else if (catName.contains('industrial')) {
-                      final matches = <LookupItem>[];
-                      matches.addAll(metadata.configurations.where((c) {
-                        final name = c.name.toLowerCase();
-                        return name.contains('warehouse') || name.contains('shed') || name.contains('industrial');
-                      }));
-                      matches.addAll(metadata.types.where((t) {
-                        final name = t.name.toLowerCase();
-                        return name.contains('warehouse') || name.contains('shed') || name.contains('industrial');
-                      }));
-                      for (final m in matches) {
-                        if (!configurations.any((c) => c.name.toLowerCase() == m.name.toLowerCase())) {
-                          configurations.add(m);
-                        }
-                      }
-                    } else if (catName.contains('residential')) {
-                      final matches = metadata.configurations.where((c) {
-                        final name = c.name.toLowerCase();
-                        return !name.contains('office') &&
-                            !name.contains('shop') &&
-                            !name.contains('showroom') &&
-                            !name.contains('plot') &&
-                            !name.contains('warehouse') &&
-                            !name.contains('shed') &&
-                            !name.contains('industrial');
-                      }).toList();
-                      for (final m in matches) {
-                        if (!configurations.any((c) => c.name.toLowerCase() == m.name.toLowerCase())) {
-                          configurations.add(m);
-                        }
-                      }
-                    } else {
-                      configurations.addAll(metadata.configurations.where((c) => c.categoryId == _selectedCategory));
                     }
+                    if (configurations.isEmpty) {
+                      configurations.addAll([
+                        LookupItem(id: 'office', name: 'Office'),
+                        LookupItem(id: 'showroom', name: 'Showroom'),
+                        LookupItem(id: 'shop', name: 'Shop'),
+                      ]);
+                    }
+                  } else if (activeCategoryName.contains('land') || activeCategoryName.contains('plot')) {
+                    final matches = <LookupItem>[];
+                    matches.addAll(metadata.configurations.where((c) {
+                      return c.name.toLowerCase().contains('plot');
+                    }));
+                    matches.addAll(metadata.types.where((t) {
+                      return t.name.toLowerCase().contains('plot');
+                    }));
+                    for (final m in matches) {
+                      if (!configurations.any((c) => c.name.toLowerCase() == m.name.toLowerCase())) {
+                        configurations.add(m);
+                      }
+                    }
+                  } else if (activeCategoryName.contains('industrial')) {
+                    final matches = <LookupItem>[];
+                    matches.addAll(metadata.configurations.where((c) {
+                      final name = c.name.toLowerCase();
+                      return name.contains('warehouse') || name.contains('shed') || name.contains('industrial');
+                    }));
+                    matches.addAll(metadata.types.where((t) {
+                      final name = t.name.toLowerCase();
+                      return name.contains('warehouse') || name.contains('shed') || name.contains('industrial');
+                    }));
+                    for (final m in matches) {
+                      if (!configurations.any((c) => c.name.toLowerCase() == m.name.toLowerCase())) {
+                        configurations.add(m);
+                      }
+                    }
+                  } else if (activeCategoryName.contains('residential')) {
+                    final matches = metadata.configurations.where((c) {
+                      final name = c.name.toLowerCase();
+                      return !name.contains('office') &&
+                          !name.contains('shop') &&
+                          !name.contains('showroom') &&
+                          !name.contains('plot') &&
+                          !name.contains('warehouse') &&
+                          !name.contains('shed') &&
+                          !name.contains('industrial');
+                    }).toList();
+                    for (final m in matches) {
+                      if (!configurations.any((c) => c.name.toLowerCase() == m.name.toLowerCase())) {
+                        configurations.add(m);
+                      }
+                    }
+                  } else {
+                    configurations.addAll(metadata.configurations);
                   }
                 }
 
@@ -3988,22 +3936,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       const SizedBox(width: CRMSpacing.m),
                       Expanded(
                         child: CRMMultiSelectDropdown(
-                          label: (() {
-                            if (_selectedCategory != null) {
-                              final cat = categories.firstWhere(
-                                (c) => c.id == _selectedCategory,
-                                orElse: () => LookupItem(id: '', name: ''),
-                              );
-                              final catName = cat.name.toLowerCase();
-                              if (catName.contains('commercial') ||
-                                  catName.contains('industrial') ||
-                                  catName.contains('land') ||
-                                  catName.contains('plot')) {
-                                return 'Property Type';
-                              }
-                            }
-                            return 'BHK';
-                          })(),
+                          label: (activeCategoryName.contains('commercial') ||
+                                  activeCategoryName.contains('industrial') ||
+                                  activeCategoryName.contains('land') ||
+                                  activeCategoryName.contains('plot'))
+                              ? 'Property Type'
+                              : 'BHK',
                           selectedIds: _selectedConfigurations,
                           items: configurations,
                           onChanged: (vals) {
@@ -4105,22 +4043,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       SizedBox(
                         width: columnWidth,
                         child: CRMMultiSelectDropdown(
-                          label: (() {
-                            if (_selectedCategory != null) {
-                              final cat = categories.firstWhere(
-                                (c) => c.id == _selectedCategory,
-                                orElse: () => LookupItem(id: '', name: ''),
-                              );
-                              final catName = cat.name.toLowerCase();
-                              if (catName.contains('commercial') ||
-                                  catName.contains('industrial') ||
-                                  catName.contains('land') ||
-                                  catName.contains('plot')) {
-                                return 'Property Type';
-                              }
-                            }
-                            return 'BHK';
-                          })(),
+                          label: (activeCategoryName.contains('commercial') ||
+                                  activeCategoryName.contains('industrial') ||
+                                  activeCategoryName.contains('land') ||
+                                  activeCategoryName.contains('plot'))
+                              ? 'Property Type'
+                              : 'BHK',
                           selectedIds: _selectedConfigurations,
                           items: configurations,
                           onChanged: (vals) {
@@ -4195,6 +4123,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 }
               },
             ),
+            const SizedBox(height: CRMSpacing.m),
+            Divider(
+              height: 1,
+              color: ThemeManager().isDarkMode ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            _buildPropertyDateFilterBar(context, rawLoadedList, metadata, currentUserId),
           ],
         ),
       ),
@@ -4249,7 +4184,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     );
   }
 
-  Widget _buildSearchAndFilters(PropertyMetadataModel? metadata) {
+  Widget _buildSearchAndFilters(
+    PropertyMetadataModel? metadata,
+    List<PropertyModel> rawLoadedList,
+    String? currentUserId,
+  ) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 600;
 
@@ -4264,7 +4203,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             child: _isMobileFiltersExpanded
                 ? Padding(
                     padding: const EdgeInsets.only(top: CRMSpacing.m),
-                    child: _buildSearchFiltersCard(metadata),
+                    child: _buildSearchFiltersCard(metadata, rawLoadedList, currentUserId),
                   )
                 : const SizedBox.shrink(),
           ),
@@ -4272,7 +4211,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       );
     }
 
-    return _buildSearchFiltersCard(metadata);
+    return _buildSearchFiltersCard(metadata, rawLoadedList, currentUserId);
   }
 
   Widget _buildPropertyListingTabButton(String label) {
@@ -4400,6 +4339,16 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
 
   Widget _buildCategoryDropdown(List<LookupItem> categories) {
+    final Map<String, LookupItem> uniqueCats = {};
+    for (final c in categories) {
+      if (c.id.isNotEmpty && !uniqueCats.containsKey(c.id)) {
+        uniqueCats[c.id] = c;
+      }
+    }
+    final List<LookupItem> catList = uniqueCats.values.toList();
+    final bool hasValue = _selectedCategory == null || uniqueCats.containsKey(_selectedCategory);
+    final String? safeCategory = hasValue ? _selectedCategory : null;
+
     return Container(
       width: 180,
       height: 44,
@@ -4411,7 +4360,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String?>(
-          value: _selectedCategory,
+          value: safeCategory,
           hint: Text(
             'All Category',
             style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
@@ -4424,7 +4373,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
               ),
             ),
-            ...categories.map((c) {
+            ...catList.map((c) {
               return DropdownMenuItem<String?>(
                 value: c.id,
                 child: Text(
@@ -4464,6 +4413,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       _currentPage = 0;
       _myAddedOnly = false;
       _selectedStatusFilter = null;
+      _selectedPropertyDateFilter = PropertyDateFilterPreset.allTime;
+      _propertyCustomStartDate = null;
+      _propertyCustomEndDate = null;
     });
     _loadProperties();
   }
@@ -4495,7 +4447,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               content: SizedBox(
-                width: 380,
+                width: CRMBreakpoints.adaptiveWidth(context, 380),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -4788,9 +4740,24 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     required ValueChanged<String?> onChanged,
     required double width,
   }) {
-    final bool hasValue =
-        value == null || items.any((item) => item.value == value);
+    final Map<String, DropdownMenuItem<String>> uniqueItemsMap = {};
+    for (final item in items) {
+      if (item.value != null && !uniqueItemsMap.containsKey(item.value)) {
+        uniqueItemsMap[item.value!] = item;
+      }
+    }
+    final List<DropdownMenuItem<String>> uniqueItems = uniqueItemsMap.values.toList();
+
+    final bool hasValue = value != null && uniqueItemsMap.containsKey(value);
     final String? safeValue = hasValue ? value : null;
+
+    final List<DropdownMenuItem<String>> allItems = [
+      DropdownMenuItem<String>(
+        value: null,
+        child: Text('All $label', overflow: TextOverflow.ellipsis),
+      ),
+      ...uniqueItems,
+    ];
 
     return SizedBox(
       width: width,
@@ -4816,18 +4783,15 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               borderRadius: BorderRadius.circular(CRMBorderRadius.s),
               borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5)),
         ),
-        items: [
-          DropdownMenuItem<String>(
-              value: null,
-              child: Text('All $label', overflow: TextOverflow.ellipsis)),
-          ...items,
-        ],
+        items: allItems,
         onChanged: onChanged,
       ),
     );
   }
 
   Widget _buildActionToolbar(List<PropertyModel> allProperties, List<PropertyModel> pagedProperties) {
+    final int withImagesCount =
+        allProperties.where((p) => p.images.isNotEmpty).length;
     final int noImagesCount =
         allProperties.where((p) => p.images.isEmpty).length;
     final authState = context.read<AuthBloc>().state;
@@ -4843,98 +4807,141 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         spacing: 12,
         runSpacing: 8,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (!_isTableView && pagedProperties.isNotEmpty) ...[
-                Theme(
-                  data: ThemeData(unselectedWidgetColor: CRMColors.textSecondaryOf(context)),
-                  child: Checkbox(
-                    value: pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
-                    tristate: pagedProperties.any((p) => _selectedPropertyIds.contains(p.id)) &&
-                        !pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
-                    activeColor: CRMColors.primaryOf(context),
-                    onChanged: (bool? checked) {
-                      setState(() {
-                        if (checked == true) {
-                          for (final p in pagedProperties) {
-                            _selectedPropertyIds.add(p.id);
-                          }
-                        } else {
-                          for (final p in pagedProperties) {
-                            _selectedPropertyIds.remove(p.id);
-                          }
-                        }
-                      });
-                    },
-                  ),
-                ),
-                InkWell(
-                  onTap: () {
-                    setState(() {
-                      final allSel = pagedProperties.every((p) => _selectedPropertyIds.contains(p.id));
-                      if (!allSel) {
-                        for (final p in pagedProperties) {
-                          _selectedPropertyIds.add(p.id);
-                        }
-                      } else {
-                        for (final p in pagedProperties) {
-                          _selectedPropertyIds.remove(p.id);
-                        }
-                      }
-                    });
-                  },
-                  child: Text(
-                    'Select All (${pagedProperties.length})',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: CRMColors.textOf(context),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Theme(
+                      data: ThemeData(unselectedWidgetColor: CRMColors.textSecondaryOf(context)),
+                      child: Checkbox(
+                        value: pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
+                        tristate: pagedProperties.any((p) => _selectedPropertyIds.contains(p.id)) &&
+                            !pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
+                        activeColor: CRMColors.primaryOf(context),
+                        onChanged: (bool? checked) {
+                          setState(() {
+                            if (checked == true) {
+                              for (final p in pagedProperties) {
+                                _selectedPropertyIds.add(p.id);
+                              }
+                            } else {
+                              for (final p in pagedProperties) {
+                                _selectedPropertyIds.remove(p.id);
+                              }
+                            }
+                          });
+                        },
+                      ),
                     ),
-                  ),
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          final allSel = pagedProperties.every((p) => _selectedPropertyIds.contains(p.id));
+                          if (!allSel) {
+                            for (final p in pagedProperties) {
+                              _selectedPropertyIds.add(p.id);
+                            }
+                          } else {
+                            for (final p in pagedProperties) {
+                              _selectedPropertyIds.remove(p.id);
+                            }
+                          }
+                        });
+                      },
+                      child: Text(
+                        'Select All (${pagedProperties.length})',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
               ],
               FilterChip(
                 avatar: Icon(
-                  _noImagesOnly
-                      ? Icons.no_photography_rounded
-                      : Icons.image_not_supported_outlined,
+                  Icons.image_rounded,
                   size: 16,
-                  color: _noImagesOnly
+                  color: _imageFilter == 'with_images'
+                      ? Colors.white
+                      : const Color(0xFF2E7D32),
+                ),
+                label: Text(
+                  'With Photos ($withImagesCount)',
+                  style: TextStyle(
+                    color: _imageFilter == 'with_images'
+                        ? Colors.white
+                        : CRMColors.textOf(context),
+                    fontWeight:
+                        _imageFilter == 'with_images' ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 12,
+                  ),
+                ),
+                selected: _imageFilter == 'with_images',
+                selectedColor: const Color(0xFF2E7D32),
+                backgroundColor:
+                    const Color(0xFF2E7D32).withOpacity(0.08),
+                side: BorderSide(
+                  color: _imageFilter == 'with_images'
+                      ? const Color(0xFF2E7D32)
+                      : CRMColors.borderOf(context).withOpacity(0.6),
+                ),
+                onSelected: (bool selected) {
+                  setState(() {
+                    _imageFilter = selected ? 'with_images' : null;
+                    _noImagesOnly = false;
+                  });
+                },
+              ),
+              const SizedBox(width: 8),
+              FilterChip(
+                avatar: Icon(
+                  Icons.no_photography_rounded,
+                  size: 16,
+                  color: (_imageFilter == 'no_images' || _noImagesOnly)
                       ? Colors.white
                       : CRMColors.primaryOf(context),
                 ),
                 label: Text(
                   'No Photos ($noImagesCount)',
                   style: TextStyle(
-                    color: _noImagesOnly
+                    color: (_imageFilter == 'no_images' || _noImagesOnly)
                         ? Colors.white
                         : CRMColors.textOf(context),
                     fontWeight:
-                        _noImagesOnly ? FontWeight.bold : FontWeight.normal,
+                        (_imageFilter == 'no_images' || _noImagesOnly) ? FontWeight.bold : FontWeight.normal,
                     fontSize: 12,
                   ),
                 ),
-                selected: _noImagesOnly,
+                selected: _imageFilter == 'no_images' || _noImagesOnly,
                 selectedColor: CRMColors.primaryOf(context),
                 backgroundColor:
                     CRMColors.primaryOf(context).withOpacity(0.08),
                 side: BorderSide(
-                  color: _noImagesOnly
+                  color: (_imageFilter == 'no_images' || _noImagesOnly)
                       ? CRMColors.primaryOf(context)
                       : CRMColors.borderOf(context).withOpacity(0.6),
                 ),
                 onSelected: (bool selected) {
                   setState(() {
+                    _imageFilter = selected ? 'no_images' : null;
                     _noImagesOnly = selected;
                   });
                 },
               ),
             ],
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (canExport) ...[
                 ElevatedButton.icon(
@@ -4952,7 +4959,6 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     elevation: 1,
                   ),
                 ),
-                const SizedBox(width: 12),
               ],
               Container(
                 padding: const EdgeInsets.all(2),
@@ -5118,11 +5124,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         p.ownerName,
         p.ownerMobile,
         p.propertyStatusName,
-        p.createdByName.isNotEmpty ? p.createdByName : 'System',
+        p.showsAddedBy ? p.createdByName : '',
         DateFormat('dd/MM/yyyy hh:mm a').format(p.createdAt.toLocal()),
       ];
 
-      csvBuffer.writeln(row.map((val) => '"${val.toString().replaceAll('"', '""')}"').join(','));
+      csvBuffer.writeln(row.map((val) => '"${CsvSanitizer.sanitize(val)}"').join(','));
     }
 
     final bytes = utf8.encode(csvBuffer.toString());
@@ -5179,6 +5185,18 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   void _openPropertyDetails(BuildContext context, PropertyModel p,
       {bool forceInAppDrawer = false}) {
+    AuditTelemetryService.instance.trackPropertyTouch(
+      propertyId: p.id,
+      propertyTitle: p.title ?? 'Property #${p.propertyCode}',
+      touchType: 'view_details',
+      extra: {
+        'property_code': p.propertyCode,
+        'category': p.categoryName,
+        'city': p.cityName,
+        'area': p.areaName,
+        'price': p.price,
+      },
+    );
     final bool isMobile = MediaQuery.of(context).size.width < 600;
     if (kIsWeb && !isMobile && !forceInAppDrawer) {
       final String url = '${Uri.base.origin}/properties/${p.id}';
@@ -5235,16 +5253,406 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     return false;
   }
 
+  bool _matchesPropertyDateFilter(PropertyModel p) {
+    return _matchesPropertyDateFilterWithPreset(p, _selectedPropertyDateFilter);
+  }
+
+  bool _matchesPropertyDateFilterWithPreset(PropertyModel p, PropertyDateFilterPreset preset) {
+    final createdAt = p.createdAt.toLocal();
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+
+    switch (preset) {
+      case PropertyDateFilterPreset.today:
+        return !createdAt.isBefore(todayStart) && !createdAt.isAfter(todayEnd);
+      case PropertyDateFilterPreset.yesterday:
+        final yestStart = todayStart.subtract(const Duration(days: 1));
+        final yestEnd = DateTime(yestStart.year, yestStart.month, yestStart.day, 23, 59, 59, 999);
+        return !createdAt.isBefore(yestStart) && !createdAt.isAfter(yestEnd);
+      case PropertyDateFilterPreset.last7Days:
+        final start = todayStart.subtract(const Duration(days: 6));
+        return !createdAt.isBefore(start) && !createdAt.isAfter(todayEnd);
+      case PropertyDateFilterPreset.thisMonth:
+        final monthStart = DateTime(now.year, now.month, 1);
+        return !createdAt.isBefore(monthStart) && !createdAt.isAfter(todayEnd);
+      case PropertyDateFilterPreset.customRange:
+        if (_propertyCustomStartDate != null && _propertyCustomEndDate != null) {
+          final start = DateTime(_propertyCustomStartDate!.year, _propertyCustomStartDate!.month, _propertyCustomStartDate!.day);
+          final end = DateTime(_propertyCustomEndDate!.year, _propertyCustomEndDate!.month, _propertyCustomEndDate!.day, 23, 59, 59, 999);
+          return !createdAt.isBefore(start) && !createdAt.isAfter(end);
+        }
+        return true;
+      case PropertyDateFilterPreset.allTime:
+        return true;
+    }
+  }
+
+  bool _matchesPropertyFilters(
+    PropertyModel p,
+    PropertyMetadataModel? metadata,
+    String? currentUserId, {
+    PropertyDateFilterPreset? datePresetOverride,
+  }) {
+    final ltName = p.listingTypeName.toLowerCase();
+    final matchesListing = _activeListingTab == 'Rent'
+        ? ltName.contains('rent')
+        : (ltName.contains('sale') ||
+            ltName.contains('resale') ||
+            !ltName.contains('rent'));
+    if (!matchesListing) return false;
+
+    final matchesCategory = _selectedCategory == null ||
+        p.categoryId == _selectedCategory;
+    if (!matchesCategory) return false;
+
+    final matchesCategoryTab = _matchesActiveCategory(p);
+    if (!matchesCategoryTab) return false;
+
+    if (_selectedConfigurations.isNotEmpty) {
+      final matchesConfig = _selectedConfigurations.any((id) {
+        if (p.configurationId == id || p.propertyTypeId == id) return true;
+
+        final idLower = id.toLowerCase();
+        final pTypeNameLower = p.propertyTypeName.toLowerCase();
+        final pConfigNameLower = (p.configurationName ?? '').toLowerCase();
+
+        if (pTypeNameLower.isNotEmpty && (pTypeNameLower == idLower || pTypeNameLower.contains(idLower))) {
+          return true;
+        }
+        if (pConfigNameLower.isNotEmpty && (pConfigNameLower == idLower || pConfigNameLower.contains(idLower))) {
+          return true;
+        }
+
+        if (metadata != null) {
+          final configMatch = metadata.configurations.firstWhere(
+            (c) => c.id == id,
+            orElse: () => LookupItem(id: '', name: ''),
+          );
+          if (configMatch.id.isNotEmpty) {
+            final nameLower = configMatch.name.toLowerCase();
+            if (pTypeNameLower.contains(nameLower) || pConfigNameLower.contains(nameLower)) return true;
+          }
+
+          final typeMatch = metadata.types.firstWhere(
+            (t) => t.id == id,
+            orElse: () => LookupItem(id: '', name: ''),
+          );
+          if (typeMatch.id.isNotEmpty) {
+            final nameLower = typeMatch.name.toLowerCase();
+            if (pTypeNameLower.contains(nameLower) || pConfigNameLower.contains(nameLower)) return true;
+          }
+        }
+
+        return false;
+      });
+      if (!matchesConfig) return false;
+    }
+
+    final matchesArea = _selectedAreas.isEmpty ||
+        _selectedAreas.contains(p.areaId);
+    if (!matchesArea) return false;
+
+    if (_selectedPriceSortOrRange == 'custom') {
+      if (_minPrice != null && p.price < _minPrice!) {
+        return false;
+      }
+      if (_maxPrice != null && p.price > _maxPrice!) {
+        return false;
+      }
+    }
+
+    bool matchesSearch = true;
+    bool isDirectMatch = false;
+    if (_searchController.text.trim().isNotEmpty) {
+      final query = _searchController.text.trim().toLowerCase();
+      final words = query.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      matchesSearch = words.every((word) =>
+          p.propertyCode.toLowerCase().contains(word) ||
+          p.title.toLowerCase().contains(word) ||
+          (p.description?.toLowerCase().contains(word) ?? false) ||
+          p.ownerName.toLowerCase().contains(word) ||
+          p.ownerMobile.toLowerCase().contains(word) ||
+          p.areaName.toLowerCase().contains(word) ||
+          p.cityName.toLowerCase().contains(word) ||
+          p.categoryName.toLowerCase().contains(word) ||
+          (p.configurationName?.toLowerCase().contains(word) ?? false) ||
+          p.propertyTypeName.toLowerCase().contains(word) ||
+          (p.showsAddedBy && p.createdByName.toLowerCase().contains(word)));
+
+      if (matchesSearch && words.any((w) => p.propertyCode.toLowerCase() == w || (w.startsWith('pr') && p.propertyCode.toLowerCase().replaceAll('-', '') == w.replaceAll('-', '')))) {
+        isDirectMatch = true;
+      }
+      if (!matchesSearch) return false;
+    }
+
+    final matchesMyAdded = !_myAddedOnly || (p.createdBy == currentUserId);
+    if (!matchesMyAdded) return false;
+
+    final matchesArchive = _archiveTabOnly
+        ? _archivedPropertyIds.contains(p.id)
+        : !_archivedPropertyIds.contains(p.id);
+    if (!matchesArchive) return false;
+
+    final matchesStatus = _selectedStatusFilter == null ||
+        p.propertyStatusName.toLowerCase() == _selectedStatusFilter!.toLowerCase();
+    if (!matchesStatus) return false;
+
+    bool matchesBhk = true;
+    if (_activeBhkFilter != null && _activeBhkFilter != 'All BHK') {
+      if (_activeBhkFilter == '1 BHK') {
+        matchesBhk = p.bedrooms == 1 || (p.configurationName?.contains('1') ?? false);
+      } else if (_activeBhkFilter == '2 BHK') {
+        matchesBhk = p.bedrooms == 2 || (p.configurationName?.contains('2') ?? false);
+      } else if (_activeBhkFilter == '3 BHK') {
+        matchesBhk = p.bedrooms == 3 || (p.configurationName?.contains('3') ?? false);
+      } else if (_activeBhkFilter == '4 BHK') {
+        matchesBhk = p.bedrooms == 4 || (p.configurationName?.contains('4') ?? false);
+      } else if (_activeBhkFilter == '5+ BHK') {
+        matchesBhk = p.bedrooms >= 5 || (p.configurationName?.contains('5') ?? false);
+      }
+      if (!matchesBhk) return false;
+    }
+
+    bool matchesNoImages = true;
+    if (_imageFilter == 'with_images') {
+      matchesNoImages = p.images.isNotEmpty;
+    } else if (_imageFilter == 'no_images' || _noImagesOnly) {
+      matchesNoImages = p.images.isEmpty;
+    }
+    if (!matchesNoImages) return false;
+
+    final datePreset = datePresetOverride ?? _selectedPropertyDateFilter;
+    final matchesDate = _matchesPropertyDateFilterWithPreset(p, datePreset);
+
+    if (isDirectMatch && matchesSearch) {
+      return matchesBhk && matchesMyAdded && matchesArchive && matchesDate;
+    }
+
+    return matchesDate;
+  }
+
+  int _getPropertyDateFilterCount(
+    List<PropertyModel> baseList,
+    PropertyMetadataModel? metadata,
+    String? currentUserId,
+    PropertyDateFilterPreset preset,
+  ) {
+    return baseList
+        .where((p) => _matchesPropertyFilters(
+              p,
+              metadata,
+              currentUserId,
+              datePresetOverride: preset,
+            ))
+        .length;
+  }
+
+  Future<void> _pickPropertyCustomDateRange(BuildContext context) async {
+    final initialRange = DateTimeRange(
+      start: _propertyCustomStartDate ?? DateTime.now().subtract(const Duration(days: 7)),
+      end: _propertyCustomEndDate ?? DateTime.now(),
+    );
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: initialRange,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      builder: (ctx, child) {
+        final isDark = ThemeManager().isDarkMode;
+        return Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: isDark
+                ? ColorScheme.dark(
+                    primary: CRMColors.primaryOf(ctx),
+                    onPrimary: Colors.white,
+                    surface: const Color(0xFF1E293B),
+                    onSurface: Colors.white,
+                  )
+                : ColorScheme.light(
+                    primary: CRMColors.primaryOf(ctx),
+                    onPrimary: Colors.white,
+                    surface: Colors.white,
+                    onSurface: Colors.black87,
+                  ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _propertyCustomStartDate = picked.start;
+        _propertyCustomEndDate = picked.end;
+        _selectedPropertyDateFilter = PropertyDateFilterPreset.customRange;
+        _currentPage = 0;
+      });
+    }
+  }
+
+  Widget _buildPropertyDateFilterBar(
+    BuildContext context,
+    List<PropertyModel> baseList,
+    PropertyMetadataModel? metadata,
+    String? currentUserId,
+  ) {
+    final isDark = ThemeManager().isDarkMode;
+    final primaryColor = CRMColors.primaryOf(context);
+
+    final todayCount = _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.today);
+    final yesterdayCount = _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.yesterday);
+    final last7Count = _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.last7Days);
+    final thisMonthCount = _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.thisMonth);
+    final allTimeCount = _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.allTime);
+
+    final isCustomActive = _selectedPropertyDateFilter == PropertyDateFilterPreset.customRange &&
+        _propertyCustomStartDate != null &&
+        _propertyCustomEndDate != null;
+    final customLabel = isCustomActive
+        ? 'Custom Range (${DateFormat('d MMM').format(_propertyCustomStartDate!)} - ${DateFormat('d MMM').format(_propertyCustomEndDate!)})'
+        : 'Custom Range';
+    final customCount = isCustomActive
+        ? _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.customRange)
+        : null;
+
+    final items = [
+      (PropertyDateFilterPreset.today, 'Today', todayCount, Icons.calendar_today_rounded),
+      (PropertyDateFilterPreset.yesterday, 'Yesterday', yesterdayCount, Icons.history_rounded),
+      (PropertyDateFilterPreset.last7Days, 'Last 7 Days', last7Count, Icons.date_range_rounded),
+      (PropertyDateFilterPreset.thisMonth, 'This Month', thisMonthCount, Icons.calendar_month_rounded),
+      (PropertyDateFilterPreset.customRange, customLabel, customCount, Icons.event_repeat_rounded),
+      (PropertyDateFilterPreset.allTime, 'All Time', allTimeCount, Icons.all_inclusive_rounded),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.calendar_month_rounded, size: 16, color: primaryColor),
+            const SizedBox(width: 8),
+            Text(
+              'DATE FILTER:',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: items.map((item) {
+              final filter = item.$1;
+              final label = item.$2;
+              final count = item.$3;
+              final icon = item.$4;
+              final isSelected = _selectedPropertyDateFilter == filter;
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    if (filter == PropertyDateFilterPreset.customRange) {
+                      _pickPropertyCustomDateRange(context);
+                    } else {
+                      setState(() {
+                        _selectedPropertyDateFilter = filter;
+                        _currentPage = 0;
+                      });
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? primaryColor
+                          : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected
+                            ? primaryColor
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          icon,
+                          size: 14,
+                          color: isSelected
+                              ? Colors.white
+                              : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                            color: isSelected
+                                ? Colors.white
+                                : (isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155)),
+                          ),
+                        ),
+                        if (count != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.white.withValues(alpha: 0.25)
+                                  : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$count',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isSelected
+                                    ? Colors.white
+                                    : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
   String _getPropertyBhkOrAreaValue(PropertyModel p) {
     final catName = p.categoryName.toLowerCase();
     if (catName.contains('commercial') || catName.contains('industrial')) {
+      if (p.propertyTypeName.isNotEmpty && p.propertyTypeName != 'N/A') {
+        return p.propertyTypeName;
+      }
       return p.superBuiltupArea != null && p.superBuiltupArea! > 0
           ? '${p.superBuiltupArea!.toStringAsFixed(0)} Sq.Ft'
-          : 'N/A';
+          : 'Commercial';
     } else if (catName.contains('land') || catName.contains('plot')) {
+      if (p.propertyTypeName.isNotEmpty && p.propertyTypeName != 'N/A') {
+        return p.propertyTypeName;
+      }
       return p.plotArea != null && p.plotArea! > 0
           ? '${p.plotArea!.toStringAsFixed(0)} Sq.Ft'
-          : 'N/A';
+          : 'Land & Plot';
     }
     if (p.configurationName != null && p.configurationName!.trim().isNotEmpty) {
       return p.configurationName!;
@@ -5597,6 +6005,10 @@ class DonutChart3DPainter extends CustomPainter {
 
     for (final sector in sectors) {
       final sweepAngle = (sector.value / total) * animatedSweepTotal;
+      if (total <= 0 || sweepAngle <= 0.0001) {
+        startAngle += sweepAngle;
+        continue;
+      }
       final midAngle = startAngle + sweepAngle / 2;
 
       // Gradient arc paint
@@ -5609,13 +6021,14 @@ class DonutChart3DPainter extends CustomPainter {
       // Create a sweep gradient for the sector for a richer look
       final darkerColor = Color.lerp(sector.color, Colors.black, 0.25)!;
       final lighterColor = Color.lerp(sector.color, Colors.white, 0.2)!;
+      final endAngle = math.max(startAngle + sweepAngle, startAngle + 0.001);
       arcPaint.shader = ui.Gradient.sweep(
         center,
         [lighterColor, sector.color, darkerColor, sector.color],
         [0.0, 0.3, 0.7, 1.0],
         TileMode.clamp,
         startAngle,
-        startAngle + sweepAngle,
+        endAngle,
       );
 
       final arcRect = Rect.fromCircle(center: center, radius: outerRadius - strokeWidth / 2);
@@ -5881,14 +6294,22 @@ class _HoverChartTooltipState extends State<HoverChartTooltip> {
   }
 }
 
+class _MediaItem {
+  final String url;
+  final bool isVideo;
+  _MediaItem({required this.url, required this.isVideo});
+}
+
 class _MobilePropertyImageCarousel extends StatefulWidget {
   final List<String> images;
+  final List<String>? videos;
   final VoidCallback onTap;
   final double? height;
 
   const _MobilePropertyImageCarousel({
     Key? key,
     required this.images,
+    this.videos,
     required this.onTap,
     this.height,
   }) : super(key: key);
@@ -5901,6 +6322,23 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
   late final PageController _pageController;
   Timer? _timer;
   int _currentPage = 0;
+
+  List<_MediaItem> get _mediaItems {
+    final list = <_MediaItem>[];
+    if (widget.videos != null) {
+      for (final v in widget.videos!) {
+        if (v.trim().isNotEmpty) {
+          list.add(_MediaItem(url: v.trim(), isVideo: true));
+        }
+      }
+    }
+    for (final img in widget.images) {
+      if (img.trim().isNotEmpty) {
+        list.add(_MediaItem(url: img.trim(), isVideo: false));
+      }
+    }
+    return list;
+  }
 
   @override
   void initState() {
@@ -5938,9 +6376,94 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
     );
   }
 
+  Widget _buildVideoThumbnail(String url) {
+    // Generate video poster image (Cloudinary supports replacing video extension with .jpg)
+    String posterUrl = url;
+    if (url.contains('/video/upload/')) {
+      posterUrl = url.replaceAll(RegExp(r'\.(mp4|mov|webm|avi|mkv)$', caseSensitive: false), '.jpg');
+    }
+
+    return Container(
+      color: Colors.black87,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CrmNetworkImage(
+            url: posterUrl,
+            fit: BoxFit.contain,
+            cacheLogicalWidth: 600,
+            cacheLogicalHeight: 450,
+            placeholder: (context) => Container(
+              color: Colors.black,
+              child: const Center(
+                child: Icon(Icons.videocam_rounded, size: 40, color: Colors.white24),
+              ),
+            ),
+            error: (context) => Container(
+              color: Colors.black,
+              child: const Center(
+                child: Icon(Icons.videocam_rounded, size: 40, color: Colors.white24),
+              ),
+            ),
+          ),
+          // Subtle dark tint to enhance play button contrast
+          Container(
+            color: Colors.black.withValues(alpha: 0.25),
+          ),
+          // Prominent play button indicator
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.65),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white70, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 32,
+              ),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.red.shade700,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.play_arrow_rounded, color: Colors.white, size: 12),
+                  SizedBox(width: 3),
+                  Text(
+                    'VIDEO',
+                    style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (widget.images.isEmpty) return const SizedBox.shrink();
+    final media = _mediaItems;
+    if (media.isEmpty) return const SizedBox.shrink();
 
     return Stack(
       alignment: Alignment.center,
@@ -5962,15 +6485,16 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
                   _currentPage = page;
                 });
               },
-              itemCount: widget.images.length,
+              itemCount: media.length,
               itemBuilder: (context, index) {
-                return _buildPropertyThumbnail(widget.images[index]);
+                final item = media[index];
+                return item.isVideo ? _buildVideoThumbnail(item.url) : _buildPropertyThumbnail(item.url);
               },
             ),
           ),
         ),
-        // Navigation Buttons (only if there are multiple images)
-        if (widget.images.length > 1) ...[
+        // Navigation Buttons (only if there are multiple media items)
+        if (media.length > 1) ...[
           // Left Arrow
           Positioned(
             left: 8,
@@ -5985,7 +6509,7 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
                   // Reset timer on manual action
                   _startTimer();
                   if (_pageController.hasClients) {
-                    final prevPage = (_currentPage - 1 + widget.images.length) % widget.images.length;
+                    final prevPage = (_currentPage - 1 + media.length) % media.length;
                     _pageController.animateToPage(
                       prevPage,
                       duration: const Duration(milliseconds: 300),
@@ -6010,7 +6534,7 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
                   // Reset timer on manual action
                   _startTimer();
                   if (_pageController.hasClients) {
-                    final nextPage = (_currentPage + 1) % widget.images.length;
+                    final nextPage = (_currentPage + 1) % media.length;
                     _pageController.animateToPage(
                       nextPage,
                       duration: const Duration(milliseconds: 300),
@@ -6033,7 +6557,7 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              '${_currentPage + 1}/${widget.images.length}',
+              '${_currentPage + 1}/${media.length}',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 10,
@@ -6068,9 +6592,7 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final double cardWidth = (screenWidth - (CRMSpacing.m * 2) - CRMSpacing.m).clamp(0.0, double.infinity) / 2;
-    final double cardHeight = 105.0;
+    const double cardHeight = 105.0;
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -6087,20 +6609,21 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
       children: [
         Row(
           children: [
-            SizedBox(
-              width: cardWidth,
-              height: cardHeight,
-              child: widget.kpiCard,
+            Expanded(
+              child: SizedBox(
+                height: cardHeight,
+                child: widget.kpiCard,
+              ),
             ),
-            const SizedBox(width: CRMSpacing.m),
-            GestureDetector(
+            const SizedBox(width: CRMSpacing.s),
+            Expanded(
+              child: GestureDetector(
               onTap: () {
                 setState(() {
                   _isExpanded = !_isExpanded;
                 });
               },
               child: Container(
-                width: cardWidth,
                 height: cardHeight,
                 decoration: BoxDecoration(
                   color: CRMColors.cardBgOf(context),
@@ -6130,12 +6653,17 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          widget.chartTitle,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: CRMColors.textOf(context),
+                        Flexible(
+                          child: Text(
+                            widget.chartTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: CRMColors.textOf(context),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 2),
@@ -6149,6 +6677,7 @@ class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
                   ],
                 ),
               ),
+            ),
             ),
           ],
         ),

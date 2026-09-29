@@ -1,0 +1,1208 @@
+class KpiConfigItem {
+  final String kpiKey;
+  final String kpiLabel;
+  final bool isEnabled;
+  final int displayOrder;
+
+  const KpiConfigItem({
+    required this.kpiKey,
+    required this.kpiLabel,
+    required this.isEnabled,
+    required this.displayOrder,
+  });
+
+  factory KpiConfigItem.fromJson(Map<String, dynamic> json) {
+    return KpiConfigItem(
+      kpiKey: json['kpi_key']?.toString() ?? '',
+      kpiLabel: json['kpi_label']?.toString() ?? json['kpi_key']?.toString() ?? '',
+      isEnabled: json['is_enabled'] != false,
+      displayOrder: (json['display_order'] as num?)?.toInt() ?? 1,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'kpi_key': kpiKey,
+      'kpi_label': kpiLabel,
+      'is_enabled': isEnabled,
+      'display_order': displayOrder,
+    };
+  }
+
+  KpiConfigItem copyWith({
+    String? kpiKey,
+    String? kpiLabel,
+    bool? isEnabled,
+    int? displayOrder,
+  }) {
+    return KpiConfigItem(
+      kpiKey: kpiKey ?? this.kpiKey,
+      kpiLabel: kpiLabel ?? this.kpiLabel,
+      isEnabled: isEnabled ?? this.isEnabled,
+      displayOrder: displayOrder ?? this.displayOrder,
+    );
+  }
+}
+
+class DashboardKpiCounts {
+  final int availableInventory;
+  final int totalLeads;
+  final int telecallers;
+  final int leadsAllocated;
+  final int assignedToSales;
+  final int siteVisitsDone;
+  final int dealWon;
+  final int salesUsers;
+
+  const DashboardKpiCounts({
+    this.availableInventory = 0,
+    this.totalLeads = 0,
+    this.telecallers = 0,
+    this.leadsAllocated = 0,
+    this.assignedToSales = 0,
+    this.siteVisitsDone = 0,
+    this.dealWon = 0,
+    this.salesUsers = 0,
+  });
+
+  factory DashboardKpiCounts.fromJson(Map<String, dynamic> json) {
+    return DashboardKpiCounts(
+      availableInventory: (json['available_inventory'] as num?)?.toInt() ?? 0,
+      totalLeads: (json['total_leads'] as num?)?.toInt() ?? 0,
+      telecallers: (json['telecallers'] as num?)?.toInt() ?? 0,
+      leadsAllocated: (json['leads_allocated'] as num?)?.toInt() ?? 0,
+      assignedToSales: (json['assigned_to_sales'] as num?)?.toInt() ?? 0,
+      siteVisitsDone: (json['site_visits_done'] as num?)?.toInt() ?? 0,
+      dealWon: (json['deal_won'] as num?)?.toInt() ?? 0,
+      salesUsers: (json['sales_users'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class DashboardKpisResponse {
+  final List<KpiConfigItem> config;
+  final DashboardKpiCounts counts;
+  final Map<String, dynamic> filters;
+
+  const DashboardKpisResponse({
+    this.config = const [],
+    this.counts = const DashboardKpiCounts(),
+    this.filters = const {},
+  });
+
+  factory DashboardKpisResponse.fromJson(Map<String, dynamic> json) {
+    final cfgList = (json['config'] as List?)
+            ?.map((c) => KpiConfigItem.fromJson(Map<String, dynamic>.from(c)))
+            .toList() ??
+        [];
+    final countsMap = json['counts'] is Map
+        ? Map<String, dynamic>.from(json['counts'])
+        : <String, dynamic>{};
+    return DashboardKpisResponse(
+      config: cfgList,
+      counts: DashboardKpiCounts.fromJson(countsMap),
+      filters: json['filters'] is Map ? Map<String, dynamic>.from(json['filters']) : {},
+    );
+  }
+
+  bool isKpiEnabled(String key) {
+    if (config.isEmpty) return true;
+    final item = config.firstWhere(
+      (c) => c.kpiKey == key,
+      orElse: () => KpiConfigItem(kpiKey: key, kpiLabel: key, isEnabled: true, displayOrder: 99),
+    );
+    return item.isEnabled;
+  }
+}
+
+class InventoryBreakdownData {
+  final int available;
+  final int rentedOut;
+  final int toBeAvailable;
+  final int soldOut;
+  final int total;
+
+  const InventoryBreakdownData({
+    this.available = 0,
+    this.rentedOut = 0,
+    this.toBeAvailable = 0,
+    this.soldOut = 0,
+    this.total = 0,
+  });
+
+  factory InventoryBreakdownData.fromJson(Map<String, dynamic> json) {
+    return InventoryBreakdownData(
+      available: (json['available'] as num?)?.toInt() ?? 0,
+      rentedOut: (json['rented_out'] as num?)?.toInt() ?? 0,
+      toBeAvailable: (json['to_be_available'] as num?)?.toInt() ?? 0,
+      soldOut: (json['sold_out'] as num?)?.toInt() ?? 0,
+      total: (json['total'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class InventoryPropertyItem {
+  final String id;
+  final String propertyCode;
+  final String title;
+  final num price;
+  final num? superBuiltupArea;
+  final int? bedrooms;
+  final int? bathrooms;
+  final String? createdAt;
+  final String status;
+  final String listingType;
+  final String? areaName;
+  final String? createdByName;
+
+  const InventoryPropertyItem({
+    required this.id,
+    required this.propertyCode,
+    required this.title,
+    required this.price,
+    this.superBuiltupArea,
+    this.bedrooms,
+    this.bathrooms,
+    this.createdAt,
+    required this.status,
+    required this.listingType,
+    this.areaName,
+    this.createdByName,
+  });
+
+  factory InventoryPropertyItem.fromJson(Map<String, dynamic> json) {
+    num parsedPrice = 0;
+    if (json['price'] is num) {
+      parsedPrice = json['price'] as num;
+    } else if (json['price'] != null) {
+      parsedPrice = num.tryParse(json['price'].toString()) ?? 0;
+    }
+
+    num? parsedArea;
+    if (json['super_builtup_area'] is num) {
+      parsedArea = json['super_builtup_area'] as num;
+    } else if (json['super_builtup_area'] != null) {
+      parsedArea = num.tryParse(json['super_builtup_area'].toString());
+    }
+
+    int? parsedBedrooms;
+    if (json['bedrooms'] is num) {
+      parsedBedrooms = (json['bedrooms'] as num).toInt();
+    } else if (json['bedrooms'] != null) {
+      parsedBedrooms = int.tryParse(json['bedrooms'].toString());
+    }
+
+    int? parsedBathrooms;
+    if (json['bathrooms'] is num) {
+      parsedBathrooms = (json['bathrooms'] as num).toInt();
+    } else if (json['bathrooms'] != null) {
+      parsedBathrooms = int.tryParse(json['bathrooms'].toString());
+    }
+
+    return InventoryPropertyItem(
+      id: json['id']?.toString() ?? '',
+      propertyCode: json['property_code']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      price: parsedPrice,
+      superBuiltupArea: parsedArea,
+      bedrooms: parsedBedrooms,
+      bathrooms: parsedBathrooms,
+      createdAt: json['created_at']?.toString(),
+      status: json['status']?.toString() ?? 'Available',
+      listingType: json['listing_type']?.toString() ?? 'Rent',
+      areaName: json['area_name']?.toString(),
+      createdByName: json['created_by_name']?.toString(),
+    );
+  }
+}
+
+class InventoryPropertiesResponse {
+  final List<InventoryPropertyItem> properties;
+  final int total;
+  final int page;
+  final int limit;
+
+  const InventoryPropertiesResponse({
+    this.properties = const [],
+    this.total = 0,
+    this.page = 1,
+    this.limit = 20,
+  });
+
+  factory InventoryPropertiesResponse.fromJson(Map<String, dynamic> json) {
+    final rawList = json['properties'];
+    final List<InventoryPropertyItem> list = [];
+    if (rawList is List) {
+      for (final p in rawList) {
+        if (p is Map) {
+          list.add(InventoryPropertyItem.fromJson(Map<String, dynamic>.from(p)));
+        }
+      }
+    }
+    return InventoryPropertiesResponse(
+      properties: list,
+      total: int.tryParse(json['total']?.toString() ?? '') ?? 0,
+      page: int.tryParse(json['page']?.toString() ?? '') ?? 1,
+      limit: int.tryParse(json['limit']?.toString() ?? '') ?? 20,
+    );
+  }
+}
+
+class LeadSourceItem {
+  final String source;
+  final int count;
+
+  const LeadSourceItem({
+    required this.source,
+    required this.count,
+  });
+
+  factory LeadSourceItem.fromJson(Map<String, dynamic> json) {
+    return LeadSourceItem(
+      source: json['source']?.toString() ?? 'Other',
+      count: (json['count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class LeadsBreakdownData {
+  final int totalLeads;
+  final List<LeadSourceItem> sources;
+
+  const LeadsBreakdownData({
+    this.totalLeads = 0,
+    this.sources = const [],
+  });
+
+  factory LeadsBreakdownData.fromJson(Map<String, dynamic> json) {
+    final srcList = (json['sources'] as List?)
+            ?.map((s) => LeadSourceItem.fromJson(Map<String, dynamic>.from(s)))
+            .toList() ??
+        [];
+    return LeadsBreakdownData(
+      totalLeads: (json['total_leads'] as num?)?.toInt() ?? 0,
+      sources: srcList,
+    );
+  }
+}
+
+class LeadListItem {
+  final String id;
+  final String customerName;
+  final String phone;
+  final String sanitizedPhone;
+  final String? email;
+  final String? sanitizedEmail;
+  final String source;
+  final String leadType;
+  final String stage;
+  final String? allocationStatus;
+  final String? callDisposition;
+  final String? rejectionReason;
+  final String? archiveReason;
+  final String? telecallerRemarks;
+  final String? transferRemarks;
+  final num? budget;
+  final num? budgetFrom;
+  final num? budgetTo;
+  final int callAttemptCount;
+  final String? firstCallAt;
+  final String? telecallerAssignedAt;
+  final String? salesAssignedAt;
+  final String? createdAt;
+  final String? updatedAt;
+  final String? telecallerId;
+  final String? telecallerName;
+  final String? telecallerEmail;
+  final String? telecallerPhone;
+  final String? salesUserId;
+  final String? salesUserName;
+  final String? salesUserEmail;
+  final String? salesUserPhone;
+  final String? salesStatus;
+  final String? salesRemarks;
+  final String? latestCallOutcome;
+  final String? latestCallRemarks;
+  final String? latestCallAt;
+  final String? budgetDisplay;
+  final String? configuration;
+  final String? locality;
+  final String? campaignName;
+  final Map<String, dynamic>? rawJson;
+
+  const LeadListItem({
+    required this.id,
+    required this.customerName,
+    required this.phone,
+    required this.sanitizedPhone,
+    this.email,
+    this.sanitizedEmail,
+    required this.source,
+    required this.leadType,
+    required this.stage,
+    this.allocationStatus,
+    this.callDisposition,
+    this.rejectionReason,
+    this.archiveReason,
+    this.telecallerRemarks,
+    this.transferRemarks,
+    this.budget,
+    this.budgetFrom,
+    this.budgetTo,
+    this.callAttemptCount = 0,
+    this.firstCallAt,
+    this.telecallerAssignedAt,
+    this.salesAssignedAt,
+    this.createdAt,
+    this.updatedAt,
+    this.telecallerId,
+    this.telecallerName,
+    this.telecallerEmail,
+    this.telecallerPhone,
+    this.salesUserId,
+    this.salesUserName,
+    this.salesUserEmail,
+    this.salesUserPhone,
+    this.salesStatus,
+    this.salesRemarks,
+    this.latestCallOutcome,
+    this.latestCallRemarks,
+    this.latestCallAt,
+    this.budgetDisplay,
+    this.configuration,
+    this.locality,
+    this.campaignName,
+    this.rawJson,
+  });
+
+  factory LeadListItem.fromJson(Map<String, dynamic> json) {
+    num? parseNum(dynamic val) {
+      if (val is num) return val;
+      if (val != null) return num.tryParse(val.toString());
+      return null;
+    }
+
+    int parseInt(dynamic val, [int fallback = 0]) {
+      if (val is num) return val.toInt();
+      if (val != null) return int.tryParse(val.toString()) ?? fallback;
+      return fallback;
+    }
+
+    final p = json['phone']?.toString() ?? json['sanitized_phone']?.toString() ?? '';
+    final sp = json['sanitized_phone']?.toString() ?? p;
+
+    Map<String, dynamic>? parsedRaw;
+    if (json['raw_json'] is Map) {
+      parsedRaw = Map<String, dynamic>.from(json['raw_json'] as Map);
+    }
+
+    return LeadListItem(
+      id: json['id']?.toString() ?? '',
+      customerName: () {
+        final rawName = json['customer_name']?.toString().trim() ?? '';
+        final isPlaceholder = rawName.isEmpty ||
+            rawName.toLowerCase() == 'n/a' ||
+            RegExp(r'^(meta|housing|webhook|direct|manual)\s*leads?$', caseSensitive: false).hasMatch(rawName);
+        if (!isPlaceholder) return rawName;
+        if (parsedRaw != null) {
+          for (final key in [
+            'lead_name',
+            'Full Name',
+            'full_name',
+            'Client Name',
+            'Customer Name',
+            'Name',
+            'name',
+            'Owner Name'
+          ]) {
+            final val = parsedRaw[key]?.toString().trim();
+            if (val != null &&
+                val.isNotEmpty &&
+                !RegExp(r'^(meta|housing|webhook|direct|manual)\s*leads?$', caseSensitive: false).hasMatch(val)) {
+              return val;
+            }
+          }
+        }
+        return rawName.isNotEmpty && rawName != 'N/A'
+            ? rawName
+            : (sp.isNotEmpty ? sp : (p.isNotEmpty ? p : 'Client'));
+      }(),
+      phone: p,
+      sanitizedPhone: sp,
+      email: json['email']?.toString() ?? json['sanitized_email']?.toString(),
+      sanitizedEmail: json['sanitized_email']?.toString() ?? json['email']?.toString(),
+      source: json['source']?.toString() ?? 'Other',
+      leadType: json['lead_type']?.toString() ?? 'Requirement',
+      stage: json['stage']?.toString() ?? 'NEW',
+      allocationStatus: json['allocation_status']?.toString(),
+      callDisposition: json['call_disposition']?.toString(),
+      rejectionReason: json['rejection_reason']?.toString(),
+      archiveReason: json['archive_reason']?.toString(),
+      telecallerRemarks: json['telecaller_remarks']?.toString() ?? json['notes']?.toString(),
+      transferRemarks: json['transfer_remarks']?.toString(),
+      budget: parseNum(json['budget']),
+      budgetFrom: parseNum(json['budget_from']),
+      budgetTo: parseNum(json['budget_to']),
+      callAttemptCount: parseInt(json['call_attempt_count'], 0),
+      firstCallAt: json['first_call_at']?.toString(),
+      telecallerAssignedAt: json['telecaller_assigned_at']?.toString(),
+      salesAssignedAt: json['sales_assigned_at']?.toString(),
+      createdAt: json['created_at']?.toString(),
+      updatedAt: json['updated_at']?.toString(),
+      telecallerId: json['telecaller_id']?.toString(),
+      telecallerName: json['telecaller_name']?.toString(),
+      telecallerEmail: json['telecaller_email']?.toString(),
+      telecallerPhone: json['telecaller_phone']?.toString(),
+      salesUserId: json['sales_user_id']?.toString(),
+      salesUserName: json['sales_user_name']?.toString(),
+      salesUserEmail: json['sales_user_email']?.toString(),
+      salesUserPhone: json['sales_user_phone']?.toString(),
+      salesStatus: json['sales_status']?.toString(),
+      salesRemarks: json['sales_remarks']?.toString(),
+      latestCallOutcome: json['latest_call_outcome']?.toString(),
+      latestCallRemarks: json['latest_call_remarks']?.toString(),
+      latestCallAt: json['latest_call_at']?.toString(),
+      budgetDisplay: json['budget_display']?.toString(),
+      configuration: json['configuration']?.toString(),
+      locality: json['locality']?.toString(),
+      campaignName: json['campaign_name']?.toString(),
+      rawJson: parsedRaw,
+    );
+  }
+}
+
+class LeadsListResponse {
+  final List<LeadListItem> leads;
+  final int total;
+  final int page;
+  final int limit;
+
+  const LeadsListResponse({
+    this.leads = const [],
+    this.total = 0,
+    this.page = 1,
+    this.limit = 25,
+  });
+
+  factory LeadsListResponse.fromJson(Map<String, dynamic> json) {
+    final list = (json['leads'] as List?)
+            ?.map((l) => LeadListItem.fromJson(Map<String, dynamic>.from(l)))
+            .toList() ??
+        [];
+    return LeadsListResponse(
+      leads: list,
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      page: (json['page'] as num?)?.toInt() ?? 1,
+      limit: (json['limit'] as num?)?.toInt() ?? 25,
+    );
+  }
+}
+
+class TelecallerSummaryItem {
+  final String id;
+  final String name;
+  final String email;
+  final String status;
+  final int leadsAllocated;
+  final int listingLeads;
+  final int requirementLeads;
+
+  const TelecallerSummaryItem({
+    required this.id,
+    required this.name,
+    required this.email,
+    this.status = 'Active',
+    this.leadsAllocated = 0,
+    this.listingLeads = 0,
+    this.requirementLeads = 0,
+  });
+
+  factory TelecallerSummaryItem.fromJson(Map<String, dynamic> json) {
+    return TelecallerSummaryItem(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'Active',
+      leadsAllocated: (json['leads_allocated'] as num?)?.toInt() ?? 0,
+      listingLeads: (json['listing_leads'] as num?)?.toInt() ?? 0,
+      requirementLeads: (json['requirement_leads'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class TelecallersSummaryResponse {
+  final int totalTelecallers;
+  final List<TelecallerSummaryItem> telecallers;
+
+  const TelecallersSummaryResponse({
+    this.totalTelecallers = 0,
+    this.telecallers = const [],
+  });
+
+  factory TelecallersSummaryResponse.fromJson(Map<String, dynamic> json) {
+    final list = (json['telecallers'] as List?)
+            ?.map((t) => TelecallerSummaryItem.fromJson(Map<String, dynamic>.from(t)))
+            .toList() ??
+        [];
+    return TelecallersSummaryResponse(
+      totalTelecallers: (json['total_telecallers'] as num?)?.toInt() ?? 0,
+      telecallers: list,
+    );
+  }
+}
+
+class SalesBreakdownItem {
+  final String salesUserId;
+  final String salesUserName;
+  final int leadCount;
+
+  const SalesBreakdownItem({
+    required this.salesUserId,
+    required this.salesUserName,
+    required this.leadCount,
+  });
+
+  factory SalesBreakdownItem.fromJson(Map<String, dynamic> json) {
+    return SalesBreakdownItem(
+      salesUserId: json['sales_user_id']?.toString() ?? '',
+      salesUserName: json['sales_user_name']?.toString() ?? '',
+      leadCount: (json['lead_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class TelecallerDrilldownData {
+  final String telecallerId;
+  final String telecallerName;
+  final String telecallerEmail;
+  final int totalAllocated;
+  final int listingAllocated;
+  final int requirementAllocated;
+  final int openLeads;
+  final int cnr;
+  final int callbacks;
+  final int followUp;
+  final int assignedToSales;
+  final List<SalesBreakdownItem> salesUserBreakdown;
+  final int notInterested;
+  final int archived;
+
+  const TelecallerDrilldownData({
+    required this.telecallerId,
+    required this.telecallerName,
+    required this.telecallerEmail,
+    this.totalAllocated = 0,
+    this.listingAllocated = 0,
+    this.requirementAllocated = 0,
+    this.openLeads = 0,
+    this.cnr = 0,
+    this.callbacks = 0,
+    this.followUp = 0,
+    this.assignedToSales = 0,
+    this.salesUserBreakdown = const [],
+    this.notInterested = 0,
+    this.archived = 0,
+  });
+
+  factory TelecallerDrilldownData.fromJson(Map<String, dynamic> json) {
+    final tc = json['telecaller'] is Map ? Map<String, dynamic>.from(json['telecaller']) : {};
+    final salesList = (json['sales_user_breakdown'] as List?)
+            ?.map((s) => SalesBreakdownItem.fromJson(Map<String, dynamic>.from(s)))
+            .toList() ??
+        [];
+    return TelecallerDrilldownData(
+      telecallerId: tc['id']?.toString() ?? '',
+      telecallerName: tc['name']?.toString() ?? '',
+      telecallerEmail: tc['email']?.toString() ?? '',
+      totalAllocated: (json['total_allocated'] as num?)?.toInt() ?? 0,
+      listingAllocated: (json['listing_allocated'] as num?)?.toInt() ?? 0,
+      requirementAllocated: (json['requirement_allocated'] as num?)?.toInt() ?? 0,
+      openLeads: (json['open_leads'] as num?)?.toInt() ?? 0,
+      cnr: (json['cnr'] as num?)?.toInt() ?? 0,
+      callbacks: (json['callbacks'] as num?)?.toInt() ?? 0,
+      followUp: (json['follow_up'] as num?)?.toInt() ?? 0,
+      assignedToSales: (json['assigned_to_sales'] as num?)?.toInt() ?? 0,
+      salesUserBreakdown: salesList,
+      notInterested: (json['not_interested'] as num?)?.toInt() ?? 0,
+      archived: (json['archived'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class LeadsAllocatedTelecallerItem {
+  final String telecallerId;
+  final String telecallerName;
+  final int listingCount;
+  final int requirementCount;
+  final int totalCount;
+
+  const LeadsAllocatedTelecallerItem({
+    required this.telecallerId,
+    required this.telecallerName,
+    this.listingCount = 0,
+    this.requirementCount = 0,
+    this.totalCount = 0,
+  });
+
+  factory LeadsAllocatedTelecallerItem.fromJson(Map<String, dynamic> json) {
+    return LeadsAllocatedTelecallerItem(
+      telecallerId: json['telecaller_id']?.toString() ?? '',
+      telecallerName: json['telecaller_name']?.toString() ?? '',
+      listingCount: (json['listing_count'] as num?)?.toInt() ?? 0,
+      requirementCount: (json['requirement_count'] as num?)?.toInt() ?? 0,
+      totalCount: (json['total_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class LeadsAllocatedResponse {
+  final int totalAllocated;
+  final int listingAllocated;
+  final int requirementAllocated;
+  final List<LeadsAllocatedTelecallerItem> telecallers;
+
+  const LeadsAllocatedResponse({
+    this.totalAllocated = 0,
+    this.listingAllocated = 0,
+    this.requirementAllocated = 0,
+    this.telecallers = const [],
+  });
+
+  factory LeadsAllocatedResponse.fromJson(Map<String, dynamic> json) {
+    final list = (json['telecallers'] as List?)
+            ?.map((t) => LeadsAllocatedTelecallerItem.fromJson(Map<String, dynamic>.from(t)))
+            .toList() ??
+        [];
+    return LeadsAllocatedResponse(
+      totalAllocated: (json['total_allocated'] as num?)?.toInt() ?? 0,
+      listingAllocated: (json['listing_allocated'] as num?)?.toInt() ?? 0,
+      requirementAllocated: (json['requirement_allocated'] as num?)?.toInt() ?? 0,
+      telecallers: list,
+    );
+  }
+}
+
+class AssignedToSalesBreakdownItem {
+  final String telecallerId;
+  final String telecallerName;
+  final String salesUserId;
+  final String salesUserName;
+  final int listingCount;
+  final int requirementCount;
+  final int totalCount;
+
+  const AssignedToSalesBreakdownItem({
+    required this.telecallerId,
+    required this.telecallerName,
+    required this.salesUserId,
+    required this.salesUserName,
+    this.listingCount = 0,
+    this.requirementCount = 0,
+    this.totalCount = 0,
+  });
+
+  factory AssignedToSalesBreakdownItem.fromJson(Map<String, dynamic> json) {
+    return AssignedToSalesBreakdownItem(
+      telecallerId: json['telecaller_id']?.toString() ?? '',
+      telecallerName: json['telecaller_name']?.toString() ?? '',
+      salesUserId: json['sales_user_id']?.toString() ?? '',
+      salesUserName: json['sales_user_name']?.toString() ?? '',
+      listingCount: (json['listing_count'] as num?)?.toInt() ?? 0,
+      requirementCount: (json['requirement_count'] as num?)?.toInt() ?? 0,
+      totalCount: (json['total_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class AssignedToSalesResponse {
+  final int totalAssigned;
+  final int listingAssigned;
+  final int requirementAssigned;
+  final List<AssignedToSalesBreakdownItem> breakdown;
+
+  const AssignedToSalesResponse({
+    this.totalAssigned = 0,
+    this.listingAssigned = 0,
+    this.requirementAssigned = 0,
+    this.breakdown = const [],
+  });
+
+  factory AssignedToSalesResponse.fromJson(Map<String, dynamic> json) {
+    final list = (json['breakdown'] as List?)
+            ?.map((b) => AssignedToSalesBreakdownItem.fromJson(Map<String, dynamic>.from(b)))
+            .toList() ??
+        [];
+    return AssignedToSalesResponse(
+      totalAssigned: (json['total_assigned'] as num?)?.toInt() ?? 0,
+      listingAssigned: (json['listing_assigned'] as num?)?.toInt() ?? 0,
+      requirementAssigned: (json['requirement_assigned'] as num?)?.toInt() ?? 0,
+      breakdown: list,
+    );
+  }
+}
+
+class SalesUserSummaryItem {
+  final String id;
+  final String name;
+  final String email;
+  final int leadsCount;
+
+  const SalesUserSummaryItem({
+    required this.id,
+    required this.name,
+    required this.email,
+    this.leadsCount = 0,
+  });
+
+  factory SalesUserSummaryItem.fromJson(Map<String, dynamic> json) {
+    return SalesUserSummaryItem(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      leadsCount: (json['leads_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class SalesUsersSummaryResponse {
+  final int totalSalesUsers;
+  final List<SalesUserSummaryItem> salesUsers;
+
+  const SalesUsersSummaryResponse({
+    this.totalSalesUsers = 0,
+    this.salesUsers = const [],
+  });
+
+  factory SalesUsersSummaryResponse.fromJson(Map<String, dynamic> json) {
+    final list = (json['sales_users'] as List?)
+            ?.map((s) => SalesUserSummaryItem.fromJson(Map<String, dynamic>.from(s)))
+            .toList() ??
+        [];
+    return SalesUsersSummaryResponse(
+      totalSalesUsers: (json['total_sales_users'] as num?)?.toInt() ?? 0,
+      salesUsers: list,
+    );
+  }
+}
+
+class RejectionReasonItem {
+  final String reason;
+  final String rawStatus;
+  final int count;
+
+  const RejectionReasonItem({
+    required this.reason,
+    required this.rawStatus,
+    required this.count,
+  });
+
+  factory RejectionReasonItem.fromJson(Map<String, dynamic> json) {
+    return RejectionReasonItem(
+      reason: json['reason']?.toString() ?? 'Other',
+      rawStatus: json['raw_status']?.toString() ?? '',
+      count: (json['count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class SalesUserLifecycleStatuses {
+  final int callAttempted;
+  final int open;
+  final int pickedUp;
+  final int followUp;
+  final int reFollowUp;
+  final int interested;
+  final int siteVisitScheduled;
+  final int siteVisitDone;
+  final int dealWon;
+  final int rejected;
+  final int total;
+
+  const SalesUserLifecycleStatuses({
+    this.callAttempted = 0,
+    this.open = 0,
+    this.pickedUp = 0,
+    this.followUp = 0,
+    this.reFollowUp = 0,
+    this.interested = 0,
+    this.siteVisitScheduled = 0,
+    this.siteVisitDone = 0,
+    this.dealWon = 0,
+    this.rejected = 0,
+    this.total = 0,
+  });
+
+  factory SalesUserLifecycleStatuses.fromJson(Map<String, dynamic> json) {
+    return SalesUserLifecycleStatuses(
+      callAttempted: (json['call_attempted'] as num?)?.toInt() ?? 0,
+      open: (json['open'] as num?)?.toInt() ?? 0,
+      pickedUp: (json['picked_up'] as num?)?.toInt() ?? 0,
+      followUp: (json['follow_up'] as num?)?.toInt() ?? 0,
+      reFollowUp: (json['re_follow_up'] as num?)?.toInt() ?? 0,
+      interested: (json['interested'] as num?)?.toInt() ?? 0,
+      siteVisitScheduled: (json['site_visit_scheduled'] as num?)?.toInt() ?? 0,
+      siteVisitDone: (json['site_visit_done'] as num?)?.toInt() ?? 0,
+      dealWon: (json['deal_won'] as num?)?.toInt() ?? 0,
+      rejected: (json['rejected'] as num?)?.toInt() ?? 0,
+      total: (json['total'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class SalesUserDrilldownData {
+  final String salesUserId;
+  final String salesUserName;
+  final String salesUserEmail;
+  final SalesUserLifecycleStatuses statuses;
+  final List<RejectionReasonItem> rejectionBreakdown;
+
+  const SalesUserDrilldownData({
+    required this.salesUserId,
+    required this.salesUserName,
+    required this.salesUserEmail,
+    required this.statuses,
+    this.rejectionBreakdown = const [],
+  });
+
+  factory SalesUserDrilldownData.fromJson(Map<String, dynamic> json) {
+    final su = json['sales_user'] is Map ? Map<String, dynamic>.from(json['sales_user']) : {};
+    final st = json['statuses'] is Map ? Map<String, dynamic>.from(json['statuses']) : <String, dynamic>{};
+    final rejList = (json['rejection_breakdown'] as List?)
+            ?.map((r) => RejectionReasonItem.fromJson(Map<String, dynamic>.from(r)))
+            .toList() ??
+        [];
+    return SalesUserDrilldownData(
+      salesUserId: su['id']?.toString() ?? '',
+      salesUserName: su['name']?.toString() ?? '',
+      salesUserEmail: su['email']?.toString() ?? '',
+      statuses: SalesUserLifecycleStatuses.fromJson(st),
+      rejectionBreakdown: rejList,
+    );
+  }
+}
+
+class KpiFilterParams {
+  final String businessType; // 'Rent', 'Re-sale', 'Both'
+  final String dateFilter; // 'Today', 'Weekly', 'Monthly', 'Yearly', 'Custom Range'
+  final String? startDate; // YYYY-MM-DD
+  final String? endDate; // YYYY-MM-DD
+  final String leadType; // 'Listing', 'Requirement', 'Both'
+
+  const KpiFilterParams({
+    this.businessType = 'Rent',
+    this.dateFilter = 'Weekly',
+    this.startDate,
+    this.endDate,
+    this.leadType = 'Both',
+  });
+
+  KpiFilterParams copyWith({
+    String? businessType,
+    String? dateFilter,
+    String? startDate,
+    String? endDate,
+    String? leadType,
+  }) {
+    return KpiFilterParams(
+      businessType: businessType ?? this.businessType,
+      dateFilter: dateFilter ?? this.dateFilter,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      leadType: leadType ?? this.leadType,
+    );
+  }
+
+  Map<String, dynamic> toQueryParams() {
+    return {
+      'businessType': businessType,
+      'dateFilter': dateFilter,
+      if (startDate != null && startDate!.isNotEmpty) 'startDate': startDate,
+      if (endDate != null && endDate!.isNotEmpty) 'endDate': endDate,
+      'leadType': leadType,
+    };
+  }
+}
+
+class SiteVisitItem {
+  final String id;
+  final String customerName;
+  final String mobile;
+  final num? budget;
+  final num? budgetFrom;
+  final num? budgetTo;
+  final String status;
+  final String? createdAt;
+  final String? updatedAt;
+  final String? notes;
+  final String? remarks;
+  final String? salesUserId;
+  final String? salesUserName;
+  final String? salesUserPhone;
+  final String? salesUserEmail;
+  final String? areaName;
+  final String? listingType;
+  final String? propertyType;
+
+  const SiteVisitItem({
+    required this.id,
+    required this.customerName,
+    required this.mobile,
+    this.budget,
+    this.budgetFrom,
+    this.budgetTo,
+    required this.status,
+    this.createdAt,
+    this.updatedAt,
+    this.notes,
+    this.remarks,
+    this.salesUserId,
+    this.salesUserName,
+    this.salesUserPhone,
+    this.salesUserEmail,
+    this.areaName,
+    this.listingType,
+    this.propertyType,
+  });
+
+  factory SiteVisitItem.fromJson(Map<String, dynamic> json) {
+    num? parseNum(dynamic val) {
+      if (val is num) return val;
+      if (val != null) return num.tryParse(val.toString());
+      return null;
+    }
+
+    return SiteVisitItem(
+      id: json['id']?.toString() ?? '',
+      customerName: json['customer_name']?.toString() ?? 'N/A',
+      mobile: json['mobile']?.toString() ?? '',
+      budget: parseNum(json['budget']),
+      budgetFrom: parseNum(json['budget_from']),
+      budgetTo: parseNum(json['budget_to']),
+      status: json['status']?.toString() ?? 'Site Visit Done',
+      createdAt: json['created_at']?.toString(),
+      updatedAt: json['updated_at']?.toString(),
+      notes: json['notes']?.toString(),
+      remarks: json['remarks']?.toString(),
+      salesUserId: json['sales_user_id']?.toString(),
+      salesUserName: json['sales_user_name']?.toString(),
+      salesUserPhone: json['sales_user_phone']?.toString(),
+      salesUserEmail: json['sales_user_email']?.toString(),
+      areaName: json['area_name']?.toString(),
+      listingType: json['listing_type']?.toString(),
+      propertyType: json['property_type']?.toString(),
+    );
+  }
+}
+
+class SiteVisitsResponse {
+  final List<SiteVisitItem> siteVisits;
+  final int total;
+  final int page;
+  final int limit;
+
+  const SiteVisitsResponse({
+    this.siteVisits = const [],
+    this.total = 0,
+    this.page = 1,
+    this.limit = 25,
+  });
+
+  factory SiteVisitsResponse.fromJson(Map<String, dynamic> json) {
+    final list = (json['site_visits'] as List?)
+            ?.map((v) => SiteVisitItem.fromJson(Map<String, dynamic>.from(v)))
+            .toList() ??
+        [];
+    return SiteVisitsResponse(
+      siteVisits: list,
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      page: (json['page'] as num?)?.toInt() ?? 1,
+      limit: (json['limit'] as num?)?.toInt() ?? 25,
+    );
+  }
+}
+
+class DealWonItem {
+  final String id;
+  final String customerName;
+  final String mobile;
+  final num? budget;
+  final num? budgetFrom;
+  final num? budgetTo;
+  final String status;
+  final String? createdAt;
+  final String? updatedAt;
+  final String? notes;
+  final String? remarks;
+  final String? salesUserId;
+  final String? salesUserName;
+  final String? salesUserPhone;
+  final String? salesUserEmail;
+  final String? areaName;
+  final String? listingType;
+  final String? propertyType;
+
+  const DealWonItem({
+    required this.id,
+    required this.customerName,
+    required this.mobile,
+    this.budget,
+    this.budgetFrom,
+    this.budgetTo,
+    required this.status,
+    this.createdAt,
+    this.updatedAt,
+    this.notes,
+    this.remarks,
+    this.salesUserId,
+    this.salesUserName,
+    this.salesUserPhone,
+    this.salesUserEmail,
+    this.areaName,
+    this.listingType,
+    this.propertyType,
+  });
+
+  factory DealWonItem.fromJson(Map<String, dynamic> json) {
+    num? parseNum(dynamic val) {
+      if (val is num) return val;
+      if (val != null) return num.tryParse(val.toString());
+      return null;
+    }
+
+    return DealWonItem(
+      id: json['id']?.toString() ?? '',
+      customerName: json['customer_name']?.toString() ?? 'N/A',
+      mobile: json['mobile']?.toString() ?? '',
+      budget: parseNum(json['budget']),
+      budgetFrom: parseNum(json['budget_from']),
+      budgetTo: parseNum(json['budget_to']),
+      status: json['status']?.toString() ?? 'Won',
+      createdAt: json['created_at']?.toString(),
+      updatedAt: json['updated_at']?.toString(),
+      notes: json['notes']?.toString(),
+      remarks: json['remarks']?.toString(),
+      salesUserId: json['sales_user_id']?.toString(),
+      salesUserName: json['sales_user_name']?.toString(),
+      salesUserPhone: json['sales_user_phone']?.toString(),
+      salesUserEmail: json['sales_user_email']?.toString(),
+      areaName: json['area_name']?.toString(),
+      listingType: json['listing_type']?.toString(),
+      propertyType: json['property_type']?.toString(),
+    );
+  }
+}
+
+class DealWonResponse {
+  final List<DealWonItem> dealsWon;
+  final int total;
+  final int page;
+  final int limit;
+
+  const DealWonResponse({
+    this.dealsWon = const [],
+    this.total = 0,
+    this.page = 1,
+    this.limit = 25,
+  });
+
+  factory DealWonResponse.fromJson(Map<String, dynamic> json) {
+    final list = (json['deals_won'] as List?)
+            ?.map((v) => DealWonItem.fromJson(Map<String, dynamic>.from(v)))
+            .toList() ??
+        [];
+    return DealWonResponse(
+      dealsWon: list,
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      page: (json['page'] as num?)?.toInt() ?? 1,
+      limit: (json['limit'] as num?)?.toInt() ?? 25,
+    );
+  }
+}
+
+class SalesUserRequirementItem {
+  final String id;
+  final String customerName;
+  final String mobile;
+  final num? budget;
+  final num? budgetFrom;
+  final num? budgetTo;
+  final String status;
+  final String? createdAt;
+  final String? updatedAt;
+  final String? notes;
+  final String? remarks;
+  final String? areaName;
+  final String? listingType;
+  final String? propertyType;
+
+  const SalesUserRequirementItem({
+    required this.id,
+    required this.customerName,
+    required this.mobile,
+    this.budget,
+    this.budgetFrom,
+    this.budgetTo,
+    required this.status,
+    this.createdAt,
+    this.updatedAt,
+    this.notes,
+    this.remarks,
+    this.areaName,
+    this.listingType,
+    this.propertyType,
+  });
+
+  factory SalesUserRequirementItem.fromJson(Map<String, dynamic> json) {
+    num? parseNum(dynamic val) {
+      if (val is num) return val;
+      if (val != null) return num.tryParse(val.toString());
+      return null;
+    }
+
+    return SalesUserRequirementItem(
+      id: json['id']?.toString() ?? '',
+      customerName: json['customer_name']?.toString() ?? 'N/A',
+      mobile: json['mobile']?.toString() ?? '',
+      budget: parseNum(json['budget']),
+      budgetFrom: parseNum(json['budget_from']),
+      budgetTo: parseNum(json['budget_to']),
+      status: json['status']?.toString() ?? '',
+      createdAt: json['created_at']?.toString(),
+      updatedAt: json['updated_at']?.toString(),
+      notes: json['notes']?.toString(),
+      remarks: json['remarks']?.toString(),
+      areaName: json['area_name']?.toString(),
+      listingType: json['listing_type']?.toString(),
+      propertyType: json['property_type']?.toString(),
+    );
+  }
+}
+
+class SalesUserRequirementsResponse {
+  final List<SalesUserRequirementItem> requirements;
+  final int total;
+  final int page;
+  final int limit;
+
+  const SalesUserRequirementsResponse({
+    this.requirements = const [],
+    this.total = 0,
+    this.page = 1,
+    this.limit = 25,
+  });
+
+  factory SalesUserRequirementsResponse.fromJson(Map<String, dynamic> json) {
+    final list = (json['requirements'] as List?)
+            ?.map((v) => SalesUserRequirementItem.fromJson(Map<String, dynamic>.from(v)))
+            .toList() ??
+        [];
+    return SalesUserRequirementsResponse(
+      requirements: list,
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      page: (json['page'] as num?)?.toInt() ?? 1,
+      limit: (json['limit'] as num?)?.toInt() ?? 25,
+    );
+  }
+}
+
+

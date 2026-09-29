@@ -37,6 +37,20 @@ class RequirementModel {
   final String? createdBy;
   final String? creatorMobile;
   final String? creatorEmail;
+  final String? leadSource;
+  final String? referralName;
+  final String? metaLeadId;
+  final String? metaPageId;
+  final String? metaFormId;
+  final String? metaCampaignId;
+  final String? metaCampaignName;
+  final String? metaAdsetId;
+  final String? metaAdsetName;
+  final String? metaAdId;
+  final String? metaAdName;
+  final Map<String, dynamic>? metaCustomFields;
+  final String? leadQuality;
+  final String? assignedTelecallerId;
 
   RequirementModel({
     required this.id,
@@ -75,7 +89,45 @@ class RequirementModel {
     this.createdBy,
     this.creatorMobile,
     this.creatorEmail,
+    this.leadSource,
+    this.referralName,
+    this.metaLeadId,
+    this.metaPageId,
+    this.metaFormId,
+    this.metaCampaignId,
+    this.metaCampaignName,
+    this.metaAdsetId,
+    this.metaAdsetName,
+    this.metaAdId,
+    this.metaAdName,
+    this.metaCustomFields,
+    this.leadQuality,
+    this.assignedTelecallerId,
   });
+
+  bool get isMetaLead => metaLeadId != null && metaLeadId!.isNotEmpty;
+  String? get metaCampaignDisplayName => metaCampaignName ?? metaCampaignId;
+  String? get metaAdDisplayName => metaAdName ?? metaAdId;
+
+  String? get leadSourceDisplay {
+    if (isMetaLead) {
+      if (metaCampaignName != null && metaCampaignName!.isNotEmpty) {
+        return 'Meta Ads ($metaCampaignName)';
+      }
+      return 'Meta Ads';
+    }
+    final src = (leadSource != null && leadSource!.trim().isNotEmpty)
+        ? leadSource!.trim()
+        : null;
+    if (src == null) return null;
+    if (src.toLowerCase() == 'referral' || src.toLowerCase() == 'referrel') {
+      if (referralName != null && referralName!.trim().isNotEmpty) {
+        return 'Referral (${referralName!.trim()})';
+      }
+      return 'Referral';
+    }
+    return src;
+  }
 
   factory RequirementModel.fromJson(Map<String, dynamic> json) {
     // Handle category name from joined category object
@@ -141,6 +193,57 @@ class RequirementModel {
       }
     }
 
+    // Fallback: If configurationName is empty, extract from meta_custom_fields
+    if (configName == null || configName.isEmpty || configName == 'Any Config') {
+      final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
+      if (meta is Map) {
+        for (final key in [
+          'what_type_of_property_are_you_looking_to_rent?',
+          'what_type_of_property_are_you_looking_to_rent_out?',
+          'what_type_of_home_are_you_looking_for?',
+          'What Type Of Home Are You Looking For?',
+          'what_type_of_property_you_are_looking_to_rent_out?',
+          'what_type_of_property_are_you_looking_for?',
+          'bhk',
+          'BHK',
+          'configuration',
+          'Configuration',
+          'room_config',
+          'Unit Type',
+          'type_of_property',
+        ]) {
+          final val = meta[key]?.toString().trim();
+          if (val != null && val.isNotEmpty && val.toLowerCase() != 'not_decided_yet') {
+            final lower = val.toLowerCase();
+            if (lower.contains('1_bhk') || lower.contains('1 bhk')) {
+              configName = '1 BHK';
+            } else if (lower.contains('2_bhk') || lower.contains('2 bhk')) {
+              configName = '2 BHK';
+            } else if (lower.contains('3_bhk') || lower.contains('3 bhk')) {
+              configName = '3 BHK';
+            } else if (lower.contains('4_bhk') || lower.contains('4 bhk')) {
+              configName = '4 BHK';
+            } else if (lower.contains('5_bhk') || lower.contains('5 bhk')) {
+              configName = '5 BHK';
+            } else if (lower.contains('1_rk') || lower.contains('1 rk')) {
+              configName = '1 RK';
+            } else if (lower.contains('penthouse')) {
+              configName = 'Penthouse';
+            } else if (lower.contains('villa')) {
+              configName = 'Villa';
+            } else if (lower.contains('commercial') || lower.contains('office')) {
+              configName = 'Office';
+            } else {
+              configName = val.replaceAll('_', ' ').split(' ').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
+            }
+            if (configName.isNotEmpty) {
+              break;
+            }
+          }
+        }
+      }
+    }
+
     // Handle listing type name from joined object
     String? listingName;
     if (json['listingTypeName'] != null) {
@@ -161,11 +264,160 @@ class RequirementModel {
 
     List<String> aNames = [];
     if (json['areaNames'] != null) {
-      aNames = List<String>.from(json['areaNames']);
+      aNames = List<String>.from(json['areaNames']).where((s) => s.trim().isNotEmpty).toList();
     } else if (json['area_names'] != null) {
-      aNames = List<String>.from(json['area_names']);
+      aNames = List<String>.from(json['area_names']).where((s) => s.trim().isNotEmpty).toList();
     } else if (json['area'] != null && json['area'] is Map) {
-      aNames = [json['area']['area_name']?.toString() ?? ''];
+      final aName = json['area']['area_name']?.toString().trim();
+      if (aName != null && aName.isNotEmpty) {
+        aNames = [aName];
+      }
+    }
+
+    // Fallback: If areaNames is still empty, extract from meta_custom_fields
+    if (aNames.isEmpty) {
+      final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
+      if (meta is Map) {
+        for (final key in [
+          'which_location_are_you_looking_for?',
+          'which_area_are_you_looking_for?',
+          'Which Area Are You Looking For?',
+          'where_is_your_property_located?',
+          'what_is_the_complete_address_of_your_property?',
+          'preferred_area',
+          'Preferred Area',
+          'Preferred Location',
+          'preferred_location',
+          'locality',
+          'Locality',
+          'location',
+          'Location',
+          'area',
+          'Area'
+        ]) {
+          final val = meta[key]?.toString().trim();
+          if (val != null && val.isNotEmpty) {
+            final lower = val.toLowerCase();
+            if (!lower.contains('any_suitable') && !lower.contains('any suitable') && lower != 'any' && lower != 'all' && lower != 'anywhere' && lower != 'ahmedabad' && lower != 'gujarat' && lower != 'other_area') {
+              final formatted = val
+                  .replaceAll('_', ' ')
+                  .split(' ')
+                  .map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '')
+                  .join(' ')
+                  .trim();
+              if (formatted.isNotEmpty) {
+                final splitAreas = formatted
+                    .split(RegExp(r'[,/]'))
+                    .map((s) => s.trim())
+                    .where((s) => s.isNotEmpty)
+                    .toList();
+                aNames = splitAreas.isNotEmpty ? splitAreas : [formatted];
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Extract lead source and referral name
+    String? parsedLeadSource = (json['leadSource'] ?? json['lead_source'] ?? json['source']) as String?;
+    String? parsedReferralName = (json['referralName'] ?? json['referral_name'] ?? json['referred_by']) as String?;
+
+    if (parsedLeadSource != null && parsedLeadSource.startsWith('Referral (')) {
+      final match = RegExp(r'^Referral\s*\((.*?)\)$', caseSensitive: false).firstMatch(parsedLeadSource);
+      if (match != null) {
+        parsedReferralName = match.group(1);
+        parsedLeadSource = 'Referral';
+      }
+    }
+
+    String? parsedRemarks;
+    if (json['remarks'] != null && json['remarks'].toString().trim().isNotEmpty) {
+      parsedRemarks = json['remarks'].toString().trim();
+    } else if (json['internal_crm_remarks'] != null) {
+      if (json['internal_crm_remarks'] is List && (json['internal_crm_remarks'] as List).isNotEmpty) {
+        final remarksList = List.from(json['internal_crm_remarks']);
+        remarksList.sort((a, b) {
+          if (a is Map && b is Map) {
+            final aTime = a['created_at']?.toString() ?? a['createdAt']?.toString() ?? '';
+            final bTime = b['created_at']?.toString() ?? b['createdAt']?.toString() ?? '';
+            if (aTime.isNotEmpty && bTime.isNotEmpty) {
+              return aTime.compareTo(bTime);
+            }
+          }
+          return 0;
+        });
+        final last = remarksList.last;
+        if (last is Map && last['remark'] != null) {
+          parsedRemarks = last['remark']?.toString();
+        } else if (last is String) {
+          parsedRemarks = last;
+        }
+      } else if (json['internal_crm_remarks'] is Map) {
+        parsedRemarks = json['internal_crm_remarks']['remark']?.toString();
+      } else if (json['internal_crm_remarks'] is String) {
+        parsedRemarks = json['internal_crm_remarks'];
+      }
+    }
+
+    double computedMin = (json['minBudget'] ?? json['budget_from'] as num?)?.toDouble() ?? 0.0;
+    double computedMax = (json['maxBudget'] ?? json['budget_to'] as num?)?.toDouble() ?? 0.0;
+    if (computedMin == 0.0 && computedMax == 0.0) {
+      final baseBgt = (json['budget'] as num?)?.toDouble() ?? 0.0;
+      if (baseBgt > 0) {
+        computedMin = baseBgt * 0.85;
+        computedMax = baseBgt * 1.15;
+      } else {
+        final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
+        if (meta is Map) {
+          for (final key in [
+            'what_is_your_preferred_monthly_rent_budget?',
+            'what_is_your_monthly_rental_budget?',
+            'What Is Your Monthly Rental Budget?',
+            'what_is_your_expected_monthly_rent?',
+            'expected_monthly_rent',
+            'budget',
+            'Budget',
+          ]) {
+            final val = meta[key]?.toString().trim();
+            if (val != null && val.isNotEmpty) {
+              final clean = val.replaceAll('_', ' ').replaceAll(RegExp(r'[–—]'), '-');
+              final matches = RegExp(r'\d+(?:,\d+)*(?:\.\d+)?\s*(?:cr|crore|lakh|lac|l|k|thousand)?', caseSensitive: false).allMatches(clean);
+              final nums = <double>[];
+              for (final m in matches) {
+                final str = m.group(0)!.replaceAll(',', '').trim().toLowerCase();
+                double? n;
+                if (str.endsWith('cr') || str.endsWith('crore')) {
+                  final v = double.tryParse(str.replaceAll(RegExp(r'crore|cr'), ''));
+                  if (v != null) n = v * 10000000;
+                } else if (str.endsWith('l') || str.endsWith('lakh') || str.endsWith('lac')) {
+                  final v = double.tryParse(str.replaceAll(RegExp(r'lakh|lac|l'), ''));
+                  if (v != null) n = v * 100000;
+                } else if (str.endsWith('k') || str.endsWith('thousand')) {
+                  final v = double.tryParse(str.replaceAll(RegExp(r'thousand|k'), ''));
+                  if (v != null) n = v * 1000;
+                } else {
+                  n = double.tryParse(str);
+                }
+                if (n != null && n > 0) nums.add(n);
+              }
+              if (nums.length >= 2) {
+                computedMin = nums[0] < nums[1] ? nums[0] : nums[1];
+                computedMax = nums[0] > nums[1] ? nums[0] : nums[1];
+                if (computedMin < 1000 && computedMax >= 1000) computedMin *= 1000;
+                break;
+              } else if (nums.length == 1) {
+                var v = nums[0];
+                if (v < 1000 && (clean.toLowerCase().contains('k') || clean.toLowerCase().contains('thousand'))) v *= 1000;
+                computedMin = v * 0.85;
+                computedMax = v * 1.15;
+                break;
+              }
+            }
+          }
+        }
+      }
     }
 
     return RequirementModel(
@@ -180,8 +432,8 @@ class RequirementModel {
       configurationName: configName,
       listingTypeId: json['listingTypeId'] ?? json['listing_type_id'],
       listingTypeName: listingName,
-      minBudget: (json['minBudget'] ?? json['budget_from'] as num?)?.toDouble() ?? 0.0,
-      maxBudget: (json['maxBudget'] ?? json['budget_to'] as num?)?.toDouble() ?? 0.0,
+      minBudget: computedMin,
+      maxBudget: computedMax,
       minArea: (json['minArea'] ?? json['min_area'] as num?)?.toDouble(),
       maxArea: (json['maxArea'] ?? json['max_area'] as num?)?.toDouble(),
       areaIds: aIds,
@@ -190,7 +442,7 @@ class RequirementModel {
       propertyTypeIds: propTypeIds,
       rawSiteVisits: json['site_visits'] as List<dynamic>?,
       rawShareSessions: json['share_sessions'] as List<dynamic>?,
-      remarks: json['remarks'],
+      remarks: parsedRemarks,
       notes: json['notes'] as String?,
       status: json['status'] ?? 'Active',
       createdAt: json['createdAt'] != null
@@ -198,14 +450,24 @@ class RequirementModel {
           : json['created_at'] != null
               ? DateTime.parse(json['created_at'])
               : DateTime.now(),
-      adminId: (json['admin_id'] ?? json['adminId']) as String?,
-      assignedTo: (json['assigned_to'] ?? json['assignedTo']) as String?,
-      organizationId: json['organization_id'] as String?,
+      adminId: (json['admin_id'] ?? json['adminId'])?.toString(),
+      assignedTo: () {
+        final v = json['assigned_to'] ?? json['assignedTo'];
+        if (v == null) return null;
+        final s = v.toString().trim();
+        return s.isEmpty ? null : s;
+      }(),
+      organizationId: json['organization_id']?.toString(),
       assigneeName: () {
         if (json['assigneeName'] != null) return json['assigneeName'] as String;
         if (json['assignee_name'] != null) return json['assignee_name'] as String;
+        if (json['assignedToName'] != null) return json['assignedToName'] as String;
+        if (json['assigned_to_name'] != null) return json['assigned_to_name'] as String;
         if (json['assignee'] is Map) {
           return (json['assignee']['full_name'] ?? json['assignee']['fullName'] ?? json['assignee']['name']) as String?;
+        }
+        if (json['assigned_user'] is Map) {
+          return (json['assigned_user']['full_name'] ?? json['assigned_user']['fullName'] ?? json['assigned_user']['name']) as String?;
         }
         return null;
       }(),
@@ -214,9 +476,6 @@ class RequirementModel {
         if (json['creator_name'] != null) return json['creator_name'] as String;
         if (json['creator'] is Map) {
           return (json['creator']['full_name'] ?? json['creator']['fullName'] ?? json['creator']['name']) as String?;
-        }
-        if (json['admin'] is Map) {
-          return (json['admin']['full_name'] ?? json['admin']['fullName'] ?? json['admin']['name']) as String?;
         }
         return null;
       }(),
@@ -242,6 +501,36 @@ class RequirementModel {
       createdBy: (json['created_by'] ?? json['createdBy']) as String?,
       creatorMobile: (json['creatorMobile'] ?? json['creator_mobile']) as String?,
       creatorEmail: (json['creatorEmail'] ?? json['creator_email']) as String?,
+      leadSource: parsedLeadSource,
+      referralName: parsedReferralName,
+      metaLeadId: (json['meta_lead_id'] ?? json['metaLeadId'])?.toString(),
+      metaPageId: (json['meta_page_id'] ?? json['metaPageId'])?.toString(),
+      metaFormId: (json['meta_form_id'] ?? json['metaFormId'])?.toString(),
+      metaCampaignId: (json['meta_campaign_id'] ?? json['metaCampaignId'])?.toString(),
+      metaCampaignName: (json['meta_campaign_name'] ?? json['metaCampaignName'])?.toString(),
+      metaAdsetId: (json['meta_adset_id'] ?? json['metaAdsetId'])?.toString(),
+      metaAdsetName: (json['meta_adset_name'] ?? json['metaAdsetName'])?.toString(),
+      metaAdId: (json['meta_ad_id'] ?? json['metaAdId'])?.toString(),
+      metaAdName: (json['meta_ad_name'] ?? json['metaAdName'])?.toString(),
+      metaCustomFields: json['meta_custom_fields'] is Map
+          ? Map<String, dynamic>.from(json['meta_custom_fields'] as Map)
+          : json['metaCustomFields'] is Map
+              ? Map<String, dynamic>.from(json['metaCustomFields'] as Map)
+              : null,
+      leadQuality: (json['lead_quality'] ?? json['leadQuality'])?.toString(),
+      assignedTelecallerId: (json['assigned_telecaller_id'] ??
+              json['assignedTelecallerId'] ??
+              (json['meta_custom_fields'] is Map
+                  ? (json['meta_custom_fields']['assigned_telecaller_id'] ??
+                      json['meta_custom_fields']['telecaller_id'] ??
+                      json['meta_custom_fields']['telecaller_by'])
+                  : null) ??
+              (json['metaCustomFields'] is Map
+                  ? (json['metaCustomFields']['assigned_telecaller_id'] ??
+                      json['metaCustomFields']['telecaller_id'] ??
+                      json['metaCustomFields']['telecaller_by'])
+                  : null))
+          ?.toString(),
     );
   }
 
@@ -267,6 +556,7 @@ class RequirementModel {
       'configurationIds': configurationIds,
       'propertyTypeIds': propertyTypeIds,
       'remarks': remarks,
+      'notes': notes,
       'status': status,
       'createdAt': createdAt.toIso8601String(),
       'adminId': adminId,
@@ -280,35 +570,86 @@ class RequirementModel {
       'createdBy': createdBy,
       'creatorMobile': creatorMobile,
       'creatorEmail': creatorEmail,
+      'leadSource': leadSource,
+      'referralName': referralName,
+      'meta_lead_id': metaLeadId,
+      'meta_page_id': metaPageId,
+      'meta_form_id': metaFormId,
+      'meta_campaign_id': metaCampaignId,
+      'meta_campaign_name': metaCampaignName,
+      'meta_adset_id': metaAdsetId,
+      'meta_adset_name': metaAdsetName,
+      'meta_ad_id': metaAdId,
+      'meta_ad_name': metaAdName,
+      'meta_custom_fields': metaCustomFields,
+      'lead_quality': leadQuality,
+      'assigned_telecaller_id': assignedTelecallerId,
+      'assignedTelecallerId': assignedTelecallerId,
     };
   }
 
   Map<String, dynamic> toBackendJson() {
+    final String? formattedSource = leadSource != null && leadSource!.toLowerCase() == 'referral' && referralName != null && referralName!.isNotEmpty
+        ? 'Referral ($referralName)'
+        : leadSource;
+
+    String? cleanUuid(String? val) {
+      if (val == null) return null;
+      final trimmed = val.trim();
+      if (trimmed.isEmpty || trimmed.toLowerCase() == 'unknown' || trimmed.toLowerCase() == 'n/a' || trimmed == 'None') return null;
+      return trimmed;
+    }
+
+    final catId = cleanUuid(categoryId);
+    final propTypeId = cleanUuid(propertyTypeId);
+    final configId = cleanUuid(configurationId);
+    final listTypeId = cleanUuid(listingTypeId);
+    final assignTo = cleanUuid(assignedTo);
+
+    final cleanPropTypeIds = propertyTypeIds.map((id) => cleanUuid(id)).whereType<String>().toList();
+    final cleanConfigIds = configurationIds.map((id) => cleanUuid(id)).whereType<String>().toList();
+
     return {
       'customer_name': clientName,
       'mobile': clientMobile,
-      'category_id': categoryId,
-      'property_type_id': propertyTypeId,
-      'configuration_id': configurationId,
-      'listing_type_id': listingTypeId,
+      'category_id': catId,
+      'property_type_id': propTypeId,
+      'configuration_id': configId,
+      'listing_type_id': listTypeId,
       'budget': (minBudget + maxBudget) / 2,
       'budget_from': minBudget,
       'budget_to': maxBudget,
       'min_area': minArea,
       'max_area': maxArea,
-      'area_id': areaIds.isNotEmpty ? areaIds.first : null,
-      'area_ids': areaIds,
+      'area_id': areaIds.isNotEmpty ? cleanUuid(areaIds.first) : null,
+      'area_ids': areaIds.map((id) => cleanUuid(id)).whereType<String>().toList(),
       'area_names': areaNames,
-      'configuration_ids': configurationIds.isNotEmpty ? configurationIds : (configurationId != null ? [configurationId!] : null),
-      'property_type_ids': propertyTypeIds.isNotEmpty ? propertyTypeIds : [propertyTypeId],
+      'configuration_ids': cleanConfigIds.isNotEmpty ? cleanConfigIds : (configId != null ? [configId] : null),
+      'property_type_ids': cleanPropTypeIds.isNotEmpty ? cleanPropTypeIds : (propTypeId != null ? [propTypeId] : null),
       'remarks': remarks,
+      'internal_crm_remarks': remarks,
       'notes': notes,
       'status': status,
-      'assigned_to': (assignedTo == null || assignedTo!.isEmpty) ? null : assignedTo,
+      'next_followup_date': nextFollowupDate,
+      'assigned_to': assignTo,
       'furnishing_type_ids': furnishingIds,
       'facing_type_ids': facingIds,
-      'furnishing_type_id': furnishingIds.isNotEmpty ? furnishingIds.first : null,
-      'facing_type_id': facingIds.isNotEmpty ? facingIds.first : null,
+      'furnishing_type_id': furnishingIds.isNotEmpty ? cleanUuid(furnishingIds.first) : null,
+      'facing_type_id': facingIds.isNotEmpty ? cleanUuid(facingIds.first) : null,
+      'lead_source': leadSource,
+      'referral_name': referralName,
+      'source': formattedSource,
+      if (metaLeadId != null) 'meta_lead_id': metaLeadId,
+      if (metaPageId != null) 'meta_page_id': metaPageId,
+      if (metaFormId != null) 'meta_form_id': metaFormId,
+      if (metaCampaignId != null) 'meta_campaign_id': metaCampaignId,
+      if (metaCampaignName != null) 'meta_campaign_name': metaCampaignName,
+      if (metaAdsetId != null) 'meta_adset_id': metaAdsetId,
+      if (metaAdsetName != null) 'meta_adset_name': metaAdsetName,
+      if (metaAdId != null) 'meta_ad_id': metaAdId,
+      if (metaAdName != null) 'meta_ad_name': metaAdName,
+      if (metaCustomFields != null) 'meta_custom_fields': metaCustomFields,
+      if (leadQuality != null) 'lead_quality': leadQuality,
     };
   }
 
@@ -369,11 +710,63 @@ class RequirementModel {
     }
   }
 
+  String get cityName {
+    if (metaCustomFields != null) {
+      final c = metaCustomFields!['city'] ?? metaCustomFields!['cityName'] ?? metaCustomFields!['city_name'];
+      if (c != null && c.toString().trim().isNotEmpty) {
+        return c.toString().trim();
+      }
+    }
+    return '';
+  }
+
+  bool get hasUnmappedArea {
+    if (isAllAreas) return false;
+    final status = (metaCustomFields?['match_engine_status'] ?? '').toString().toUpperCase();
+    if (status == 'UNMAPPED_LOCATION') return true;
+    if (areaIds.isEmpty && areaNames.isNotEmpty) {
+      return true;
+    }
+    return false;
+  }
+
+  bool get isAllAreas {
+    if (areaIds.isEmpty && areaNames.isEmpty) return true;
+    if (metaCustomFields != null &&
+        (metaCustomFields!['is_all_areas'] == true ||
+            metaCustomFields!['is_all_areas'] == 'true' ||
+            metaCustomFields!['all_areas'] == true ||
+            metaCustomFields!['all_areas'] == 'true')) {
+      return true;
+    }
+    if (areaNames.length >= 10 || areaIds.length >= 10) return true;
+    return areaNames.any((a) {
+      final l = a.trim().toLowerCase();
+      return l.isEmpty ||
+          l == 'all areas' ||
+          l == 'all' ||
+          l == 'any area' ||
+          l == 'any' ||
+          l == 'anywhere' ||
+          l == 'entire city' ||
+          l == 'all localities';
+    });
+  }
+
+  String get displayAreasText {
+    if (isAllAreas) return 'All Areas';
+    if (areaNames.isNotEmpty) return areaNames.join(', ');
+    return 'All Areas';
+  }
+
   String get matchingReadiness {
-    final hasCategory = categoryId.trim().isNotEmpty;
-    final hasConfig = configurationId != null && configurationId!.trim().isNotEmpty;
+    if (hasUnmappedArea) {
+      return 'Unmapped Area';
+    }
+    final hasCategory = categoryId.trim().isNotEmpty || categoryName.trim().isNotEmpty || propertyTypeName.trim().isNotEmpty;
+    final hasConfig = (configurationId != null && configurationId!.trim().isNotEmpty) || configurationIds.isNotEmpty || (configurationName != null && configurationName!.trim().isNotEmpty);
     final hasBudget = minBudget > 0 || maxBudget > 0;
-    final hasArea = areaIds.isNotEmpty;
+    final hasArea = isAllAreas || areaIds.isNotEmpty;
 
     if (hasCategory && hasConfig && hasBudget && hasArea) {
       return 'Ready';
@@ -434,6 +827,20 @@ class RequirementModel {
     String? createdBy,
     String? creatorMobile,
     String? creatorEmail,
+    String? leadSource,
+    String? referralName,
+    String? metaLeadId,
+    String? metaPageId,
+    String? metaFormId,
+    String? metaCampaignId,
+    String? metaCampaignName,
+    String? metaAdsetId,
+    String? metaAdsetName,
+    String? metaAdId,
+    String? metaAdName,
+    Map<String, dynamic>? metaCustomFields,
+    String? leadQuality,
+    String? assignedTelecallerId,
   }) {
     return RequirementModel(
       id: id ?? this.id,
@@ -472,6 +879,20 @@ class RequirementModel {
       createdBy: createdBy ?? this.createdBy,
       creatorMobile: creatorMobile ?? this.creatorMobile,
       creatorEmail: creatorEmail ?? this.creatorEmail,
+      leadSource: leadSource ?? this.leadSource,
+      referralName: referralName ?? this.referralName,
+      metaLeadId: metaLeadId ?? this.metaLeadId,
+      metaPageId: metaPageId ?? this.metaPageId,
+      metaFormId: metaFormId ?? this.metaFormId,
+      metaCampaignId: metaCampaignId ?? this.metaCampaignId,
+      metaCampaignName: metaCampaignName ?? this.metaCampaignName,
+      metaAdsetId: metaAdsetId ?? this.metaAdsetId,
+      metaAdsetName: metaAdsetName ?? this.metaAdsetName,
+      metaAdId: metaAdId ?? this.metaAdId,
+      metaAdName: metaAdName ?? this.metaAdName,
+      metaCustomFields: metaCustomFields ?? this.metaCustomFields,
+      leadQuality: leadQuality ?? this.leadQuality,
+      assignedTelecallerId: assignedTelecallerId ?? this.assignedTelecallerId,
     );
   }
 }

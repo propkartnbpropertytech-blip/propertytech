@@ -13,9 +13,12 @@ class UserModel extends Equatable {
   final String? createdAt;
   final String? adminId;
   final String? organizationId;
+  final String? organizationName;
+  final bool campaignEnabled;
   final String? adminName;
   final String? adminEmail;
   final String? adminRole;
+  final bool mfaEnabled;
 
   const UserModel({
     required this.id,
@@ -30,9 +33,12 @@ class UserModel extends Equatable {
     this.createdAt,
     this.adminId,
     this.organizationId,
+    this.organizationName,
+    this.campaignEnabled = false,
     this.adminName,
     this.adminEmail,
     this.adminRole,
+    this.mfaEnabled = false,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -60,6 +66,19 @@ class UserModel extends Equatable {
     final createdAt = userMap['created_at']?.toString() ?? userMap['createdAt']?.toString();
     final adminId = userMap['admin_id']?.toString() ?? userMap['adminId']?.toString();
     final organizationId = userMap['organization_id']?.toString() ?? userMap['organizationId']?.toString();
+    final organizationName = userMap['organization_name']?.toString() ??
+        userMap['organizationName']?.toString() ??
+        (userMap['organizations'] is Map ? userMap['organizations']['name']?.toString() : null);
+    final hasCampaignFlag = userMap.containsKey('campaign_enabled') ||
+        userMap.containsKey('campaignEnabled') ||
+        userMap['organizations'] is Map;
+    final campaignEnabled = role.toLowerCase() == 'super admin'
+        ? true
+        : hasCampaignFlag
+            ? (userMap['campaign_enabled'] == true ||
+                userMap['campaignEnabled'] == true ||
+                (userMap['organizations'] is Map && userMap['organizations']['campaign_enabled'] == true))
+            : true;
 
     String? adminName;
     String? adminEmail;
@@ -78,11 +97,6 @@ class UserModel extends Equatable {
       adminName = userMap['admin_name']?.toString() ?? userMap['adminName']?.toString();
       adminEmail = userMap['admin_email']?.toString() ?? userMap['adminEmail']?.toString();
       adminRole = userMap['admin_role']?.toString() ?? userMap['adminRole']?.toString();
-    }
-
-    // If they have Admin role, but are managed by an Admin, they are a Telecaller
-    if (role == 'Admin' && adminId != null) {
-      role = 'Telecaller';
     }
 
     // Hierarchy guard: ensure we don't display invalid hierarchy relationships (e.g. Sales as Admin's creator)
@@ -113,9 +127,12 @@ class UserModel extends Equatable {
       createdAt: createdAt,
       adminId: adminId,
       organizationId: organizationId,
+      organizationName: organizationName,
+      campaignEnabled: campaignEnabled,
       adminName: adminName,
       adminEmail: adminEmail,
       adminRole: adminRole,
+      mfaEnabled: userMap['mfa_enabled'] == true || userMap['mfaEnabled'] == true,
     );
   }
 
@@ -133,9 +150,12 @@ class UserModel extends Equatable {
       if (createdAt != null) 'created_at': createdAt,
       if (adminId != null) 'admin_id': adminId,
       if (organizationId != null) 'organization_id': organizationId,
+      if (organizationName != null) 'organization_name': organizationName,
+      'campaign_enabled': campaignEnabled,
       if (adminName != null) 'admin_name': adminName,
       if (adminEmail != null) 'admin_email': adminEmail,
       if (adminRole != null) 'admin_role': adminRole,
+      'mfa_enabled': mfaEnabled,
     };
   }
 
@@ -152,9 +172,12 @@ class UserModel extends Equatable {
     String? createdAt,
     String? adminId,
     String? organizationId,
+    String? organizationName,
+    bool? campaignEnabled,
     String? adminName,
     String? adminEmail,
     String? adminRole,
+    bool? mfaEnabled,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -169,9 +192,12 @@ class UserModel extends Equatable {
       createdAt: createdAt ?? this.createdAt,
       adminId: adminId ?? this.adminId,
       organizationId: organizationId ?? this.organizationId,
+      organizationName: organizationName ?? this.organizationName,
+      campaignEnabled: campaignEnabled ?? this.campaignEnabled,
       adminName: adminName ?? this.adminName,
       adminEmail: adminEmail ?? this.adminEmail,
       adminRole: adminRole ?? this.adminRole,
+      mfaEnabled: mfaEnabled ?? this.mfaEnabled,
     );
   }
 
@@ -188,9 +214,12 @@ class UserModel extends Equatable {
         createdAt,
         adminId,
         organizationId,
+        organizationName,
+        campaignEnabled,
         adminName,
         adminEmail,
         adminRole,
+        mfaEnabled,
       ];
 }
 

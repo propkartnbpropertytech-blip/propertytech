@@ -11,6 +11,8 @@ class RequirementsService {
     String? propertyTypeId,
     String? status,
     String? listingTypeId,
+    int? page,
+    int? limit,
   }) async {
     try {
       final Map<String, dynamic> queryParameters = {};
@@ -29,11 +31,33 @@ class RequirementsService {
       if (listingTypeId != null && listingTypeId.isNotEmpty) {
         queryParameters['listingTypeId'] = listingTypeId;
       }
+      if (page != null) {
+        queryParameters['page'] = page;
+      }
+      if (limit != null) {
+        queryParameters['limit'] = limit;
+      }
 
       final response = await _apiClient.get(
         '/requirements',
         queryParameters: queryParameters,
       );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      throw ApiException(message: "Invalid response format from server.");
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> createRequirementsBulk(List<Map<String, dynamic>> requirementsList) async {
+    try {
+      final response = await _apiClient.post('/requirements/bulk', {
+        'requirements': requirementsList,
+      });
       if (response.data is Map<String, dynamic>) {
         return response.data as Map<String, dynamic>;
       }
@@ -131,6 +155,42 @@ class RequirementsService {
   Future<void> emptyBin() async {
     try {
       await _apiClient.delete('/requirements/bin/empty');
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> getRequirementMatches(
+    String requirementId, {
+    int page = 1,
+    int limit = 20,
+    String? mode,
+    int? minScore,
+    bool includeNearby = false,
+  }) async {
+    try {
+      final Map<String, dynamic> queryParams = {
+        'page': page,
+        'limit': limit,
+        'include_nearby': includeNearby,
+      };
+      if (mode != null && mode.isNotEmpty) {
+        queryParams['mode'] = mode;
+      }
+      if (minScore != null) {
+        queryParams['min_score'] = minScore;
+      }
+
+      final response = await _apiClient.get(
+        '/requirements/$requirementId/matches',
+        queryParameters: queryParams,
+      );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      throw ApiException(message: "Invalid response format from server.");
     } on DioException catch (e) {
       throw ApiException.fromDioException(e);
     } catch (e) {

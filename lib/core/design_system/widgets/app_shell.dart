@@ -1,10 +1,15 @@
 import '../../../core/services/notification_center.dart';
+import '../../../core/services/app_notifier_service.dart';
+import '../../../core/services/platform_notifier/platform_notifier.dart';
 import '../../../features/dashboard/repository/dashboard_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:persistent_bottom_nav_bar_v2/persistent_bottom_nav_bar_v2.dart';
 import '../../security/role_guard.dart';
+import '../../../features/integration/services/integration_service.dart';
+import '../../../features/campaign/services/portal_integrations_service.dart';
+import '../../security/permission_matrix_service.dart';
 import '../../../../features/auth/bloc/auth_bloc.dart';
 import '../../theme/theme_manager.dart';
 import '../tokens/app_colors.dart';
@@ -13,16 +18,24 @@ import '../tokens/app_typography.dart';
 import '../tokens/app_motion.dart';
 import '../tokens/app_shadows.dart';
 import 'crm_brand_lockup.dart';
+import 'package:dio/dio.dart';
 import '../../api/dio_client.dart';
 import '../../utils/budget_formatter.dart';
 import '../../network/sync_manager.dart';
 import 'dart:async';
 import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/model_mappers.dart';
 import '../../../features/properties/services/properties_service.dart';
 import '../../../features/properties/models/property_model.dart';
+import '../../../features/properties/repository/properties_repository.dart';
 import '../../navigation/mobile_system_back_handler.dart';
+import '../tokens/app_breakpoints.dart';
 import '../../../../features/shell/widgets/sidebar.dart';
+import '../../../../features/telecaller/telecaller_heartbeat_service.dart';
+import '../../../../features/telecaller/services/telecaller_shift_manager.dart';
+import '../../../../features/telecaller/widgets/telecaller_shift_gate_overlay.dart';
 import '../../../../features/shell/widgets/top_bar.dart';
+import '../../../../features/team_messages/services/team_messages_service.dart';
 
 class CRMAppShell extends StatefulWidget {
   final Widget child;
@@ -39,6 +52,8 @@ class CRMAppShell extends StatefulWidget {
 class _CRMAppShellState extends State<CRMAppShell>
     with SingleTickerProviderStateMixin {
   bool _isSidebarExpanded = true;
+  double _sidebarWidth = 245.0;
+  bool _isDraggingSidebar = false;
   final TextEditingController _searchController = TextEditingController();
   late PersistentTabController _tabController;
   int _previousIndex = 0;
@@ -47,6 +62,9 @@ class _CRMAppShellState extends State<CRMAppShell>
   late AnimationController _entryController;
   bool _notificationsPanelOpen = false;
   bool _isBottomBarVisible = true;
+  List<Map<String, dynamic>> _portalNav = [];
+  bool _portalNavLoading = false;
+  DateTime? _portalNavAt;
 
   @override
   void initState() {
@@ -79,6 +97,15 @@ class _CRMAppShellState extends State<CRMAppShell>
     });
 
     _notifCenterSub = NotificationCenter.stream.listen((newNotif) {
+      if ((newNotif['action'] ?? '').toString() == 'refresh' ||
+          (newNotif['id'] ?? '').toString() == 'refresh') {
+        return;
+      }
+      final notifId = (newNotif['id'] ?? '').toString();
+      if (notifId.isNotEmpty &&
+          _notifications.any((n) => (n is Map && (n['id'] ?? '').toString() == notifId))) {
+        return;
+      }
       if (mounted) {
         setState(() {
           _notifications.insert(0, newNotif);
@@ -86,19 +113,46 @@ class _CRMAppShellState extends State<CRMAppShell>
               .where((n) => n['is_read'] == false)
               .length;
         });
+
+        if (newNotif['notifyToast'] == false) {
+          return;
+        }
+
+        if (notifId.isNotEmpty && !_knownNotificationIds.contains(notifId)) {
+          _knownNotificationIds.add(notifId);
+          AppNotifierService.notify(
+            title: newNotif['title'] ?? 'Notification',
+            message: newNotif['message'] ?? '',
+            type: newNotif['type'] ?? 'general',
+            route: newNotif['route'],
+            data: newNotif,
+          );
+        }
       }
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      await NotificationCenter.init();
-      _fetchNotifications();
+      await AppNotifierService.init();
+      String? userId;
+      final authState = context.read<AuthBloc>().state;
+      if (authState is Authenticated) {
+        userId = authState.user.id;
+      }
+      await NotificationCenter.init(userId: userId);
+      await _fetchNotifications();
+      if (authState is Authenticated) {
+        TelecallerHeartbeatService.instance.start(authState);
+        unawaited(PermissionMatrixService.instance.syncFromBackend());
+      }
       _notificationsTimer?.cancel();
-      _notifCenterSub?.cancel();
-      _notificationsTimer = Timer.periodic(const Duration(minutes: 5), (
+      _notificationsTimer = Timer.periodic(const Duration(seconds: 25), (
         _,
       ) async {
-        if (mounted) await _fetchNotifications();
+        if (mounted) {
+          await _fetchNotifications(silent: true);
+          await AppNotifierService.checkAndTriggerWelcomeIfNewlyGranted();
+        }
       });
     });
   }
@@ -111,6 +165,8 @@ class _CRMAppShellState extends State<CRMAppShell>
     _searchFocusNode.dispose();
     _searchDebounce?.cancel();
     _notificationsTimer?.cancel();
+    _notifCenterSub?.cancel();
+    TelecallerHeartbeatService.instance.stop();
     super.dispose();
   }
 
@@ -121,10 +177,14 @@ class _CRMAppShellState extends State<CRMAppShell>
   List<dynamic> _ownerSuggestions = [];
   List<dynamic> _builderSuggestions = [];
   List<dynamic> _clientSuggestions = [];
+  List<Map<String, String>> _callingLeadSuggestions = [];
   bool _isSearching = false;
   Timer? _searchDebounce;
   List<dynamic> _notifications = [];
+  final Set<String> _knownNotificationIds = {};
+  bool _isFirstNotifFetch = true;
   int _unreadNotificationsCount = 0;
+  int _unreadTeamMessagesCount = 0;
   bool _isLoadingNotifications = false;
   int _notificationsPage = 1;
   int _totalNotificationPages = 1;
@@ -136,7 +196,7 @@ class _CRMAppShellState extends State<CRMAppShell>
     if (location.startsWith('/properties')) return 1;
     if (location.startsWith('/requirements')) return 3;
     if (location.startsWith('/profile')) return 4;
-    return _tabController.index;
+    return -1;
   }
 
   String _getTabRoutePath(int index) {
@@ -155,89 +215,154 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   void _showQuickActionsBottomSheet() {
+    final themeManager = ThemeManager();
+    final isDark = themeManager.isDarkMode;
+    final primaryColor = themeManager.primaryColor;
+
     showModalBottomSheet(
       context: context,
-      backgroundColor: CRMColors.surfaceElevatedOf(context),
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(CRMBorderRadius.sheet),
         ),
       ),
-      builder: (context) {
+      builder: (ctx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: CRMSpacing.l,
-              horizontal: CRMSpacing.xl,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       'Quick Actions',
-                      style: CRMTypography.sectionTitle.copyWith(
-                        color: CRMColors.text,
+                      style: TextStyle(
+                        fontSize: 18,
                         fontWeight: FontWeight.bold,
+                        color: isDark
+                            ? const Color(0xFFF8FAFC)
+                            : const Color(0xFF14213D),
                       ),
                     ),
                     IconButton(
                       icon: Icon(
                         Icons.close_rounded,
-                        color: CRMColors.textSecondary,
+                        size: 20,
+                        color: isDark
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF68738A),
                       ),
-                      onPressed: () => Navigator.pop(context),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
+                      onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
                 ),
-                const SizedBox(height: CRMSpacing.m),
+                const SizedBox(height: 12),
                 ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: CRMColors.primary.withOpacity(0.12),
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                     child: Icon(
-                      Icons.add_business_rounded,
-                      color: CRMColors.primary,
+                      Icons.add_home_work_rounded,
+                      color: primaryColor,
                     ),
                   ),
                   title: Text(
-                    'Add Property',
-                    style: CRMTypography.bodyMedium.copyWith(
-                      color: CRMColors.text,
-                      fontWeight: FontWeight.bold,
+                    'Add New Property',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFFF8FAFC)
+                          : const Color(0xFF14213D),
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Create a rental or re-sale listing',
+                    style: TextStyle(
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF68738A),
                     ),
                   ),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     context.go('/properties?action=add');
                   },
                 ),
-                const Divider(height: CRMSpacing.m),
                 ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: CRMColors.primary.withOpacity(0.12),
-                    child: Icon(
-                      Icons.add_task_rounded,
-                      color: CRMColors.primary,
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.person_add_rounded,
+                      color: Color(0xFF3B82F6),
                     ),
                   ),
                   title: Text(
-                    'Add Requirement',
-                    style: CRMTypography.bodyMedium.copyWith(
-                      color: CRMColors.text,
-                      fontWeight: FontWeight.bold,
+                    'Add New Lead / Requirement',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFFF8FAFC)
+                          : const Color(0xFF14213D),
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Capture customer demand details',
+                    style: TextStyle(
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF68738A),
                     ),
                   ),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     context.go('/requirements?action=add');
                   },
                 ),
-                const SizedBox(height: CRMSpacing.s),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.calendar_month_rounded,
+                      color: Color(0xFF8B5CF6),
+                    ),
+                  ),
+                  title: Text(
+                    'Schedule Site Visit',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFFF8FAFC)
+                          : const Color(0xFF14213D),
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Book client inspection appointment',
+                    style: TextStyle(
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF68738A),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    context.go('/dashboard');
+                  },
+                ),
               ],
             ),
           ),
@@ -265,74 +390,305 @@ class _CRMAppShellState extends State<CRMAppShell>
     }
   }
 
-  Future<void> _fetchNotifications({bool loadMore = false}) async {
+  Future<void> _fetchNotifications({bool loadMore = false, bool silent = false}) async {
     if (!mounted) return;
-    setState(() {
-      _isLoadingNotifications = true;
+    if (!silent) {
+      setState(() {
+        _isLoadingNotifications = true;
+        if (!loadMore) {
+          _notificationsPage = 1;
+        } else {
+          _notificationsPage++;
+        }
+      });
+    } else {
       if (!loadMore) {
         _notificationsPage = 1;
       } else {
         _notificationsPage++;
       }
-    });
+    }
 
-    await NotificationCenter.init();
-    await _checkOverdueFollowupsForBell();
+    String? role;
+    String? userId;
+    final authState = context.read<AuthBloc>().state;
+    if (authState is Authenticated) {
+      role = authState.user.role;
+      userId = authState.user.id;
+    }
+    await NotificationCenter.init(userId: userId);
 
     List<dynamic> apiList = [];
     int apiTotalPages = 1;
+    bool keepExistingList = false;
     try {
       final response = await DioClient.dio.get(
         '/notifications',
-        queryParameters: {'page': _notificationsPage, 'limit': 5},
+        queryParameters: {
+          'page': _notificationsPage,
+          'limit': 100,
+          '_ts': DateTime.now().millisecondsSinceEpoch,
+        },
+        options: Options(
+          headers: const {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          },
+          validateStatus: (status) => status != null && status < 500,
+        ),
       );
-      apiList = response.data['data']['notifications'] as List? ?? [];
-      final pagination = response.data['data']['pagination'] ?? {};
-      apiTotalPages = pagination['totalPages'] ?? 1;
-    } catch (_) {}
-
-    final authState = context.read<AuthBloc>().state;
-    String? role;
-    if (authState is Authenticated) {
-      role = authState.user.role;
+      if (response.statusCode == 304) {
+        keepExistingList = true;
+      } else {
+        final raw = response.data;
+        if (raw is List) {
+          apiList = List<dynamic>.from(raw);
+        } else if (raw is Map) {
+          final dataNode = raw['data'] ?? raw;
+          if (dataNode is List) {
+            apiList = List<dynamic>.from(dataNode);
+          } else if (dataNode is Map && dataNode['notifications'] is List) {
+            apiList = List<dynamic>.from(dataNode['notifications'] as List);
+          } else if (raw['notifications'] is List) {
+            apiList = List<dynamic>.from(raw['notifications'] as List);
+          }
+          final pagination = dataNode is Map ? (dataNode['pagination'] ?? {}) : {};
+          apiTotalPages = pagination['totalPages'] ?? 1;
+        }
+      }
+    } catch (_) {
+      keepExistingList = _notifications.isNotEmpty && !loadMore;
     }
+
+    if (keepExistingList) {
+      apiList = _notifications
+          .where((n) => n is Map && !(n['id']?.toString() ?? '').startsWith('local_') && !(n['id']?.toString() ?? '').startsWith('due_'))
+          .toList();
+    }
+
+    if (!loadMore) {
+      try {
+        final assignedRes = await DioClient.dio.get(
+          '/notifications',
+          queryParameters: {
+            'page': 1,
+            'limit': 50,
+            'type': 'lead_assigned',
+            '_ts': DateTime.now().millisecondsSinceEpoch,
+          },
+          options: Options(
+            headers: const {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+            },
+            validateStatus: (status) => status != null && status < 500,
+          ),
+        );
+        if (assignedRes.statusCode != null && assignedRes.statusCode! < 400) {
+          List<dynamic> assignedList = [];
+          final assignedRaw = assignedRes.data;
+          if (assignedRaw is List) {
+            assignedList = List<dynamic>.from(assignedRaw);
+          } else if (assignedRaw is Map) {
+            final dataNode = assignedRaw['data'] ?? assignedRaw;
+            if (dataNode is List) {
+              assignedList = List<dynamic>.from(dataNode);
+            } else if (dataNode is Map && dataNode['notifications'] is List) {
+              assignedList = List<dynamic>.from(dataNode['notifications'] as List);
+            }
+          }
+          if (assignedList.isNotEmpty) {
+            apiList = [...assignedList, ...apiList];
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!loadMore) {
+      await _checkOverdueFollowupsForBell(existingApi: apiList);
+    }
+
     final isAdminOrSuperAdmin = role == 'Admin' || role == 'Super Admin';
 
-    final combined = [...NotificationCenter.localNotifications, ...apiList];
+    final currentPanel = _notifications.where((raw) {
+      if (raw is! Map) return false;
+      final id = (raw['id'] ?? '').toString();
+      final action = (raw['action'] ?? '').toString();
+      return id != 'refresh' && action != 'refresh';
+    }).toList();
+    final combined = [
+      ...apiList,
+      ...NotificationCenter.localNotifications,
+      ...currentPanel,
+    ];
     final uniqueNotifs = <dynamic>[];
     final seenIds = <String>{};
-    for (final n in combined) {
+    final seenFingerprints = <String>{};
+    for (final raw in combined) {
+      if (raw is! Map) continue;
+      final n = Map<String, dynamic>.from(raw);
+      final payload = n['payload'] is Map ? Map<String, dynamic>.from(n['payload'] as Map) : <String, dynamic>{};
+      n['type'] = (n['type'] ?? payload['type'] ?? '').toString();
+      if ((n['type'] as String).isEmpty &&
+          (n['title'] ?? '').toString().toLowerCase().contains('assigned')) {
+        n['type'] = 'lead_assigned';
+      }
+      n['route'] = n['route'] ?? payload['route'];
+      if ((n['route'] == null || n['route'].toString().isEmpty) && n['type'] == 'lead_assigned') {
+        n['route'] = '/requirements?group=assigned';
+      }
       final id = n['id']?.toString() ?? '';
-      final type = n['type']?.toString().toLowerCase() ?? '';
+      if (id == 'refresh' || (n['action'] ?? '').toString() == 'refresh') {
+        continue;
+      }
+      final type = n['type'].toString().toLowerCase();
+      final isRead = n['is_read'] == true || n['is_read'] == 'true' || n['is_read'] == 1;
+      n['message'] = (n['message'] ?? '').toString().replaceAll(
+        RegExp(r'\s*\(Sales Person:\s*System\)', caseSensitive: false),
+        '',
+      );
 
       if (!isAdminOrSuperAdmin &&
           (type == 'forgot_password' || type == 'password_reset')) {
         continue;
       }
 
-      if (id.isNotEmpty &&
-          !seenIds.contains(id) &&
-          !NotificationCenter.deletedIds.contains(id)) {
-        seenIds.add(id);
-        uniqueNotifs.add(n);
+      final fuId = (payload['followupId'] ?? '').toString();
+      final titleLower = (n['title'] ?? '').toString().toLowerCase();
+      final reqId = (payload['requirementId'] ?? '').toString();
+      final propId = (payload['propertyId'] ?? '').toString();
+      final isDueNotif = _isDueAlertNotif(type, titleLower);
+      final clientKey = _dueClientKey(n, payload);
+      String fingerprint;
+      if (isDueNotif && clientKey.isNotEmpty) {
+        fingerprint = 'dueclient|$clientKey';
+      } else if (isDueNotif && fuId.isNotEmpty) {
+        fingerprint = 'duefu|$fuId';
+      } else if (fuId.isNotEmpty && isDueNotif) {
+        fingerprint = 'duefu|$fuId';
+      } else {
+        fingerprint =
+            '$type|$titleLower|${(n['message'] ?? '').toString().toLowerCase().replaceAll(RegExp(r'\s*\(sales person:[^)]*\)'), '')}';
+      }
+      if (!isDueNotif) {
+        if (type.contains('assign')) {
+          final audience = (payload['audience'] ?? '').toString();
+          if (clientKey.isNotEmpty &&
+              seenFingerprints.contains('assignedclient|$audience|$clientKey')) {
+            continue;
+          }
+          fingerprint = reqId.isNotEmpty
+              ? 'assigned|$reqId|$audience|$titleLower'
+              : 'assignedclient|$audience|$clientKey|$titleLower';
+        } else if (propId.isNotEmpty && (type.contains('property') || type.contains('created'))) {
+          fingerprint = 'createdprop|$propId';
+        } else if (reqId.isNotEmpty &&
+            (type.contains('created') || type.contains('new_lead'))) {
+          fingerprint = 'createdreq|$reqId';
+        }
+      }
+      final isAssigned = type.contains('assign') || titleLower.contains('assigned');
+      if (id.isNotEmpty && seenIds.contains(id)) {
+        continue;
+      }
+      if (id.isNotEmpty && NotificationCenter.deletedIds.contains(id) && !isAssigned) {
+        continue;
+      }
+      if (isAssigned) {
+        final notifKey =
+            '${n['title']}_${n['message']}'.replaceAll(' ', '').toLowerCase();
+        if (NotificationCenter.deletedIds.contains(notifKey)) {
+          continue;
+        }
+      }
+      if (isDueNotif && fuId.isNotEmpty && seenFingerprints.contains('duefu|$fuId')) {
+        continue;
+      }
+      if (isDueNotif && clientKey.isNotEmpty && seenFingerprints.contains('dueclient|$clientKey')) {
+        continue;
+      }
+      if (seenFingerprints.contains(fingerprint)) {
+        continue;
+      }
+
+      if (id.isNotEmpty) seenIds.add(id);
+      if (isDueNotif && fuId.isNotEmpty) seenFingerprints.add('duefu|$fuId');
+      if (isDueNotif && clientKey.isNotEmpty) seenFingerprints.add('dueclient|$clientKey');
+      if (!isDueNotif && type.contains('assign') && clientKey.isNotEmpty) {
+        seenFingerprints.add(
+          'assignedclient|${payload['audience'] ?? ''}|$clientKey',
+        );
+      }
+      seenFingerprints.add(fingerprint);
+      n['is_read'] = isRead;
+      uniqueNotifs.add(n);
+
+      if (!_isFirstNotifFetch && !isRead && id.isNotEmpty && !_knownNotificationIds.contains(id)) {
+        final alreadyLocalAssign = isAssigned &&
+            NotificationCenter.localNotifications.any((l) {
+              final lp = l['payload'] is Map
+                  ? Map<String, dynamic>.from(l['payload'] as Map)
+                  : <String, dynamic>{};
+              final localClient =
+                  (lp['clientName'] ?? '').toString().trim().toLowerCase();
+              return (l['type'] ?? '').toString().toLowerCase().contains('assign') &&
+                  localClient.isNotEmpty &&
+                  localClient == clientKey;
+            });
+        if (!isDueNotif &&
+            type != 'lead_created' &&
+            type != 'property_created' &&
+            !(isAssigned && alreadyLocalAssign)) {
+          AppNotifierService.notify(
+            title: n['title'] ?? 'Notification',
+            message: n['message'] ?? '',
+            type: n['type'] ?? 'general',
+            route: n['route'],
+            data: n,
+          );
+        }
       }
     }
 
+    _knownNotificationIds.addAll(seenIds);
+    _isFirstNotifFetch = false;
+
+    int unreadMsgCount = 0;
+    try {
+      unreadMsgCount = await TeamMessagesService().getUnreadCount();
+    } catch (_) {}
+
     if (mounted) {
-      setState(() {
+      final newUnreadCount = uniqueNotifs
+          .where((n) => n['is_read'] == false)
+          .length;
+      final bool hasChanged = !silent ||
+          _notificationsPanelOpen ||
+          _unreadNotificationsCount != newUnreadCount ||
+          _unreadTeamMessagesCount != unreadMsgCount ||
+          _notifications.length != uniqueNotifs.length;
+
+      if (hasChanged) {
+        setState(() {
+          _notifications = uniqueNotifs;
+          _totalNotificationPages = apiTotalPages;
+          _unreadNotificationsCount = newUnreadCount;
+          _unreadTeamMessagesCount = unreadMsgCount;
+          _isLoadingNotifications = false;
+        });
+      } else {
         _notifications = uniqueNotifs;
         _totalNotificationPages = apiTotalPages;
-        _unreadNotificationsCount = _notifications
-            .where((n) => n['is_read'] == false)
-            .length;
+        _unreadNotificationsCount = newUnreadCount;
+        _unreadTeamMessagesCount = unreadMsgCount;
         _isLoadingNotifications = false;
-      });
+      }
     }
   }
 
   Future<void> _markNotificationRead(String id) async {
     try {
-      if (id.startsWith('local_')) {
+      if (id.startsWith('local_') || id.startsWith('due_')) {
         await NotificationCenter.markAsRead(id);
       } else {
         await DioClient.dio.patch('/notifications/$id/read');
@@ -358,7 +714,7 @@ class _CRMAppShellState extends State<CRMAppShell>
       final title = notif?['title']?.toString();
       final message = notif?['message']?.toString();
 
-      if (id.startsWith('local_')) {
+      if (id.startsWith('local_') || id.startsWith('due_')) {
         await NotificationCenter.deleteNotification(
           id,
           title: title,
@@ -387,13 +743,120 @@ class _CRMAppShellState extends State<CRMAppShell>
     });
   }
 
+  int _levenshteinDistance(String s, String t) {
+    if (s == t) return 0;
+    if (s.isEmpty) return t.length;
+    if (t.isEmpty) return s.length;
+
+    List<int> v0 = List<int>.generate(t.length + 1, (i) => i);
+    List<int> v1 = List<int>.filled(t.length + 1, 0);
+
+    for (int i = 0; i < s.length; i++) {
+      v1[0] = i + 1;
+      for (int j = 0; j < t.length; j++) {
+        int cost = (s.codeUnitAt(i) == t.codeUnitAt(j)) ? 0 : 1;
+        int subCost = v0[j] + cost;
+        int insCost = v1[j] + 1;
+        int delCost = v0[j + 1] + 1;
+        v1[j + 1] = subCost < insCost
+            ? (subCost < delCost ? subCost : delCost)
+            : (insCost < delCost ? insCost : delCost);
+      }
+      for (int j = 0; j <= t.length; j++) {
+        v0[j] = v1[j];
+      }
+    }
+    return v0[t.length];
+  }
+
+  bool _isFuzzyMatchToken(
+      String token, List<String> fieldStrings, List<String> fieldWords) {
+    if (token.isEmpty) return true;
+
+    // Direct substring match in any field string
+    for (final fs in fieldStrings) {
+      if (fs.contains(token)) return true;
+      if (token.length >= 4 && fs.length >= 3 && token.contains(fs)) return true;
+    }
+
+    final isNumericToken = RegExp(r'^\d+$').hasMatch(token);
+    if (isNumericToken && token.length >= 4) {
+      for (final fs in fieldStrings) {
+        if (fs.replaceAll(RegExp(r'\D'), '').contains(token)) return true;
+      }
+    }
+
+    // Word level matching
+    for (final w in fieldWords) {
+      if (w.isEmpty) continue;
+      if (w == token) return true;
+      if (!isNumericToken && (w.contains(token) || token.contains(w))) return true;
+
+      if (token.length <= 3) {
+        if (!isNumericToken && w.startsWith(token)) return true;
+      } else if (token.length <= 6) {
+        if (!isNumericToken && _levenshteinDistance(token, w) <= 1) return true;
+      } else {
+        if (!isNumericToken && _levenshteinDistance(token, w) <= 2) return true;
+      }
+    }
+    return false;
+  }
+
+  void _addStr(List<String> list, dynamic val) {
+    if (val != null) {
+      final s = val.toString().trim().toLowerCase();
+      if (s.isNotEmpty) list.add(s);
+    }
+  }
+
+  Set<int> _extractAllBhks(String? text) {
+    final Set<int> results = {};
+    if (text == null || text.trim().isEmpty) return results;
+    final matches = RegExp(r'(\d+)\s*(?:bhk|rk|bedroom|bed)', caseSensitive: false).allMatches(text);
+    for (final m in matches) {
+      final val = int.tryParse(m.group(1) ?? '');
+      if (val != null && val > 0 && val <= 10) {
+        results.add(val);
+      }
+    }
+    return results;
+  }
+
+  void _addPriceStrings(List<String> list, num? price) {
+    if (price == null || price <= 0) return;
+    final val = price.toDouble();
+    final valInt = price.toInt();
+    list.add(valInt.toString());
+
+    final fmt = BudgetFormatter.format(val).toLowerCase();
+    list.add(fmt);
+    list.add(fmt.replaceAll(' ', ''));
+    list.add('₹$fmt');
+    list.add('₹${fmt.replaceAll(' ', '')}');
+
+    if (val >= 100000) {
+      final lakhs = val / 100000;
+      final lakhsStr = lakhs.toStringAsFixed(lakhs.truncateToDouble() == lakhs ? 0 : 1);
+      list.add('${lakhsStr}l');
+      list.add('${lakhsStr} l');
+      list.add('${lakhsStr}lakh');
+      list.add('${lakhsStr} lakh');
+      list.add('${lakhsStr} lakhs');
+    } else if (val >= 1000) {
+      final k = val / 1000;
+      final kStr = k.toStringAsFixed(k.truncateToDouble() == k ? 0 : 1);
+      list.add('${kStr}k');
+      list.add('${kStr} k');
+      list.add('${kStr}thousand');
+      list.add('${kStr} thousand');
+    }
+  }
+
   Future<void> _performSearch(String query) async {
     setState(() => _isSearching = true);
     _showSearchOverlay();
     try {
-      final queryLower = query.toLowerCase();
-      final queryNormalized = queryLower.replaceAll(' ', '');
-
       final authState = context.read<AuthBloc>().state;
       String? currentUserRole;
       if (authState is Authenticated) {
@@ -402,48 +865,94 @@ class _CRMAppShellState extends State<CRMAppShell>
       final bool isUserAdminOrSuperAdmin =
           currentUserRole == 'Admin' || currentUserRole == 'Super Admin';
 
-      // 1. Active Properties
-      final props = await RepositoryCoordinator().propertyLocal.getProperties();
+      // Standardize query & aliases
+      String queryNorm = query.toLowerCase().trim();
+      queryNorm = queryNorm.replaceAll(RegExp(r'(\d+)\s*bhk'), r'$1 bhk');
+      queryNorm = queryNorm.replaceAll(RegExp(r'\bresel(l)?\b'), 'resale');
+      queryNorm = queryNorm.replaceAll(RegExp(r'\bre-sale\b'), 'resale');
+
+      final requestedBhks = _extractAllBhks(queryNorm);
+
+      final queryTokens = queryNorm
+          .split(RegExp(r'[\s,/\-]+'))
+          .where((t) => t.isNotEmpty)
+          .toList();
+
+      final cleanQueryNoSpaces = queryNorm.replaceAll(RegExp(r'\s+'), '');
+      final isPrSearch = cleanQueryNoSpaces.startsWith('pr-') ||
+          (cleanQueryNoSpaces.startsWith('pr') && RegExp(r'^pr\d+').hasMatch(cleanQueryNoSpaces));
+      final prDigitsMatch = RegExp(r'\d+').firstMatch(queryNorm)?.group(0);
+
+      // 1. Active Properties (with fallback to repository API if local is empty)
+      List<dynamic> props = [];
+      try {
+        props = await RepositoryCoordinator().propertyLocal.getProperties();
+      } catch (_) {}
+      if (props.isEmpty) {
+        try {
+          props = await PropertiesRepository().getProperties();
+        } catch (_) {}
+      }
+
       final matchedProps = props
           .where((p) {
-            final code = (p.propertyCode ?? '').toLowerCase();
-            final name = (p.title ?? '').toLowerCase();
-            final ownerName = (p.ownerName ?? '').toLowerCase();
-            final ownerMobile = (p.ownerMobile ?? '').toLowerCase();
-            final area = (p.areaName ?? '').toLowerCase();
-            final bhk = (p.configurationName ?? '').toLowerCase();
-            final bhkNormalized = bhk.replaceAll(' ', '');
-            final date = p.createdAt.toString().toLowerCase();
-            final status = (p.propertyStatusName ?? '').toLowerCase();
-            final superBuiltup = (p.superBuiltupArea?.toString() ?? '')
-                .toLowerCase();
-            final type = (p.propertyTypeName ?? '').toLowerCase();
-            final category = (p.categoryName ?? '').toLowerCase();
-            final remarks = (p.remarks ?? '').toLowerCase();
-            final description = (p.description ?? '').toLowerCase();
-            final salesman = (p.createdByName ?? '').toLowerCase();
+            final pCodeNorm = (p.propertyCode ?? '').toLowerCase().replaceAll('-', '').replaceAll(' ', '');
+            if (isPrSearch && prDigitsMatch != null) {
+              final targetPrNorm = 'pr$prDigitsMatch';
+              if (prDigitsMatch.length >= 4) {
+                if (pCodeNorm != targetPrNorm) return false;
+              } else {
+                if (!pCodeNorm.startsWith(targetPrNorm)) return false;
+              }
+            }
 
-            final matchesGeneral =
-                code.contains(queryLower) ||
-                name.contains(queryLower) ||
-                ownerName.contains(queryLower) ||
-                ownerMobile.contains(queryLower) ||
-                area.contains(queryLower) ||
-                bhk.contains(queryLower) ||
-                (bhkNormalized.isNotEmpty &&
-                    bhkNormalized.contains(queryNormalized)) ||
-                date.contains(queryLower) ||
-                status.contains(queryLower) ||
-                superBuiltup.contains(queryLower) ||
-                type.contains(queryLower) ||
-                category.contains(queryLower) ||
-                remarks.contains(queryLower) ||
-                description.contains(queryLower);
+            if (requestedBhks.isNotEmpty) {
+              final propBhks = _extractAllBhks('${p.configurationName ?? ''} ${p.title} ${p.description ?? ''}');
+              if (propBhks.isNotEmpty && propBhks.intersection(requestedBhks).isEmpty) {
+                return false;
+              }
+            }
 
-            final matchesSalesman =
-                isUserAdminOrSuperAdmin && salesman.contains(queryLower);
+            final fieldStrings = <String>[];
+            _addStr(fieldStrings, p.propertyCode);
+            _addStr(fieldStrings, p.title);
+            _addStr(fieldStrings, p.ownerName);
+            _addStr(fieldStrings, p.ownerMobile);
+            _addStr(fieldStrings, p.areaName);
+            _addStr(fieldStrings, p.configurationName);
+            _addStr(fieldStrings, p.propertyStatusName);
+            _addStr(fieldStrings, p.superBuiltupArea);
+            _addStr(fieldStrings, p.propertyTypeName);
+            _addStr(fieldStrings, p.categoryName);
+            _addStr(fieldStrings, p.remarks);
+            _addStr(fieldStrings, p.description);
+            _addPriceStrings(fieldStrings, p.price);
 
-            return matchesGeneral || matchesSalesman;
+            final configLower = p.configurationName?.toLowerCase() ?? '';
+            if (configLower.isNotEmpty) {
+              _addStr(fieldStrings, configLower.replaceAll(' ', ''));
+              _addStr(fieldStrings, configLower.replaceAll(' ', '-'));
+            }
+            final categoryLower = p.categoryName?.toLowerCase() ?? '';
+            if (categoryLower.contains('re-sale') || categoryLower.contains('resale')) {
+              fieldStrings.add('resale');
+              fieldStrings.add('re-sale');
+              fieldStrings.add('resel');
+            }
+
+            if (isUserAdminOrSuperAdmin) {
+              _addStr(fieldStrings, p.createdByName);
+            }
+
+            final fieldWords = fieldStrings
+                .join(' ')
+                .split(RegExp(r'[^a-zA-Z0-9]+'))
+                .where((w) => w.isNotEmpty)
+                .toList();
+
+            return queryTokens.every(
+              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
+            );
           })
           .map(
             (p) => {
@@ -466,44 +975,63 @@ class _CRMAppShellState extends State<CRMAppShell>
 
         matchedBinProps = binProps
             .where((p) {
-              final code = (p.propertyCode ?? '').toLowerCase();
-              final name = (p.title ?? '').toLowerCase();
-              final ownerName = (p.ownerName ?? '').toLowerCase();
-              final ownerMobile = (p.ownerMobile ?? '').toLowerCase();
-              final area = (p.areaName ?? '').toLowerCase();
-              final bhk = (p.configurationName ?? '').toLowerCase();
-              final bhkNormalized = bhk.replaceAll(' ', '');
-              final date = p.createdAt.toString().toLowerCase();
-              final status = (p.propertyStatusName ?? '').toLowerCase();
-              final superBuiltup = (p.superBuiltupArea?.toString() ?? '')
-                  .toLowerCase();
-              final type = (p.propertyTypeName ?? '').toLowerCase();
-              final category = (p.categoryName ?? '').toLowerCase();
-              final remarks = (p.remarks ?? '').toLowerCase();
-              final description = (p.description ?? '').toLowerCase();
-              final salesman = (p.createdByName ?? '').toLowerCase();
+              final pCodeNorm = (p.propertyCode ?? '').toLowerCase().replaceAll('-', '').replaceAll(' ', '');
+              if (isPrSearch && prDigitsMatch != null) {
+                final targetPrNorm = 'pr$prDigitsMatch';
+                if (prDigitsMatch.length >= 4) {
+                  if (pCodeNorm != targetPrNorm) return false;
+                } else {
+                  if (!pCodeNorm.startsWith(targetPrNorm)) return false;
+                }
+              }
 
-              final matchesGeneral =
-                  code.contains(queryLower) ||
-                  name.contains(queryLower) ||
-                  ownerName.contains(queryLower) ||
-                  ownerMobile.contains(queryLower) ||
-                  area.contains(queryLower) ||
-                  bhk.contains(queryLower) ||
-                  (bhkNormalized.isNotEmpty &&
-                      bhkNormalized.contains(queryNormalized)) ||
-                  date.contains(queryLower) ||
-                  status.contains(queryLower) ||
-                  superBuiltup.contains(queryLower) ||
-                  type.contains(queryLower) ||
-                  category.contains(queryLower) ||
-                  remarks.contains(queryLower) ||
-                  description.contains(queryLower);
+              if (requestedBhks.isNotEmpty) {
+                final propBhks = _extractAllBhks('${p.configurationName} ${p.title} ${p.description}');
+                if (propBhks.isNotEmpty && propBhks.intersection(requestedBhks).isEmpty) {
+                  return false;
+                }
+              }
 
-              final matchesSalesman =
-                  isUserAdminOrSuperAdmin && salesman.contains(queryLower);
+              final fieldStrings = <String>[];
+              _addStr(fieldStrings, p.propertyCode);
+              _addStr(fieldStrings, p.title);
+              _addStr(fieldStrings, p.ownerName);
+              _addStr(fieldStrings, p.ownerMobile);
+              _addStr(fieldStrings, p.areaName);
+              _addStr(fieldStrings, p.configurationName);
+              _addStr(fieldStrings, p.propertyStatusName);
+              _addStr(fieldStrings, p.superBuiltupArea);
+              _addStr(fieldStrings, p.propertyTypeName);
+              _addStr(fieldStrings, p.categoryName);
+              _addStr(fieldStrings, p.remarks);
+              _addStr(fieldStrings, p.description);
+              _addPriceStrings(fieldStrings, p.price);
 
-              return matchesGeneral || matchesSalesman;
+              final configLower = p.configurationName?.toLowerCase() ?? '';
+              if (configLower.isNotEmpty) {
+                _addStr(fieldStrings, configLower.replaceAll(' ', ''));
+                _addStr(fieldStrings, configLower.replaceAll(' ', '-'));
+              }
+              final categoryLower = p.categoryName.toLowerCase();
+              if (categoryLower.contains('re-sale') || categoryLower.contains('resale')) {
+                fieldStrings.add('resale');
+                fieldStrings.add('re-sale');
+                fieldStrings.add('resel');
+              }
+
+              if (isUserAdminOrSuperAdmin) {
+                _addStr(fieldStrings, p.createdByName);
+              }
+
+              final fieldWords = fieldStrings
+                  .join(' ')
+                  .split(RegExp(r'[^a-zA-Z0-9]+'))
+                  .where((w) => w.isNotEmpty)
+                  .toList();
+
+              return queryTokens.every(
+                (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
+              );
             })
             .map(
               (p) => {
@@ -515,80 +1043,121 @@ class _CRMAppShellState extends State<CRMAppShell>
               },
             )
             .toList();
-      } catch (_) {
-        // fail silently if bin fetch fails
-      }
+      } catch (_) {}
 
-      final allMatchedProps = [...matchedProps, ...matchedBinProps];
+      final allMatchedProps = [...matchedProps, ...matchedBinProps].take(12).toList();
 
-      // 2. Requirements
-      final reqs = await RepositoryCoordinator().requirementLocal
-          .getRequirements();
+      final isReqSearch = cleanQueryNoSpaces.startsWith('req') || cleanQueryNoSpaces.startsWith('r-');
+      final reqDigitsMatch = RegExp(r'\d+').firstMatch(queryNorm)?.group(0);
+
+      // 2. Requirements / Leads
+      final reqs = await RepositoryCoordinator().requirementLocal.getRequirements();
       final matchedReqs = reqs
           .where((r) {
-            final name = (r.clientName ?? '').toLowerCase();
-            final mobile = (r.clientMobile ?? '').toLowerCase();
-            final remarks = (r.remarks ?? '').toLowerCase();
-            final type = (r.propertyTypeName ?? '').toLowerCase();
-            final config = (r.configurationName ?? '').toLowerCase();
-            final configNormalized = config.replaceAll(' ', '');
-            final category = (r.categoryName ?? '').toLowerCase();
-            final matchesArea = r.areaNames.any(
-              (name) => name.toLowerCase().contains(queryLower),
+            final reqModel = r.toModel();
+            final reqCodeNorm = reqModel.requirementCode.toLowerCase().replaceAll('-', '').replaceAll(' ', '');
+
+            if (isReqSearch && reqDigitsMatch != null) {
+              if (reqDigitsMatch.length >= 4) {
+                if (!reqCodeNorm.contains(reqDigitsMatch)) return false;
+              }
+            }
+
+            if (requestedBhks.isNotEmpty) {
+              final reqBhks = _extractAllBhks('${r.configurationName ?? ''} ${r.remarks ?? ''}');
+              if (reqBhks.isNotEmpty && reqBhks.intersection(requestedBhks).isEmpty) {
+                return false;
+              }
+            }
+
+            final fieldStrings = <String>[];
+            _addStr(fieldStrings, reqModel.requirementCode);
+            _addStr(fieldStrings, r.id);
+            _addStr(fieldStrings, r.clientName);
+            _addStr(fieldStrings, r.clientMobile);
+            _addStr(fieldStrings, r.remarks);
+            _addStr(fieldStrings, r.notes);
+            _addStr(fieldStrings, r.propertyTypeName);
+            _addStr(fieldStrings, r.configurationName);
+            _addStr(fieldStrings, r.categoryName);
+            _addPriceStrings(fieldStrings, r.minBudget);
+            _addPriceStrings(fieldStrings, r.maxBudget);
+            for (final a in r.areaNames) {
+              _addStr(fieldStrings, a);
+            }
+            if (isUserAdminOrSuperAdmin) {
+              _addStr(fieldStrings, r.creatorName);
+              _addStr(fieldStrings, r.assigneeName);
+            }
+
+            final fieldWords = fieldStrings
+                .join(' ')
+                .split(RegExp(r'[^a-zA-Z0-9]+'))
+                .where((w) => w.isNotEmpty)
+                .toList();
+
+            return queryTokens.every(
+              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
             );
-            final salesmanCreator = (r.creatorName ?? '').toLowerCase();
-            final salesmanAssignee = (r.assigneeName ?? '').toLowerCase();
-
-            final matchesGeneral =
-                name.contains(queryLower) ||
-                mobile.contains(queryLower) ||
-                remarks.contains(queryLower) ||
-                type.contains(queryLower) ||
-                config.contains(queryLower) ||
-                (configNormalized.isNotEmpty &&
-                    configNormalized.contains(queryNormalized)) ||
-                category.contains(queryLower) ||
-                matchesArea;
-
-            final matchesSalesman =
-                isUserAdminOrSuperAdmin &&
-                (salesmanCreator.contains(queryLower) ||
-                    salesmanAssignee.contains(queryLower));
-
-            return matchesGeneral || matchesSalesman;
           })
           .map(
-            (r) => {
-              'id': r.id,
-              'customer_name': r.clientName,
-              'mobile': r.clientMobile,
+            (r) {
+              final reqModel = r.toModel();
+              return {
+                'id': r.id,
+                'customer_name': r.clientName,
+                'mobile': r.clientMobile,
+                'requirement_code': reqModel.requirementCode,
+              };
             },
           )
+          .take(12)
           .toList();
 
       // 3. Owners
       final owners = await RepositoryCoordinator().ownerLocal.getOwners();
       final matchedOwners = owners
-          .where(
-            (o) =>
-                (o.name ?? '').toLowerCase().contains(queryLower) ||
-                (o.mobile ?? '').contains(queryLower) ||
-                (o.email?.toLowerCase().contains(queryLower) ?? false),
-          )
+          .where((o) {
+            final fieldStrings = <String>[];
+            _addStr(fieldStrings, o.name);
+            _addStr(fieldStrings, o.mobile);
+            _addStr(fieldStrings, o.email);
+
+            final fieldWords = fieldStrings
+                .join(' ')
+                .split(RegExp(r'[^a-zA-Z0-9]+'))
+                .where((w) => w.isNotEmpty)
+                .toList();
+
+            return queryTokens.every(
+              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
+            );
+          })
           .map((o) => {'id': o.id, 'name': o.name, 'mobile': o.mobile})
+          .take(8)
           .toList();
 
       // 4. Builders
       final builders = await RepositoryCoordinator().builderLocal.getBuilders();
       final matchedBuilders = builders
-          .where(
-            (b) =>
-                (b.companyName ?? '').toLowerCase().contains(queryLower) ||
-                (b.contactPerson ?? '').toLowerCase().contains(queryLower) ||
-                (b.mobile ?? '').contains(queryLower) ||
-                (b.email ?? '').toLowerCase().contains(queryLower) ||
-                (b.remarks?.toLowerCase().contains(queryLower) ?? false),
-          )
+          .where((b) {
+            final fieldStrings = <String>[];
+            _addStr(fieldStrings, b.companyName);
+            _addStr(fieldStrings, b.contactPerson);
+            _addStr(fieldStrings, b.mobile);
+            _addStr(fieldStrings, b.email);
+            _addStr(fieldStrings, b.remarks);
+
+            final fieldWords = fieldStrings
+                .join(' ')
+                .split(RegExp(r'[^a-zA-Z0-9]+'))
+                .where((w) => w.isNotEmpty)
+                .toList();
+
+            return queryTokens.every(
+              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
+            );
+          })
           .map(
             (b) => {
               'id': b.id,
@@ -597,20 +1166,81 @@ class _CRMAppShellState extends State<CRMAppShell>
               'mobile': b.mobile,
             },
           )
+          .take(8)
           .toList();
 
       // 5. Clients
       final clients = await RepositoryCoordinator().clientLocal.getClients();
       final matchedClients = clients
-          .where(
-            (c) =>
-                (c.name ?? '').toLowerCase().contains(queryLower) ||
-                (c.mobile ?? '').contains(queryLower) ||
-                (c.email ?? '').toLowerCase().contains(queryLower) ||
-                (c.remarks?.toLowerCase().contains(queryLower) ?? false),
-          )
+          .where((c) {
+            final fieldStrings = <String>[];
+            _addStr(fieldStrings, c.name);
+            _addStr(fieldStrings, c.mobile);
+            _addStr(fieldStrings, c.email);
+            _addStr(fieldStrings, c.remarks);
+
+            final fieldWords = fieldStrings
+                .join(' ')
+                .split(RegExp(r'[^a-zA-Z0-9]+'))
+                .where((w) => w.isNotEmpty)
+                .toList();
+
+            return queryTokens.every(
+              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
+            );
+          })
           .map((c) => {'id': c.id, 'name': c.name, 'mobile': c.mobile})
+          .take(8)
           .toList();
+
+      if (IntegrationService().leads.isEmpty) {
+        try {
+          await IntegrationService().ensureLoaded();
+        } catch (_) {}
+      }
+      final callingLeads = IntegrationService().leads.where((lead) {
+        final buffer = StringBuffer()
+          ..write(lead.campaignStatus)
+          ..write(' ')
+          ..write(lead.source)
+          ..write(' ')
+          ..write(lead.leadType)
+          ..write(' ')
+          ..write(lead.assignedToName ?? '')
+          ..write(' ')
+          ..write(lead.assignedTelecallerName ?? '');
+        for (final value in lead.rawJson.values) {
+          if (value != null && value is! Map && value is! List) buffer.write(' $value');
+        }
+        final text = buffer.toString().toLowerCase();
+        final digits = text.replaceAll(RegExp(r'\D'), '');
+        final qDigits = queryNorm.replaceAll(RegExp(r'\D'), '');
+        if (text.contains(queryNorm)) return true;
+        return qDigits.length >= 4 && digits.contains(qDigits);
+      }).take(8).map((lead) {
+        final status = lead.campaignStatus.trim().toLowerCase();
+        final alloc = (lead.allocationStatus ?? '').toUpperCase();
+        final queue = (status == 'cnr' || alloc == 'CNR')
+            ? 'CNR'
+            : ((status == 'callback' || status == 'call back' || alloc == 'CALLBACK') ? 'Callback' : (status == 'follow up' || status == 'follow-up' ? 'Follow up' : 'New'));
+        String name = '';
+        for (final key in ['Full Name', 'Client Name', 'full_name', 'lead_name', 'Name', 'Customer Name']) {
+          final value = lead.rawJson[key]?.toString().trim() ?? '';
+          if (value.isNotEmpty) {
+            name = value;
+            break;
+          }
+        }
+        if (name.isEmpty) name = 'Lead';
+        final phone = (lead.rawJson['Phone Number'] ?? lead.rawJson['phone_number'] ?? lead.rawJson['lead_phone'] ?? '').toString();
+        return {
+          'id': lead.id,
+          'name': name,
+          'phone': phone,
+          'queue': queue,
+          'status': lead.campaignStatus.isEmpty ? 'New' : lead.campaignStatus,
+        };
+      }).toList();
 
       setState(() {
         _propertySuggestions = allMatchedProps;
@@ -618,6 +1248,7 @@ class _CRMAppShellState extends State<CRMAppShell>
         _ownerSuggestions = matchedOwners;
         _builderSuggestions = matchedBuilders;
         _clientSuggestions = matchedClients;
+        _callingLeadSuggestions = callingLeads;
         _isSearching = false;
       });
       _searchOverlayEntry?.markNeedsBuild();
@@ -625,6 +1256,58 @@ class _CRMAppShellState extends State<CRMAppShell>
       setState(() => _isSearching = false);
       _searchOverlayEntry?.markNeedsBuild();
     }
+  }
+
+  Widget _buildViewAllTile({
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: CRMSpacing.m,
+        vertical: CRMSpacing.xs,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: CRMSpacing.m,
+            vertical: 9,
+          ),
+          decoration: BoxDecoration(
+            color: CRMColors.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: CRMColors.primary.withValues(alpha: 0.25),
+              width: 0.8,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: CRMColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_rounded,
+                color: CRMColors.primary,
+                size: 16,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showSearchOverlay() {
@@ -644,6 +1327,8 @@ class _CRMAppShellState extends State<CRMAppShell>
             ? (availableHeight < 400 ? availableHeight : 400)
             : 100;
 
+        final String activeSearchQuery = _searchController.text.trim();
+
         final Widget cardContent = Material(
           elevation: 8,
           shadowColor: CRMColors.shadow,
@@ -654,7 +1339,7 @@ class _CRMAppShellState extends State<CRMAppShell>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(CRMBorderRadius.input),
               border: Border.all(
-                color: CRMColors.borderOf(context).withOpacity(0.6),
+                color: CRMColors.borderOf(context).withValues(alpha: 0.6),
                 width: 0.5,
               ),
             ),
@@ -665,9 +1350,8 @@ class _CRMAppShellState extends State<CRMAppShell>
                   )
                 : (_propertySuggestions.isEmpty &&
                       _requirementSuggestions.isEmpty &&
-                      _ownerSuggestions.isEmpty &&
-                      _builderSuggestions.isEmpty &&
-                      _clientSuggestions.isEmpty)
+                      _clientSuggestions.isEmpty &&
+                      _callingLeadSuggestions.isEmpty)
                 ? Padding(
                     padding: const EdgeInsets.all(CRMSpacing.m),
                     child: Text(
@@ -682,7 +1366,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                     children: [
                       if (_propertySuggestions.isNotEmpty) ...[
                         _buildSuggestionSectionHeader('Properties'),
-                        ..._propertySuggestions.map(
+                        ..._propertySuggestions.take(5).map(
                           (p) => _buildSuggestionTile(
                             icon: Icons.business_rounded,
                             title: p['title'] ?? '',
@@ -701,60 +1385,120 @@ class _CRMAppShellState extends State<CRMAppShell>
                             },
                           ),
                         ),
+                        _buildViewAllTile(
+                          label: activeSearchQuery.isNotEmpty
+                              ? 'View All Matching Properties ("$activeSearchQuery")'
+                              : 'View All Properties',
+                          onTap: () {
+                            _hideSearchOverlay();
+                            final bhks = _extractAllBhks(activeSearchQuery);
+                            String? bhkVal;
+                            if (bhks.isNotEmpty) {
+                              final b = bhks.first;
+                              bhkVal = b <= 4 ? b.toString() : '5';
+                            }
+                            final uri = Uri(
+                              path: '/properties',
+                              queryParameters: {
+                                if (activeSearchQuery.isNotEmpty) 'search': activeSearchQuery,
+                                if (bhkVal != null) 'bhk': bhkVal,
+                                't': DateTime.now().millisecondsSinceEpoch.toString(),
+                              },
+                            );
+                            context.go(uri.toString());
+                          },
+                        ),
+                      ],
+                      if (_callingLeadSuggestions.isNotEmpty) ...[
+                        _buildSuggestionSectionHeader('Calling leads'),
+                        ..._callingLeadSuggestions.take(5).map(
+                          (lead) => _buildSuggestionTile(
+                            icon: Icons.support_agent_rounded,
+                            title: lead['name'] ?? '',
+                            subtitle: '${lead['queue']} · ${lead['status']}${((lead['phone'] ?? '').isNotEmpty) ? ' · ${lead['phone']}' : ''}',
+                            onTap: () {
+                              _hideSearchOverlay();
+                              final queue = lead['queue'];
+                              final path = queue == 'CNR'
+                                  ? '/telecaller/cnr'
+                                  : queue == 'Callback'
+                                      ? '/telecaller/callbacks'
+                                      : (RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ? '/telecaller/leads' : '/campaign/leads');
+                              final uri = Uri(
+                                path: path,
+                                queryParameters: {
+                                  if (activeSearchQuery.trim().isNotEmpty)
+                                    (path.contains('/leads') ? 'search' : 'q'): activeSearchQuery.trim(),
+                                },
+                              );
+                              context.go(uri.toString());
+                            },
+                          ),
+                        ),
                       ],
                       if (_requirementSuggestions.isNotEmpty) ...[
                         _buildSuggestionSectionHeader('Leads'),
-                        ..._requirementSuggestions.map(
+                        ..._requirementSuggestions.take(5).map(
                           (r) => _buildSuggestionTile(
                             icon: Icons.person_search_rounded,
                             title: r['customer_name'] ?? '',
-                            subtitle: 'Mobile: ${r['mobile']}',
+                            subtitle: 'Req Code: ${r['requirement_code']} • Mobile: ${r['mobile']}',
                             onTap: () {
                               _hideSearchOverlay();
-                              context.go('/requirements');
+                              context.go(
+                                '/requirements?openId=${r['id']}&t=${DateTime.now().millisecondsSinceEpoch}',
+                              );
                             },
                           ),
                         ),
-                      ],
-                      if (_ownerSuggestions.isNotEmpty) ...[
-                        _buildSuggestionSectionHeader('Owners'),
-                        ..._ownerSuggestions.map(
-                          (o) => _buildSuggestionTile(
-                            icon: Icons.person_rounded,
-                            title: o['name'] ?? '',
-                            subtitle: 'Mobile: ${o['mobile']}',
-                            onTap: () {
-                              _hideSearchOverlay();
-                              context.go('/owners');
-                            },
-                          ),
-                        ),
-                      ],
-                      if (_builderSuggestions.isNotEmpty) ...[
-                        _buildSuggestionSectionHeader('Builders'),
-                        ..._builderSuggestions.map(
-                          (b) => _buildSuggestionTile(
-                            icon: Icons.construction_rounded,
-                            title: b['company_name'] ?? '',
-                            subtitle:
-                                'Contact: ${b['contact_person']} • Mobile: ${b['mobile']}',
-                            onTap: () {
-                              _hideSearchOverlay();
-                              context.go('/builders');
-                            },
-                          ),
+                        _buildViewAllTile(
+                          label: activeSearchQuery.isNotEmpty
+                              ? 'View All Matching Leads ("$activeSearchQuery")'
+                              : 'View All Leads',
+                          onTap: () {
+                            _hideSearchOverlay();
+                            final uri = Uri(
+                              path: '/requirements',
+                              queryParameters: {
+                                if (activeSearchQuery.isNotEmpty) 'search': activeSearchQuery,
+                                'tab': 'leads',
+                                't': DateTime.now().millisecondsSinceEpoch.toString(),
+                              },
+                            );
+                            context.go(uri.toString());
+                          },
                         ),
                       ],
                       if (_clientSuggestions.isNotEmpty) ...[
                         _buildSuggestionSectionHeader('Clients'),
-                        ..._clientSuggestions.map(
+                        ..._clientSuggestions.take(5).map(
                           (c) => _buildSuggestionTile(
                             icon: Icons.people_alt_rounded,
                             title: c['name'] ?? '',
                             subtitle: 'Mobile: ${c['mobile']}',
-                            onTap: () {
+                            onTap: () async {
                               _hideSearchOverlay();
-                              context.go('/clients');
+                              final clientMobile = (c['mobile'] ?? '').toString().trim();
+                              final clientName = (c['name'] ?? '').toString().trim().toLowerCase();
+                              String? matchedReqId;
+                              try {
+                                final reqs = await RepositoryCoordinator().requirementLocal.getRequirements();
+                                for (final req in reqs) {
+                                  if (clientMobile.isNotEmpty && req.clientMobile.trim() == clientMobile) {
+                                    matchedReqId = req.id;
+                                    break;
+                                  }
+                                  if (clientName.isNotEmpty && req.clientName.trim().toLowerCase() == clientName) {
+                                    matchedReqId = req.id;
+                                    break;
+                                  }
+                                }
+                              } catch (_) {}
+                              if (matchedReqId != null && context.mounted) {
+                                context.go(
+                                  '/requirements?openId=$matchedReqId&t=${DateTime.now().millisecondsSinceEpoch}',
+                                );
+                              }
                             },
                           ),
                         ),
@@ -774,7 +1518,7 @@ class _CRMAppShellState extends State<CRMAppShell>
         }
 
         return Positioned(
-          width: 400,
+          width: CRMBreakpoints.adaptiveWidth(context, 400),
           child: CompositedTransformFollower(
             link: _searchLayerLink,
             showWhenUnlinked: false,
@@ -876,12 +1620,15 @@ class _CRMAppShellState extends State<CRMAppShell>
       if (userState.user.role.isNotEmpty) {
         currentUserRole = userState.user.role;
       }
+      if (RoleGuard.isTelecaller(currentUserRole)) {
+        TelecallerShiftManager.instance.init(userState.user.id);
+      }
     }
 
     final targetIndex = _getTabRouteIndex(location);
-    if (_tabController.index != targetIndex) {
+    if (targetIndex >= 0 && _tabController.index != targetIndex) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_tabController.index != targetIndex) {
+        if (targetIndex >= 0 && _tabController.index != targetIndex) {
           _tabController.jumpToTab(targetIndex);
           _previousIndex = targetIndex;
         }
@@ -889,11 +1636,11 @@ class _CRMAppShellState extends State<CRMAppShell>
     }
 
     final showSidebar = isDesktop || isTablet;
-
-    final entryCurved = CurvedAnimation(
-      parent: _entryController,
-      curve: CRMMotion.emphasized,
-    );
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final showBottomNav = isMobile && !keyboardOpen;
+    final navClearance = showBottomNav
+        ? CRMBreakpoints.mobileNavClearance(context)
+        : 0.0;
 
     return MobileSystemBackHandler(
       onBeforeBack: () async {
@@ -912,18 +1659,14 @@ class _CRMAppShellState extends State<CRMAppShell>
       },
       child: Stack(
         children: [
-          FadeTransition(
-            opacity: entryCurved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.012),
-                end: Offset.zero,
-              ).animate(entryCurved),
-              child: Scaffold(
-                backgroundColor: CRMColors.backgroundOf(context),
-                extendBody: isMobile,
+          Scaffold(
+            backgroundColor: CRMColors.backgroundOf(context),
+                extendBody: true,
                 drawer: isMobile
                     ? Drawer(
+                        width: size.width < 360
+                            ? size.width * 0.88
+                            : (size.width < 420 ? size.width * 0.82 : 304),
                         backgroundColor: ThemeManager().isDarkMode
                             ? const Color(0xFF0F172A)
                             : Colors.white,
@@ -936,46 +1679,56 @@ class _CRMAppShellState extends State<CRMAppShell>
                         ),
                       )
                     : null,
-                bottomNavigationBar: isMobile
-                    ? AnimatedSlide(
-                        offset: _isBottomBarVisible
-                            ? Offset.zero
-                            : const Offset(0, 1.5),
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeInOut,
-                        child: IgnorePointer(
-                          ignoring: !_isBottomBarVisible,
-                          child: CustomBottomNavBar(
-                            selectedIndex: targetIndex,
-                            onItemSelected: (index) {
-                              if (index == 2) {
-                                _showQuickActionsBottomSheet();
-                                return;
-                              }
-                              final path = _getTabRoutePath(index);
-                              if (GoRouterState.of(context).matchedLocation !=
-                                  path) {
-                                context.go(path);
-                              }
-                            },
-                          ),
-                        ),
-                      )
-                    : null,
-                body: Row(
+                body: TelecallerShiftGateOverlay(
+                  isTelecaller: RoleGuard.isTelecaller(currentUserRole),
+                  child: Stack(
+                    children: [
+                    SizedBox(
+                  width: size.width,
+                  child: Row(
                   children: [
-                    if (showSidebar)
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: _isSidebarExpanded ? 245.0 : 70.0,
+                    if (showSidebar) ...[
+                      SizedBox(
+                        width: _sidebarWidth,
                         child: ModernSidebar(
                           currentPath: location,
                           userName: currentUserName,
                           userEmail: currentUserEmail,
                           userRole: currentUserRole,
-                          isCollapsed: !_isSidebarExpanded,
+                          isCollapsed: _sidebarWidth < 150.0,
+                          customWidth: _sidebarWidth,
                         ),
                       ),
+                      MouseRegion(
+                        cursor: SystemMouseCursors.resizeColumn,
+                        child: GestureDetector(
+                          onDoubleTap: () {
+                            setState(() {
+                              if (_sidebarWidth > 150.0) {
+                                _sidebarWidth = 70.0;
+                                _isSidebarExpanded = false;
+                              } else {
+                                _sidebarWidth = 245.0;
+                                _isSidebarExpanded = true;
+                              }
+                            });
+                          },
+                          onPanStart: (_) {
+                            setState(() => _isDraggingSidebar = true);
+                          },
+                          onPanUpdate: (details) {
+                            setState(() {
+                              _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(70.0, 360.0);
+                              _isSidebarExpanded = _sidebarWidth > 150.0;
+                            });
+                          },
+                          onPanEnd: (_) {
+                            setState(() => _isDraggingSidebar = false);
+                          },
+                          child: SidebarResizerDivider(isDragging: _isDraggingSidebar),
+                        ),
+                      ),
+                    ],
                     Expanded(
                       child: Column(
                         children: [
@@ -986,7 +1739,13 @@ class _CRMAppShellState extends State<CRMAppShell>
                                   Scaffold.of(scaffoldContext).openDrawer();
                                 } else {
                                   setState(() {
-                                    _isSidebarExpanded = !_isSidebarExpanded;
+                                    if (_sidebarWidth > 150.0) {
+                                      _sidebarWidth = 70.0;
+                                      _isSidebarExpanded = false;
+                                    } else {
+                                      _sidebarWidth = 245.0;
+                                      _isSidebarExpanded = true;
+                                    }
                                   });
                                 }
                               },
@@ -994,14 +1753,21 @@ class _CRMAppShellState extends State<CRMAppShell>
                               userName: currentUserName,
                               userRole: currentUserRole,
                               searchController: _searchController,
-                              unreadNotifications: _unreadNotificationsCount > 0
-                                  ? _unreadNotificationsCount
-                                  : 3,
+                              searchFocusNode: _searchFocusNode,
+                              searchLayerLink: _searchLayerLink,
+                              onSearchChanged: _onSearchChanged,
+                              onSearchSubmitted: (val) {
+                                if (val.trim().isNotEmpty) {
+                                  _performSearch(val.trim());
+                                }
+                              },
+                              unreadNotifications: _unreadNotificationsCount,
+                              unreadMessages: _unreadTeamMessagesCount,
                               onNotificationsTap: () {
                                 setState(() {
-                                  _notificationsPanelOpen =
-                                      !_notificationsPanelOpen;
+                                  _notificationsPanelOpen = true;
                                 });
+                                _fetchNotifications();
                               },
                             ),
                           ),
@@ -1031,7 +1797,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                                                   _isBottomBarVisible = false;
                                                 });
                                               }
-                                            } else if (scrollDelta < 0) {
+                                            } else {
                                               if (!_isBottomBarVisible) {
                                                 setState(() {
                                                   _isBottomBarVisible = true;
@@ -1043,17 +1809,8 @@ class _CRMAppShellState extends State<CRMAppShell>
                                       }
                                       return false;
                                     },
-                                    child: MediaQuery(
-                                      data: MediaQuery.of(context).copyWith(
-                                        padding: MediaQuery.of(context).padding
-                                            .copyWith(
-                                              bottom:
-                                                  MediaQuery.of(
-                                                    context,
-                                                  ).padding.bottom +
-                                                  76,
-                                            ),
-                                      ),
+                                    child: Padding(
+                                      padding: EdgeInsets.only(bottom: navClearance),
                                       child: widget.child,
                                     ),
                                   )
@@ -1063,10 +1820,46 @@ class _CRMAppShellState extends State<CRMAppShell>
                       ),
                     ),
                   ],
+                  ),
+                    ),
+                    if (showBottomNav)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: AnimatedSlide(
+                          offset: _isBottomBarVisible
+                              ? Offset.zero
+                              : const Offset(0, 1.5),
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                          child: IgnorePointer(
+                            ignoring: !_isBottomBarVisible,
+                            child: Material(
+                              type: MaterialType.transparency,
+                              child: CustomBottomNavBar(
+                                selectedIndex: targetIndex,
+                                onItemSelected: (index) {
+                                  if (index == 2) {
+                                    _showQuickActionsBottomSheet();
+                                    return;
+                                  }
+                                  final path = _getTabRoutePath(index);
+                                  if (GoRouterState.of(context)
+                                          .matchedLocation !=
+                                      path) {
+                                    context.go(path);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
-          ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),
           ValueListenableBuilder<bool>(
             valueListenable: SyncManager().isSyncing,
@@ -1421,7 +2214,125 @@ class _CRMAppShellState extends State<CRMAppShell>
     );
   }
 
-  Future<void> _checkOverdueFollowupsForBell() async {
+  bool _isDueAlertNotif(String type, String title) {
+    final titleLower = title.toLowerCase();
+    if (titleLower.contains('follow-up scheduled') ||
+        titleLower.contains('re-followup scheduled')) {
+      return false;
+    }
+    return type == 'due_followup' ||
+        type == 'site_visit' ||
+        titleLower.contains('follow-up alert') ||
+        titleLower.contains('overdue follow-up') ||
+        titleLower.contains('site visit');
+  }
+
+  String _dueClientKey(Map n, Map payload) {
+    final fromPayload = (payload['clientName'] ?? '').toString().trim().toLowerCase();
+    if (fromPayload.isNotEmpty) return fromPayload;
+    final msg = (n['message'] ?? '').toString();
+    final quoted = RegExp(r'client\s+"([^"]+)"', caseSensitive: false).firstMatch(msg);
+    if (quoted != null) {
+      return quoted.group(1)!.trim().toLowerCase();
+    }
+    final dueMatch = RegExp(
+      r'(?:follow-up|site visit) for (?:client\s+)?["“]?(.+?)["”]?(?:\s*\(| is | has |$)',
+      caseSensitive: false,
+    ).firstMatch(msg);
+    return (dueMatch?.group(1) ?? '').trim().toLowerCase();
+  }
+
+  String _cleanPersonName(String? raw) {
+    final v = (raw ?? '').trim();
+    if (v.isEmpty) return '';
+    final lower = v.toLowerCase();
+    if (lower == 'system' ||
+        lower == 'sales team' ||
+        lower == 'team member' ||
+        lower == 'propkart admin' ||
+        lower == 'n/a' ||
+        lower == 'sales person') {
+      return '';
+    }
+    if (RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      caseSensitive: false,
+    ).hasMatch(v)) {
+      return '';
+    }
+    return v;
+  }
+
+  String _salesPersonForFollowup(dynamic f, dynamic req, String? fallback) {
+    String name = '';
+    if (req != null) {
+      try {
+        name = _cleanPersonName(req.assigneeName);
+      } catch (_) {}
+    }
+    if (name.isEmpty) name = _cleanPersonName(f?.creatorName);
+    if (name.isEmpty && req != null) {
+      try {
+        name = _cleanPersonName(req.creatorName);
+      } catch (_) {}
+    }
+    if (name.isEmpty) name = _cleanPersonName(fallback);
+    return name;
+  }
+
+  Future<void> _emitDueFollowupNotification({
+    required String id,
+    required String title,
+    required String message,
+    required String type,
+    required String route,
+    Map<String, dynamic>? payload,
+  }) async {
+    final followupId = (payload?['followupId'] ?? '').toString();
+    final clientName = (payload?['clientName'] ?? '').toString();
+    if (NotificationCenter.containsId(id)) return;
+    if (followupId.isNotEmpty && NotificationCenter.hasDueFollowup(followupId)) return;
+    if (clientName.isNotEmpty && NotificationCenter.hasDueClientToday(clientName)) return;
+    await NotificationCenter.addNotification(
+      id: id,
+      title: title,
+      message: message,
+      type: type,
+      route: route,
+      payload: payload,
+      notifyToast: false,
+    );
+  }
+
+  bool _apiHasDueNotification(
+    List<dynamic> existingApi, {
+    String? followupId,
+    String? clientName,
+  }) {
+    final fuId = (followupId ?? '').trim();
+    final client = (clientName ?? '').trim().toLowerCase();
+    for (final raw in existingApi) {
+      if (raw is! Map) continue;
+      final payload = raw['payload'] is Map
+          ? Map<String, dynamic>.from(raw['payload'] as Map)
+          : <String, dynamic>{};
+      final type = (raw['type'] ?? payload['type'] ?? '').toString().toLowerCase();
+      final title = (raw['title'] ?? '').toString().toLowerCase();
+      if (!_isDueAlertNotif(type, title)) continue;
+      if (fuId.isNotEmpty && (payload['followupId'] ?? '').toString() == fuId) {
+        return true;
+      }
+      final payloadClient = _dueClientKey(raw, payload);
+      if (client.isNotEmpty &&
+          (payloadClient == client ||
+              (raw['message'] ?? '').toString().toLowerCase().contains(client))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _checkOverdueFollowupsForBell({List<dynamic> existingApi = const []}) async {
     try {
       final dashboardData = await DashboardRepository().getDashboardData(
         backgroundRefresh: false,
@@ -1440,10 +2351,10 @@ class _CRMAppShellState extends State<CRMAppShell>
         currentUserId = authState.user.id;
         currentUserName = authState.user.fullName;
       }
-      final isHighRole =
-          role == 'Admin' || role == 'Super Admin' || role == 'Telecaller';
+      final isAdmin = role == 'Admin' || role == 'Super Admin';
+      final isTelecaller = role == 'Telecaller';
+      final dueClientsThisPass = <String>{};
 
-      int activeDueCount = 0;
       for (final f in followups) {
         final parsed = DateTime.tryParse(f.followupDate);
         if (parsed == null) continue;
@@ -1455,84 +2366,193 @@ class _CRMAppShellState extends State<CRMAppShell>
         } catch (_) {}
         if (req != null) {
           final status = req.status ?? '';
-          if (status != 'Follow-up' && status != 'Re-Followup') {
+          if (status != 'Follow-up' &&
+              status != 'Re-Followup' &&
+              status != 'Site Visit Scheduled') {
             await NotificationCenter.removeNotificationsForClient(f.clientName);
             continue;
           }
         }
 
-        if (!isHighRole) {
-          String salesPerson = f.creatorName ?? '';
-          if (salesPerson.isEmpty && req != null) {
-            try {
-              salesPerson =
-                  (req.assignedToName ??
-                          req.addedByName ??
-                          req.creatorName ??
-                          '')
-                      .toString();
-            } catch (_) {}
-          }
-
+        if (!isAdmin) {
           bool isMine = false;
-          if (salesPerson.isNotEmpty &&
-              currentUserName != null &&
-              currentUserName.isNotEmpty) {
-            if (salesPerson.trim().toLowerCase() ==
-                currentUserName.trim().toLowerCase()) {
-              isMine = true;
-            }
-          }
-          if (!isMine && req != null) {
+          if (req != null && currentUserId != null) {
             try {
-              if (req.adminId == currentUserId ||
-                  req.assignedToId == currentUserId) {
+              final assignedId = (req.assignedTo ?? '').toString();
+              if (assignedId.isNotEmpty && assignedId == currentUserId) {
                 isMine = true;
               }
             } catch (_) {}
           }
-
+          final creator = _cleanPersonName(f.creatorName);
+          if (!isMine &&
+              currentUserName != null &&
+              currentUserName.isNotEmpty &&
+              creator.isNotEmpty &&
+              creator.toLowerCase() == currentUserName.trim().toLowerCase()) {
+            isMine = true;
+          }
           if (!isMine) {
+            continue;
+          }
+          if (isTelecaller && creator.isEmpty) {
             continue;
           }
         }
 
-        if (fDate.isBefore(today)) {
-          activeDueCount++;
-          if (activeDueCount <= 4) {
-            final clientName = f.clientName;
+        final isSiteVisit = req != null && req.status == 'Site Visit Scheduled';
+        final isOverdue = fDate.isBefore(today);
+        final isToday = fDate.isAtSameMomentAs(today);
 
-            // For Admin, Super Admin & Telecaller: send notification only ONCE PER DAY per client!
-            if (isHighRole &&
-                NotificationCenter.hasNotificationToday(clientName)) {
+        if (isOverdue || isToday) {
+            final clientName = (f.clientName ?? '').toString().trim();
+            if (clientName.isEmpty) continue;
+            final clientKey = clientName.toLowerCase();
+            if (dueClientsThisPass.contains(clientKey)) continue;
+            final dueId =
+                'due_${f.id}_${today.year}${today.month.toString().padLeft(2, '0')}${today.day.toString().padLeft(2, '0')}';
+            if (NotificationCenter.containsId(dueId) ||
+                NotificationCenter.hasDueFollowup(f.id) ||
+                NotificationCenter.hasDueClientToday(clientName) ||
+                _apiHasDueNotification(
+                  existingApi,
+                  followupId: f.id,
+                  clientName: clientName,
+                )) {
+              dueClientsThisPass.add(clientKey);
               continue;
             }
 
-            String salesPerson = f.creatorName ?? '';
-            if (salesPerson.isEmpty && req != null) {
-              try {
-                salesPerson =
-                    (req.assignedToName ??
-                            req.addedByName ??
-                            req.creatorName ??
-                            '')
-                        .toString();
-              } catch (_) {}
-            }
-            if (salesPerson.isEmpty) salesPerson = 'Sales Team';
-
-            final message = isHighRole
-                ? 'Follow-up for $clientName (Sales Person: $salesPerson) is overdue! Please take action.'
-                : 'Follow-up for $clientName is overdue! Please take action immediately.';
-
-            NotificationCenter.addNotification(
-              title: 'Overdue Follow-up Alert',
-              message: message,
-              type: 'due_followup',
+            final salesPerson = _salesPersonForFollowup(
+              f,
+              req,
+              isAdmin ? null : currentUserName,
             );
-          }
+
+            String notifTitle;
+            String notifMsg;
+            String notifType;
+            final reqId = (f.requirementId ?? req?.id ?? '').toString();
+            final route = reqId.isNotEmpty
+                ? '/requirements?openId=${Uri.encodeComponent(reqId)}&tab=follow-ups&subTab=Today'
+                : '/requirements?tab=follow-ups&subTab=Today';
+
+            if (isSiteVisit) {
+              notifType = 'site_visit';
+              if (isOverdue) {
+                notifTitle = 'Overdue Site Visit';
+                notifMsg = isAdmin && salesPerson.isNotEmpty
+                    ? 'Site visit for $clientName (Sales Person: $salesPerson) is overdue! Please take action.'
+                    : 'Site visit for $clientName is overdue! Please take action.';
+              } else {
+                notifTitle = "Today's Site Visit Scheduled";
+                notifMsg = isAdmin && salesPerson.isNotEmpty
+                    ? 'Site visit for $clientName (Sales Person: $salesPerson) is scheduled for today.'
+                    : 'Site visit for $clientName is scheduled for today.';
+              }
+            } else {
+              notifType = 'due_followup';
+              if (isOverdue) {
+                notifTitle = 'Overdue Follow-up Alert';
+                notifMsg = isAdmin && salesPerson.isNotEmpty
+                    ? 'Follow-up for $clientName (Sales Person: $salesPerson) is overdue! Please take action.'
+                    : 'Follow-up for $clientName is overdue! Please take action immediately.';
+              } else {
+                notifTitle = "Today's Follow-up Alert";
+                notifMsg = isAdmin && salesPerson.isNotEmpty
+                    ? 'Follow-up for $clientName (Sales Person: $salesPerson) is scheduled for today.'
+                    : 'Follow-up for $clientName is scheduled for today.';
+              }
+            }
+
+            await _emitDueFollowupNotification(
+              id: dueId,
+              title: notifTitle,
+              message: notifMsg,
+              type: notifType,
+              route: route,
+              payload: {
+                'followupId': f.id,
+                'requirementId': reqId,
+                'clientName': clientName,
+                'assigneeName': salesPerson,
+              },
+            );
+            dueClientsThisPass.add(clientKey);
         }
       }
+
+      try {
+        final campRes = await DioClient.dio.get(
+          '/integrations/followups',
+          queryParameters: const {'filter': 'all'},
+        );
+        final rawFollowups = campRes.data is Map
+            ? (campRes.data['followups'] ?? campRes.data['data'])
+            : null;
+        if (rawFollowups is List) {
+          for (final item in rawFollowups) {
+            if (item is! Map) continue;
+            final status = (item['status'] ?? 'Pending').toString();
+            if (status.toLowerCase() != 'pending') continue;
+            final scheduled = DateTime.tryParse(
+              (item['scheduled_at'] ?? '').toString(),
+            );
+            if (scheduled == null) continue;
+            final fDate = DateTime(scheduled.year, scheduled.month, scheduled.day);
+            final isOverdue = fDate.isBefore(today);
+            final isTodayDue = fDate.isAtSameMomentAs(today);
+            if (!isOverdue && !isTodayDue) continue;
+
+            final createdBy = (item['created_by'] ?? '').toString();
+            if (!isAdmin &&
+                (createdBy.isEmpty ||
+                    currentUserId == null ||
+                    createdBy != currentUserId)) {
+              continue;
+            }
+
+            final clientName = (item['client_name'] ?? 'Campaign lead')
+                .toString()
+                .trim();
+            final fuId = (item['id'] ?? '').toString();
+            if (fuId.isEmpty) continue;
+            final clientKey = clientName.toLowerCase();
+            if (dueClientsThisPass.contains(clientKey)) continue;
+            final dueId =
+                'due_campaign_${fuId}_${today.year}${today.month.toString().padLeft(2, '0')}${today.day.toString().padLeft(2, '0')}';
+            if (NotificationCenter.containsId(dueId) ||
+                NotificationCenter.hasDueFollowup(fuId) ||
+                NotificationCenter.hasDueClientToday(clientName) ||
+                _apiHasDueNotification(
+                  existingApi,
+                  followupId: fuId,
+                  clientName: clientName,
+                )) {
+              dueClientsThisPass.add(clientKey);
+              continue;
+            }
+
+            await _emitDueFollowupNotification(
+              id: dueId,
+              title: isOverdue
+                  ? 'Overdue Follow-up Alert'
+                  : "Today's Follow-up Alert",
+              message: isOverdue
+                  ? 'Follow-up for $clientName is overdue! Please take action.'
+                  : 'Follow-up for $clientName is scheduled for today.',
+              type: 'due_followup',
+              route: '/campaign/leads',
+              payload: {
+                'followupId': fuId,
+                'campaignLeadId': (item['lead_id'] ?? '').toString(),
+                'clientName': clientName,
+              },
+            );
+            dueClientsThisPass.add(clientKey);
+          }
+        }
+      } catch (_) {}
     } catch (_) {}
   }
 
@@ -1568,7 +2588,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   Widget _buildNotificationsPanel(BuildContext context) {
-    final unread = _notifications.where((n) => n['is_read'] == false).toList();
+    final unread = _notifications.where((n) => n['is_read'] != true).toList();
     final read = _notifications.where((n) => n['is_read'] == true).toList();
 
     return Positioned.fill(
@@ -1638,6 +2658,75 @@ class _CRMAppShellState extends State<CRMAppShell>
                           ),
                         ),
                         Divider(height: 1, color: CRMColors.borderOf(context)),
+                        FutureBuilder<bool>(
+                          future: PlatformNotifier.isPermissionGranted(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasData && snapshot.data == false) {
+                              return Container(
+                                margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.primaryOf(
+                                    context,
+                                  ).withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: CRMColors.primaryOf(
+                                      context,
+                                    ).withValues(alpha: 0.25),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.notifications_active_outlined,
+                                      size: 18,
+                                      color: CRMColors.primaryOf(context),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Enable browser notifications for live alerts',
+                                        style: CRMTypography.caption.copyWith(
+                                          color: CRMColors.textOf(context),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    InkWell(
+                                      onTap: () async {
+                                        await AppNotifierService.requestPermission(
+                                          forceWelcome: true,
+                                        );
+                                        if (mounted) setState(() {});
+                                      },
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        child: Text(
+                                          'Allow',
+                                          style: TextStyle(
+                                            color: CRMColors.primaryOf(context),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
                         Expanded(
                           child:
                               _isLoadingNotifications && _notifications.isEmpty
@@ -1732,8 +2821,62 @@ class _CRMAppShellState extends State<CRMAppShell>
     );
   }
 
+  Color _getCategoryColor(dynamic rawType) {
+    final type = (rawType ?? '').toString().toLowerCase();
+    if (type.contains('meta') || type.contains('housing')) return const Color(0xFF10B981);
+    if (type.contains('assign')) return const Color(0xFF3B82F6);
+    if (type.contains('site_visit') || type.contains('visit')) return const Color(0xFF8B5CF6);
+    if (type.contains('followup')) return const Color(0xFFF59E0B);
+    if (type.contains('welcome')) return const Color(0xFF10B981);
+    return CRMColors.primaryOf(context);
+  }
+
+  String _formatCategoryLabel(dynamic rawType) {
+    final type = (rawType ?? '').toString().toLowerCase();
+    if (type.contains('meta')) return 'META LEAD';
+    if (type.contains('housing')) return 'HOUSING LEAD';
+    if (type.contains('assign')) return 'LEAD ASSIGNED';
+    if (type.contains('site_visit') || type.contains('visit')) return 'SITE VISIT';
+    if (type.contains('property')) return 'PROPERTY ADDED';
+    if (type.contains('created')) return 'LEAD ADDED';
+    if (type.contains('new_lead')) return 'NEW LEAD';
+    if (type.contains('followup')) return 'FOLLOW UP';
+    if (type.contains('welcome')) return 'WELCOME';
+    return type.toUpperCase();
+  }
+
   Widget _buildNotificationTile(dynamic n) {
     final isRead = n['is_read'] == true;
+    final payload = n['payload'] is Map
+        ? Map<String, dynamic>.from(n['payload'] as Map)
+        : <String, dynamic>{};
+    String type = (n['type'] ?? payload['type'] ?? '').toString();
+    if (type.isEmpty &&
+        (n['title'] ?? '').toString().toLowerCase().contains('assigned')) {
+      type = 'lead_assigned';
+    }
+    final badgeColor = _getCategoryColor(type);
+    final assigner = _cleanPersonName(payload['assignerName']?.toString());
+    final assignee = _cleanPersonName(payload['assigneeName']?.toString());
+    final client = (payload['clientName'] ?? '').toString().trim();
+    String message = (n['message'] ?? '').toString();
+    final audience = (payload['audience'] ?? '').toString();
+    if (type.toLowerCase() == 'lead_assigned' &&
+        audience == 'assignee' &&
+        assigner.isNotEmpty &&
+        client.isNotEmpty) {
+      message = '$assigner assigned client "$client" to you.';
+    } else if (type.toLowerCase() == 'lead_assigned' &&
+        audience == 'assigner' &&
+        assignee.isNotEmpty &&
+        client.isNotEmpty) {
+      message = 'You assigned client "$client" to $assignee.';
+    }
+    message = message.replaceAll(
+      RegExp(r'\s*\(Sales Person:\s*System\)', caseSensitive: false),
+      '',
+    );
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -1748,39 +2891,101 @@ class _CRMAppShellState extends State<CRMAppShell>
         ),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        leading: Icon(
-          isRead
-              ? Icons.notifications_none_rounded
-              : Icons.notifications_active_rounded,
-          color: isRead
-              ? CRMColors.textMutedOf(context)
-              : CRMColors.primaryOf(context),
-        ),
-        title: Text(
-          n['title'] ?? '',
-          style: CRMTypography.captionBold.copyWith(
-            color: CRMColors.textOf(context),
-            fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        leading: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: CRMColors.borderOf(context).withValues(alpha: 0.8),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
+          padding: const EdgeInsets.all(3),
+          child: Image.asset(
+            'assets/logo.png',
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => Icon(
+              isRead
+                  ? Icons.notifications_none_rounded
+                  : Icons.notifications_active_rounded,
+              color: isRead
+                  ? CRMColors.textMutedOf(context)
+                  : CRMColors.primaryOf(context),
+            ),
+          ),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (type.isNotEmpty && type.toLowerCase() != 'general')
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: badgeColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    _formatCategoryLabel(type),
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: badgeColor,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+              ),
+            Text(
+              n['title'] ?? '',
+              style: CRMTypography.captionBold.copyWith(
+                color: CRMColors.textOf(context),
+                fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
+              ),
+            ),
+          ],
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 2),
             Text(
-              n['message'] ?? '',
+              message,
               style: CRMTypography.caption.copyWith(
                 color: CRMColors.textSecondaryOf(context),
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              _getRelativeTime(n['created_at'] ?? ''),
-              style: CRMTypography.footnote.copyWith(
-                color: CRMColors.textMutedOf(context),
-                fontSize: 10,
-              ),
+            Row(
+              children: [
+                Text(
+                  _getRelativeTime(n['created_at'] ?? ''),
+                  style: CRMTypography.footnote.copyWith(
+                    color: CRMColors.textMutedOf(context),
+                    fontSize: 10,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  'Tap to view →',
+                  style: TextStyle(
+                    color: CRMColors.primaryOf(context),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1791,6 +2996,8 @@ class _CRMAppShellState extends State<CRMAppShell>
         ),
         onTap: () {
           if (!isRead) _markNotificationRead(n['id']);
+          setState(() => _notificationsPanelOpen = false);
+          AppNotifierService.handleNotificationTap(n);
         },
       ),
     );
@@ -1856,6 +3063,25 @@ class _CRMAppShellState extends State<CRMAppShell>
     );
   }
 
+  void _ensurePortalNav() {
+    if (_portalNavLoading) return;
+    final cacheAt = PortalIntegrationsService.cachedAt;
+    if (cacheAt != null && _portalNavAt == cacheAt) return;
+    if (cacheAt == null && _portalNavAt != null && DateTime.now().difference(_portalNavAt!).inSeconds < 20) {
+      return;
+    }
+    _portalNavLoading = true;
+    PortalIntegrationsService().listCached().then((rows) {
+      _portalNavLoading = false;
+      _portalNavAt = PortalIntegrationsService.cachedAt ?? DateTime.now();
+      if (!mounted) return;
+      setState(() => _portalNav = rows);
+    }).catchError((_) {
+      _portalNavLoading = false;
+      _portalNavAt = DateTime.now();
+    });
+  }
+
   Widget _buildSidebarContent(
     String currentPath,
     AuthState userState, {
@@ -1870,6 +3096,9 @@ class _CRMAppShellState extends State<CRMAppShell>
       userRole = userState.user.role;
       userFullName = userState.user.fullName;
       userProfilePhoto = userState.user.profilePhoto;
+      if (userRole == 'Admin' || userRole == 'Super Admin') {
+        _ensurePortalNav();
+      }
     }
 
     final isExpanded =
@@ -1943,17 +3172,28 @@ class _CRMAppShellState extends State<CRMAppShell>
                     currentPath: currentPath,
                     isMobile: isMobile,
                     isExpanded: isExpanded,
-                    subItems: const [
-                      _SidebarSubItemData(
+                    subItems: [
+                      const _SidebarSubItemData(
                         icon: Icons.hub_rounded,
                         label: 'Connections',
                         route: '/campaign/connections',
                       ),
-                      _SidebarSubItemData(
-                        icon: Icons.table_chart_rounded,
-                        label: 'Campaign Leads',
-                        route: '/campaign/leads',
+                      const _SidebarSubItemData(
+                        icon: Icons.campaign_rounded,
+                        label: 'Meta',
+                        route: '/campaign/meta',
                       ),
+                      const _SidebarSubItemData(
+                        icon: Icons.apartment_rounded,
+                        label: 'Housing',
+                        route: '/campaign/housing',
+                      ),
+                      for (final row in _portalNav)
+                        _SidebarSubItemData(
+                          icon: Icons.hub_outlined,
+                          label: row['name']?.toString() ?? 'Portal',
+                          route: '/campaign/portal-leads/${row['id']}',
+                        ),
                     ],
                   ),
                 ],
@@ -2739,18 +3979,20 @@ class CustomBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isNarrow = screenWidth < 360;
     return SafeArea(
       top: false,
-      minimum: const EdgeInsets.only(bottom: 8),
+      minimum: EdgeInsets.only(bottom: isNarrow ? 4 : 8),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+        padding: EdgeInsets.fromLTRB(isNarrow ? 8 : 12, 0, isNarrow ? 8 : 12, 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Container(
                 height: 64,
-                padding: const EdgeInsets.symmetric(horizontal: 6),
+                padding: EdgeInsets.symmetric(horizontal: isNarrow ? 2 : 6),
                 decoration: BoxDecoration(
                   color: CRMColors.cardBgOf(context),
                   borderRadius: BorderRadius.circular(CRMBorderRadius.card),
@@ -2790,15 +4032,15 @@ class CustomBottomNavBar extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: isNarrow ? 6 : 10),
             Material(
               color: Colors.transparent,
               child: InkWell(
                 onTap: () => onItemSelected(2),
                 customBorder: const CircleBorder(),
                 child: Ink(
-                  width: 52,
-                  height: 52,
+                  width: isNarrow ? 48 : 52,
+                  height: isNarrow ? 48 : 52,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: CRMColors.primaryOf(context),
@@ -2838,7 +4080,10 @@ class CustomBottomNavBar extends StatelessWidget {
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: EdgeInsets.symmetric(
+                horizontal: MediaQuery.sizeOf(context).width < 360 ? 4 : 8,
+                vertical: 4,
+              ),
               decoration: BoxDecoration(
                 color: isSelected
                     ? activeColor.withValues(alpha: CRMColors.isDark ? 0.18 : 0.12)
@@ -2863,6 +4108,64 @@ class CustomBottomNavBar extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class SidebarResizerDivider extends StatefulWidget {
+  final bool isDragging;
+
+  const SidebarResizerDivider({super.key, this.isDragging = false});
+
+  @override
+  State<SidebarResizerDivider> createState() => _SidebarResizerDividerState();
+}
+
+class _SidebarResizerDividerState extends State<SidebarResizerDivider> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = ThemeManager().isDarkMode;
+    final primaryColor = ThemeManager().primaryColor;
+    final isActive = widget.isDragging || _isHovered;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: isActive ? 6.0 : 4.0,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          color: isActive
+              ? primaryColor
+              : (isDark ? const Color(0xFF334155) : const Color(0xFFE8ECF2)),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: primaryColor.withValues(alpha: 0.35),
+                    blurRadius: 4,
+                    spreadRadius: 1,
+                  )
+                ]
+              : null,
+        ),
+        child: Center(
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 150),
+            opacity: isActive ? 1.0 : 0.0,
+            child: Container(
+              width: 2,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
         ),
       ),
     );

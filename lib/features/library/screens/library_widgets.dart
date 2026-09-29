@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../../../core/api/api_constants.dart';
+import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
@@ -324,40 +325,14 @@ class _DragDropUploadZoneState extends State<DragDropUploadZone> {
         }
 
         try {
-          // CLOUDINARY_ONLY — upload straight to library_docs
           debugPrint("[CLOUDINARY] Uploading $name (${bytes.length} bytes) → library_docs");
-          final uploadBytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
-
-          final int timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-          const folder = 'library_docs';
-          final String toSign =
-              'folder=$folder&timestamp=$timestamp${ApiConstants.cloudinaryApiSecret}';
-          final String signature = sha1.convert(utf8.encode(toSign)).toString();
-
-          final formData = FormData.fromMap({
-            'file': MultipartFile.fromBytes(
-              uploadBytes,
-              filename: name,
-              contentType: MediaType('application', 'pdf'),
-            ),
-            'api_key': ApiConstants.cloudinaryApiKey,
-            'timestamp': timestamp,
-            'signature': signature,
-            'folder': folder,
-          });
-
-          final cloudResponse = await Dio(
-            BaseOptions(
-              connectTimeout: const Duration(seconds: 60),
-              receiveTimeout: const Duration(seconds: 60),
-              sendTimeout: const Duration(seconds: 60),
-            ),
-          ).post(
-            'https://api.cloudinary.com/v1_1/${ApiConstants.cloudinaryCloudName}/image/upload',
-            data: formData,
+          uploadedUrl = await CloudinaryUploader.upload(
+            bytes: bytes,
+            filename: name,
+            mimeType: 'application/pdf',
+            resourceType: 'image',
+            folder: 'library_docs',
           );
-
-          uploadedUrl = (cloudResponse.data?['secure_url'] ?? '').toString();
 
           if (uploadedUrl.isEmpty ||
               !uploadedUrl.contains('res.cloudinary.com') ||
@@ -702,43 +677,19 @@ class _AgentImageUploadZoneState extends State<AgentImageUploadZone> {
       }
 
       try {
-        final int timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-        const folder = 'agent_images';
-        final String toSign =
-            'folder=$folder&timestamp=$timestamp${ApiConstants.cloudinaryApiSecret}';
-        final String signature = sha1.convert(utf8.encode(toSign)).toString();
-
-        final contentType = ext == 'png'
-            ? MediaType('image', 'png')
+        final mimeType = ext == 'png'
+            ? 'image/png'
             : ext == 'webp'
-                ? MediaType('image', 'webp')
-                : MediaType('image', 'jpeg');
+                ? 'image/webp'
+                : 'image/jpeg';
 
-        final formData = FormData.fromMap({
-          'file': MultipartFile.fromBytes(
-            uploadBytes,
-            filename: file.name,
-            contentType: contentType,
-          ),
-          'api_key': ApiConstants.cloudinaryApiKey,
-          'timestamp': timestamp,
-          'signature': signature,
-          'folder': folder,
-        });
-
-        final cloudResponse = await Dio(
-          BaseOptions(
-            connectTimeout: const Duration(seconds: 60),
-            receiveTimeout: const Duration(seconds: 60),
-            sendTimeout: const Duration(seconds: 60),
-          ),
-        ).post(
-          'https://api.cloudinary.com/v1_1/${ApiConstants.cloudinaryCloudName}/image/upload',
-          data: formData,
+        final uploadedUrl = await CloudinaryUploader.upload(
+          bytes: uploadBytes,
+          filename: file.name,
+          mimeType: mimeType,
+          resourceType: 'image',
+          folder: 'agent_images',
         );
-
-        final uploadedUrl =
-            (cloudResponse.data?['secure_url'] ?? '').toString();
 
         if (uploadedUrl.isEmpty || !uploadedUrl.contains('res.cloudinary.com')) {
           throw Exception('Invalid Cloudinary response: $uploadedUrl');

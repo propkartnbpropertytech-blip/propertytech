@@ -136,11 +136,7 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
     if (roleId != null && _cachedRoles.isNotEmpty) {
       for (final r in _cachedRoles) {
         if (r.id == roleId) {
-          final resolvedName = r.name;
-          if (resolvedName.toLowerCase() == 'admin' && _callerRole?.toLowerCase() == 'admin') {
-            return 'Telecaller';
-          }
-          return resolvedName;
+          return r.name;
         }
       }
     }
@@ -202,6 +198,7 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
       }
       await _usersRepository.createUser(event.userData);
       emit(const UsersOperationSuccess(message: "User created successfully."));
+      emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
     } catch (e) {
       emit(UsersError(message: e.toString()));
       emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
@@ -216,18 +213,35 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
       if (_cachedRoles.isEmpty) {
         _cachedRoles = await _usersRepository.getRoles();
       }
-      final denial = RoleGuard.validateUserMutation(
+      UserModel? existing;
+      for (final u in _cachedUsers) {
+        if (u.id == event.id) {
+          existing = u;
+          break;
+        }
+      }
+      final currentRoleName = existing?.roleName;
+      final newRoleName = _resolveTargetRoleName(event.userData) ?? currentRoleName;
+      final currentDenial = currentRoleName == null
+          ? null
+          : RoleGuard.validateUserMutation(
+              callerRole: _callerRole,
+              targetRoleName: currentRoleName,
+              isDelete: false,
+            );
+      final newDenial = RoleGuard.validateUserMutation(
         callerRole: _callerRole,
-        targetRoleName: _resolveTargetRoleName(event.userData),
+        targetRoleName: newRoleName,
         isDelete: false,
       );
-      if (denial != null) {
-        emit(UsersError(message: denial));
+      if (currentDenial != null || newDenial != null) {
+        emit(UsersError(message: currentDenial ?? newDenial!));
         emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
         return;
       }
       await _usersRepository.updateUser(event.id, event.userData);
       emit(const UsersOperationSuccess(message: "User updated successfully."));
+      emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
     } catch (e) {
       emit(UsersError(message: e.toString()));
       emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
@@ -246,6 +260,7 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
       }
       await _usersRepository.toggleUserStatus(event.id, event.isActive);
       emit(const UsersOperationSuccess(message: "User status updated."));
+      emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
     } catch (e) {
       emit(UsersError(message: e.toString()));
       emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
@@ -257,8 +272,20 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
     Emitter<UsersState> emit,
   ) async {
     try {
-      if (!RoleGuard.canManageEmployees(_callerRole)) {
-        emit(const UsersError(message: 'You do not have permission to manage employees.'));
+      UserModel? existing;
+      for (final u in _cachedUsers) {
+        if (u.id == event.id) {
+          existing = u;
+          break;
+        }
+      }
+      final denial = RoleGuard.validateUserMutation(
+        callerRole: _callerRole,
+        targetRoleName: existing?.roleName,
+        isDelete: true,
+      );
+      if (denial != null) {
+        emit(UsersError(message: denial));
         emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
         return;
       }

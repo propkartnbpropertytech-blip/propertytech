@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "PropKart local (isolated)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define-from-file=env/local.env"
+      ]
+    },
+    {
+      "name": "PropKart production defines",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define-from-file=env/production.env"
+      ]
+    }
+  ]
+}

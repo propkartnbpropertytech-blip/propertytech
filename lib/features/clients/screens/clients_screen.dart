@@ -25,6 +25,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
   String _selectedStage = "All";
   String _selectedSource = "All";
   bool _isPipelineView = true; // Board vs Table toggle
+  int _currentPage = 1;
+  final int _pageSize = 25;
 
   @override
   void initState() {
@@ -39,6 +41,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 
   void _triggerFetch() {
+    _currentPage = 1;
     context.read<ClientsBloc>().add(
           FetchClientsEvent(
             search: _searchController.text.trim(),
@@ -53,6 +56,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
       _searchController.clear();
       _selectedStage = "All";
       _selectedSource = "All";
+      _currentPage = 1;
     });
     _triggerFetch();
   }
@@ -132,19 +136,31 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 
   Widget _buildPageHeader() {
+    final isNarrow = MediaQuery.sizeOf(context).width < 600;
+    final title = Text(
+      "Clients",
+      style: CRMTypography.pageTitle.copyWith(color: CRMColors.textOf(context)),
+    );
+    final action = CRMButton(
+      label: "Add Client",
+      prefixIcon: Icons.person_add_rounded,
+      height: 40,
+      onPressed: () => _showAddEditDialog(),
+    );
+    if (isNarrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          title,
+          const SizedBox(height: CRMSpacing.s),
+          action,
+        ],
+      );
+    }
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          "Clients",
-          style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
-        ),
-        CRMButton(
-          label: "Add Client",
-          prefixIcon: Icons.person_add_rounded,
-          height: 40,
-          onPressed: () => _showAddEditDialog(),
-        ),
+        Expanded(child: title),
+        action,
       ],
     );
   }
@@ -197,37 +213,52 @@ class _ClientsScreenState extends State<ClientsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-                  decoration: InputDecoration(
-                    hintText: 'Search by client name, email, mobile, comments...',
-                    hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMutedOf(context)),
-                    prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context)),
-                    filled: true,
-                    fillColor: CRMColors.backgroundOf(context),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
-                    ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked = constraints.maxWidth < 560;
+              final field = TextField(
+                controller: _searchController,
+                style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+                decoration: InputDecoration(
+                  hintText: 'Search by client name, email, mobile, comments...',
+                  hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMutedOf(context)),
+                  prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context)),
+                  filled: true,
+                  fillColor: CRMColors.backgroundOf(context),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                    borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
                   ),
-                  onChanged: (val) => _triggerFetch(),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                    borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                    borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
+                  ),
                 ),
-              ),
-              const SizedBox(width: CRMSpacing.s),
-              CRMButton(label: "Search", onPressed: _triggerFetch),
-            ],
+                onChanged: (val) => _triggerFetch(),
+              );
+              final searchButton = CRMButton(label: "Search", onPressed: _triggerFetch);
+              if (stacked) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    field,
+                    const SizedBox(height: CRMSpacing.s),
+                    searchButton,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: field),
+                  const SizedBox(width: CRMSpacing.s),
+                  searchButton,
+                ],
+              );
+            },
           ),
           const SizedBox(height: CRMSpacing.m),
           Row(
@@ -317,8 +348,11 @@ class _ClientsScreenState extends State<ClientsScreen> {
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
   }) {
-    return SizedBox(
-      width: 180,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth < 200 ? constraints.maxWidth : 180.0;
+        return SizedBox(
+      width: width,
       height: 44,
       child: DropdownButtonFormField<T>(
         value: value,
@@ -347,6 +381,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
         items: items,
         onChanged: onChanged,
       ),
+    );
+      },
     );
   }
 
@@ -540,7 +576,16 @@ class _ClientsScreenState extends State<ClientsScreen> {
           clients = state.clients;
         }
 
-        return CRMDataTable(
+        final totalPages = clients.isEmpty ? 1 : (clients.length / _pageSize).ceil();
+        final currentPage = _currentPage.clamp(1, totalPages);
+        final start = (currentPage - 1) * _pageSize;
+        final end = (start + _pageSize).clamp(0, clients.length);
+        final pageClients = clients.isEmpty ? const <ClientModel>[] : clients.sublist(start, end);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+        CRMDataTable(
           isLoading: isLoading,
           emptyTitle: 'No Clients Profile Found',
           emptyDescription: 'Adjust search filter parameters or add a new customer.',
@@ -553,7 +598,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
             DataColumn(label: Text('Assigned Representative')),
             DataColumn(label: Text('Actions')),
           ],
-          rows: clients.map((c) {
+          rows: pageClients.map((c) {
             return DataRow(
               cells: [
                 DataCell(Text(c.name, style: CRMTypography.bodyMedium.copyWith(color: CRMColors.text))),
@@ -592,6 +637,35 @@ class _ClientsScreenState extends State<ClientsScreen> {
               ],
             );
           }).toList(),
+        ),
+        if (!isLoading && clients.isNotEmpty) ...[
+          const SizedBox(height: CRMSpacing.s),
+          Row(
+            children: [
+              Text(
+                'Showing ${clients.isEmpty ? 0 : start + 1}–$end of ${clients.length}',
+                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Previous page',
+                onPressed: currentPage <= 1
+                    ? null
+                    : () => setState(() => _currentPage = currentPage - 1),
+                icon: const Icon(Icons.chevron_left_rounded),
+              ),
+              Text('$currentPage / $totalPages', style: CRMTypography.caption),
+              IconButton(
+                tooltip: 'Next page',
+                onPressed: currentPage >= totalPages
+                    ? null
+                    : () => setState(() => _currentPage = currentPage + 1),
+                icon: const Icon(Icons.chevron_right_rounded),
+              ),
+            ],
+          ),
+        ],
+          ],
         );
       },
     );

@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
+import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/services/app_notifier_service.dart';
 import '../models/property_model.dart';
 import '../repository/properties_repository.dart';
+import '../../../core/storage/model_mappers.dart';
 
 // --- Events ---
 abstract class PropertiesEvent {}
@@ -84,12 +86,16 @@ class PropertiesLoaded extends PropertiesState {
   final PropertyMetadataModel? metadata;
   final Set<String> bookmarkedIds;
   final String activeTab;
+  final PropertyModel? newlyAdded;
+  final bool isSilentRefreshing;
 
   PropertiesLoaded({
     required this.properties,
     this.metadata,
     required this.bookmarkedIds,
     required this.activeTab,
+    this.newlyAdded,
+    this.isSilentRefreshing = false,
   });
 
   PropertiesLoaded copyWith({
@@ -97,12 +103,16 @@ class PropertiesLoaded extends PropertiesState {
     PropertyMetadataModel? metadata,
     Set<String>? bookmarkedIds,
     String? activeTab,
+    PropertyModel? newlyAdded,
+    bool? isSilentRefreshing,
   }) {
     return PropertiesLoaded(
       properties: properties ?? this.properties,
       metadata: metadata ?? this.metadata,
       bookmarkedIds: bookmarkedIds ?? this.bookmarkedIds,
       activeTab: activeTab ?? this.activeTab,
+      newlyAdded: newlyAdded,
+      isSilentRefreshing: isSilentRefreshing ?? this.isSilentRefreshing,
     );
   }
 }
@@ -128,6 +138,7 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
   final PropertiesRepository _repository = PropertiesRepository();
   PropertyMetadataModel? _cachedMetadata;
   LoadPropertiesEvent? _lastLoadEvent;
+  PropertiesLoaded? _lastLoaded;
   StreamSubscription? _propertiesSubscription;
   StreamSubscription? _lookupsSubscription;
 
@@ -197,7 +208,16 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     Emitter<PropertiesState> emit,
   ) async {
     _lastLoadEvent = event;
-    emit(PropertiesLoading());
+    if (state is PropertiesLoaded) {
+      final current = state as PropertiesLoaded;
+      if (current.properties.isNotEmpty) {
+        emit(current.copyWith(isSilentRefreshing: true));
+      } else {
+        emit(PropertiesLoading());
+      }
+    } else {
+      emit(PropertiesLoading());
+    }
     try {
       final bookmarked = await _getBookmarkedIds();
       
@@ -239,8 +259,10 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
         bookmarkedIds: bookmarked,
         activeTab: event.activeTab,
       ));
+      _lastLoaded = state as PropertiesLoaded;
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
     }
   }
 
@@ -252,9 +274,11 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
       _cachedMetadata = await _repository.getPropertyMetadata();
       if (state is PropertiesLoaded) {
         emit((state as PropertiesLoaded).copyWith(metadata: _cachedMetadata));
+        _lastLoaded = state as PropertiesLoaded;
       }
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
     }
   }
 
@@ -262,14 +286,31 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     CreatePropertyEvent event,
     Emitter<PropertiesState> emit,
   ) async {
-    emit(PropertiesLoading());
     try {
       final saved = await _repository.createProperty(event.propertyData);
+      final propertyName = saved.title.trim().isNotEmpty
+          ? saved.title.trim()
+          : (saved.propertyCode.trim().isNotEmpty ? saved.propertyCode.trim() : 'a property');
+      unawaited(AppNotifierService.notifyPropertyAdded(
+        propertyName: propertyName,
+        propertyId: saved.id,
+      ));
+      if (state is PropertiesLoaded) {
+        final current = state as PropertiesLoaded;
+        final updatedList = [saved, ...current.properties.where((p) => p.id != saved.id)];
+        emit(current.copyWith(
+          properties: updatedList,
+          newlyAdded: saved,
+          isSilentRefreshing: false,
+        ));
+        _lastLoaded = state as PropertiesLoaded;
+      }
       emit(PropertyCreatedState(saved));
-      add(LoadPropertiesEvent(activeTab: event.activeTab));
+      add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: false));
     } catch (e) {
       emit(PropertiesError(e.toString()));
-      add(LoadPropertiesEvent(activeTab: event.activeTab));
+      if (_lastLoaded != null) emit(_lastLoaded!);
+      add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: false));
     }
   }
 
@@ -278,22 +319,53 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     Emitter<PropertiesState> emit,
   ) async {
     try {
-      final saved = await _repository.updateProperty(event.id, event.propertyData);
+      PropertyModel? existingInState;
       if (state is PropertiesLoaded) {
         final current = state as PropertiesLoaded;
-        final updatedList = current.properties.map((p) => p.id == saved.id ? saved : p).toList();
+        final index = current.properties.indexWhere((p) => p.id == event.id || p.propertyCode == event.id);
+        if (index != -1) {
+          existingInState = current.properties[index];
+        }
+      }
+
+      var saved = await _repository.updateProperty(event.id, event.propertyData);
+
+      if (existingInState != null) {
+        bool restored = false;
+        if (!event.propertyData.containsKey('images') && existingInState.images.isNotEmpty) {
+          saved = saved.copyWith(images: existingInState.images);
+          restored = true;
+        }
+        if (!event.propertyData.containsKey('videos') && existingInState.videos.isNotEmpty) {
+          saved = saved.copyWith(videos: existingInState.videos);
+          restored = true;
+        }
+        if (!event.propertyData.containsKey('amenities') && existingInState.amenities.isNotEmpty) {
+          saved = saved.copyWith(amenities: existingInState.amenities);
+          restored = true;
+        }
+        if (restored) {
+          await RepositoryCoordinator().propertyLocal.saveProperties([saved.toLocal()]);
+        }
+      }
+
+      if (state is PropertiesLoaded) {
+        final current = state as PropertiesLoaded;
+        final updatedList = current.properties.map((p) => (p.id == saved.id || p.propertyCode == saved.propertyCode) ? saved : p).toList();
         emit(PropertiesLoaded(
           properties: updatedList,
           metadata: current.metadata,
           bookmarkedIds: current.bookmarkedIds,
           activeTab: current.activeTab,
         ));
+        _lastLoaded = state as PropertiesLoaded;
       } else {
         emit(PropertyUpdatedState(saved));
         add(LoadPropertiesEvent(activeTab: event.activeTab));
       }
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
     }
   }
 
@@ -312,11 +384,13 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
           bookmarkedIds: current.bookmarkedIds,
           activeTab: current.activeTab,
         ));
+        _lastLoaded = state as PropertiesLoaded;
       } else {
         add(LoadPropertiesEvent(activeTab: event.activeTab));
       }
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
     }
   }
 
@@ -324,12 +398,21 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     DeletePropertyEvent event,
     Emitter<PropertiesState> emit,
   ) async {
-    emit(PropertiesLoading());
     try {
       await _repository.softDeleteProperty(event.id);
+      if (state is PropertiesLoaded) {
+        final current = state as PropertiesLoaded;
+        final updatedList = current.properties.where((p) => p.id != event.id).toList();
+        emit(current.copyWith(
+          properties: updatedList,
+          isSilentRefreshing: false,
+        ));
+        _lastLoaded = state as PropertiesLoaded;
+      }
       add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: true));
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
       add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: true));
     }
   }
@@ -338,12 +421,21 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     RestorePropertyEvent event,
     Emitter<PropertiesState> emit,
   ) async {
-    emit(PropertiesLoading());
     try {
       await _repository.restoreProperty(event.id);
+      if (state is PropertiesLoaded) {
+        final current = state as PropertiesLoaded;
+        final updatedList = current.properties.where((p) => p.id != event.id).toList();
+        emit(current.copyWith(
+          properties: updatedList,
+          isSilentRefreshing: false,
+        ));
+        _lastLoaded = state as PropertiesLoaded;
+      }
       add(LoadPropertiesEvent(activeTab: event.activeTab));
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
       add(LoadPropertiesEvent(activeTab: event.activeTab));
     }
   }
@@ -363,6 +455,7 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
       add(LoadPropertiesEvent(activeTab: event.activeTab));
     } catch (e) {
       emit(PropertiesError(e.toString()));
+      if (_lastLoaded != null) emit(_lastLoaded!);
       add(LoadPropertiesEvent(activeTab: event.activeTab));
     }
   }

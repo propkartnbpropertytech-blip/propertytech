@@ -63,6 +63,7 @@ class PropertyModel {
   final List<String> amenities;
   final List<String> videos;
   final Map<String, dynamic>? additionalDetails;
+  final String? portalStatus;
 
   PropertyModel({
     required this.id,
@@ -127,7 +128,36 @@ class PropertyModel {
     this.adminId,
     this.organizationId,
     this.additionalDetails,
+    this.portalStatus = 'None',
   });
+
+  bool get showsAddedBy {
+    final name = createdByName.trim();
+    return createdBy.trim().isNotEmpty &&
+        name.isNotEmpty &&
+        name.toLowerCase() != 'n/a' &&
+        name != '-';
+  }
+
+  bool isOwnTeamListing({
+    required String userId,
+    required String role,
+    String? adminId,
+  }) {
+    final r = role.toLowerCase();
+    if (r == 'super admin') return true;
+    if (createdBy == userId) return true;
+    if (r == 'admin' && this.adminId != null && this.adminId == userId) {
+      return true;
+    }
+    if ((r == 'telecaller' || r == 'sales') &&
+        this.adminId != null &&
+        adminId != null &&
+        this.adminId == adminId) {
+      return true;
+    }
+    return false;
+  }
 
   factory PropertyModel.fromJson(Map<String, dynamic> json) {
     final category = json['category'] != null ? Map<String, dynamic>.from(json['category'] as Map) : null;
@@ -137,11 +167,11 @@ class PropertyModel {
     final status = json['property_status'] != null ? Map<String, dynamic>.from(json['property_status'] as Map) : null;
     final city = json['city'] != null && json['city'] is Map ? Map<String, dynamic>.from(json['city'] as Map) : null;
     final area = json['area'] != null && json['area'] is Map ? Map<String, dynamic>.from(json['area'] as Map) : null;
-    final furnishing = json['furnishing_type'] != null ? Map<String, dynamic>.from(json['furnishing_type'] as Map) : null;
-    final facing = json['facing_type'] != null ? Map<String, dynamic>.from(json['facing_type'] as Map) : null;
-    final ownership = json['ownership_type'] != null ? Map<String, dynamic>.from(json['ownership_type'] as Map) : null;
-    final brokerage = json['brokerage_type'] != null ? Map<String, dynamic>.from(json['brokerage_type'] as Map) : null;
-    final creator = json['creator'] != null ? Map<String, dynamic>.from(json['creator'] as Map) : null;
+    final furnishing = json['furnishing_type'] != null && json['furnishing_type'] is Map ? Map<String, dynamic>.from(json['furnishing_type'] as Map) : null;
+    final facing = json['facing_type'] != null && json['facing_type'] is Map ? Map<String, dynamic>.from(json['facing_type'] as Map) : null;
+    final ownership = json['ownership_type'] != null && json['ownership_type'] is Map ? Map<String, dynamic>.from(json['ownership_type'] as Map) : null;
+    final brokerage = json['brokerage_type'] != null && json['brokerage_type'] is Map ? Map<String, dynamic>.from(json['brokerage_type'] as Map) : null;
+    final creator = json['creator'] != null && json['creator'] is Map ? Map<String, dynamic>.from(json['creator'] as Map) : null;
 
     String parsedCityName = 'N/A';
     if (json['city_name'] != null && json['city_name'].toString().trim().isNotEmpty && json['city_name'].toString().trim() != 'N/A') {
@@ -202,11 +232,22 @@ class PropertyModel {
       }
     }
 
-    final rawAmenities = json['property_amenities'] as List<dynamic>? ?? [];
-    final List<String> amenityList = rawAmenities
-        .map((am) => ((am['amenity'] as Map<String, dynamic>?)?['name'] as String?) ?? '')
-        .where((name) => name.isNotEmpty)
-        .toList();
+    final rawAmenities = (json['property_amenities'] is List && (json['property_amenities'] as List).isNotEmpty)
+        ? json['property_amenities']
+        : (json['amenities'] as List<dynamic>? ?? []);
+    final List<String> amenityList = [];
+    for (final am in rawAmenities) {
+      if (am == null) continue;
+      if (am is String) {
+        if (am.isNotEmpty) amenityList.add(am);
+      } else if (am is Map) {
+        final name = ((am['amenity'] as Map<String, dynamic>?)?['name'] as String?) ??
+                     (am['name'] as String?) ??
+                     (am['amenity_name'] as String?) ??
+                     '';
+        if (name.isNotEmpty) amenityList.add(name);
+      }
+    }
 
     final List<String> videoList = [];
     final jsonPropertyVideos = json['property_videos'];
@@ -227,6 +268,17 @@ class PropertyModel {
         final str = vid.toString();
         if (str.isNotEmpty) videoList.add(str);
       }
+    }
+
+    String? parsedBrokerageTypeName;
+    if (json['brokerage_type_name'] != null && json['brokerage_type_name'].toString().trim().isNotEmpty) {
+      parsedBrokerageTypeName = json['brokerage_type_name'].toString().trim();
+    } else if (json['brokerageTypeName'] != null && json['brokerageTypeName'].toString().trim().isNotEmpty) {
+      parsedBrokerageTypeName = json['brokerageTypeName'].toString().trim();
+    } else if (brokerage != null && brokerage['name'] != null) {
+      parsedBrokerageTypeName = brokerage['name'].toString().trim();
+    } else if (json['brokerage_type'] is String && json['brokerage_type'].toString().trim().isNotEmpty) {
+      parsedBrokerageTypeName = json['brokerage_type'].toString().trim();
     }
 
     return PropertyModel(
@@ -267,7 +319,7 @@ class PropertyModel {
       ownershipTypeName: ownership != null ? ownership['name'] as String? : null,
       googlePlaceId: json['google_place_id'] as String?,
       brokerageTypeId: json['brokerage_type_id'] as String?,
-      brokerageTypeName: brokerage != null ? brokerage['name'] as String? : null,
+      brokerageTypeName: parsedBrokerageTypeName,
       bedrooms: json['bedrooms'] as int? ?? 0,
       bathrooms: json['bathrooms'] as int? ?? 0,
       balconies: json['balconies'] as int? ?? 0,
@@ -284,7 +336,7 @@ class PropertyModel {
       flatNo: json['flat_no'] as String?,
       isVerified: json['is_verified'] as bool? ?? false,
       createdBy: json['created_by'] as String? ?? '',
-      createdByName: creator != null ? creator['full_name'] as String? ?? 'N/A' : 'N/A',
+      createdByName: creator != null ? creator['full_name'] as String? ?? '' : '',
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : DateTime.now(),
       images: imageList,
       amenities: amenityList,
@@ -292,11 +344,13 @@ class PropertyModel {
       adminId: json['admin_id'] as String?,
       organizationId: json['organization_id'] as String?,
       additionalDetails: json['additional_details'] != null ? Map<String, dynamic>.from(json['additional_details'] as Map) : null,
+      portalStatus: (json['portal_status'] ?? json['portalStatus']) as String? ?? 'None',
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
+      'portal_status': portalStatus,
       'title': title,
       'description': description,
       'category_id': categoryId,
@@ -338,6 +392,138 @@ class PropertyModel {
       'videos': videos,
       'additional_details': additionalDetails,
     };
+  }
+
+  PropertyModel copyWith({
+    String? id,
+    String? propertyCode,
+    String? title,
+    String? description,
+    String? categoryId,
+    String? categoryName,
+    String? propertyTypeId,
+    String? propertyTypeName,
+    String? configurationId,
+    String? configurationName,
+    String? listingTypeId,
+    String? listingTypeName,
+    String? propertyStatusId,
+    String? propertyStatusName,
+    String? cityId,
+    String? cityName,
+    String? areaId,
+    String? areaName,
+    String? pincode,
+    String? address,
+    String? landmark,
+    double? latitude,
+    double? longitude,
+    double? superBuiltupArea,
+    double? carpetArea,
+    double? plotArea,
+    double? price,
+    double? deposit,
+    double? maintenance,
+    String? furnishingTypeId,
+    String? furnishingTypeName,
+    String? facingTypeId,
+    String? facingTypeName,
+    String? ownershipTypeId,
+    String? ownershipTypeName,
+    int? bedrooms,
+    int? bathrooms,
+    int? balconies,
+    int? parking,
+    int? floorNo,
+    int? totalFloor,
+    int? ageOfProperty,
+    DateTime? possessionDate,
+    String? ownerName,
+    String? ownerMobile,
+    String? brokerName,
+    String? remarks,
+    String? blockWing,
+    String? flatNo,
+    String? googlePlaceId,
+    String? brokerageTypeId,
+    String? brokerageTypeName,
+    String? adminId,
+    String? organizationId,
+    bool? isVerified,
+    String? createdBy,
+    String? createdByName,
+    DateTime? createdAt,
+    List<String>? images,
+    List<String>? amenities,
+    List<String>? videos,
+    Map<String, dynamic>? additionalDetails,
+    String? portalStatus,
+  }) {
+    return PropertyModel(
+      id: id ?? this.id,
+      propertyCode: propertyCode ?? this.propertyCode,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      categoryId: categoryId ?? this.categoryId,
+      categoryName: categoryName ?? this.categoryName,
+      propertyTypeId: propertyTypeId ?? this.propertyTypeId,
+      propertyTypeName: propertyTypeName ?? this.propertyTypeName,
+      configurationId: configurationId ?? this.configurationId,
+      configurationName: configurationName ?? this.configurationName,
+      listingTypeId: listingTypeId ?? this.listingTypeId,
+      listingTypeName: listingTypeName ?? this.listingTypeName,
+      propertyStatusId: propertyStatusId ?? this.propertyStatusId,
+      propertyStatusName: propertyStatusName ?? this.propertyStatusName,
+      cityId: cityId ?? this.cityId,
+      cityName: cityName ?? this.cityName,
+      areaId: areaId ?? this.areaId,
+      areaName: areaName ?? this.areaName,
+      pincode: pincode ?? this.pincode,
+      address: address ?? this.address,
+      landmark: landmark ?? this.landmark,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      superBuiltupArea: superBuiltupArea ?? this.superBuiltupArea,
+      carpetArea: carpetArea ?? this.carpetArea,
+      plotArea: plotArea ?? this.plotArea,
+      price: price ?? this.price,
+      deposit: deposit ?? this.deposit,
+      maintenance: maintenance ?? this.maintenance,
+      furnishingTypeId: furnishingTypeId ?? this.furnishingTypeId,
+      furnishingTypeName: furnishingTypeName ?? this.furnishingTypeName,
+      facingTypeId: facingTypeId ?? this.facingTypeId,
+      facingTypeName: facingTypeName ?? this.facingTypeName,
+      ownershipTypeId: ownershipTypeId ?? this.ownershipTypeId,
+      ownershipTypeName: ownershipTypeName ?? this.ownershipTypeName,
+      bedrooms: bedrooms ?? this.bedrooms,
+      bathrooms: bathrooms ?? this.bathrooms,
+      balconies: balconies ?? this.balconies,
+      parking: parking ?? this.parking,
+      floorNo: floorNo ?? this.floorNo,
+      totalFloor: totalFloor ?? this.totalFloor,
+      ageOfProperty: ageOfProperty ?? this.ageOfProperty,
+      possessionDate: possessionDate ?? this.possessionDate,
+      ownerName: ownerName ?? this.ownerName,
+      ownerMobile: ownerMobile ?? this.ownerMobile,
+      brokerName: brokerName ?? this.brokerName,
+      remarks: remarks ?? this.remarks,
+      blockWing: blockWing ?? this.blockWing,
+      flatNo: flatNo ?? this.flatNo,
+      googlePlaceId: googlePlaceId ?? this.googlePlaceId,
+      brokerageTypeId: brokerageTypeId ?? this.brokerageTypeId,
+      brokerageTypeName: brokerageTypeName ?? this.brokerageTypeName,
+      adminId: adminId ?? this.adminId,
+      organizationId: organizationId ?? this.organizationId,
+      isVerified: isVerified ?? this.isVerified,
+      createdBy: createdBy ?? this.createdBy,
+      createdByName: createdByName ?? this.createdByName,
+      createdAt: createdAt ?? this.createdAt,
+      images: images ?? this.images,
+      amenities: amenities ?? this.amenities,
+      videos: videos ?? this.videos,
+      additionalDetails: additionalDetails ?? this.additionalDetails,
+      portalStatus: portalStatus ?? this.portalStatus,
+    );
   }
 
   String get statusDisplayName {
@@ -404,7 +590,8 @@ class LookupItem {
   final String? categoryId;
   final String? state;
   final String? country;
-  LookupItem({required this.id, required this.name, this.categoryId, this.state, this.country});
+  final String? description;
+  LookupItem({required this.id, required this.name, this.categoryId, this.state, this.country, this.description});
   factory LookupItem.fromJson(Map<String, dynamic> json) {
     return LookupItem(
       id: (json['id'] ?? '').toString(),
@@ -412,6 +599,7 @@ class LookupItem {
       categoryId: json['category_id']?.toString(),
       state: json['state']?.toString(),
       country: json['country']?.toString(),
+      description: json['description']?.toString(),
     );
   }
 }
@@ -419,14 +607,26 @@ class LookupItem {
 class AreaLookup extends LookupItem {
   final String cityId;
   final String pincode;
-  AreaLookup({required String id, required String name, required this.cityId, required this.pincode})
-      : super(id: id, name: name);
+  final String? zoneId;
+  final String? zoneName;
+
+  AreaLookup({
+    required String id,
+    required String name,
+    required this.cityId,
+    required this.pincode,
+    this.zoneId,
+    this.zoneName,
+  }) : super(id: id, name: name);
+
   factory AreaLookup.fromJson(Map<String, dynamic> json) {
     return AreaLookup(
       id: (json['id'] ?? '').toString(),
       name: (json['area_name'] ?? json['name'] ?? '').toString(),
       cityId: (json['city_id'] ?? '').toString(),
       pincode: (json['pincode'] ?? '').toString(),
+      zoneId: json['zone_id']?.toString(),
+      zoneName: json['zone_name']?.toString() ?? (json['zones'] is Map ? json['zones']['name']?.toString() : null),
     );
   }
 }
@@ -434,6 +634,7 @@ class AreaLookup extends LookupItem {
 class PropertyMetadataModel {
   final List<LookupItem> cities;
   final List<AreaLookup> areas;
+  final List<LookupItem> zones;
   final List<LookupItem> categories;
   final List<LookupItem> types;
   final List<LookupItem> configurations;
@@ -448,6 +649,7 @@ class PropertyMetadataModel {
   PropertyMetadataModel({
     required this.cities,
     required this.areas,
+    this.zones = const [],
     required this.categories,
     required this.types,
     required this.configurations,
@@ -481,9 +683,19 @@ class PropertyMetadataModel {
     final areasList = parseList(meta['areas'], AreaLookup.fromJson)
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
+    final zonesList = parseList<LookupItem>(
+      meta['zones'],
+      (j) => LookupItem(
+        id: (j['id'] ?? '').toString(),
+        name: (j['name'] ?? '').toString(),
+        description: j['description']?.toString(),
+      ),
+    )..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
     return PropertyMetadataModel(
       cities: citiesList,
       areas: areasList,
+      zones: zonesList,
       categories: parseList(meta['categories'], LookupItem.fromJson),
       types: parseList(meta['types'], LookupItem.fromJson),
       configurations: parseList(meta['configurations'], LookupItem.fromJson),

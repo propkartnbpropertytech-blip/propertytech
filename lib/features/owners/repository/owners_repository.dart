@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'package:propkart/features/owners/models/owner_model.dart';
-import 'package:propkart/features/owners/services/owners_service.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
-import 'package:propkart/core/storage/isar_collections.dart';
-import 'package:propkart/core/storage/model_mappers.dart';
-import 'package:propkart/core/storage/performance_logger.dart';
+import '../models/owner_model.dart';
+import '../services/owners_service.dart';
+import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/isar_collections.dart';
+import '../../../core/storage/model_mappers.dart';
+import '../../../core/storage/performance_logger.dart';
 
 class OwnersRepository {
   final OwnersService _ownersService = OwnersService();

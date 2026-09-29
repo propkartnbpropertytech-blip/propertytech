@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:propkart/core/api/api_constants.dart';
+import '../api/api_constants.dart';
 
 class NetworkInfo {
   static final NetworkInfo _instance = NetworkInfo._internal();

@@ -14,6 +14,52 @@ class IntegrationLeadModel {
   final String? importedClientId;
   final String? metaFeedbackEventId;
   final DateTime? metaFeedbackSentAt;
+  final int enquiryCount;
+  final String leadType; // 'Property Listing', 'Requirement'
+  final String campaignStatus; // 'New', 'Follow up', 'Interested', 'Not interested'
+  final DateTime? followupScheduledAt;
+  final String? followupRemarks;
+  final String? followupStatus;
+  final DateTime? callbackScheduledAt;
+  final String? callbackRemarks;
+  final String? callbackStatus;
+  final CrmMatchInfo? crmMatch;
+  final String? assignedTo;
+  final String? assignedToName;
+  final String? assignedTelecallerId;
+  final String? assignedTelecallerName;
+  final String? allocationStatus;
+  final bool isOldUntouched;
+  final DateTime? telecallerAssignedAt;
+  final String? transferRemarks;
+  final DateTime? interactedAt;
+  final String? interactedBy;
+  final String? statusUpdatedByName;
+  final String? statusUpdatedById;
+  final DateTime? statusUpdatedAt;
+  final String? notInterestedByName;
+  final String? notInterestedById;
+  final DateTime? notInterestedAt;
+  final String? notInterestedReason;
+  final String? archivedByName;
+  final String? archivedById;
+  final DateTime? archivedAt;
+
+  bool get isInteracted =>
+      campaignStatus == 'CNR' ||
+      campaignStatus == 'Picked Up' ||
+      campaignStatus == 'Assigned' ||
+      interactedAt != null;
+
+  String get customerName {
+    final name = getStringValue('full_name');
+    if (name.isNotEmpty) return name;
+    final fallback = getStringValue('name');
+    if (fallback.isNotEmpty) return fallback;
+    final client = getStringValue('Client Name');
+    if (client.isNotEmpty) return client;
+    return getStringValue('Customer Name');
+  }
 
   IntegrationLeadModel({
     required this.id,
@@ -28,29 +74,558 @@ class IntegrationLeadModel {
     this.importedClientId,
     this.metaFeedbackEventId,
     this.metaFeedbackSentAt,
-  });
+    this.enquiryCount = 1,
+    String? leadType,
+    this.campaignStatus = 'New',
+    this.followupScheduledAt,
+    this.followupRemarks,
+    this.followupStatus,
+    this.callbackScheduledAt,
+    this.callbackRemarks,
+    this.callbackStatus,
+    this.crmMatch,
+    this.assignedTo,
+    this.assignedToName,
+    this.assignedTelecallerId,
+    this.assignedTelecallerName,
+    this.allocationStatus,
+    this.isOldUntouched = false,
+    this.telecallerAssignedAt,
+    this.transferRemarks,
+    this.interactedAt,
+    this.interactedBy,
+    this.statusUpdatedByName,
+    this.statusUpdatedById,
+    this.statusUpdatedAt,
+    this.notInterestedByName,
+    this.notInterestedById,
+    this.notInterestedAt,
+    this.notInterestedReason,
+    this.archivedByName,
+    this.archivedById,
+    this.archivedAt,
+  }) : leadType = resolveLeadType(leadType, rawJson);
 
-  /// Extract cell value by dynamic key
+  /// Resolves lead type between 'Property Listing' and 'Requirement'
+  static String resolveLeadType(String? explicitType, Map<String, dynamic> rawJson) {
+    if (explicitType != null && explicitType.trim().isNotEmpty) {
+      final t = explicitType.toLowerCase().trim();
+      if (t.contains('property') || t.contains('listing') || t.contains('owner')) {
+        return 'Property Listing';
+      }
+      if (t.contains('requirement') || t.contains('tenant') || t.contains('buyer')) {
+        return 'Requirement';
+      }
+      return explicitType;
+    }
+    return classifyLeadTypeFromRaw(rawJson);
+  }
+
+  /// Classifies lead type from raw payload keys, values, and campaign metadata
+  static String classifyLeadTypeFromRaw(Map<String, dynamic> rawJson) {
+    final campaign = (rawJson['campaign_name'] ?? rawJson['Campaign Name'] ?? '').toString().toLowerCase();
+    final form = (rawJson['form_name'] ?? rawJson['Form Name'] ?? '').toString().toLowerCase();
+    final ad = (rawJson['ad_name'] ?? rawJson['Ad Name'] ?? '').toString().toLowerCase();
+    final metaStr = '$campaign $form $ad';
+
+    // 1. High-Priority Campaign / Form explicit matching:
+    // Survey Ad 3108, Survey Ad 0308, survey ads -> Requirement (Seeker)
+    if (metaStr.contains('survey ad 3108') ||
+        metaStr.contains('survey ad 0308') ||
+        metaStr.contains('survey ad') ||
+        metaStr.contains('3108') ||
+        metaStr.contains('0308') ||
+        metaStr.contains('tenant') ||
+        metaStr.contains('buyer') ||
+        metaStr.contains('looking for property') ||
+        metaStr.contains('looking for home')) {
+      return 'Requirement';
+    }
+
+    // Rental Ad 0408, owner/listing ads -> Property Listing (Owner/Landlord)
+    if (metaStr.contains('rental ad 0408') ||
+        metaStr.contains('rental ad') ||
+        metaStr.contains('0408') ||
+        metaStr.contains('list property') ||
+        metaStr.contains('listing') ||
+        metaStr.contains('landlord') ||
+        metaStr.contains('seller') ||
+        metaStr.contains('sell property')) {
+      return 'Property Listing';
+    }
+
+    // 2. High-Precision Form Questions matching
+    final rawStr = jsonEncode(rawJson).toLowerCase();
+
+    final hasOwnerQuestions = rawStr.contains('where_is_your_property_located') ||
+        rawStr.contains('where is your property located') ||
+        rawStr.contains('what_type_of_property_are_you_looking_to_rent_out') ||
+        rawStr.contains('what type of property you are looking to rent out') ||
+        rawStr.contains('what type of property are you looking to rent out') ||
+        rawStr.contains('what_type_of_property_are_you_looking_to_sell') ||
+        rawStr.contains('looking to rent out') ||
+        rawStr.contains('looking_to_rent_out') ||
+        rawStr.contains('expected monthly rent') ||
+        rawStr.contains('expected_monthly_rent') ||
+        rawStr.contains('complete address of your property') ||
+        rawStr.contains('complete_address_of_your_property');
+
+    final hasTenantQuestions = rawStr.contains('which_area_are_you_looking_for') ||
+        rawStr.contains('which area are you looking for') ||
+        rawStr.contains('what_type_of_home_are_you_looking_for') ||
+        rawStr.contains('what type of home are you looking for') ||
+        rawStr.contains('what_is_your_monthly_rental_budget') ||
+        rawStr.contains('monthly rental budget') ||
+        rawStr.contains('who_will_be_staying_in_the_property') ||
+        rawStr.contains('who will be staying');
+
+    if (hasOwnerQuestions && !hasTenantQuestions) {
+      return 'Property Listing';
+    }
+    if (hasTenantQuestions && !hasOwnerQuestions) {
+      return 'Requirement';
+    }
+    if (hasOwnerQuestions) return 'Property Listing';
+    if (hasTenantQuestions) return 'Requirement';
+
+    return 'Requirement';
+  }
+
+  /// Extract cell value by dynamic key with intelligent alias resolution
+  static bool _isPlaceholderLeadName(String value) {
+    final lower = value.trim().toLowerCase();
+    if (lower.isEmpty || lower == 'lead' || lower == 'client' || lower == 'cnr client' || lower == 'callback client' || lower == 'campaign lead' || lower == 'meta lead') {
+      return true;
+    }
+    return RegExp(r'^lead\s*\d{6,}$').hasMatch(lower);
+  }
+
   dynamic getValue(String key) {
     if (rawJson.containsKey(key)) {
-      return rawJson[key];
+      final val = rawJson[key];
+      if (val != null && val.toString().trim().isNotEmpty) return val;
     }
     // Case-insensitive fallback
     for (final entry in rawJson.entries) {
       if (entry.key.toLowerCase().trim() == key.toLowerCase().trim()) {
+        final val = entry.value;
+        if (val != null && val.toString().trim().isNotEmpty) return val;
+      }
+    }
+
+    final normKey = key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+    // 1. Client / Owner Name
+    if (normKey == 'clientownername' ||
+        normKey == 'fullname' ||
+        normKey == 'name' ||
+        normKey == 'clientname' ||
+        normKey == 'customername' ||
+        normKey == 'buyername' ||
+        normKey == 'ownername' ||
+        normKey == 'nameofclient') {
+      const candidates = [
+        'Full Name',
+        'full_name',
+        'lead_name',
+        'name',
+        'Name',
+        'Client Name',
+        'Customer Name',
+        'Owner Name',
+        'buyer_name',
+        'Name of client',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          final text = rawJson[c].toString().trim();
+          if (!_isPlaceholderLeadName(text)) return rawJson[c];
+        }
+      }
+      for (final entry in rawJson.entries) {
+        final nk = entry.key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (nk != 'fullname' && nk != 'leadname' && nk != 'clientname' && nk != 'customername' && nk != 'ownername' && nk != 'buyername') {
+          continue;
+        }
+        final val = entry.value;
+        if (val == null || val is Map || val is List) continue;
+        final text = val.toString().trim();
+        if (text.isNotEmpty && !_isPlaceholderLeadName(text)) return val;
+      }
+    }
+
+    // 2. Phone / Mobile Number
+    if (normKey == 'phonenumber' ||
+        normKey == 'phone' ||
+        normKey == 'mobile' ||
+        normKey == 'mobilenumber' ||
+        normKey == 'contact' ||
+        normKey == 'contactnumber' ||
+        normKey == 'number' ||
+        normKey == 'ownermobile') {
+      const candidates = [
+        'phone_number',
+        'phone',
+        'Phone',
+        'Phone Number',
+        'mobile',
+        'Mobile',
+        'Number',
+        'contact',
+        'Contact',
+        'contact_number',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 3. Property Type (Owner Listing: what type of property looking to rent out / sell)
+    if (normKey == 'propertytype' || normKey == 'typeofproperty') {
+      const candidates = [
+        'what_type_of_property_are_you_looking_to_rent_out?',
+        'what_type_of_property_are_you_looking_to_sell?',
+        'property_type',
+        'Property Type',
+        'type',
+        'Type',
+        'configuration',
+        'Configuration',
+        'bhk',
+        'BHK',
+        '',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 4. Configuration (Tenant Requirement: what type of home looking for / BHK)
+    if (normKey == 'configuration' ||
+        normKey == 'bhk' ||
+        normKey == 'typeofhome' ||
+        normKey == 'hometype') {
+      const candidates = [
+        'what_type_of_home_are_you_looking_for?',
+        'configuration',
+        'Configuration',
+        'bhk',
+        'BHK',
+        'type_of_home',
+        'home_type',
+        'type',
+        'property_type',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 5. Expected Rent (Owner Listing: expected monthly rent)
+    if (normKey == 'expectedrent' ||
+        normKey == 'expectedmonthlyrent' ||
+        normKey == 'rent' ||
+        normKey == 'monthlyrent') {
+      const candidates = [
+        'what_is_your_expected_monthly_rent?',
+        'expected_monthly_rent',
+        'expected_rent',
+        'Expected Rent',
+        'monthly_rent',
+        'rent',
+        'Rent',
+        'what_is_the_complete_address_of_your_property?',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 6. Monthly Budget (Tenant Requirement: rental budget)
+    if (normKey == 'monthlybudget' ||
+        normKey == 'monthlyrentalbudget' ||
+        normKey == 'budget' ||
+        normKey == 'rentalbudget' ||
+        normKey == 'price') {
+      const candidates = [
+        'what_is_your_monthly_rental_budget?',
+        'monthly_rental_budget',
+        'Monthly Budget',
+        'budget',
+        'Budget',
+        'price',
+        'Price',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 7. Property Location (Owner Listing: where property is located / address)
+    if (normKey == 'propertylocation' ||
+        normKey == 'whereisyourpropertylocated' ||
+        normKey == 'propertyaddress' ||
+        normKey == 'completeaddress' ||
+        normKey == 'whatisthecompleteaddressofyourproperty') {
+      const candidates = [
+        'where_is_your_property_located?',
+        'what_is_the_complete_address_of_your_property?',
+        'property_location',
+        'Property Location',
+        'location',
+        'Location',
+        'area',
+        'Area',
+        'locality',
+        'address',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 8. Preferred Area (Tenant Requirement: which area / location looking for)
+    if (normKey == 'preferredarea' ||
+        normKey == 'whichareaareyoulookingfor' ||
+        normKey == 'whichlocationareyoulookingfor' ||
+        normKey == 'lookingarea' ||
+        normKey == 'lookinglocation' ||
+        normKey == 'area' ||
+        normKey == 'location') {
+      const candidates = [
+        'which_area_are_you_looking_for?',
+        'which_location_are_you_looking_for?',
+        'preferred_area',
+        'Preferred Area',
+        'location',
+        'Location',
+        'area',
+        'Area',
+        'locality',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 9. City
+    if (normKey == 'city' || normKey == 'targetcity') {
+      const candidates = ['city', 'City', 'target_city'];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 10. Email
+    if (normKey == 'email' || normKey == 'emailid' || normKey == 'emailaddress') {
+      const candidates = ['email', 'Email', 'Email ID', 'email_id', 'email_address'];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 11. Campaign Name
+    if (normKey == 'campaignname' || normKey == 'campaign') {
+      const candidates = ['Campaign Name', 'campaign_name', 'campaign', 'utm_campaign'];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 12. Form Name
+    if (normKey == 'formname' || normKey == 'form') {
+      const candidates = ['form_name', 'Form Name', 'form'];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 13. Ad Name
+    if (normKey == 'adname' || normKey == 'ad') {
+      const candidates = ['Ad Name', 'ad_name', 'ad'];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 14. Who will be staying (Tenant Requirement)
+    if (normKey == 'whowillbestaying' ||
+        normKey == 'whowillstay' ||
+        normKey == 'occupants' ||
+        normKey == 'tenanttype' ||
+        normKey == 'stayingwith') {
+      const candidates = [
+        'who_will_be_staying_in_the_property?',
+        'occupants',
+        'staying_with',
+        'tenant_type',
+        'who_will_stay',
+      ];
+      for (final c in candidates) {
+        if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
+          return rawJson[c];
+        }
+      }
+    }
+
+    // 15. Lead Arrival Date / Timestamp
+    if (normKey == 'receivedon' ||
+        normKey == 'date' ||
+        normKey == 'receiveddate' ||
+        normKey == 'arrivaltime' ||
+        normKey == 'createdat' ||
+        normKey == 'leadtime') {
+      return formattedReceivedAt;
+    }
+
+    // Fuzzy normalized search across all rawJson keys
+    for (final entry in rawJson.entries) {
+      final k = entry.key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (k.isNotEmpty && k == normKey) {
         return entry.value;
       }
     }
+
     return null;
   }
 
-  /// Helper to get formatted string value
+  /// Formatted local arrival date and time (e.g. "11 Sep 2026, 09:09 AM" or "Today, 09:09 AM")
+  String get formattedReceivedAt {
+    final local = receivedAt.toLocal();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final hour = local.hour == 0 ? 12 : (local.hour > 12 ? local.hour - 12 : local.hour);
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    final minuteStr = local.minute.toString().padLeft(2, '0');
+    final now = DateTime.now();
+
+    if (local.year == now.year && local.month == now.month && local.day == now.day) {
+      return 'Today, $hour:$minuteStr $period';
+    }
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    if (local.year == yesterday.year && local.month == yesterday.month && local.day == yesterday.day) {
+      return 'Yesterday, $hour:$minuteStr $period';
+    }
+    return '${local.day} ${months[local.month - 1]} ${local.year}, $hour:$minuteStr $period';
+  }
+
+  /// Relative elapsed time (e.g. "5m ago", "2h ago", "1d ago")
+  String get relativeTimeAgo {
+    final diff = DateTime.now().difference(receivedAt.toLocal());
+    if (diff.inSeconds < 60) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays == 1) return '1d ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w ago';
+    return '${(diff.inDays / 30).floor()}mo ago';
+  }
+
+  /// Freshness level badge
+  String get freshnessBadge {
+    final diff = DateTime.now().difference(receivedAt.toLocal());
+    if (diff.inHours < 24) return '⚡ Fresh Today';
+    if (diff.inHours < 48) return '🔥 Recent';
+    return '📅 Standard';
+  }
+
+  /// Concise 1-sentence executive summary for real estate agents
+  String get leadSummary {
+    final isProp = leadType == 'Property Listing';
+    final name = getStringValue(isProp ? 'Client / Owner Name' : 'Client Name');
+    final config = getStringValue(isProp ? 'Property Type' : 'Configuration');
+    final budget = getStringValue(isProp ? 'Expected Rent' : 'Monthly Budget');
+    final loc = getStringValue(isProp ? 'Property Location' : 'Preferred Area');
+    final city = getStringValue('City');
+
+    final locationStr = [loc, city].where((s) => s.isNotEmpty).join(', ');
+
+    if (leadType == 'Property Listing') {
+      final parts = <String>[];
+      if (name.isNotEmpty) parts.add(name);
+      parts.add('wants to rent out');
+      if (config.isNotEmpty) parts.add(config);
+      if (locationStr.isNotEmpty) parts.add('in $locationStr');
+      if (budget.isNotEmpty) parts.add('• Expected Rent: $budget');
+      parts.add('• Arrived: $formattedReceivedAt');
+      return parts.join(' ');
+    } else {
+      final staying = getStringValue('Who Will Be Staying');
+      final parts = <String>[];
+      if (name.isNotEmpty) parts.add(name);
+      parts.add('seeking');
+      if (config.isNotEmpty) parts.add(config);
+      if (locationStr.isNotEmpty) parts.add('in $locationStr');
+      if (budget.isNotEmpty) parts.add('• Budget: $budget');
+      if (staying.isNotEmpty) parts.add('• For: $staying');
+      parts.add('• Arrived: $formattedReceivedAt');
+      return parts.join(' ');
+    }
+  }
+
+  /// Helper to get formatted, human-friendly string value
   String getStringValue(String key) {
     final val = getValue(key);
     if (val == null) return '';
     if (val is List) return val.join(', ');
     if (val is Map) return jsonEncode(val);
-    return val.toString();
+    String str = val.toString().trim();
+    if (str.isEmpty) return '';
+
+    // Smart formatting for common enum-like raw values
+    final lower = str.toLowerCase();
+
+    // 1. BHK formatting
+    if (lower == '1_bhk' || lower == '1bhk') return '1 BHK';
+    if (lower == '2_bhk' || lower == '2bhk') return '2 BHK';
+    if (lower == '3_bhk' || lower == '3bhk') return '3 BHK';
+    if (lower == '4_bhk' || lower == '4bhk') return '4 BHK';
+    if (lower == '4_bhk_/_premium' || lower == '4_bhk_/_penthouse') return '4 BHK / Premium';
+
+    // 2. Location formatting
+    if (lower == 'other_area') return 'Other Area';
+    if (lower == 'sg_highway_/_thaltej') return 'SG Highway / Thaltej';
+    if (lower == 'bopal_/_south-west_ahmedabad') return 'Bopal / South-West Ahmedabad';
+    if (lower == 'west_ahmedabad') return 'West Ahmedabad';
+    if (lower == 'any_suitable_location') return 'Any Suitable Location';
+
+    // 3. Occupants formatting
+    if (lower == 'family') return 'Family';
+    if (lower == 'working_professionals') return 'Working Professionals';
+    if (lower == 'students') return 'Students';
+
+    // Clean up underscores if it looks like an internal slug
+    if (str.contains('_') && !str.contains(' ') && !str.contains('@')) {
+      return str
+          .split('_')
+          .map((word) => word.isNotEmpty ? '${word[0].toUpperCase()}${word.substring(1)}' : '')
+          .join(' ');
+    }
+
+    return str;
   }
 
   /// Create a copy with modified fields
@@ -67,12 +642,51 @@ class IntegrationLeadModel {
     String? importedClientId,
     String? metaFeedbackEventId,
     DateTime? metaFeedbackSentAt,
+    int? enquiryCount,
+    String? leadType,
+    String? campaignStatus,
+    DateTime? followupScheduledAt,
+    String? followupRemarks,
+    String? followupStatus,
+    DateTime? callbackScheduledAt,
+    String? callbackRemarks,
+    String? callbackStatus,
+    CrmMatchInfo? crmMatch,
+    String? assignedTo,
+    String? assignedToName,
+    String? assignedTelecallerId,
+    String? assignedTelecallerName,
+    String? allocationStatus,
+    bool? isOldUntouched,
+    DateTime? telecallerAssignedAt,
+    String? transferRemarks,
+    DateTime? interactedAt,
+    String? interactedBy,
+    String? statusUpdatedByName,
+    String? statusUpdatedById,
+    DateTime? statusUpdatedAt,
+    String? notInterestedByName,
+    String? notInterestedById,
+    DateTime? notInterestedAt,
+    String? notInterestedReason,
+    String? archivedByName,
+    String? archivedById,
+    DateTime? archivedAt,
+    bool clearFollowup = false,
+    bool clearCallback = false,
   }) {
+    final updatedRaw = rawJson != null
+        ? Map<String, dynamic>.from(rawJson)
+        : Map<String, dynamic>.from(this.rawJson);
+    final finalLeadType = leadType ?? this.leadType;
+    updatedRaw['_lead_type'] = finalLeadType;
+    updatedRaw['lead_type'] = finalLeadType;
+
     return IntegrationLeadModel(
       id: id ?? this.id,
       source: source ?? this.source,
       receivedAt: receivedAt ?? this.receivedAt,
-      rawJson: rawJson ?? Map<String, dynamic>.from(this.rawJson),
+      rawJson: updatedRaw,
       externalLeadId: externalLeadId ?? this.externalLeadId,
       isDuplicate: isDuplicate ?? this.isDuplicate,
       duplicateReason: duplicateReason ?? this.duplicateReason,
@@ -81,6 +695,36 @@ class IntegrationLeadModel {
       importedClientId: importedClientId ?? this.importedClientId,
       metaFeedbackEventId: metaFeedbackEventId ?? this.metaFeedbackEventId,
       metaFeedbackSentAt: metaFeedbackSentAt ?? this.metaFeedbackSentAt,
+      enquiryCount: enquiryCount ?? this.enquiryCount,
+      leadType: finalLeadType,
+      campaignStatus: campaignStatus ?? this.campaignStatus,
+      followupScheduledAt: clearFollowup ? null : (followupScheduledAt ?? this.followupScheduledAt),
+      followupRemarks: clearFollowup ? null : (followupRemarks ?? this.followupRemarks),
+      followupStatus: clearFollowup ? 'Completed' : (followupStatus ?? this.followupStatus),
+      callbackScheduledAt: clearCallback ? null : (callbackScheduledAt ?? this.callbackScheduledAt),
+      callbackRemarks: clearCallback ? null : (callbackRemarks ?? this.callbackRemarks),
+      callbackStatus: clearCallback ? 'Completed' : (callbackStatus ?? this.callbackStatus),
+      crmMatch: crmMatch ?? this.crmMatch,
+      assignedTo: assignedTo ?? this.assignedTo,
+      assignedToName: assignedToName ?? this.assignedToName,
+      assignedTelecallerId: assignedTelecallerId ?? this.assignedTelecallerId,
+      assignedTelecallerName: assignedTelecallerName ?? this.assignedTelecallerName,
+      allocationStatus: allocationStatus ?? this.allocationStatus,
+      isOldUntouched: isOldUntouched ?? this.isOldUntouched,
+      telecallerAssignedAt: telecallerAssignedAt ?? this.telecallerAssignedAt,
+      transferRemarks: transferRemarks ?? this.transferRemarks,
+      interactedAt: interactedAt ?? this.interactedAt,
+      interactedBy: interactedBy ?? this.interactedBy,
+      statusUpdatedByName: statusUpdatedByName ?? this.statusUpdatedByName,
+      statusUpdatedById: statusUpdatedById ?? this.statusUpdatedById,
+      statusUpdatedAt: statusUpdatedAt ?? this.statusUpdatedAt,
+      notInterestedByName: notInterestedByName ?? this.notInterestedByName,
+      notInterestedById: notInterestedById ?? this.notInterestedById,
+      notInterestedAt: notInterestedAt ?? this.notInterestedAt,
+      notInterestedReason: notInterestedReason ?? this.notInterestedReason,
+      archivedByName: archivedByName ?? this.archivedByName,
+      archivedById: archivedById ?? this.archivedById,
+      archivedAt: archivedAt ?? this.archivedAt,
     );
   }
 
@@ -98,21 +742,138 @@ class IntegrationLeadModel {
       'imported_client_id': importedClientId,
       'meta_feedback_event_id': metaFeedbackEventId,
       'meta_feedback_sent_at': metaFeedbackSentAt?.toIso8601String(),
+      'enquiry_count': enquiryCount,
+      'lead_type': leadType,
+      'campaign_status': campaignStatus,
+      'followup_scheduled_at': followupScheduledAt?.toIso8601String(),
+      'followup_remarks': followupRemarks,
+      'followup_status': followupStatus,
+      'callback_scheduled_at': callbackScheduledAt?.toIso8601String(),
+      'callback_remarks': callbackRemarks,
+      'callback_status': callbackStatus,
+      'crm_match': crmMatch?.toJson(),
+      'assigned_to': assignedTo,
+      'assigned_to_name': assignedToName,
+      'assigned_telecaller_id': assignedTelecallerId,
+      'assigned_telecaller_name': assignedTelecallerName,
+      'allocation_status': allocationStatus,
+      'is_old_untouched': isOldUntouched,
+      'telecaller_assigned_at': telecallerAssignedAt?.toIso8601String(),
+      'transfer_remarks': transferRemarks,
+      'interacted_at': interactedAt?.toIso8601String(),
+      'interacted_by': interactedBy,
+      'status_updated_by_name': statusUpdatedByName,
+      'status_updated_by_id': statusUpdatedById,
+      'status_updated_at': statusUpdatedAt?.toIso8601String(),
+      'not_interested_by_name': notInterestedByName,
+      'not_interested_by_id': notInterestedById,
+      'not_interested_at': notInterestedAt?.toIso8601String(),
+      'not_interested_reason': notInterestedReason,
+      'archived_by_name': archivedByName,
+      'archived_by_id': archivedById,
+      'archived_at': archivedAt?.toIso8601String(),
     };
   }
 
   factory IntegrationLeadModel.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic> raw = {};
+    if (json['raw_json'] is Map<String, dynamic>) {
+      raw = Map<String, dynamic>.from(json['raw_json']);
+    } else if (json['raw_json'] is Map) {
+      raw = Map<String, dynamic>.from(json['raw_json'] as Map);
+    } else if (json['raw_json'] is String && (json['raw_json'] as String).isNotEmpty) {
+      try {
+        raw = Map<String, dynamic>.from(jsonDecode(json['raw_json'] as String));
+      } catch (_) {}
+    }
+
+    final explicitType = json['lead_type']?.toString() ??
+        json['leadType']?.toString() ??
+        json['targetLeadType']?.toString() ??
+        raw['_lead_type']?.toString() ??
+        raw['lead_type']?.toString() ??
+        raw['leadType']?.toString();
+    final type = resolveLeadType(explicitType, raw);
+
+    final latestFu = json['latest_followup'] is Map<String, dynamic>
+        ? json['latest_followup'] as Map<String, dynamic>
+        : null;
+
+    final transferObj = raw['_transfer'] is Map ? raw['_transfer'] as Map : null;
+    final assignedToVal = json['assigned_to']?.toString() ??
+        raw['_assigned_to']?.toString() ??
+        transferObj?['assigned_to']?.toString();
+    final assignedNameVal = json['assigned_to_name']?.toString() ??
+        raw['_assigned_to_name']?.toString() ??
+        json['assigned_user']?['full_name']?.toString() ??
+        transferObj?['assigned_to_name']?.toString();
+
+    final telecallerIdVal = json['assigned_telecaller_id']?.toString() ??
+        raw['_assigned_telecaller_id']?.toString();
+    final telecallerNameVal = json['assigned_telecaller_name']?.toString() ??
+        json['telecaller']?['full_name']?.toString() ??
+        raw['_assigned_telecaller_name']?.toString();
+    final allocStatusVal = json['allocation_status']?.toString() ??
+        raw['_allocation_status']?.toString();
+    final isOldVal = json['is_old_untouched'] == true ||
+        raw['_is_old_untouched'] == true;
+    final telecallerAssignedRaw = json['telecaller_assigned_at'] ??
+        raw['_telecaller_assigned_at'];
+    final telecallerAssignedVal = telecallerAssignedRaw != null
+        ? DateTime.tryParse(telecallerAssignedRaw.toString())
+        : null;
+
+    final transferRemarksVal = json['transfer_remarks']?.toString() ??
+        raw['_transfer_remarks']?.toString() ??
+        transferObj?['remarks']?.toString();
+    final interactedAtRaw = json['interacted_at'] ?? raw['_interacted_at'] ?? transferObj?['interacted_at'];
+    final interactedAtVal = interactedAtRaw != null ? DateTime.tryParse(interactedAtRaw.toString()) : null;
+    final interactedByVal = json['interacted_by']?.toString() ?? raw['_interacted_by']?.toString() ?? transferObj?['interacted_by']?.toString();
+
+    final statusUpdatedByNameVal = json['status_updated_by_name']?.toString() ??
+        raw['status_updated_by_name']?.toString() ??
+        raw['_status_updated_by_name']?.toString() ??
+        ((json['campaign_status'] != null && json['campaign_status'] != 'New' && json['campaign_status'] != 'Assigned') ? telecallerNameVal : null);
+    final statusUpdatedByIdVal = json['status_updated_by_id']?.toString() ??
+        raw['status_updated_by_id']?.toString();
+    final statusUpdatedAtRaw = json['status_updated_at'] ?? raw['status_updated_at'];
+    final statusUpdatedAtVal = statusUpdatedAtRaw != null ? DateTime.tryParse(statusUpdatedAtRaw.toString()) : null;
+
+    final notInterestedByNameVal = json['not_interested_by_name']?.toString() ??
+        raw['not_interested_by_name']?.toString() ??
+        (json['campaign_status'] == 'Not interested' ? (statusUpdatedByNameVal ?? telecallerNameVal) : null);
+    final notInterestedByIdVal = json['not_interested_by_id']?.toString() ??
+        raw['not_interested_by_id']?.toString();
+    final notInterestedAtRaw = json['not_interested_at'] ?? raw['not_interested_at'];
+    final notInterestedAtVal = notInterestedAtRaw != null ? DateTime.tryParse(notInterestedAtRaw.toString()) : null;
+    final notInterestedReasonVal = json['not_interested_reason']?.toString() ??
+        json['not_interested_notes']?.toString() ??
+        json['rejection_reason']?.toString() ??
+        json['notes']?.toString() ??
+        raw['not_interested_reason']?.toString() ??
+        raw['not_interested_notes']?.toString() ??
+        raw['rejection_reason']?.toString() ??
+        raw['notes']?.toString();
+
+    final archivedByNameVal = json['archived_by_name']?.toString() ??
+        raw['archived_by_name']?.toString() ??
+        ((json['campaign_status'] == 'Archived' || json['campaign_status'] == 'Property Listed' || json['campaign_status'] == 'Listed') ? (statusUpdatedByNameVal ?? telecallerNameVal) : null);
+    final archivedByIdVal = json['archived_by_id']?.toString() ??
+        raw['archived_by_id']?.toString();
+    final archivedAtRaw = json['archived_at'] ?? raw['archived_at'];
+    final archivedAtVal = archivedAtRaw != null ? DateTime.tryParse(archivedAtRaw.toString()) : null;
+
     return IntegrationLeadModel(
       id: json['id']?.toString() ?? '',
       source: json['source']?.toString() ?? 'Meta Ads',
       receivedAt: json['received_at'] != null
           ? DateTime.tryParse(json['received_at'].toString()) ?? DateTime.now()
-          : DateTime.now(),
-      rawJson: json['raw_json'] is Map<String, dynamic>
-          ? Map<String, dynamic>.from(json['raw_json'])
-          : (json['raw_json'] is String
-              ? Map<String, dynamic>.from(jsonDecode(json['raw_json']))
-              : {}),
+          : (json['created_at'] != null
+              ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
+              : (raw['created_time'] != null
+                  ? DateTime.tryParse(raw['created_time'].toString()) ?? DateTime.now()
+                  : DateTime.now())),
+      rawJson: raw,
       externalLeadId: json['external_lead_id']?.toString(),
       isDuplicate: json['is_duplicate'] == true,
       duplicateReason: json['duplicate_reason']?.toString(),
@@ -123,6 +884,112 @@ class IntegrationLeadModel {
       metaFeedbackSentAt: json['meta_feedback_sent_at'] != null
           ? DateTime.tryParse(json['meta_feedback_sent_at'].toString())
           : null,
+      enquiryCount: int.tryParse(json['enquiry_count']?.toString() ?? '1') ?? 1,
+      leadType: type,
+      campaignStatus: (() {
+        final rawStatus = json['campaign_status']?.toString() ?? 'New';
+        if ((rawStatus == 'New' || rawStatus == 'Assigned' || rawStatus.isEmpty) && latestFu != null && latestFu['status'] == 'Pending') {
+          return latestFu['outcome'] == 'CALLBACK' ? 'Callback' : 'Follow up';
+        }
+        return rawStatus;
+      })(),
+      followupScheduledAt: latestFu != null && latestFu['scheduled_at'] != null && latestFu['outcome'] != 'CALLBACK'
+          ? DateTime.tryParse(latestFu['scheduled_at'].toString())
+          : (json['followup_scheduled_at'] != null
+              ? DateTime.tryParse(json['followup_scheduled_at'].toString())
+              : (raw['_followup'] is Map && raw['_followup']['scheduled_at'] != null
+                  ? DateTime.tryParse(raw['_followup']['scheduled_at'].toString())
+                  : null)),
+      followupRemarks: (latestFu != null && latestFu['outcome'] != 'CALLBACK' ? latestFu['remarks']?.toString() : null) ??
+          json['followup_remarks']?.toString() ??
+          (raw['_followup'] is Map ? raw['_followup']['remarks']?.toString() : null),
+      followupStatus: (latestFu != null && latestFu['outcome'] != 'CALLBACK' ? latestFu['status']?.toString() : null) ??
+          json['followup_status']?.toString() ??
+          (raw['_followup'] is Map ? raw['_followup']['status']?.toString() : null),
+      callbackScheduledAt: json['callback_scheduled_at'] != null
+          ? DateTime.tryParse(json['callback_scheduled_at'].toString())
+          : (raw['_callback'] is Map && raw['_callback']['scheduled_at'] != null
+              ? DateTime.tryParse(raw['_callback']['scheduled_at'].toString())
+              : (latestFu != null && latestFu['outcome'] == 'CALLBACK' && latestFu['scheduled_at'] != null
+                  ? DateTime.tryParse(latestFu['scheduled_at'].toString())
+                  : null)),
+      callbackRemarks: json['callback_remarks']?.toString() ??
+          (raw['_callback'] is Map ? raw['_callback']['remarks']?.toString() : null) ??
+          (latestFu != null && latestFu['outcome'] == 'CALLBACK' ? latestFu['remarks']?.toString() : null),
+      callbackStatus: json['callback_status']?.toString() ??
+          (raw['_callback'] is Map ? raw['_callback']['status']?.toString() : null) ??
+          (latestFu != null && latestFu['outcome'] == 'CALLBACK' ? latestFu['status']?.toString() : null),
+      crmMatch: json['crm_match'] is Map<String, dynamic>
+          ? CrmMatchInfo.fromJson(Map<String, dynamic>.from(json['crm_match']))
+          : null,
+      assignedTo: assignedToVal,
+      assignedToName: assignedNameVal,
+      assignedTelecallerId: telecallerIdVal,
+      assignedTelecallerName: telecallerNameVal,
+      allocationStatus: allocStatusVal,
+      isOldUntouched: isOldVal,
+      telecallerAssignedAt: telecallerAssignedVal,
+      transferRemarks: transferRemarksVal,
+      interactedAt: interactedAtVal,
+      interactedBy: interactedByVal,
+      statusUpdatedByName: statusUpdatedByNameVal,
+      statusUpdatedById: statusUpdatedByIdVal,
+      statusUpdatedAt: statusUpdatedAtVal,
+      notInterestedByName: notInterestedByNameVal,
+      notInterestedById: notInterestedByIdVal,
+      notInterestedAt: notInterestedAtVal,
+      notInterestedReason: notInterestedReasonVal,
+      archivedByName: archivedByNameVal,
+      archivedById: archivedByIdVal,
+      archivedAt: archivedAtVal,
     );
   }
+}
+
+/// Real-time cross-table comparison result against requirements and properties tables
+class CrmMatchInfo {
+  final bool inCrm;
+  final String? table; // 'requirements' or 'properties'
+  final String? recordId;
+  final String? code;
+  final String? name;
+  final String? status;
+  final String? details;
+  final DateTime? createdAt;
+
+  const CrmMatchInfo({
+    this.inCrm = false,
+    this.table,
+    this.recordId,
+    this.code,
+    this.name,
+    this.status,
+    this.details,
+    this.createdAt,
+  });
+
+  factory CrmMatchInfo.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const CrmMatchInfo(inCrm: false);
+    return CrmMatchInfo(
+      inCrm: json['in_crm'] == true,
+      table: json['table']?.toString(),
+      recordId: json['record_id']?.toString(),
+      code: json['code']?.toString(),
+      name: json['name']?.toString(),
+      status: json['status']?.toString(),
+      details: json['details']?.toString(),
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'in_crm': inCrm,
+    'table': table,
+    'record_id': recordId,
+    'code': code,
+    'name': name,
+    'status': status,
+    'details': details,
+    'created_at': createdAt?.toIso8601String(),
+  };
 }

@@ -14,8 +14,14 @@ import '../../../core/theme/theme_manager.dart';
 import '../../../core/theme/theme_presets.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import 'sync_debug_screen.dart';
+import 'kpi_config_screen.dart';
+import '../widgets/permission_matrix_card.dart';
+import '../widgets/backup_management_card.dart';
+import '../../requirements/services/match_criteria_manager.dart';
+import '../services/upload_limits_manager.dart';
 import '../../../core/storage/isar_service.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/api/api_constants.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -28,15 +34,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final ConfigService _configService = ConfigService();
   bool _isLoading = false;
   String _activeSection = 'profile';
+  double _selectedMatchThreshold = MatchCriteriaManager().threshold.toDouble();
+  double _selectedMaxImages = UploadLimitsManager().maxImages.toDouble();
+  double _selectedMaxVideos = UploadLimitsManager().maxVideos.toDouble();
+  bool _uploadLimitsDirty = false;
+  bool _isSavingUploadLimits = false;
 
   @override
   void initState() {
     super.initState();
     ThemeManager().addListener(_onThemeChanged);
+    MatchCriteriaManager().addListener(_onCriteriaChanged);
+    UploadLimitsManager().addListener(_onUploadLimitsChanged);
+    UploadLimitsManager().fetchFromBackend(silent: true);
   }
 
   void _onThemeChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _onCriteriaChanged() {
+    if (mounted) {
+      setState(() {
+        _selectedMatchThreshold = MatchCriteriaManager().threshold.toDouble();
+      });
+    }
+  }
+
+  void _onUploadLimitsChanged() {
+    if (!mounted || _uploadLimitsDirty) return;
+    setState(() {
+      _selectedMaxImages = UploadLimitsManager().maxImages.toDouble();
+      _selectedMaxVideos = UploadLimitsManager().maxVideos.toDouble();
+    });
+  }
+
+  void _resetUploadLimitDraft() {
+    _uploadLimitsDirty = false;
+    _selectedMaxImages = UploadLimitsManager().maxImages.toDouble();
+    _selectedMaxVideos = UploadLimitsManager().maxVideos.toDouble();
+  }
+
+  void _setActiveSection(String id) {
+    if (_activeSection == id) return;
+    setState(() {
+      if (_activeSection == 'upload_limits' || id == 'upload_limits') {
+        _resetUploadLimitDraft();
+      }
+      _activeSection = id;
+    });
+    if (id == 'upload_limits') {
+      UploadLimitsManager().fetchFromBackend(silent: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    ThemeManager().removeListener(_onThemeChanged);
+    MatchCriteriaManager().removeListener(_onCriteriaChanged);
+    UploadLimitsManager().removeListener(_onUploadLimitsChanged);
+    super.dispose();
   }
 
   Widget _buildProfileCard(String name, String email) {
@@ -187,6 +244,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
             ),
             if (isAdminOrSuperAdmin) ...[
+              const Divider(height: CRMSpacing.l),
+              ListTile(
+                title: Text(
+                  'Run Match Criteria',
+                  style: CRMTypography.bodyMedium.copyWith(
+                    color: CRMColors.textOf(context),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                subtitle: Text(
+                  'Threshold: ${MatchCriteriaManager().threshold}% (${MatchCriteriaManager().thresholdModeLabel})',
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                ),
+                leading: Icon(Icons.bolt_rounded, color: MatchCriteriaManager().thresholdColor),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: MatchCriteriaManager().thresholdColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${MatchCriteriaManager().threshold}%',
+                        style: TextStyle(
+                          color: MatchCriteriaManager().thresholdColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.arrow_forward_ios_rounded, size: 16, color: CRMColors.textSecondaryOf(context)),
+                  ],
+                ),
+                contentPadding: EdgeInsets.zero,
+                onTap: () {
+                  setState(() => _activeSection = 'match_criteria');
+                },
+              ),
               const Divider(height: CRMSpacing.l),
               ListTile(
                 title: Text(
@@ -593,16 +691,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: FutureBuilder<AppConfigModel>(
         future: _configService.fetchAppConfig(),
         builder: (context, configSnapshot) {
-          final serverVersion = configSnapshot.data?.maxVersion;
           return FutureBuilder<PackageInfo>(
             future: PackageInfo.fromPlatform(),
             builder: (context, snapshot) {
               final rawVersion = snapshot.data?.version;
-              final version = (rawVersion != null && rawVersion.isNotEmpty && rawVersion != '1.0.0' && rawVersion != '1.1.1' && rawVersion != '1.1.4' && rawVersion != '1.1.5')
+              final version = (rawVersion != null && rawVersion.isNotEmpty && rawVersion != '1.0.0' && rawVersion != '1.1.1' && rawVersion != '1.1.4' && rawVersion != '1.1.5' && rawVersion != '2.0.0' && rawVersion != '2.0.1')
                   ? rawVersion
-                  : (serverVersion ?? AppConstants.appVersion);
+                  : AppConstants.appVersion;
               final rawBuild = snapshot.data?.buildNumber;
-              final buildNumber = (rawBuild != null && rawBuild.isNotEmpty && rawBuild != '1' && rawBuild != '3' && rawBuild != '6' && rawBuild != '7')
+              final buildNumber = (rawBuild != null && rawBuild.isNotEmpty && rawBuild != '1' && rawBuild != '3' && rawBuild != '6' && rawBuild != '7' && rawBuild != '8' && rawBuild != '9')
                   ? rawBuild
                   : AppConstants.buildNumber;
 
@@ -728,6 +825,807 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildRunMatchCriteriaSection() {
+    final manager = MatchCriteriaManager();
+    final currentScore = _selectedMatchThreshold.toInt();
+    final thresholdColor = manager.thresholdColor;
+    final modeLabel = manager.thresholdModeLabel;
+    final desc = manager.thresholdDescription;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CRMCard(
+          elevated: true,
+          title: 'Run Match Criteria Engine',
+          subtitle: 'Configure minimum qualification score for property-to-requirement matching. Saved in database and active across your entire team.',
+          headerAction: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: thresholdColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: thresholdColor.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.cloud_done_rounded, size: 14, color: thresholdColor),
+                const SizedBox(width: 4),
+                Text(
+                  '$currentScore% Minimum (Team)',
+                  style: TextStyle(
+                    color: thresholdColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: CRMSpacing.m),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(CRMSpacing.m),
+                  decoration: BoxDecoration(
+                    color: thresholdColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+                    border: Border.all(color: thresholdColor.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: thresholdColor.withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.tune_rounded, color: thresholdColor, size: 22),
+                      ),
+                      const SizedBox(width: CRMSpacing.m),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              modeLabel,
+                              style: CRMTypography.bodyMedium.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: thresholdColor,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              desc,
+                              style: CRMTypography.caption.copyWith(
+                                color: CRMColors.textSecondaryOf(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: CRMSpacing.l),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Match Threshold Cutoff',
+                          style: CRMTypography.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: CRMColors.textOf(context),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Properties scoring below this percentage will not qualify as matched listings',
+                          style: CRMTypography.caption.copyWith(
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '$currentScore%',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        color: thresholdColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: CRMSpacing.s),
+
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: thresholdColor,
+                    inactiveTrackColor: thresholdColor.withValues(alpha: 0.15),
+                    thumbColor: thresholdColor,
+                    overlayColor: thresholdColor.withValues(alpha: 0.2),
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+                    trackHeight: 6,
+                    valueIndicatorColor: thresholdColor,
+                    valueIndicatorTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                  child: Slider(
+                    value: _selectedMatchThreshold.clamp(10.0, 100.0),
+                    min: 10.0,
+                    max: 100.0,
+                    divisions: 18,
+                    label: '$currentScore%',
+                    onChanged: (val) {
+                      setState(() {
+                        _selectedMatchThreshold = (val / 5).round() * 5.0;
+                      });
+                    },
+                    onChangeEnd: (val) async {
+                      final v = ((val / 5).round() * 5).toInt();
+                      await manager.setThreshold(v);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Run Match Criteria saved to database ($v%)! Successfully applied to your entire team.',
+                            ),
+                            backgroundColor: manager.thresholdColor,
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ),
+
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('10% (Permissive)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                      Text('40% (Flexible)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                      Text('60% (Balanced)', style: CRMTypography.caption.copyWith(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primary)),
+                      Text('80% (Strict)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                      Text('100% (Exact)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: CRMSpacing.l),
+
+                Text(
+                  'Quick Preset Selection',
+                  style: CRMTypography.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: CRMColors.textOf(context),
+                  ),
+                ),
+                const SizedBox(height: CRMSpacing.s),
+                Wrap(
+                  spacing: CRMSpacing.s,
+                  runSpacing: CRMSpacing.s,
+                  children: [
+                    _buildPresetChip(
+                      percent: 20,
+                      label: '20% Loose',
+                      color: const Color(0xFFD97706),
+                      description: 'Any single criterion match',
+                      isSelected: currentScore == 20,
+                      onTap: () async {
+                        setState(() => _selectedMatchThreshold = 20);
+                        await manager.setThreshold(20);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Match Criteria set to 20% (Loose) and saved in database for the team.'),
+                              backgroundColor: Color(0xFFD97706),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    _buildPresetChip(
+                      percent: 40,
+                      label: '40% Flexible',
+                      color: const Color(0xFF0288D1),
+                      description: 'Moderate partial matches',
+                      isSelected: currentScore == 40,
+                      onTap: () async {
+                        setState(() => _selectedMatchThreshold = 40);
+                        await manager.setThreshold(40);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Match Criteria set to 40% (Flexible) and saved in database for the team.'),
+                              backgroundColor: Color(0xFF0288D1),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    _buildPresetChip(
+                      percent: 60,
+                      label: '60% Balanced (Default)',
+                      color: const Color(0xFF0F766E),
+                      description: '2+ criteria matched (e.g. Price + BHK)',
+                      isSelected: currentScore == 60,
+                      onTap: () async {
+                        setState(() => _selectedMatchThreshold = 60);
+                        await manager.setThreshold(60);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Match Criteria set to 60% (Balanced) and saved in database for the team.'),
+                              backgroundColor: Color(0xFF0F766E),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    _buildPresetChip(
+                      percent: 80,
+                      label: '80% Strict',
+                      color: const Color(0xFF10B981),
+                      description: 'Price + BHK + Area exact match',
+                      isSelected: currentScore == 80,
+                      onTap: () async {
+                        setState(() => _selectedMatchThreshold = 80);
+                        await manager.setThreshold(80);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Match Criteria set to 80% (Strict) and saved in database for the team.'),
+                              backgroundColor: Color(0xFF10B981),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: CRMSpacing.l),
+                const Divider(),
+                const SizedBox(height: CRMSpacing.m),
+
+                Wrap(
+                  spacing: CRMSpacing.m,
+                  runSpacing: CRMSpacing.s,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final v = _selectedMatchThreshold.toInt();
+                        await manager.setThreshold(v);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Run Match Criteria set to $v%! Saved to database and applied across your entire team.',
+                              ),
+                              backgroundColor: thresholdColor,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.check_circle_rounded, size: 18),
+                      label: Text('Apply $currentScore% Threshold to Team'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: thresholdColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        await manager.resetToDefault();
+                        if (mounted) {
+                          setState(() => _selectedMatchThreshold = MatchCriteriaManager.defaultThreshold.toDouble());
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Reset to default threshold (60% Balanced) for entire team.'),
+                              backgroundColor: Color(0xFF0F766E),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                      label: const Text('Reset to Default (60%)'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: CRMSpacing.l),
+
+        CRMCard(
+          elevated: true,
+          title: 'Matching Engine Weight Breakdown',
+          subtitle: 'How scores are calculated for each property against a buyer/tenant requirement.',
+          child: Padding(
+            padding: const EdgeInsets.only(top: CRMSpacing.m),
+            child: Column(
+              children: [
+                _buildWeightRow(
+                  icon: Icons.currency_rupee_rounded,
+                  title: 'Budget & Price Range',
+                  weight: '30 Points',
+                  details: 'Exact budget: 30 pts • Within ±20%: 20 pts • Within ±35%: 10 pts',
+                  color: const Color(0xFF10B981),
+                ),
+                const Divider(height: CRMSpacing.m),
+                _buildWeightRow(
+                  icon: Icons.bedroom_parent_outlined,
+                  title: 'Configuration (BHK / RK)',
+                  weight: '25 Points',
+                  details: 'Exact BHK match: 25 pts • Adjacent BHK (±1): 12 pts',
+                  color: const Color(0xFF0288D1),
+                ),
+                const Divider(height: CRMSpacing.m),
+                _buildWeightRow(
+                  icon: Icons.location_on_outlined,
+                  title: 'Locality & Target Area',
+                  weight: '25 Points',
+                  details: 'Exact area or "All Areas": 25 pts • Same city match: 10 pts',
+                  color: const Color(0xFF8B5CF6),
+                ),
+                const Divider(height: CRMSpacing.m),
+                _buildWeightRow(
+                  icon: Icons.real_estate_agent_outlined,
+                  title: 'Listing Type (Rent vs Sale)',
+                  weight: '10 Points',
+                  details: 'Matching Rent or Resale/Sale: 10 pts',
+                  color: const Color(0xFFF59E0B),
+                ),
+                const Divider(height: CRMSpacing.m),
+                _buildWeightRow(
+                  icon: Icons.category_outlined,
+                  title: 'Property Type & Category',
+                  weight: '10 Points',
+                  details: 'Residential, Commercial, Apartment, Villa: 10 pts',
+                  color: const Color(0xFFEC4899),
+                ),
+                const SizedBox(height: CRMSpacing.m),
+                Container(
+                  padding: const EdgeInsets.all(CRMSpacing.m),
+                  decoration: BoxDecoration(
+                    color: CRMColors.surfaceElevatedOf(context),
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                    border: Border.all(color: CRMColors.borderOf(context)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.lightbulb_outline_rounded, color: Color(0xFF0F766E), size: 20),
+                      const SizedBox(width: CRMSpacing.s),
+                      Expanded(
+                        child: Text(
+                          'Simulation at $currentScore%: A property with Budget (30) + Configuration (25) + Locality (25) = 80% will ' +
+                              (currentScore <= 80 ? 'QUALIFY as a match.' : 'be excluded.'),
+                          style: CRMTypography.caption.copyWith(
+                            color: CRMColors.textOf(context),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPresetChip({
+    required int percent,
+    required String label,
+    required Color color,
+    required String description,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withValues(alpha: 0.15) : CRMColors.surfaceElevatedOf(context),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+          border: Border.all(
+            color: isSelected ? color : CRMColors.borderOf(context),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                    color: isSelected ? color : CRMColors.textOf(context),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              description,
+              style: TextStyle(
+                fontSize: 11,
+                color: CRMColors.textSecondaryOf(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeightRow({
+    required IconData icon,
+    required String title,
+    required String weight,
+    required String details,
+    required Color color,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 18, color: color),
+        ),
+        const SizedBox(width: CRMSpacing.m),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    title,
+                    style: CRMTypography.bodyMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: CRMColors.textOf(context),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      weight,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                details,
+                style: CRMTypography.caption.copyWith(
+                  color: CRMColors.textSecondaryOf(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _persistUploadLimits() async {
+    if (_isSavingUploadLimits) return;
+    final manager = UploadLimitsManager();
+    final images = _selectedMaxImages.round().clamp(0, 100);
+    final videos = _selectedMaxVideos.round().clamp(0, 20);
+    setState(() => _isSavingUploadLimits = true);
+    final saved = await manager.setLimits(maxImages: images, maxVideos: videos);
+    if (!mounted) return;
+    setState(() {
+      _isSavingUploadLimits = false;
+      if (saved) _uploadLimitsDirty = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          saved
+              ? 'Upload limits saved: $images images, $videos videos. Applied to Add Property.'
+              : 'Failed to save upload limits. Please try again.',
+        ),
+        backgroundColor: saved ? CRMColors.primary : CRMColors.danger,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  SliderThemeData _uploadLimitSliderTheme() {
+    return SliderTheme.of(context).copyWith(
+      activeTrackColor: CRMColors.primary,
+      inactiveTrackColor: CRMColors.primary.withValues(alpha: 0.15),
+      thumbColor: CRMColors.primary,
+      overlayColor: CRMColors.primary.withValues(alpha: 0.2),
+      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+      trackHeight: 6,
+      valueIndicatorColor: CRMColors.primary,
+      valueIndicatorTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+    );
+  }
+
+  Widget _buildLimitTickLabels(List<String> labels) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          for (final label in labels)
+            Text(
+              label,
+              style: CRMTypography.caption.copyWith(
+                fontSize: 11,
+                color: CRMColors.textSecondaryOf(context),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUploadLimitsSection() {
+    final imageCount = _selectedMaxImages.round().clamp(0, 100);
+    final videoCount = _selectedMaxVideos.round().clamp(0, 20);
+
+    return CRMCard(
+      elevated: true,
+      title: 'Property Upload Limits',
+      subtitle: 'Set the maximum number of images and videos allowed when adding a property. Click Save Changes to store the selected range in the database.',
+      headerAction: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: CRMColors.primary.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: CRMColors.primary.withValues(alpha: 0.4)),
+        ),
+        child: Text(
+          '$imageCount images / $videoCount videos',
+          style: TextStyle(
+            color: CRMColors.primary,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: CRMSpacing.m),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(CRMSpacing.m),
+              decoration: BoxDecoration(
+                color: CRMColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+                border: Border.all(color: CRMColors.primary.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: CRMColors.primary.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.tune_rounded, color: CRMColors.primary, size: 22),
+                  ),
+                  const SizedBox(width: CRMSpacing.m),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Range selection only',
+                          style: CRMTypography.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: CRMColors.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Move the sliders to preview limits. Values are saved to the database only when you click Save Changes, then applied in Add Property.',
+                          style: CRMTypography.caption.copyWith(
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: CRMSpacing.l),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Images (0–100)',
+                      style: CRMTypography.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: CRMColors.textOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Default: 30 images. Applies to Add Property after Save Changes.',
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  '$imageCount',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: CRMColors.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: CRMSpacing.s),
+            SliderTheme(
+              data: _uploadLimitSliderTheme(),
+              child: Slider(
+                value: _selectedMaxImages.clamp(0.0, 100.0),
+                min: 0,
+                max: 100,
+                divisions: 100,
+                label: '$imageCount',
+                onChanged: (val) {
+                  setState(() {
+                    _selectedMaxImages = val.roundToDouble();
+                    _uploadLimitsDirty = true;
+                  });
+                },
+              ),
+            ),
+            _buildLimitTickLabels(const ['0', '25', '50', '75', '100']),
+            const SizedBox(height: CRMSpacing.l),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Videos (0–20)',
+                      style: CRMTypography.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: CRMColors.textOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Default: 5 videos. Applies to Add Property after Save Changes.',
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  '$videoCount',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: CRMColors.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: CRMSpacing.s),
+            SliderTheme(
+              data: _uploadLimitSliderTheme(),
+              child: Slider(
+                value: _selectedMaxVideos.clamp(0.0, 20.0),
+                min: 0,
+                max: 20,
+                divisions: 20,
+                label: '$videoCount',
+                onChanged: (val) {
+                  setState(() {
+                    _selectedMaxVideos = val.roundToDouble();
+                    _uploadLimitsDirty = true;
+                  });
+                },
+              ),
+            ),
+            _buildLimitTickLabels(const ['0', '5', '10', '15', '20']),
+            const SizedBox(height: CRMSpacing.l),
+            const Divider(),
+            const SizedBox(height: CRMSpacing.m),
+            ElevatedButton.icon(
+              onPressed: _isSavingUploadLimits ? null : _persistUploadLimits,
+              icon: _isSavingUploadLimits
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.check_circle_rounded, size: 18),
+              label: const Text('Save Changes'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: CRMColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
@@ -752,6 +1650,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const _SettingsNavItem(id: 'themes', label: 'Themes', icon: Icons.palette_outlined),
       const _SettingsNavItem(id: 'appearance', label: 'Appearance', icon: Icons.tune_rounded),
       const _SettingsNavItem(id: 'locations', label: 'Locations', icon: Icons.location_city_outlined),
+      if (isAdminOrSuperAdmin)
+        const _SettingsNavItem(id: 'match_criteria', label: 'Run Match Criteria', icon: Icons.bolt_rounded),
+      if (isAdminOrSuperAdmin)
+        const _SettingsNavItem(id: 'upload_limits', label: 'Upload Limits', icon: Icons.photo_library_outlined),
+      if (isAdminOrSuperAdmin)
+        const _SettingsNavItem(id: 'kpi_config', label: 'KPI Configuration', icon: Icons.dashboard_customize_outlined),
+      if (isSuperAdmin)
+        const _SettingsNavItem(id: 'permissions', label: 'Permission Matrix', icon: Icons.admin_panel_settings_rounded),
+      if (isSuperAdmin)
+        const _SettingsNavItem(id: 'backups', label: 'Automated Backups', icon: Icons.cloud_download_rounded),
       if (isSuperAdmin)
         const _SettingsNavItem(id: 'audit', label: 'Audit Logs', icon: Icons.history_rounded),
       const _SettingsNavItem(id: 'system', label: 'System', icon: Icons.info_outline_rounded),
@@ -759,7 +1667,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (!sections.any((s) => s.id == _activeSection)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _activeSection = 'profile');
+        if (mounted) _setActiveSection('profile');
       });
     }
 
@@ -771,6 +1679,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return _buildAppearanceCard(isAdminOrSuperAdmin);
         case 'locations':
           return _buildLocationConfigCard();
+        case 'match_criteria':
+          return _buildRunMatchCriteriaSection();
+        case 'upload_limits':
+          return _buildUploadLimitsSection();
+        case 'kpi_config':
+          return const KpiConfigScreen();
+        case 'permissions':
+          if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
+          return const PermissionMatrixCard();
+        case 'backups':
+          if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
+          return const BackupManagementCard();
         case 'audit':
           return _buildAuditLogsCard();
         case 'system':
@@ -816,7 +1736,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 return ChoiceChip(
                                   label: Text(item.label),
                                   selected: selected,
-                                  onSelected: (_) => setState(() => _activeSection = item.id),
+                                  onSelected: (_) => _setActiveSection(item.id),
                                   selectedColor: CRMColors.primary.withValues(alpha: 0.12),
                                   labelStyle: CRMTypography.captionBold.copyWith(
                                     color: selected ? CRMColors.primary : CRMColors.textSecondaryOf(context),
@@ -869,7 +1789,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildSettingsNavTile(_SettingsNavItem item) {
     final selected = item.id == _activeSection;
     return InkWell(
-      onTap: () => setState(() => _activeSection = item.id),
+      onTap: () => _setActiveSection(item.id),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
@@ -939,9 +1859,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             CRMButton(
-              label: 'Verify Sentry Setup',
+              label: 'Verify Error Monitoring (${ApiConstants.errorMonitoringProvider})',
               onPressed: () {
-                throw StateError('This is test exception to verify Sentry Setup');
+                throw StateError('This is test exception to verify ${ApiConstants.errorMonitoringProvider} error telemetry setup');
               },
             ),
             const SizedBox(height: CRMSpacing.m),
@@ -978,12 +1898,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+}
 
-  @override
-  void dispose() {
-    ThemeManager().removeListener(_onThemeChanged);
-    super.dispose();
-  }
+class _SettingsNavItem {
+  final String id;
+  final String label;
+  final IconData icon;
+
+  const _SettingsNavItem({
+    required this.id,
+    required this.label,
+    required this.icon,
+  });
 }
 
 class _SettingsNavItem {

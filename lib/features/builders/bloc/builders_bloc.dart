@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
+import '../../../core/storage/repository_coordinator.dart';
 import '../models/builder_model.dart';
 import '../repository/builders_repository.dart';
 
@@ -56,6 +56,7 @@ class BuildersBloc extends Bloc<BuildersEvent, BuildersState> {
   final BuildersRepository buildersRepository;
   FetchBuildersEvent? _lastFetchEvent;
   StreamSubscription? _buildersSubscription;
+  List<BuilderModel> _cachedBuilders = [];
 
   BuildersBloc({required this.buildersRepository}) : super(BuildersInitial()) {
     on<FetchBuildersEvent>(_onFetchBuilders);
@@ -81,15 +82,25 @@ class BuildersBloc extends Bloc<BuildersEvent, BuildersState> {
     Emitter<BuildersState> emit,
   ) async {
     _lastFetchEvent = event;
-    emit(BuildersLoading());
+    if (state is! BuildersLoaded) {
+      emit(BuildersLoading());
+    }
     try {
       final list = await buildersRepository.getBuilders(
         search: event.search,
         tier: event.tier,
       );
       emit(BuildersLoaded(builders: list));
+      _cachedBuilders = list;
     } catch (e) {
       emit(BuildersError(e.toString()));
+      _restoreLoaded(emit);
+    }
+  }
+
+  void _restoreLoaded(Emitter<BuildersState> emit) {
+    if (_cachedBuilders.isNotEmpty) {
+      emit(BuildersLoaded(builders: _cachedBuilders));
     }
   }
 
@@ -97,12 +108,13 @@ class BuildersBloc extends Bloc<BuildersEvent, BuildersState> {
     CreateBuilderEvent event,
     Emitter<BuildersState> emit,
   ) async {
-    emit(BuildersLoading());
     try {
       await buildersRepository.createBuilder(event.builder);
       emit(BuildersSuccess("Builder profile created successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(BuildersError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 
@@ -110,12 +122,13 @@ class BuildersBloc extends Bloc<BuildersEvent, BuildersState> {
     UpdateBuilderEvent event,
     Emitter<BuildersState> emit,
   ) async {
-    emit(BuildersLoading());
     try {
       await buildersRepository.updateBuilder(event.builder);
       emit(BuildersSuccess("Builder profile updated successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(BuildersError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 
@@ -123,12 +136,13 @@ class BuildersBloc extends Bloc<BuildersEvent, BuildersState> {
     DeleteBuilderEvent event,
     Emitter<BuildersState> emit,
   ) async {
-    emit(BuildersLoading());
     try {
       await buildersRepository.deleteBuilder(event.id);
       emit(BuildersSuccess("Builder profile deleted successfully."));
+      _restoreLoaded(emit);
     } catch (e) {
       emit(BuildersError(e.toString()));
+      _restoreLoaded(emit);
     }
   }
 }

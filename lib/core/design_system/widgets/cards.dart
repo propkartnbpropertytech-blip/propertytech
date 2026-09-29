@@ -49,7 +49,7 @@ class CRMCard extends StatelessWidget {
         ),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
           if (title != null || subtitle != null || headerAction != null) ...[
@@ -88,7 +88,13 @@ class CRMCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (headerAction != null) headerAction!,
+                  if (headerAction != null)
+                    Flexible(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: headerAction!,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -549,17 +555,20 @@ class CRMResponsiveKpiRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (children.isEmpty) return const SizedBox.shrink();
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final gap = CRMSpacing.s;
         final maxW = constraints.maxWidth;
+        final maxColsLimit = children.isEmpty ? 1 : children.length;
         var cols = children.length;
         if (maxW < minCardWidth) {
           cols = 1;
         } else {
-          cols = (maxW / (minCardWidth + gap)).floor().clamp(1, children.length);
+          cols = (maxW / (minCardWidth + gap)).floor().clamp(1, maxColsLimit);
         }
-        if (maxColumns != null) {
+        if (maxColumns != null && maxColumns! >= 1) {
           cols = cols.clamp(1, maxColumns!);
         }
         final cardW = cols == 1

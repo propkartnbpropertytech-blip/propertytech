@@ -6,6 +6,7 @@ void main() {
     test('Telecaller is recognized as having Admin privileges but cannot manage employees', () {
       expect(RoleGuard.isAdmin('Telecaller'), isTrue);
       expect(RoleGuard.canManageEmployees('Telecaller'), isFalse);
+      expect(RoleGuard.canAccessCampaign('Telecaller'), isTrue);
     });
 
     test('Telecaller cannot view audit logs or manage lookups', () {
@@ -71,8 +72,7 @@ void main() {
       );
     });
 
-    test('Super Admin can manage Admin, but not Sales/Telecaller directly', () {
-      // Manage Admin
+    test('Super Admin can manage Admin, Sales and Telecaller', () {
       expect(
         RoleGuard.validateUserMutation(
           callerRole: 'Super Admin',
@@ -82,24 +82,22 @@ void main() {
         isNull,
       );
 
-      // Manage Sales
       expect(
         RoleGuard.validateUserMutation(
           callerRole: 'Super Admin',
           targetRoleName: 'Sales',
           isDelete: false,
         ),
-        isNotNull,
+        isNull,
       );
 
-      // Manage Telecaller
       expect(
         RoleGuard.validateUserMutation(
           callerRole: 'Super Admin',
           targetRoleName: 'Telecaller',
           isDelete: false,
         ),
-        isNotNull,
+        isNull,
       );
     });
   });

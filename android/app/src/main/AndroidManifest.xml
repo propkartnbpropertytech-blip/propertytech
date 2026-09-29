@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Essential Internet & Network permissions -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     
     <!-- Camera & Storage gallery permissions -->
     <uses-permission android:name="android.permission.CAMERA"/>
@@ -12,11 +13,12 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
 
     <application
-        android:label="propkart"
+        android:label="PropKart"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:extractNativeLibs="true">
+        android:enableOnBackInvokedCallback="true"
+        android:extractNativeLibs="false">
         <activity
             android:name="com.nbpropertytech.propkart.MainActivity"
             android:exported="true"
@@ -62,6 +64,9 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="propkart_lead_assigned" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -84,6 +89,18 @@
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
         </intent>
     </queries>
 </manifest>

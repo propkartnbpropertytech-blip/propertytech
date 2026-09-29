@@ -23,9 +23,14 @@ import '../../../../features/auth/models/user_model.dart' as auth_model;
 import '../../../../features/users/repository/users_repository.dart';
 import '../../../../features/users/models/user_model.dart';
 import '../../../../features/properties/repository/properties_repository.dart';
+import '../../../../features/properties/bloc/properties_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio/dio.dart';
+import '../../utils/file_downloader.dart';
+import '../../../../core/api/dio_client.dart';
 
-void showCRMPropertyDrawer(BuildContext context, PropertyModel property) {
-  showGeneralDialog(
+Future<void> showCRMPropertyDrawer(BuildContext context, PropertyModel property) async {
+  await showGeneralDialog(
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Property Details barrier',
@@ -54,11 +59,13 @@ void showCRMPropertyDrawer(BuildContext context, PropertyModel property) {
 class BuildPropertyDetailWidget extends StatefulWidget {
   final PropertyModel property;
   final bool showHeaderClose;
+  final VoidCallback? onClose;
 
   const BuildPropertyDetailWidget({
     super.key,
     required this.property,
     this.showHeaderClose = true,
+    this.onClose,
   });
 
   @override
@@ -69,13 +76,19 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _overviewKey = GlobalKey();
   final GlobalKey _detailsKey = GlobalKey();
+  final GlobalKey _specsKey = GlobalKey();
+  final GlobalKey _locationKey = GlobalKey();
   final GlobalKey _amenitiesKey = GlobalKey();
+  final GlobalKey _contactsKey = GlobalKey();
   final GlobalKey _investKey = GlobalKey();
   final GlobalKey _similarKey = GlobalKey();
+  final GlobalKey _leftColumnKey = GlobalKey();
+  final GlobalKey _rightCardKey = GlobalKey();
 
   bool _isAgreedToContact = true;
   bool _hasClickedContact = false;
   bool _isShortlisted = false;
+  Set<String> _shortlistedPropertyIds = {};
 
   bool _isMobileRevealed = false;
   String? _salesPersonMobile;
@@ -85,6 +98,239 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
   void initState() {
     super.initState();
     _fetchSalesPersonMobile();
+    _loadShortlistState();
+  }
+
+  Future<void> _loadShortlistState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList('shortlisted_properties') ?? [];
+      if (mounted) {
+        setState(() {
+          _shortlistedPropertyIds = list.toSet();
+          _isShortlisted = list.contains(widget.property.id);
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _toggleShortlist() async {
+    setState(() {
+      _isShortlisted = !_isShortlisted;
+      if (_isShortlisted) {
+        _shortlistedPropertyIds.add(widget.property.id);
+      } else {
+        _shortlistedPropertyIds.remove(widget.property.id);
+      }
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = (prefs.getStringList('shortlisted_properties') ?? []).toSet();
+      if (_isShortlisted) {
+        list.add(widget.property.id);
+      } else {
+        list.remove(widget.property.id);
+      }
+      await prefs.setStringList('shortlisted_properties', list.toList());
+      if (mounted) {
+        setState(() {
+          _shortlistedPropertyIds = list;
+        });
+      }
+    } catch (_) {}
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isShortlisted ? 'Property added to Shortlist!' : 'Removed from Shortlist.'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Widget _buildDownloadImagesHeaderButton(BuildContext context) {
+    final imagesCount = widget.property.images.length;
+    return Tooltip(
+      message: imagesCount > 0 ? 'Download all $imagesCount property images' : 'No images available to download',
+      child: InkWell(
+        onTap: () => _downloadAllPropertyImages(context),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: CRMColors.primaryOf(context).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: CRMColors.primaryOf(context).withOpacity(0.3),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.download_rounded,
+                size: 18,
+                color: CRMColors.primaryOf(context),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Images Download',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: CRMColors.primaryOf(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadAllPropertyImages(BuildContext context) async {
+    final images = widget.property.images;
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No images available for this property.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Downloading ${images.length} image(s) to Downloads folder...'),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    int successCount = 0;
+    final code = widget.property.propertyCode.isNotEmpty ? widget.property.propertyCode : 'property';
+
+    for (int i = 0; i < images.length; i++) {
+      final imgUrl = images[i].trim();
+      if (imgUrl.isEmpty) continue;
+      final ext = imgUrl.split('.').last.split('?').first.toLowerCase();
+      final validExt = (ext.length > 4 || ext.isEmpty || !['jpg', 'jpeg', 'png', 'webp'].contains(ext))
+          ? 'jpg'
+          : ext;
+      final filename = '${code}_image_${i + 1}.$validExt';
+
+      try {
+        if (kIsWeb) {
+          await FileDownloader.downloadUrl(imgUrl, filename);
+          successCount++;
+          await Future.delayed(const Duration(milliseconds: 350));
+        } else {
+          final response = await DioClient.dio.get<List<int>>(
+            imgUrl,
+            options: Options(responseType: ResponseType.bytes),
+          );
+          if (response.data != null && response.data!.isNotEmpty) {
+            await FileDownloader.download(response.data!, filename);
+            successCount++;
+          }
+        }
+      } catch (e) {
+        try {
+          final uri = Uri.parse(imgUrl);
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          successCount++;
+        } catch (_) {}
+      }
+    }
+
+    if (mounted) {
+      if (successCount > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$successCount image(s) downloaded to your PC Downloads folder!'),
+            backgroundColor: CRMColors.success,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to download property images.'),
+            backgroundColor: CRMColors.danger,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildShortlistedHeaderIconButton(BuildContext context) {
+    return Tooltip(
+      message: 'View Shortlisted Properties',
+      child: InkWell(
+        onTap: () {
+          if (widget.showHeaderClose && Navigator.canPop(context)) {
+            Navigator.pop(context);
+          }
+          context.go('/search?categoryTab=Shortlisted');
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: CRMColors.backgroundOf(context),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _shortlistedPropertyIds.isNotEmpty
+                      ? Colors.red
+                      : CRMColors.borderOf(context).withOpacity(0.6),
+                ),
+              ),
+              child: Icon(
+                _shortlistedPropertyIds.isNotEmpty
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                color: _shortlistedPropertyIds.isNotEmpty
+                    ? Colors.red
+                    : CRMColors.textMutedOf(context),
+                size: 20,
+              ),
+            ),
+            if (_shortlistedPropertyIds.isNotEmpty)
+              Positioned(
+                top: -2,
+                right: -2,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  child: Text(
+                    '${_shortlistedPropertyIds.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _fetchSalesPersonMobile() async {
@@ -154,7 +400,10 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
     final navItems = [
       {'label': 'OVERVIEW', 'key': _overviewKey},
       {'label': 'DETAILS', 'key': _detailsKey},
-      {'label': 'FURNISHINGS & AMENITIES', 'key': _amenitiesKey},
+      {'label': 'SPECIFICATIONS & FLOOR DETAILS', 'key': _specsKey},
+      {'label': 'LOCATION & ADDRESS', 'key': _locationKey},
+      {'label': 'AMENITIES', 'key': _amenitiesKey},
+      {'label': 'CONTACTS & KEY MANAGEMENT', 'key': _contactsKey},
       {'label': 'INVESTMENT OPTIONS', 'key': _investKey},
       {'label': 'SIMILAR PROPERTIES', 'key': _similarKey},
     ];
@@ -168,6 +417,7 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
       padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 6),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
         child: Row(
           children: navItems.map((item) {
             final label = item['label'] as String;
@@ -264,18 +514,11 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                sellerName,
-                                style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context)),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const Icon(Icons.chevron_right_rounded, size: 18),
-                          ],
+                        Text(
+                          sellerName,
+                          style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         Text(
                           'Propkart Expert Pro',
@@ -487,15 +730,7 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                       _isShortlisted ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                       color: _isShortlisted ? CRMColors.danger : CRMColors.textSecondaryOf(context),
                     ),
-                    onPressed: () {
-                      setState(() => _isShortlisted = !_isShortlisted);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(_isShortlisted ? 'Property added to Shortlist!' : 'Removed from Shortlist.'),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    },
+                    onPressed: _toggleShortlist,
                   ),
                 ],
               ),
@@ -504,46 +739,22 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
         ),
         const SizedBox(height: CRMSpacing.m),
 
-        // Bottom Share & Feedback Buttons (Matching Image 5)
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                icon: Icon(Icons.share_outlined, size: 16, color: CRMColors.primaryOf(context)),
-                label: Text('Share', style: CRMTypography.captionBold.copyWith(color: CRMColors.primaryOf(context))),
-                onPressed: () {
-                  final url = '${Uri.base.origin}/properties/${property.id}';
-                  Clipboard.setData(ClipboardData(text: url));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Property link copied to clipboard!'),
-                      backgroundColor: CRMColors.success,
-                    ),
-                  );
-                },
-              ),
+        // Bottom Feedback Button
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            const SizedBox(width: CRMSpacing.m),
-            Expanded(
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                icon: Icon(Icons.outlined_flag_rounded, size: 16, color: CRMColors.textSecondaryOf(context)),
-                label: Text('Feedback', style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context))),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Feedback submitted!')),
-                  );
-                },
-              ),
-            ),
-          ],
+            icon: Icon(Icons.outlined_flag_rounded, size: 16, color: CRMColors.textSecondaryOf(context)),
+            label: Text('Feedback', style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context))),
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Feedback submitted!')),
+              );
+            },
+          ),
         ),
       ],
     );
@@ -711,7 +922,18 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
     final referVal = _isValidValue(property.brokerName) ? property.brokerName! : '--';
     contactsItems.add(PropertyDetailItem('Refer Name / Key Collect', referVal, Icons.vpn_key_outlined));
 
-    final brokerageVal = _isValidValue(property.brokerageTypeName) ? property.brokerageTypeName! : '--';
+    String brokerageVal = _isValidValue(property.brokerageTypeName) ? property.brokerageTypeName! : '--';
+    if (brokerageVal == '--' && _isValidValue(property.brokerageTypeId)) {
+      try {
+        final blocState = context.read<PropertiesBloc>().state;
+        if (blocState is PropertiesLoaded && blocState.metadata != null) {
+          final found = blocState.metadata!.brokerages.where((b) => b.id == property.brokerageTypeId || b.name == property.brokerageTypeId);
+          if (found.isNotEmpty) {
+            brokerageVal = found.first.name;
+          }
+        }
+      } catch (_) {}
+    }
     contactsItems.add(PropertyDetailItem('Brokerage Confirmation', brokerageVal, Icons.percent_rounded));
 
     return Container(
@@ -750,23 +972,31 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                         ],
                       ),
                     ),
-                    if (showHeaderClose)
-                      CRMButton(
-                        label: 'Close',
-                        variant: CRMButtonVariant.danger,
-                        height: 40,
-                        onPressed: () => Navigator.pop(context),
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildShortlistedHeaderIconButton(context),
+                        if (showHeaderClose || widget.onClose != null) ...[
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Back',
+                            onPressed: widget.onClose ?? () => Navigator.pop(context),
+                            icon: Icon(
+                              Icons.arrow_back_rounded,
+                              color: CRMColors.textOf(context),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
               ),
             ),
             Divider(color: CRMColors.borderOf(context).withOpacity(0.6), height: 1, thickness: 0.5),
 
-            // Sticky Touchable Section Navigation Bar (Matching Image 1)
             _buildSectionNavBar(context),
 
-            // Main Details Body (Full-width outer SingleChildScrollView!)
             Expanded(
               child: SingleChildScrollView(
                 controller: _scrollController,
@@ -779,9 +1009,25 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Property Images',
-                            style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Text(
+                                'Property Images',
+                                style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                              ),
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: _buildDownloadImagesHeaderButton(context),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: CRMSpacing.s),
                           CRMImageSlider(images: property.images, videos: property.videos),
@@ -789,82 +1035,101 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                       ),
                       const SizedBox(height: CRMSpacing.l),
 
-                      // 2-Column Section Layout Below Images
-                      if (isDesktop)
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // LEFT COLUMN: All Details Sections Stacked 1-by-1 (72% width)
-                            Expanded(
-                              flex: 72,
+                          Align(
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1240),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  KeyedSubtree(key: _overviewKey, child: _buildOverviewCard(context, property)),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  KeyedSubtree(key: _detailsKey, child: _buildResponsiveDetailCard(context, 'Basic Details', basicItems)),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  _buildResponsiveDetailCard(context, 'Specifications & Floor Details', specsItems),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  _buildResponsiveDetailCard(context, 'Location & Address', locationItems),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  _buildDescriptionRemarksCard(context, property),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  KeyedSubtree(key: _amenitiesKey, child: _buildAmenitiesCard(context, property.amenities)),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  _buildResponsiveDetailCard(context, 'Contacts & Key Management', contactsItems),
-                                  const SizedBox(height: CRMSpacing.m),
-                                  KeyedSubtree(key: _investKey, child: _buildInvestmentOptionsCard(context, property)),
-                                  const SizedBox(height: CRMSpacing.m),
+                                  isDesktop
+                                      ? Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              flex: 68,
+                                              child: Column(
+                                                key: _leftColumnKey,
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  KeyedSubtree(key: _overviewKey, child: _buildOverviewCard(context, property)),
+                                                  const SizedBox(height: CRMSpacing.m),
+                                                  KeyedSubtree(key: _detailsKey, child: _buildResponsiveDetailCard(context, 'Basic Details', basicItems)),
+                                                  const SizedBox(height: CRMSpacing.m),
+                                                  KeyedSubtree(key: _specsKey, child: _buildResponsiveDetailCard(context, 'Specifications & Floor Details', specsItems)),
+                                                  const SizedBox(height: CRMSpacing.m),
+                                                  KeyedSubtree(key: _locationKey, child: _buildResponsiveDetailCard(context, 'Location & Address', locationItems)),
+                                                  const SizedBox(height: CRMSpacing.m),
+                                                  _buildDescriptionRemarksCard(context, property),
+                                                  const SizedBox(height: CRMSpacing.m),
+                                                  KeyedSubtree(key: _amenitiesKey, child: _buildAmenitiesCard(context, property.amenities)),
+                                                  const SizedBox(height: CRMSpacing.m),
+                                                  KeyedSubtree(key: _contactsKey, child: _buildResponsiveDetailCard(context, 'Contacts & Key Management', contactsItems)),
+                                                  const SizedBox(height: CRMSpacing.m),
+                                                  KeyedSubtree(key: _investKey, child: _buildInvestmentOptionsCard(context, property)),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: CRMSpacing.l),
+
+                                            Expanded(
+                                              flex: 32,
+                                              child: AnimatedBuilder(
+                                                animation: _scrollController,
+                                                builder: (context, child) {
+                                                  final double scrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
+                                                  final leftBox = _leftColumnKey.currentContext?.findRenderObject() as RenderBox?;
+                                                  final rightBox = _rightCardKey.currentContext?.findRenderObject() as RenderBox?;
+                                                  double maxSticky = 950.0;
+                                                  if (leftBox != null && leftBox.hasSize && rightBox != null && rightBox.hasSize) {
+                                                    final diff = leftBox.size.height - rightBox.size.height;
+                                                    if (diff > 0) {
+                                                      maxSticky = diff;
+                                                    }
+                                                  }
+                                                  final double stickyOffset = (scrollOffset - 430.0).clamp(0.0, maxSticky);
+                                                  return Transform.translate(
+                                                    offset: Offset(0, stickyOffset),
+                                                    child: child,
+                                                  );
+                                                },
+                                                child: KeyedSubtree(
+                                                  key: _rightCardKey,
+                                                  child: _buildRightContactSellerCard(context, property, currentUser),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            KeyedSubtree(key: _overviewKey, child: _buildOverviewCard(context, property)),
+                                            const SizedBox(height: CRMSpacing.m),
+                                            KeyedSubtree(key: _detailsKey, child: _buildResponsiveDetailCard(context, 'Basic Details', basicItems)),
+                                            const SizedBox(height: CRMSpacing.m),
+                                            KeyedSubtree(key: _specsKey, child: _buildResponsiveDetailCard(context, 'Specifications & Floor Details', specsItems)),
+                                            const SizedBox(height: CRMSpacing.m),
+                                            KeyedSubtree(key: _locationKey, child: _buildResponsiveDetailCard(context, 'Location & Address', locationItems)),
+                                            const SizedBox(height: CRMSpacing.m),
+                                            _buildDescriptionRemarksCard(context, property),
+                                            const SizedBox(height: CRMSpacing.m),
+                                            KeyedSubtree(key: _amenitiesKey, child: _buildAmenitiesCard(context, property.amenities)),
+                                            const SizedBox(height: CRMSpacing.m),
+                                            KeyedSubtree(key: _contactsKey, child: _buildResponsiveDetailCard(context, 'Contacts & Key Management', contactsItems)),
+                                            const SizedBox(height: CRMSpacing.m),
+                                            KeyedSubtree(key: _investKey, child: _buildInvestmentOptionsCard(context, property)),
+                                            const SizedBox(height: CRMSpacing.l),
+                                            _buildRightContactSellerCard(context, property, currentUser),
+                                          ],
+                                        ),
+                                  const SizedBox(height: CRMSpacing.l),
+                                  // FULL-WIDTH SIMILAR PROPERTIES AT THE BOTTOM
                                   KeyedSubtree(key: _similarKey, child: _buildSimilarPropertiesSection(context, property)),
                                 ],
                               ),
                             ),
-                            const SizedBox(width: CRMSpacing.l),
-
-                            // RIGHT COLUMN: STICKY Contact Seller Card (28% width)
-                            Expanded(
-                              flex: 28,
-                              child: AnimatedBuilder(
-                                animation: _scrollController,
-                                builder: (context, child) {
-                                  final double scrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
-                                  final double stickyOffset = (scrollOffset - 430.0).clamp(0.0, 4000.0);
-                                  return Transform.translate(
-                                    offset: Offset(0, stickyOffset),
-                                    child: child,
-                                  );
-                                },
-                                child: _buildRightContactSellerCard(context, property, currentUser),
-                              ),
-                            ),
-                          ],
-                        )
-                      else
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            KeyedSubtree(key: _overviewKey, child: _buildOverviewCard(context, property)),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _detailsKey, child: _buildResponsiveDetailCard(context, 'Basic Details', basicItems)),
-                            const SizedBox(height: CRMSpacing.m),
-                            _buildResponsiveDetailCard(context, 'Specifications & Floor Details', specsItems),
-                            const SizedBox(height: CRMSpacing.m),
-                            _buildResponsiveDetailCard(context, 'Location & Address', locationItems),
-                            const SizedBox(height: CRMSpacing.m),
-                            _buildDescriptionRemarksCard(context, property),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _amenitiesKey, child: _buildAmenitiesCard(context, property.amenities)),
-                            const SizedBox(height: CRMSpacing.m),
-                            _buildResponsiveDetailCard(context, 'Contacts & Key Management', contactsItems),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _investKey, child: _buildInvestmentOptionsCard(context, property)),
-                            const SizedBox(height: CRMSpacing.m),
-                            KeyedSubtree(key: _similarKey, child: _buildSimilarPropertiesSection(context, property)),
-                            const SizedBox(height: CRMSpacing.l),
-                            _buildRightContactSellerCard(context, property, currentUser),
-                          ],
-                        ),
+                          ),
                     ],
                   ),
                 ),
@@ -1641,8 +1906,11 @@ Widget _buildResponsiveDetailCard(BuildContext context, String title, List<Prope
 
   return LayoutBuilder(
     builder: (context, constraints) {
-      final int cols = constraints.maxWidth > 500 ? 2 : 1;
-      final double itemWidth = cols == 2 ? (constraints.maxWidth - CRMSpacing.m) / 2 : constraints.maxWidth;
+      final double maxW = constraints.maxWidth;
+      final int cols = maxW > 350 ? 3 : (maxW > 240 ? 2 : 1);
+      final double availableW = maxW - (CRMSpacing.m * 2);
+      final double tileSpacing = 16.0;
+      final double tileWidth = ((availableW - (cols - 1) * tileSpacing - 2.0) / cols).floorToDouble();
 
       return CRMCard(
         padding: const EdgeInsets.all(CRMSpacing.m),
@@ -1651,19 +1919,14 @@ Widget _buildResponsiveDetailCard(BuildContext context, String title, List<Prope
           children: [
             Text(
               title,
-              style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primaryOf(context), fontWeight: FontWeight.bold),
+              style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold, fontSize: 16),
             ),
-            const SizedBox(height: CRMSpacing.s),
-            Divider(color: CRMColors.borderOf(context).withOpacity(0.6), thickness: 0.5),
-            const SizedBox(height: CRMSpacing.s),
+            const SizedBox(height: CRMSpacing.m),
             Wrap(
-              spacing: CRMSpacing.m,
-              runSpacing: CRMSpacing.s,
+              spacing: tileSpacing,
+              runSpacing: 16,
               children: items.map((item) {
-                return SizedBox(
-                  width: itemWidth,
-                  child: _buildDetailRow(context, item.label, item.value, item.icon),
-                );
+                return _buildOverviewTile(context, item.label, item.value, item.icon, tileWidth);
               }).toList(),
             ),
           ],
@@ -1673,26 +1936,54 @@ Widget _buildResponsiveDetailCard(BuildContext context, String title, List<Prope
   );
 }
 
-Widget _buildDetailRow(BuildContext context, String label, String value, IconData icon) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4.0),
-    child: Row(
+
+
+Widget _buildDescriptionRemarksCard(BuildContext context, PropertyModel p) {
+  final hasDesc = _isValidValue(p.description);
+  final hasRemarks = _isValidValue(p.remarks);
+
+  if (!hasDesc && !hasRemarks) return const SizedBox.shrink();
+
+  return CRMCard(
+    padding: const EdgeInsets.all(CRMSpacing.m),
+    child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: CRMColors.textSecondaryOf(context)),
-        const SizedBox(width: 8),
         Text(
-          label,
-          style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
+          'Description & Remarks',
+          style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold, fontSize: 16),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            value,
-            textAlign: TextAlign.end,
-            style: CRMTypography.body.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.w600),
-          ),
+        const SizedBox(height: CRMSpacing.s),
+        Divider(color: CRMColors.borderOf(context).withOpacity(0.6), thickness: 0.5),
+        const SizedBox(height: CRMSpacing.s),
+        if (hasDesc) ...[
+          _buildTextSection(context, 'Description', p.description!),
+          const SizedBox(height: CRMSpacing.m),
+        ],
+        if (hasRemarks) ...[
+          _buildTextSection(context, 'Operational CRM Remarks', p.remarks!),
+        ],
+      ],
+    ),
+  );
+}
+
+Widget _buildAmenitiesCard(BuildContext context, List<String> amenities) {
+  if (amenities.isEmpty) return const SizedBox.shrink();
+
+  return CRMCard(
+    padding: const EdgeInsets.all(CRMSpacing.m),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Amenities',
+          style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold, fontSize: 16),
         ),
+        const SizedBox(height: CRMSpacing.s),
+        Divider(color: CRMColors.borderOf(context).withOpacity(0.6), thickness: 0.5),
+        const SizedBox(height: CRMSpacing.m),
+        _buildAmenitiesSection(context, '', amenities),
       ],
     ),
   );
@@ -1812,38 +2103,47 @@ Widget _buildOverviewCard(BuildContext context, PropertyModel p) {
 
   return CRMCard(
     padding: const EdgeInsets.all(CRMSpacing.m),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Overview',
-          style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        const SizedBox(height: CRMSpacing.m),
-        Wrap(
-          spacing: 20,
-          runSpacing: 16,
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final double maxW = constraints.maxWidth;
+        final int cols = maxW > 400 ? 3 : (maxW > 280 ? 2 : 1);
+        final double tileSpacing = 16.0;
+        final double tileWidth = ((maxW - (cols - 1) * tileSpacing - 2.0) / cols).floorToDouble();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildOverviewTile(context, 'Project / Title', p.title.isNotEmpty ? p.title : p.propertyCode, Icons.business_rounded),
-            _buildOverviewTile(context, 'Security Deposit', p.deposit > 0 ? '₹${BudgetFormatter.format(p.deposit)}' : 'N/A', Icons.account_balance_wallet_outlined),
-            _buildOverviewTile(context, 'Built Up Area', areaStr, Icons.square_foot_outlined),
-            _buildOverviewTile(context, 'Furnishing', p.furnishingTypeName ?? 'Unfurnished', Icons.chair_outlined),
-            _buildOverviewTile(context, 'Bathrooms', p.bathrooms > 0 ? '${p.bathrooms}' : 'N/A', Icons.bathtub_outlined),
-            _buildOverviewTile(context, 'Balcony', p.balconies > 0 ? '${p.balconies}' : 'N/A', Icons.balcony_outlined),
-            _buildOverviewTile(context, 'Available From', p.availableFromFormatted ?? 'Available Now', Icons.event_available_rounded),
-            _buildOverviewTile(context, 'Floor Number', floorStr, Icons.layers_outlined),
-            _buildOverviewTile(context, 'Age of Property', p.ageOfProperty != null ? '${p.ageOfProperty} years' : 'N/A', Icons.hourglass_empty_rounded),
-            _buildOverviewTile(context, 'Parking Info', p.parking > 0 ? _getParkingDisplay(p.parking) : 'None', Icons.local_parking_rounded),
+            Text(
+              'Overview',
+              style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            Wrap(
+              spacing: tileSpacing,
+              runSpacing: 16,
+              children: [
+                _buildOverviewTile(context, 'Project / Title', p.title.isNotEmpty ? p.title : p.propertyCode, Icons.business_rounded, tileWidth),
+                _buildOverviewTile(context, 'Security Deposit', p.deposit > 0 ? '₹${BudgetFormatter.format(p.deposit)}' : 'N/A', Icons.account_balance_wallet_outlined, tileWidth),
+                _buildOverviewTile(context, 'Built Up Area', areaStr, Icons.square_foot_outlined, tileWidth),
+                _buildOverviewTile(context, 'Furnishing', p.furnishingTypeName ?? 'Unfurnished', Icons.chair_outlined, tileWidth),
+                _buildOverviewTile(context, 'Bathrooms', p.bathrooms > 0 ? '${p.bathrooms}' : 'N/A', Icons.bathtub_outlined, tileWidth),
+                _buildOverviewTile(context, 'Balcony', p.balconies > 0 ? '${p.balconies}' : 'N/A', Icons.balcony_outlined, tileWidth),
+                _buildOverviewTile(context, 'Available From', p.availableFromFormatted ?? 'Available Now', Icons.event_available_rounded, tileWidth),
+                _buildOverviewTile(context, 'Floor Number', floorStr, Icons.layers_outlined, tileWidth),
+                _buildOverviewTile(context, 'Age of Property', p.ageOfProperty != null ? '${p.ageOfProperty} years' : 'N/A', Icons.hourglass_empty_rounded, tileWidth),
+                _buildOverviewTile(context, 'Parking Info', p.parking > 0 ? _getParkingDisplay(p.parking) : 'None', Icons.local_parking_rounded, tileWidth),
+              ],
+            ),
           ],
-        ),
-      ],
+        );
+      },
     ),
   );
 }
 
-Widget _buildOverviewTile(BuildContext context, String label, String value, IconData icon) {
+Widget _buildOverviewTile(BuildContext context, String label, String value, IconData icon, [double tileWidth = 200.0]) {
   return SizedBox(
-    width: 200,
+    width: tileWidth,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1897,11 +2197,13 @@ Widget _buildAmenitiesSection(BuildContext context, String label, List<String> a
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
-        label,
-        style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
-      ),
-      const SizedBox(height: CRMSpacing.s),
+      if (label.isNotEmpty) ...[
+        Text(
+          label,
+          style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
+        ),
+        const SizedBox(height: CRMSpacing.s),
+      ],
       Wrap(
         spacing: CRMSpacing.s,
         runSpacing: CRMSpacing.s,
@@ -2062,10 +2364,15 @@ class _InvestmentOptionsSectionWidgetState extends State<_InvestmentOptionsSecti
           const SizedBox(height: CRMSpacing.m),
 
           // Option Cards Horizontal List
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: currentOptions.map((opt) {
+          _ArrowedHScroll(
+            key: ValueKey(_selectedTab),
+            scrollStep: 211,
+            builder: (controller) => SingleChildScrollView(
+              controller: controller,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Row(
+                children: currentOptions.map((opt) {
                 final keyword = opt['keyword'] as String;
                 return MouseRegion(
                   cursor: SystemMouseCursors.click,
@@ -2137,6 +2444,7 @@ class _InvestmentOptionsSectionWidgetState extends State<_InvestmentOptionsSecti
                   ),
                 );
               }).toList(),
+              ),
             ),
           ),
         ],
@@ -2146,7 +2454,23 @@ class _InvestmentOptionsSectionWidgetState extends State<_InvestmentOptionsSecti
 }
 
 Widget _buildSimilarPropertiesSection(BuildContext context, PropertyModel currentProp) {
-  final bhkStr = currentProp.bedrooms > 0 ? '${currentProp.bedrooms} BHK ' : '';
+  final currentCatLower = currentProp.categoryName.toLowerCase();
+  final currentPropTypeLower = currentProp.propertyTypeName.toLowerCase();
+  final isCommercialOrLand = currentCatLower.contains('commercial') ||
+      currentCatLower.contains('industrial') ||
+      currentCatLower.contains('land') ||
+      currentCatLower.contains('plot') ||
+      currentPropTypeLower.contains('office') ||
+      currentPropTypeLower.contains('showroom') ||
+      currentPropTypeLower.contains('shop') ||
+      currentPropTypeLower.contains('warehouse') ||
+      currentPropTypeLower.contains('factory');
+
+  final bhkStr = (!isCommercialOrLand && currentProp.bedrooms > 0)
+      ? '${currentProp.bedrooms} BHK '
+      : ((currentProp.propertyTypeName.isNotEmpty && currentProp.propertyTypeName != 'N/A')
+          ? '${currentProp.propertyTypeName} '
+          : '');
   final locationStr = currentProp.areaName.isNotEmpty
       ? currentProp.areaName
       : (currentProp.cityName.isNotEmpty ? currentProp.cityName : 'this Area');
@@ -2191,14 +2515,29 @@ Widget _buildSimilarPropertiesSection(BuildContext context, PropertyModel curren
             final allProps = snapshot.data ?? [];
             final similar = allProps.where((p) {
               if (p.id == currentProp.id) return false;
-              // Strict BHK match: if current property is a 2 BHK, strictly require p.bedrooms == 2
-              if (currentProp.bedrooms > 0) {
-                if (p.bedrooms != currentProp.bedrooms) return false;
+              if (isCommercialOrLand) {
+                final pCatLower = p.categoryName.toLowerCase();
+                final pTypeLower = p.propertyTypeName.toLowerCase();
+                final pIsCommercialOrLand = pCatLower.contains('commercial') ||
+                    pCatLower.contains('industrial') ||
+                    pCatLower.contains('land') ||
+                    pCatLower.contains('plot') ||
+                    pTypeLower.contains('office') ||
+                    pTypeLower.contains('showroom') ||
+                    pTypeLower.contains('shop') ||
+                    pTypeLower.contains('warehouse') ||
+                    pTypeLower.contains('factory');
+                if (!pIsCommercialOrLand) return false;
               } else {
-                if (currentProp.propertyTypeId.isNotEmpty && p.propertyTypeId.isNotEmpty) {
-                  if (p.propertyTypeId != currentProp.propertyTypeId) return false;
-                } else if (currentProp.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
-                  if (p.categoryId != currentProp.categoryId) return false;
+                // Strict BHK match: if current property is a 2 BHK, strictly require p.bedrooms == 2
+                if (currentProp.bedrooms > 0) {
+                  if (p.bedrooms != currentProp.bedrooms) return false;
+                } else {
+                  if (currentProp.propertyTypeId.isNotEmpty && p.propertyTypeId.isNotEmpty) {
+                    if (p.propertyTypeId != currentProp.propertyTypeId) return false;
+                  } else if (currentProp.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
+                    if (p.categoryId != currentProp.categoryId) return false;
+                  }
                 }
               }
 
@@ -2237,12 +2576,32 @@ Widget _buildSimilarPropertiesSection(BuildContext context, PropertyModel curren
               );
             }
 
-            return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: similar.map((p) {
+            return _ArrowedHScroll(
+              scrollStep: 246,
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Row(
+                  children: similar.map((p) {
                   final String imgUrl = p.images.isNotEmpty ? p.images.first : '';
-                  final String titleBhk = p.bedrooms > 0 ? '${p.bedrooms} BHK ${p.propertyTypeName}' : p.propertyTypeName;
+                  final pCatLower = p.categoryName.toLowerCase();
+                  final pTypeLower = p.propertyTypeName.toLowerCase();
+                  final pIsCommercialOrLand = pCatLower.contains('commercial') ||
+                      pCatLower.contains('industrial') ||
+                      pCatLower.contains('land') ||
+                      pCatLower.contains('plot') ||
+                      pTypeLower.contains('office') ||
+                      pTypeLower.contains('showroom') ||
+                      pTypeLower.contains('shop') ||
+                      pTypeLower.contains('warehouse') ||
+                      pTypeLower.contains('factory');
+
+                  final String titleBhk = pIsCommercialOrLand
+                      ? (p.propertyTypeName.isNotEmpty && p.propertyTypeName != 'N/A'
+                          ? p.propertyTypeName
+                          : p.categoryName)
+                      : (p.bedrooms > 0 ? '${p.bedrooms} BHK ${p.propertyTypeName}' : p.propertyTypeName);
                   final String areaText = '${p.superBuiltupArea?.toStringAsFixed(0) ?? p.carpetArea?.toStringAsFixed(0) ?? "-"} sq.ft';
                   final String furnishedText = p.furnishingTypeName ?? 'Unfurnished';
 
@@ -2272,7 +2631,16 @@ Widget _buildSimilarPropertiesSection(BuildContext context, PropertyModel curren
                                   width: double.infinity,
                                   color: Colors.grey.shade200,
                                   child: imgUrl.isNotEmpty
-                                      ? CrmNetworkImage(url: imgUrl, fit: BoxFit.cover)
+                                      ? CrmNetworkImage(
+                                          url: imgUrl,
+                                          fit: BoxFit.cover,
+                                          height: 125,
+                                          width: double.infinity,
+                                          cacheLogicalWidth: 230,
+                                          error: (_) => Center(
+                                            child: Icon(Icons.home_work_outlined, size: 36, color: Colors.grey.shade400),
+                                          ),
+                                        )
                                       : Center(
                                           child: Icon(Icons.home_work_outlined, size: 36, color: Colors.grey.shade400),
                                         ),
@@ -2358,6 +2726,7 @@ Widget _buildSimilarPropertiesSection(BuildContext context, PropertyModel curren
                     ),
                   );
                 }).toList(),
+                ),
               ),
             );
           },
@@ -2365,6 +2734,105 @@ Widget _buildSimilarPropertiesSection(BuildContext context, PropertyModel curren
       ],
     ),
   );
+}
+
+class _ArrowedHScroll extends StatefulWidget {
+  final double scrollStep;
+  final Widget Function(ScrollController controller) builder;
+
+  const _ArrowedHScroll({
+    super.key,
+    required this.scrollStep,
+    required this.builder,
+  });
+
+  @override
+  State<_ArrowedHScroll> createState() => _ArrowedHScrollState();
+}
+
+class _ArrowedHScrollState extends State<_ArrowedHScroll> {
+  final ScrollController _controller = ScrollController();
+  bool _showPrev = false;
+  bool _showNext = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_syncArrows);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncArrows());
+  }
+
+  void _syncArrows() {
+    if (!_controller.hasClients) return;
+    final pos = _controller.position;
+    final showPrev = pos.pixels > 4;
+    final showNext = pos.maxScrollExtent > 4 && pos.pixels < pos.maxScrollExtent - 4;
+    if (showPrev != _showPrev || showNext != _showNext) {
+      setState(() {
+        _showPrev = showPrev;
+        _showNext = showNext;
+      });
+    }
+  }
+
+  Future<void> _scroll(bool forward) async {
+    if (!_controller.hasClients) return;
+    final target = (_controller.offset + (forward ? widget.scrollStep : -widget.scrollStep))
+        .clamp(0.0, _controller.position.maxScrollExtent);
+    await _controller.animateTo(
+      target,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _arrow({required bool isLeft}) {
+    final enabled = isLeft ? _showPrev : _showNext;
+    return Material(
+      color: CRMColors.cardBgOf(context),
+      elevation: 3,
+      shadowColor: Colors.black26,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: enabled ? () => _scroll(!isLeft) : null,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(
+            isLeft ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+            size: 22,
+            color: enabled
+                ? CRMColors.primaryOf(context)
+                : CRMColors.textMutedOf(context).withValues(alpha: 0.35),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        widget.builder(_controller),
+        Positioned(
+          left: 0,
+          child: _arrow(isLeft: true),
+        ),
+        Positioned(
+          right: 0,
+          child: _arrow(isLeft: false),
+        ),
+      ],
+    );
+  }
 }
 
 String _getParkingDisplay(int parkingVal) {

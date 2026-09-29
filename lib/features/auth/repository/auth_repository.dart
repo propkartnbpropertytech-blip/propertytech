@@ -9,28 +9,37 @@ class AuthRepository {
   final AuthService _authService = AuthService();
   final SecureStorage _secureStorage = SecureStorage();
 
-  Future<UserModel> login(String email, String password, bool rememberMe) async {
+  Future<dynamic> login(
+    String email,
+    String password,
+    bool rememberMe, {
+    String? captchaId,
+    String? captchaAnswer,
+  }) async {
     await SessionCleanup.clearLocalSession(clearToken: true);
 
     final responseData = await _authService.login(
       email,
       password,
       rememberMe: rememberMe,
+      captchaId: captchaId,
+      captchaAnswer: captchaAnswer,
     );
-    final user = UserModel.fromJson(responseData);
 
-    if (kIsWeb) {
-      // Prefer HttpOnly cookies (same-origin proxy). Keep access token in memory
-      // as fallback when the browser blocks cross-site cookies.
-      await _secureStorage.markWebCookieSession(
-        active: true,
-        persistHint: rememberMe,
-      );
-      if (user.token != null && user.token!.isNotEmpty) {
-        await _secureStorage.saveToken(user.token!, persist: rememberMe);
-      }
-      return user.copyWith(token: null);
+    final data = responseData['data'];
+    if (data is Map<String, dynamic> && data['mfaRequired'] == true) {
+      return {
+        'mfaRequired': true,
+        'mfaSetupRequired': data['mfaSetupRequired'] == true,
+        'mfaChallengeId': data['mfaChallengeId'] ?? '',
+        'email': data['email'] ?? email,
+        'role': data['role'] ?? '',
+        'secret': data['secret'],
+        'otpauthUrl': data['otpauthUrl'],
+      };
     }
+
+    final user = UserModel.fromJson(responseData);
 
     if (user.token == null || user.token!.isEmpty) {
       throw Exception('Login succeeded but no access token was returned.');
@@ -38,9 +47,31 @@ class AuthRepository {
 
     final refresh = _extractRefreshToken(responseData);
     await _secureStorage.saveToken(user.token!, persist: rememberMe);
-    await _secureStorage.saveRefreshToken(refresh, persist: rememberMe);
+    if (refresh != null && refresh.isNotEmpty) {
+      await _secureStorage.saveRefreshToken(refresh, persist: rememberMe);
+    }
 
-    return user.copyWith(token: null);
+    if (kIsWeb) {
+      await _secureStorage.markWebCookieSession(
+        active: true,
+        persistHint: rememberMe,
+      );
+    }
+
+    // Immediately record session login timestamp and active activity timestamp.
+    // This guarantees that router redirect checks will NEVER detect a stale or expired session.
+    await _secureStorage.saveSessionLoginTime(DateTime.now());
+    await _secureStorage.updateLastActivity();
+
+    final rawData = responseData['data'];
+    final expHours = rawData is Map<String, dynamic>
+        ? (rawData['tokenExpirationHours'] ?? (rawData['extra'] is Map ? rawData['extra']['tokenExpirationHours'] : null))
+        : null;
+    if (expHours is int && expHours > 0) {
+      await _secureStorage.saveSessionExpirationHours(expHours);
+    }
+
+    return user;
   }
 
   String? _extractRefreshToken(Map<String, dynamic> responseData) {
@@ -53,28 +84,7 @@ class AuthRepository {
   }
 
   Future<bool> refreshSession() async {
-    if (kIsWeb) {
-      try {
-        final response = await _authService.refresh(null);
-        final data = response['data'] is Map<String, dynamic>
-            ? response['data'] as Map<String, dynamic>
-            : response;
-        final access = data['token']?.toString() ?? data['accessToken']?.toString();
-        if (access != null && access.isNotEmpty) {
-          await _secureStorage.saveToken(access, persist: false);
-        }
-        await _secureStorage.markWebCookieSession(
-          active: true,
-          persistHint: await _secureStorage.hasWebSessionHint(),
-        );
-        return true;
-      } catch (_) {
-        return false;
-      }
-    }
-
     final refresh = await _secureStorage.getRefreshToken();
-    if (refresh == null || refresh.isEmpty) return false;
     try {
       final response = await _authService.refresh(refresh);
       final data = response['data'] is Map<String, dynamic>
@@ -84,10 +94,16 @@ class AuthRepository {
       final nextRefresh = data['refreshToken']?.toString() ?? data['refresh_token']?.toString();
       if (access == null || access.isEmpty) return false;
 
-      final hadPersistedRefresh = await _secureStorage.getRefreshToken() != null;
-      await _secureStorage.saveToken(access, persist: hadPersistedRefresh);
+      final hadPersisted = await _secureStorage.getRefreshToken() != null;
+      await _secureStorage.saveToken(access, persist: hadPersisted);
       if (nextRefresh != null && nextRefresh.isNotEmpty) {
-        await _secureStorage.saveRefreshToken(nextRefresh, persist: hadPersistedRefresh);
+        await _secureStorage.saveRefreshToken(nextRefresh, persist: hadPersisted);
+      }
+      if (kIsWeb) {
+        await _secureStorage.markWebCookieSession(
+          active: true,
+          persistHint: await _secureStorage.hasWebSessionHint(),
+        );
       }
       return true;
     } catch (_) {
@@ -103,7 +119,6 @@ class AuthRepository {
       }
       return UserModel.fromJson(responseData).copyWith(token: null);
     } catch (e) {
-      await logout();
       rethrow;
     }
   }
@@ -154,5 +169,44 @@ class AuthRepository {
 
     final token = await getSavedToken();
     return token != null && token.isNotEmpty;
+  }
+
+  Future<UserModel> verifyMfa(String mfaChallengeId, String code, bool rememberMe) async {
+    final responseData = await _authService.verifyMfa(mfaChallengeId, code);
+    final user = UserModel.fromJson(responseData);
+
+    if (user.token == null || user.token!.isEmpty) {
+      throw Exception('MFA verification succeeded but no access token was returned.');
+    }
+
+    final refresh = _extractRefreshToken(responseData);
+    await _secureStorage.saveToken(user.token!, persist: rememberMe);
+    if (refresh != null && refresh.isNotEmpty) {
+      await _secureStorage.saveRefreshToken(refresh, persist: rememberMe);
+    }
+
+    if (kIsWeb) {
+      await _secureStorage.markWebCookieSession(
+        active: true,
+        persistHint: rememberMe,
+      );
+    }
+
+    await _secureStorage.saveSessionLoginTime(DateTime.now());
+    await _secureStorage.updateLastActivity();
+
+    return user;
+  }
+
+  Future<Map<String, dynamic>> setupMfa() async {
+    return await _authService.setupMfa();
+  }
+
+  Future<Map<String, dynamic>> confirmMfa(String code) async {
+    return await _authService.confirmMfa(code);
+  }
+
+  Future<Map<String, dynamic>> disableMfa(String password) async {
+    return await _authService.disableMfa(password);
   }
 }

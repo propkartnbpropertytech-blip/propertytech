@@ -11,6 +11,8 @@ import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
 import '../bloc/requirements_bloc.dart';
 import '../models/requirement_model.dart';
+import '../services/match_criteria_manager.dart';
+import '../services/followup_sync_engine.dart';
 import '../repository/requirements_repository.dart';
 import 'add_edit_requirement_screen.dart';
 import '../../properties/repository/properties_repository.dart';
@@ -39,42 +41,786 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 import '../../users/bloc/users_bloc.dart';
 import '../../users/models/user_model.dart' as users_model;
+import '../../users/repository/users_repository.dart';
+import '../../team_messages/services/team_messages_service.dart';
 import '../../../core/config/app_config.dart';
 import 'package:collection/collection.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
-import 'package:propkart/core/storage/model_mappers.dart';
-import 'package:propkart/core/storage/isar_collections.dart';
+import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/storage/model_mappers.dart';
+import '../../../core/storage/isar_collections.dart';
 import '../../../core/utils/file_downloader.dart';
+import '../../../core/utils/formatters.dart';
 import '../utils/property_share_pdf.dart';
+import '../widgets/pdf_option_selection_dialog.dart';
 import '../../../core/api/cloudinary_uploader.dart';
+import '../../../core/telemetry/audit_telemetry_service.dart';
+import '../../../core/telemetry/audit_dwell_tracker.dart';
+import '../../../core/utils/team_user_visibility.dart';
+import '../../../core/security/permission_matrix_service.dart';
+import '../../../core/security/role_guard.dart';
+import '../../../core/design_system/widgets/app_status_snackbar.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color kWhatsAppGreen = Color(0xFF25D366);
 
+DateTime? _parseFollowupDateTime(dynamic raw) {
+  if (raw == null) return null;
+  String str = raw.toString().trim();
+  if (str.isEmpty) return null;
+
+  final parsed = DateTime.tryParse(str);
+  if (parsed != null) {
+    return parsed.isUtc ? parsed.toLocal() : parsed;
+  }
+
+  try {
+    final parts = str.split(RegExp(r'[T\s]'));
+    final dateParts = parts[0].split(RegExp(r'[/\\-]'));
+    if (dateParts.length == 3) {
+      int d, m, y;
+      if (dateParts[0].length == 4) {
+        y = int.parse(dateParts[0]);
+        m = int.parse(dateParts[1]);
+        d = int.parse(dateParts[2]);
+      } else {
+        d = int.parse(dateParts[0]);
+        m = int.parse(dateParts[1]);
+        y = int.parse(dateParts[2]);
+      }
+      int h = 0, min = 0, sec = 0;
+      if (parts.length > 1 && parts[1].isNotEmpty) {
+        final timeParts = parts[1].split(':');
+        if (timeParts.length >= 2) {
+          h = int.tryParse(timeParts[0]) ?? 0;
+          min = int.tryParse(timeParts[1].replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
+          if (timeParts.length >= 3) {
+            sec = int.tryParse(timeParts[2].replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
+          }
+        }
+      }
+      return DateTime(y, m, d, h, min, sec);
+    }
+  } catch (_) {}
+
+  return null;
+}
+
+  String? getTelecallerRemarks(RequirementModel req) {
+  if (req.metaCustomFields != null && req.metaCustomFields!['telecaller_remarks'] != null) {
+    final tr = req.metaCustomFields!['telecaller_remarks'].toString().trim();
+    if (tr.isNotEmpty && tr.toLowerCase() != 'null' && tr.toLowerCase() != 'n/a') {
+      return tr;
+    }
+  }
+  if (req.notes != null) {
+    final text = req.notes!.trim();
+    if (text.isNotEmpty && text.toLowerCase() != 'null' && text.toLowerCase() != 'n/a') {
+      return text;
+    }
+  }
+  if (req.remarks != null && req.remarks!.trim().isNotEmpty) {
+    final text = req.remarks!.trim();
+    if (text.contains('[Telecaller Key Points]:')) {
+      final parts = text.split('[Telecaller Key Points]:');
+      if (parts.length > 1) {
+        final extracted = parts[1].split('\n').first.trim();
+        if (extracted.isNotEmpty) return extracted;
+      }
+    }
+    if (text.toLowerCase() != 'null' && text.toLowerCase() != 'n/a') {
+      return text;
+    }
+  }
+  return null;
+}
+
+Widget _buildNeedsMoreDetailsBadge(RequirementModel req, {bool compact = false}) {
+    if (req.matchingReadiness == 'Ready') return const SizedBox.shrink();
+
+    if (req.hasUnmappedArea) {
+      final unmappedLocality = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : 'Unmapped';
+      return Tooltip(
+        message: 'Unmapped Locality: "$unmappedLocality" does not match any registered area in CRM. Run match engine cannot fetch properties without a valid area.',
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 5 : 7,
+            vertical: compact ? 1.5 : 2.5,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEF3C7),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: const Color(0xFFF59E0B)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.warning_amber_rounded,
+                size: 11,
+                color: Color(0xFFD97706),
+              ),
+              const SizedBox(width: 3),
+              Flexible(
+                child: Text(
+                  'Unmapped Locality',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: const Color(0xFF92400E),
+                    fontSize: compact ? 9.5 : 10.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final missing = <String>[];
+    if (req.minBudget <= 0 && req.maxBudget <= 0) missing.add('Budget');
+    if (!req.isAllAreas && req.areaIds.isEmpty && req.areaNames.isEmpty) missing.add('Area');
+    final hasConfig = (req.configurationId != null && req.configurationId!.trim().isNotEmpty) || req.configurationIds.isNotEmpty || (req.configurationName != null && req.configurationName!.trim().isNotEmpty);
+    if (!hasConfig) missing.add('Config');
+    final hasCategory = req.categoryId.trim().isNotEmpty || req.categoryName.trim().isNotEmpty || req.propertyTypeName.trim().isNotEmpty;
+    if (!hasCategory) missing.add('Category');
+
+    final tooltipMsg = missing.isNotEmpty
+        ? 'Needs More Details: Missing ${missing.join(', ')}'
+        : 'Needs More Details for Property Matching';
+
+    return Tooltip(
+      message: tooltipMsg,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 5 : 7,
+          vertical: compact ? 1.5 : 2.5,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: const Color(0xFFF97316).withOpacity(0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.info_outline_rounded,
+              size: 11,
+              color: Color(0xFFEA580C),
+            ),
+            const SizedBox(width: 3),
+            Flexible(
+              child: Text(
+                'Needs More Details',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: const Color(0xFFC2410C),
+                  fontSize: compact ? 9.5 : 10.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+class PropertyMatchResult {
+  final PropertyModel property;
+  final int matchPercentage;
+  final List<String> matchedCriteria;
+  final bool isPriceMatched;
+  final bool isConfigMatched;
+  final bool isAreaMatched;
+  final bool isListingTypeMatched;
+  final bool isPropertyTypeMatched;
+  final List<String> unmatchedPreferences;
+  final Map<String, dynamic>? locationMatchDetail;
+  final Map<String, dynamic>? breakdown;
+
+  PropertyMatchResult({
+    required this.property,
+    required this.matchPercentage,
+    required this.matchedCriteria,
+    this.isPriceMatched = false,
+    this.isConfigMatched = false,
+    this.isAreaMatched = false,
+    this.isListingTypeMatched = false,
+    this.isPropertyTypeMatched = false,
+    this.unmatchedPreferences = const [],
+    this.locationMatchDetail,
+    this.breakdown,
+  });
+
+  factory PropertyMatchResult.fromServerJson(Map<String, dynamic> json, PropertyModel property) {
+    final bd = json['breakdown'] as Map<String, dynamic>?;
+    final matchedReasons = (json['matched_reasons'] as List?)?.map((e) => e.toString()).toList() ?? [];
+    final unmatched = (json['unmatched_preferences'] as List?)?.map((e) => e.toString()).toList() ?? [];
+    final score = (json['overall_match_score'] as num?)?.toInt() ?? 0;
+
+    return PropertyMatchResult(
+      property: property,
+      matchPercentage: score,
+      matchedCriteria: matchedReasons,
+      unmatchedPreferences: unmatched,
+      isPriceMatched: (bd?['budget_score'] as num? ?? 0) > 0,
+      isConfigMatched: (bd?['configuration_score'] as num? ?? 0) > 0,
+      isAreaMatched: (bd?['location_score'] as num? ?? 0) > 0,
+      isListingTypeMatched: (bd?['listing_type_score'] as num? ?? 0) > 0,
+      isPropertyTypeMatched: (bd?['property_type_score'] as num? ?? 0) > 0,
+      locationMatchDetail: json['location_match_detail'] as Map<String, dynamic>?,
+      breakdown: bd,
+    );
+  }
+}
+
+class PropertyRequirementMatcher {
+  static Set<int> extractBhkNumbers(String? text, {int fallbackBedrooms = 0}) {
+    final Set<int> bhks = {};
+    if (fallbackBedrooms > 0 && fallbackBedrooms <= 10) {
+      bhks.add(fallbackBedrooms);
+    }
+    if (text == null || text.trim().isEmpty) return bhks;
+
+    final matches = RegExp(r'(\d+)\s*(?:bhk|bedroom|bed|rk)', caseSensitive: false).allMatches(text);
+    for (final m in matches) {
+      final numStr = m.group(1);
+      if (numStr != null) {
+        final n = int.tryParse(numStr);
+        if (n != null && n > 0 && n <= 10) bhks.add(n);
+      }
+    }
+    if (bhks.isEmpty && text.toLowerCase().contains('bhk')) {
+      final numMatches = RegExp(r'\b(\d+)\b').allMatches(text);
+      for (final m in numMatches) {
+        final n = int.tryParse(m.group(1)!);
+        if (n != null && n > 0 && n <= 10) bhks.add(n);
+      }
+    }
+    return bhks;
+  }
+
+  static String _normalizeTypeLabel(String raw) {
+    return raw
+        .toLowerCase()
+        .replaceAll('&', ' and ')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static bool _isFlatApartmentType(String raw) {
+    final n = _normalizeTypeLabel(raw);
+    if (n.isEmpty) return false;
+    if (n.contains('apartment') || n.contains('flat')) return true;
+    final tokens = n.split(' ');
+    return tokens.contains('apt') || tokens.contains('apts') || tokens.contains('flats');
+  }
+
+  static bool propertyTypesCompatible({
+    required String reqTypeName,
+    required String propTypeName,
+    String reqTypeId = '',
+    String propTypeId = '',
+    List<String> reqTypeIds = const [],
+    String reqCategory = '',
+    String propCategory = '',
+  }) {
+    if (reqTypeIds.contains(propTypeId) ||
+        (reqTypeId.isNotEmpty && propTypeId.isNotEmpty && reqTypeId == propTypeId)) {
+      return true;
+    }
+
+    final reqType = _normalizeTypeLabel(reqTypeName);
+    final propType = _normalizeTypeLabel(propTypeName);
+    if (reqType.isNotEmpty && propType.isNotEmpty) {
+      if (reqType == propType) return true;
+      if (reqType.contains(propType) || propType.contains(reqType)) return true;
+      if (_isFlatApartmentType(reqType) && _isFlatApartmentType(propType)) {
+        return true;
+      }
+
+      bool isVilla(String s) =>
+          s.contains('villa') ||
+          s.contains('bungalow') ||
+          s.contains('house');
+      bool isPlot(String s) => s.contains('plot') || s.contains('land');
+      bool isOffice(String s) =>
+          s.contains('office') ||
+          s.contains('commercial') ||
+          s.contains('shop') ||
+          s.contains('showroom');
+      if (isVilla(reqType) && isVilla(propType)) return true;
+      if (isPlot(reqType) && isPlot(propType)) return true;
+      if (isOffice(reqType) && isOffice(propType)) return true;
+    }
+
+    final reqCat = _normalizeTypeLabel(reqCategory);
+    final propCat = _normalizeTypeLabel(propCategory);
+    if (reqCat.isNotEmpty && propCat.isNotEmpty &&
+        (reqCat == propCat || reqCat.contains(propCat) || propCat.contains(reqCat))) {
+      if (reqType.isEmpty || propType.isEmpty) return true;
+    }
+
+    if (reqType.isEmpty && reqTypeId.isEmpty && reqCat.isEmpty) return true;
+    return false;
+  }
+
+  static bool _hasRequirementCategory(RequirementModel req) {
+    return req.categoryId.trim().isNotEmpty || req.categoryName.trim().isNotEmpty;
+  }
+
+  static bool _hasRequirementPropertyType(RequirementModel req) {
+    return req.propertyTypeId.trim().isNotEmpty ||
+        req.propertyTypeIds.isNotEmpty ||
+        req.propertyTypeName.trim().isNotEmpty;
+  }
+
+  static bool categoriesCompatible(RequirementModel req, PropertyModel p) {
+    if (!_hasRequirementCategory(req)) return true;
+    if (req.categoryId.trim().isNotEmpty &&
+        p.categoryId.trim().isNotEmpty &&
+        req.categoryId.trim() == p.categoryId.trim()) {
+      return true;
+    }
+    final reqCat = _normalizeTypeLabel(req.categoryName);
+    final propCat = _normalizeTypeLabel(p.categoryName);
+    return reqCat.isNotEmpty && propCat.isNotEmpty && reqCat == propCat;
+  }
+
+  static bool isEligibleByCategoryAndType(PropertyModel p, RequirementModel req) {
+    if (!categoriesCompatible(req, p)) return false;
+    if (!_hasRequirementPropertyType(req)) return true;
+    return propertyTypesCompatible(
+      reqTypeName: req.propertyTypeName,
+      propTypeName: p.propertyTypeName,
+      reqTypeId: req.propertyTypeId,
+      propTypeId: p.propertyTypeId,
+      reqTypeIds: req.propertyTypeIds,
+      reqCategory: req.categoryName,
+      propCategory: p.categoryName,
+    );
+  }
+
+  static bool isAllAreas(RequirementModel req) {
+    return req.isAllAreas;
+  }
+
+  static bool _isAnyConfigurationLabel(String? raw) {
+    final n = (raw ?? '')
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (n.isEmpty) return true;
+    const aliases = {
+      'any',
+      'any config',
+      'any configuration',
+      'any configurations',
+      'all config',
+      'all configuration',
+      'all configurations',
+      'any bhk',
+      'all bhk',
+      'any rk',
+      'na',
+      'n a',
+      'unspecified',
+      'not specified',
+    };
+    return aliases.contains(n);
+  }
+
+  static bool isAnyConfiguration(RequirementModel req) {
+    final hasId = (req.configurationId != null && req.configurationId!.trim().isNotEmpty) ||
+        req.configurationIds.isNotEmpty;
+    if (hasId) return false;
+    return _isAnyConfigurationLabel(req.configurationName);
+  }
+
+  static const Map<String, Set<String>> _zoneLocalities = {
+    'west': {
+      'ambawadi', 'ambli', 'anandnagar', 'azadsociety', 'bhadaj', 'bodakdev',
+      'bopal', 'jodhpur', 'jodhpurcharrasta', 'makarba', 'marigold', 'memnagar',
+      'prahladnagar', 'sarkhej', 'satellite', 'satelite', 'sciencecity', 'sciencepark',
+      'sciencecityroad', 'shela', 'shilaj', 'shyamal', 'sindhubhavan', 'sola',
+      'southbopal', 'thaltej', 'vastrapur', 'westahmedabad', 'westamdavad',
+      'sghighway', 'sgroad',
+    },
+    'north': {
+      'chandkheda', 'chandlodia', 'ghatlodia', 'gota', 'jagatpur', 'kknagar',
+      'naranpura', 'newranip', 'ognaj', 'ranip', 'tragad', 'vaishnodevi',
+      'vaishnodevicircle',
+    },
+    'east': {'naroda', 'nikol'},
+    'central': {'navrangpura'},
+  };
+
+  static String? _zoneKeyForName(String cleanName) {
+    final n = cleanName;
+    if (n.isEmpty) return null;
+    if (n.contains('westahmedabad') ||
+        n.contains('westamdavad') ||
+        n.contains('southwestahmedabad') ||
+        n.contains('westernahmedabad') ||
+        n == 'westahmd') {
+      return 'west';
+    }
+    if (n.contains('northahmedabad') || n.contains('northamdavad')) return 'north';
+    if (n.contains('eastahmedabad') || n.contains('eastamdavad')) return 'east';
+    if (n.contains('centralahmedabad') || n.contains('centralamdavad')) return 'central';
+    return null;
+  }
+
+  static bool _isInConfiguredZone(String zoneKey, String areaClean) {
+    if (areaClean.isEmpty) return false;
+    final members = _zoneLocalities[zoneKey];
+    if (members == null) return false;
+    if (members.contains(areaClean)) return true;
+    if (_zoneKeyForName(areaClean) == zoneKey) return true;
+    for (final loc in members) {
+      if (loc.length >= 5 && areaClean.contains(loc)) return true;
+    }
+    return false;
+  }
+
+  static const Set<String> _westAhmedabadLocalities = {
+    'bodakdev', 'satellite', 'vastrapur', 'thaltej', 'prahladnagar',
+    'bopal', 'southbopal', 'shela', 'shilaj', 'ambli', 'makarba', 'vejalpur',
+    'jodhpur', 'jodhpurcharrasta', 'anandnagar', 'memnagar', 'sciencecity',
+    'sindhubhavan', 'sola', 'shyamal', 'azadsociety', 'bhadaj'
+  };
+
+  static bool _namesReferToSameLocality(String a, String aClean, String b, String bClean) {
+    if (a.isEmpty || b.isEmpty) return false;
+    if (a == b || aClean == bClean) return true;
+    const tooGeneric = {'ahmedabad', 'amdavad', 'gujarat', 'india'};
+    if (tooGeneric.contains(aClean) || tooGeneric.contains(bClean)) return false;
+    if (aClean.length >= 5 && bClean.length >= 5 &&
+        (aClean.contains(bClean) || bClean.contains(aClean))) {
+      return true;
+    }
+    return false;
+  }
+
+  static PropertyMatchResult match(PropertyModel p, RequirementModel req) {
+    final statusName = p.propertyStatusName.toLowerCase();
+    final isInactive = statusName.contains('rented') || statusName.contains('sold') || statusName.contains('closed') || statusName.contains('inactive');
+    final isWonReq = req.status.toLowerCase() == 'won' || req.status.toLowerCase() == 'closed';
+    if (isInactive && !isWonReq) {
+      return PropertyMatchResult(
+        property: p,
+        matchPercentage: 0,
+        matchedCriteria: [],
+        unmatchedPreferences: ['Property is not available ($statusName)'],
+      );
+    }
+
+    if (!isEligibleByCategoryAndType(p, req)) {
+      return PropertyMatchResult(
+        property: p,
+        matchPercentage: 0,
+        matchedCriteria: [],
+        unmatchedPreferences: ['Category or property type does not match the client requirement'],
+      );
+    }
+
+    final List<String> matchedTags = [];
+    int totalScore = 0;
+
+    // 1. Listing Type Match (Weight: 10 pts)
+    bool isListingMatch = false;
+    final reqListing = (req.listingTypeName ?? '').toLowerCase();
+    final propListing = (p.listingTypeName).toLowerCase();
+    final isReqRent = reqListing.contains('rent') || reqListing.contains('lease');
+    final isPropRent = propListing.contains('rent') || propListing.contains('lease') || p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
+    final isReqSale = reqListing.contains('sale') || reqListing.contains('resale') || reqListing.contains('buy');
+    final isPropSale = !isPropRent && (propListing.contains('sale') || propListing.contains('resale') || propListing.isNotEmpty);
+
+    // Hard Filter: Rent vs Resale conflict
+    if ((isReqRent && isPropSale) || (isReqSale && isPropRent)) {
+      return PropertyMatchResult(
+        property: p,
+        matchPercentage: 0,
+        matchedCriteria: [],
+        unmatchedPreferences: ['Listing type conflict: Requirement is ${isReqRent ? "Rent" : "Resale"}, Property is ${isPropRent ? "Rent" : "Resale"}'],
+      );
+    }
+
+    if (reqListing.isEmpty) {
+      totalScore += 10;
+      isListingMatch = true;
+    } else if (isReqRent && isPropRent) {
+      totalScore += 10;
+      isListingMatch = true;
+      matchedTags.add('✓ Rent');
+    } else if (isReqSale && isPropSale) {
+      totalScore += 10;
+      isListingMatch = true;
+      matchedTags.add('✓ Resale/Sale');
+    } else if (p.listingTypeId.isNotEmpty && req.listingTypeId != null && p.listingTypeId == req.listingTypeId) {
+      totalScore += 10;
+      isListingMatch = true;
+      matchedTags.add('✓ Listing Type');
+    }
+
+    // 2. Target Area Match (Weight: 25 pts)
+    bool isAreaMatch = false;
+    if (isAllAreas(req)) {
+      totalScore += 25;
+      isAreaMatch = true;
+      matchedTags.add('✓ All Areas');
+    } else {
+      final pArea = p.areaName.trim().toLowerCase();
+      final pAreaClean = pArea.replaceAll(RegExp(r'[^a-z0-9]'), '');
+      final pTitleClean = p.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      bool found = false;
+      bool isZoneMatch = false;
+      String zoneLabel = '';
+
+      if (req.areaIds.isNotEmpty && p.areaId.isNotEmpty && req.areaIds.contains(p.areaId)) {
+        found = true;
+      }
+
+      if (!found && req.areaNames.isNotEmpty) {
+        for (final aName in req.areaNames) {
+          final subAreas = aName.split(RegExp(r'[,/|]'));
+          for (final sub in subAreas) {
+            final trimmed = sub.trim().toLowerCase();
+            final trimmedClean = trimmed.replaceAll(RegExp(r'[^a-z0-9]'), '');
+            if (trimmed.isEmpty) continue;
+            if (_namesReferToSameLocality(trimmed, trimmedClean, pArea, pAreaClean)) {
+              found = true;
+              break;
+            }
+            final zoneKey = _zoneKeyForName(trimmedClean);
+            if (zoneKey != null &&
+                (_isInConfiguredZone(zoneKey, pAreaClean) ||
+                    _isInConfiguredZone(zoneKey, pTitleClean))) {
+              isZoneMatch = true;
+              found = true;
+              zoneLabel = sub.trim();
+              break;
+            }
+            if (trimmed == pArea || trimmedClean == pAreaClean || pArea.contains(trimmed) || trimmed.contains(pArea)) {
+              found = true;
+              break;
+            }
+            if ((trimmedClean.contains('westahmedabad') || trimmedClean.contains('westamdavad')) && _westAhmedabadLocalities.contains(pAreaClean)) {
+              isZoneMatch = true;
+              found = true;
+              break;
+            }
+            if ((trimmedClean.contains('bothlocations') || trimmedClean.contains('bothlocation') || trimmedClean == 'both') &&
+                (pAreaClean.contains('gota') || pAreaClean.contains('vaishno'))) {
+              found = true;
+              break;
+            }
+          }
+          if (found) break;
+        }
+      }
+
+      if (found) {
+        totalScore += 25;
+        isAreaMatch = true;
+        matchedTags.add(isZoneMatch
+            ? '✓ Zone: ${zoneLabel.isNotEmpty ? zoneLabel : 'coverage'} (covers ${p.areaName.isNotEmpty ? p.areaName : p.title})'
+            : '✓ Area: ${p.areaName}');
+      } else if (p.cityName.isNotEmpty && (req.cityName.isNotEmpty ? p.cityName.toLowerCase() == req.cityName.toLowerCase() : req.areaNames.any((a) => a.toLowerCase().contains(p.cityName.toLowerCase()) || p.cityName.toLowerCase().contains(a.toLowerCase())))) {
+        totalScore += 10;
+        matchedTags.add('✓ City: ${p.cityName}');
+      }
+    }
+
+    // 3. Configuration / BHK Match (Weight: 25 pts)
+    // "Any Configuration" fully satisfies this criterion (1RK through penthouse/villa/duplex).
+    bool isConfigMatch = false;
+    if (isAnyConfiguration(req)) {
+      totalScore += 25;
+      isConfigMatch = true;
+      matchedTags.add('✓ Any Configuration');
+    } else {
+    final reqBhks = extractBhkNumbers(req.configurationName);
+    final propBhks = extractBhkNumbers(
+      '${p.configurationName ?? ''} ${p.title}',
+      fallbackBedrooms: p.bedrooms,
+    );
+
+    final bool hasSameId = (p.configurationId != null && p.configurationId!.isNotEmpty && req.configurationIds.contains(p.configurationId)) ||
+        (p.configurationId != null && req.configurationId != null && p.configurationId == req.configurationId);
+
+    if (reqBhks.isNotEmpty && propBhks.isNotEmpty) {
+      final intersection = reqBhks.intersection(propBhks);
+      if (intersection.isNotEmpty) {
+        totalScore += 25;
+        isConfigMatch = true;
+        matchedTags.add('✓ ${intersection.join(", ")} BHK');
+      } else {
+        bool adjacent = false;
+        for (final rb in reqBhks) {
+          for (final pb in propBhks) {
+            if ((rb - pb).abs() == 1) {
+              adjacent = true;
+              break;
+            }
+          }
+          if (adjacent) break;
+        }
+        if (adjacent) {
+          totalScore += 12;
+          final pBhkStr = propBhks.isNotEmpty ? '${propBhks.first} BHK' : (p.bedrooms > 0 ? '${p.bedrooms} BHK' : '');
+          if (pBhkStr.isNotEmpty) matchedTags.add('~ Near BHK ($pBhkStr)');
+        }
+      }
+    } else if (hasSameId) {
+      totalScore += 25;
+      isConfigMatch = true;
+      matchedTags.add('✓ Config Match');
+    } else if (req.configurationName != null && req.configurationName!.isNotEmpty && p.configurationName != null && p.configurationName!.isNotEmpty) {
+      final rName = req.configurationName!.toLowerCase();
+      final pName = p.configurationName!.toLowerCase();
+      if (rName.contains(pName) || pName.contains(rName)) {
+        totalScore += 25;
+        isConfigMatch = true;
+        matchedTags.add('✓ ${p.configurationName}');
+      }
+    }
+    }
+
+    // 4. Price / Budget Match (Weight: 30 pts)
+    bool isPriceMatch = false;
+    final minB = req.minBudget > 0 ? req.minBudget : 0.0;
+    final maxB = req.maxBudget > 0 ? req.maxBudget : 0.0;
+    final price = p.price;
+
+    if (maxB > 0) {
+      if (price >= minB && price <= maxB) {
+        totalScore += 30;
+        isPriceMatch = true;
+        matchedTags.add('✓ In Budget (₹${BudgetFormatter.format(price)})');
+      } else if (price >= minB * 0.8 && price <= maxB * 1.2) {
+        totalScore += 20;
+        matchedTags.add('~ Near Budget (₹${BudgetFormatter.format(price)})');
+      } else if (price >= minB * 0.65 && price <= maxB * 1.35) {
+        totalScore += 10;
+        matchedTags.add('~ Flex Budget (₹${BudgetFormatter.format(price)})');
+      }
+    } else {
+      totalScore += 20;
+      isPriceMatch = true;
+      matchedTags.add('✓ ₹${BudgetFormatter.format(price)}');
+    }
+
+    // 5. Property Type / Category Match (Weight: 10 pts)
+    // Apartment requirements must match Flat/Apartment inventory (same residential type).
+    bool isPropTypeMatch = false;
+    if (propertyTypesCompatible(
+      reqTypeName: req.propertyTypeName,
+      propTypeName: p.propertyTypeName,
+      reqTypeId: req.propertyTypeId,
+      propTypeId: p.propertyTypeId,
+      reqTypeIds: req.propertyTypeIds,
+      reqCategory: req.categoryName,
+      propCategory: p.categoryName,
+    )) {
+      totalScore += 10;
+      isPropTypeMatch = true;
+      final typeLabel = p.propertyTypeName.trim().isNotEmpty
+          ? p.propertyTypeName
+          : p.categoryName;
+      if (typeLabel.trim().isNotEmpty) {
+        matchedTags.add('✓ $typeLabel');
+      }
+    }
+
+    final finalPct = totalScore.clamp(0, 100);
+
+    return PropertyMatchResult(
+      property: p,
+      matchPercentage: finalPct,
+      matchedCriteria: matchedTags,
+      isPriceMatched: isPriceMatch,
+      isConfigMatched: isConfigMatch,
+      isAreaMatched: isAreaMatch,
+      isListingTypeMatched: isListingMatch,
+      isPropertyTypeMatched: isPropTypeMatch,
+    );
+  }
+
+  static int calculateMatchPercentage(PropertyModel p, RequirementModel req) {
+    return match(p, req).matchPercentage;
+  }
+
+  static bool isMatch(PropertyModel p, RequirementModel req, {int? threshold}) {
+    final t = threshold ?? MatchCriteriaManager().threshold;
+    return match(p, req).matchPercentage >= t;
+  }
+}
+
 class RequirementsScreen extends StatefulWidget {
   final String? initialTab;
   final String? initialSubTab;
+  final String? initialGroup;
 
   const RequirementsScreen({
     super.key,
     this.initialTab,
     this.initialSubTab,
+    this.initialGroup,
   });
 
   @override
   State<RequirementsScreen> createState() => _RequirementsScreenState();
 }
 
+enum LeadDateFilterPreset {
+  today,
+  yesterday,
+  last7Days,
+  thisMonth,
+  customRange,
+  allTime,
+}
+
 class _RequirementsScreenState extends State<RequirementsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _wonSearchController = TextEditingController();
+  final TextEditingController _allClientsFollowupSearchController = TextEditingController();
+  String _allClientsFollowupSearchQuery = '';
+  Timer? _allClientsFollowupSearchDebounce;
+  final Map<String, TextEditingController> _tabSearchControllers = {};
+  final Map<String, String> _tabSearchQueries = {};
+  Timer? _tabSearchDebounce;
+  String? _selectedSalespersonFilter;
+
+  TextEditingController _getTabSearchController(String subTab) {
+    final key = '${_selectedMainFollowupSection}_$subTab';
+    return _tabSearchControllers.putIfAbsent(key, () => TextEditingController());
+  }
+
+  String _getTabSearchQuery(String subTab) {
+    final key = '${_selectedMainFollowupSection}_$subTab';
+    return _tabSearchQueries[key] ?? '';
+  }
   String? _wonCategoryId;
   String? _wonPropertyTypeId;
   final List<String> _wonConfigurationIds = [];
   final List<String> _selectedConfigIds = [];
   String? _selectedCategoryId;
   String _selectedStatus = "All";
+  String _selectedUserFilterId = "All";
   String _selectedReadiness = "All";
+  LeadDateFilterPreset _selectedLeadDateFilter = LeadDateFilterPreset.allTime;
+  DateTime? _customStartDate;
+  DateTime? _customEndDate;
   String get _activeListingTab => ThemeManager().isRentMode ? 'Rent' : 'Re-Sale';
   set _activeListingTab(String value) {
     ThemeManager().setRentMode(value == 'Rent');
@@ -82,6 +828,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String _activeMainTab = "Leads"; // "Leads", "Requirements", or "Follow-ups"
   DateTime? _reqFollowupDateFilter = DateTime.now();
   String _selectedFollowupSubTab = "Today"; // "Today", "Due", "Future"
+  String _selectedMainFollowupSection = "Follow ups"; // "Follow ups" or "Site Visit Scheduled"
+  final Set<String> _selectedFollowupClientKeys = {};
   int _currentPage = 1;
   int _requirementsPerPage = 10;
   int _currentFollowupPage = 1;
@@ -97,11 +845,80 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   StreamSubscription? _requirementsStreamSub;
   StreamSubscription? _dashboardStreamSub;
   OverlayEntry? _notesOverlayEntry;
+  final Set<String> _selectedRequirementIds = {};
+  final ScrollController _scrollController = ScrollController();
+  String? _highlightedRequirementId;
+  List<RequirementModel> _cachedRequirements = [];
+  final Map<String, RequirementModel> _localRequirementOverrides = {};
+  String _salesLeadGroupFilter = 'assigned'; // 'assigned', 'added', 'all'
+  final UsersRepository _usersRepository = UsersRepository();
+  List<users_model.UserModel> _assignUsers = [];
+  bool _assignUsersLoading = false;
 
-  void _refreshFollowupsFuture() {
+  Future<void> _confirmBulkMoveToBin(List<RequirementModel> pageItems) async {
+    final count = _selectedRequirementIds.length;
+    if (count == 0) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.auto_delete_outlined, color: CRMColors.danger, size: 22),
+            const SizedBox(width: 8),
+            Text('Move $count Lead(s) to Recycle Bin?'),
+          ],
+        ),
+        content: Text(
+          'Selected lead(s) will be moved to the Recycle Bin and can be restored anytime from the Recycle Bin tab.',
+          style: TextStyle(fontSize: 13.5, color: CRMColors.textOf(context)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Move to Bin'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final idsToDelete = List<String>.from(_selectedRequirementIds);
+      setState(() {
+        _selectedRequirementIds.clear();
+      });
+
+      for (final id in idsToDelete) {
+        try {
+          await RequirementsRepository().deleteRequirement(id);
+        } catch (_) {}
+      }
+
+      _triggerFetch();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$count lead(s) moved to Recycle Bin successfully.'),
+            backgroundColor: CRMColors.success,
+          ),
+        );
+      }
+    }
+  }
+
+  void _refreshFollowupsFuture({bool force = true}) {
     _followupsFuture = Future.wait([
-      DashboardRepository().getDashboardData(backgroundRefresh: false),
-      RequirementsRepository().getRequirements(),
+      DashboardRepository().getDashboardData(backgroundRefresh: true, forceRefresh: force),
+      RequirementsRepository().getRequirements(refreshFromServer: force),
     ]);
   }
 
@@ -110,10 +927,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     super.initState();
     if (widget.initialTab != null) {
       final tabLower = widget.initialTab!.toLowerCase();
+      final authState = context.read<AuthBloc>().state;
+      final currentUser = authState is Authenticated ? authState.user : null;
+      final isAdminOrSuperAdmin = currentUser != null &&
+          (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
+      final isTelecaller = currentUser?.role == 'Telecaller';
       if (tabLower == 'follow-ups' || tabLower == 'followups') {
-        _activeMainTab = 'Follow-ups';
+        _activeMainTab = isTelecaller ? 'Leads' : 'Follow-ups';
       } else if (tabLower == 'my won' || tabLower == 'won') {
-        _activeMainTab = 'My Won';
+        _activeMainTab = isAdminOrSuperAdmin ? 'Won' : 'My Won';
+      } else if (tabLower == 'rejected') {
+        _activeMainTab = 'Rejected';
+      } else if (tabLower == 'leads added by me' || tabLower == 'added') {
+        _activeMainTab = 'Leads Added by Me';
       } else if (tabLower == 'leads') {
         _activeMainTab = 'Leads';
       }
@@ -121,7 +947,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (widget.initialSubTab != null && widget.initialSubTab!.isNotEmpty) {
       _selectedFollowupSubTab = widget.initialSubTab!;
     }
-    _refreshFollowupsFuture();
+    if (widget.initialGroup != null && widget.initialGroup!.isNotEmpty) {
+      _salesLeadGroupFilter = widget.initialGroup!;
+    }
+    _refreshFollowupsFuture(force: true);
     _requirementsStreamSub = RepositoryCoordinator().requirementsStream.listen((_) {
       if (mounted) {
         setState(() {
@@ -136,10 +965,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         });
       }
     });
+    // Listen for real-time team match criteria threshold changes
+    MatchCriteriaManager().addListener(_onCriteriaChanged);
     // Metadata load triggers the first fetch once listing types are available.
     // Avoid a duplicate empty fetch before metadata arrives.
     _loadMetadata();
-    context.read<UsersBloc>().add(const FetchUsers());
+    if (RoleGuard.canManageEmployees(RoleGuard.currentUser?.role)) {
+      context.read<UsersBloc>().add(const FetchUsers());
+    }
+    unawaited(_loadAssignUsers());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -153,11 +987,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         if (tabParam != null) {
           final tabLower = tabParam.toLowerCase();
           if (tabLower == 'follow-ups' || tabLower == 'followups') {
-            if (_activeMainTab != 'Follow-ups') {
-              setState(() {
-                _activeMainTab = 'Follow-ups';
-              });
-              _refreshFollowupsFuture();
+            final authState = context.read<AuthBloc>().state;
+            final currentUser = authState is Authenticated ? authState.user : null;
+            if (currentUser?.role != 'Telecaller') {
+              if (_activeMainTab != 'Follow-ups') {
+                setState(() {
+                  _activeMainTab = 'Follow-ups';
+                });
+                _refreshFollowupsFuture();
+              }
             }
           }
         }
@@ -174,16 +1012,152 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _searchController.text = searchParam;
           setState(() {});
         }
-        final openId = uri.queryParameters['openId'];
-        if (openId != null && openId.isNotEmpty) {
-          RepositoryCoordinator().requirementLocal.getRequirement(openId).then((local) {
-            if (local != null && mounted) {
-              showCRMRequirementDrawer(context, local.toModel());
-            }
-          });
-        }
+        _checkAutoOpenRequirement();
       }
     });
+  }
+
+  String? _lastOpenedReqKey;
+
+  void _checkAutoOpenRequirement() {
+    try {
+      final uri = GoRouterState.of(context).uri;
+      final openId = uri.queryParameters['openId'] ?? uri.queryParameters['openReqId'];
+      final t = uri.queryParameters['t'];
+      final uniqueKey = openId != null ? '${openId}_$t' : null;
+      if (openId != null && openId.isNotEmpty && _lastOpenedReqKey != uniqueKey) {
+        _lastOpenedReqKey = uniqueKey;
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (!mounted) return;
+          RequirementModel? matched;
+          try {
+            final local = await RepositoryCoordinator().requirementLocal.getRequirement(openId);
+            if (local != null) matched = local.toModel();
+          } catch (_) {}
+          if (matched == null) {
+            try {
+              final allReqs = await RepositoryCoordinator().requirementLocal.getRequirements();
+              for (final r in allReqs) {
+                if (r.id == openId) {
+                  matched = r.toModel();
+                  break;
+                }
+              }
+            } catch (_) {}
+          }
+          if (matched != null && mounted) {
+            showCRMRequirementDrawer(context, matched);
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void didUpdateWidget(covariant RequirementsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialTab != oldWidget.initialTab && widget.initialTab != null) {
+      final tabLower = widget.initialTab!.toLowerCase();
+      final authState = context.read<AuthBloc>().state;
+      final currentUser = authState is Authenticated ? authState.user : null;
+      if (tabLower == 'follow-ups' || tabLower == 'followups') {
+        if (currentUser?.role != 'Telecaller') {
+          setState(() {
+            _activeMainTab = 'Follow-ups';
+          });
+          _refreshFollowupsFuture();
+        }
+      } else if (tabLower == 'my won' || tabLower == 'won') {
+        final isAdminOrSuperAdmin = currentUser != null &&
+            (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
+        setState(() {
+          _activeMainTab = isAdminOrSuperAdmin ? 'Won' : 'My Won';
+        });
+        _triggerFetch();
+      } else if (tabLower == 'rejected') {
+        setState(() {
+          _activeMainTab = 'Rejected';
+        });
+        _triggerFetch();
+      } else if (tabLower == 'leads added by me' || tabLower == 'added') {
+        setState(() {
+          _activeMainTab = 'Leads Added by Me';
+        });
+        _triggerFetch();
+      } else if (tabLower == 'leads') {
+        setState(() {
+          _activeMainTab = 'Leads';
+        });
+        _triggerFetch();
+      }
+    }
+    if (widget.initialSubTab != oldWidget.initialSubTab &&
+        widget.initialSubTab != null &&
+        widget.initialSubTab!.isNotEmpty) {
+      setState(() {
+        _selectedFollowupSubTab = widget.initialSubTab!;
+      });
+    }
+    if (widget.initialGroup != oldWidget.initialGroup &&
+        widget.initialGroup != null &&
+        widget.initialGroup!.isNotEmpty) {
+      setState(() {
+        _salesLeadGroupFilter = widget.initialGroup!;
+      });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    try {
+      final uri = GoRouterState.of(context).uri;
+      final tabParam = uri.queryParameters['tab'];
+      if (tabParam != null) {
+        final tabLower = tabParam.toLowerCase();
+        final authState = context.read<AuthBloc>().state;
+        final currentUser = authState is Authenticated ? authState.user : null;
+        final isAdminOrSuperAdmin = currentUser != null &&
+            (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
+        String? targetTab;
+        if (tabLower == 'follow-ups' || tabLower == 'followups') {
+          if (currentUser?.role != 'Telecaller') {
+            targetTab = 'Follow-ups';
+          }
+        } else if (tabLower == 'my won' || tabLower == 'won') {
+          targetTab = isAdminOrSuperAdmin ? 'Won' : 'My Won';
+        } else if (tabLower == 'rejected') {
+          targetTab = 'Rejected';
+        } else if (tabLower == 'leads added by me' || tabLower == 'added') {
+          targetTab = 'Leads Added by Me';
+        } else if (tabLower == 'leads') {
+          targetTab = 'Leads';
+        }
+        if (targetTab != null && targetTab != _activeMainTab) {
+          setState(() {
+            _activeMainTab = targetTab!;
+          });
+          if (targetTab == 'Follow-ups') {
+            _refreshFollowupsFuture();
+          } else {
+            _triggerFetch();
+          }
+        }
+      }
+      final subTabParam = uri.queryParameters['subTab'];
+      if (subTabParam != null && subTabParam.isNotEmpty && subTabParam != _selectedFollowupSubTab) {
+        setState(() {
+          _selectedFollowupSubTab = subTabParam;
+        });
+      }
+      final sectionParam = uri.queryParameters['section'];
+      if (sectionParam != null && (sectionParam == 'Site Visit Scheduled' || sectionParam == 'Follow ups')) {
+        setState(() {
+          _selectedMainFollowupSection = sectionParam;
+        });
+      }
+      _checkAutoOpenRequirement();
+    } catch (_) {}
   }
 
   @override
@@ -255,12 +1229,27 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   @override
   void dispose() {
+    MatchCriteriaManager().removeListener(_onCriteriaChanged);
     _removeNotesPopover();
     _requirementsStreamSub?.cancel();
     _dashboardStreamSub?.cancel();
     _searchController.dispose();
     _wonSearchController.dispose();
+    _allClientsFollowupSearchDebounce?.cancel();
+    _allClientsFollowupSearchController.dispose();
+    _tabSearchDebounce?.cancel();
+    for (final c in _tabSearchControllers.values) {
+      c.dispose();
+    }
+    _tabSearchControllers.clear();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onCriteriaChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _loadPropertiesForMatches() async {
@@ -321,7 +1310,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
     String? configId;
     String? propTypeId;
-    if (_activeMainTab != 'My Won') {
+    if (_activeMainTab != 'My Won' && _activeMainTab != 'Won' && _activeMainTab != 'Rejected') {
       if (_selectedConfigIds.length == 1) {
         if (isPropertyTypeFilter) {
           propTypeId = _selectedConfigIds.first;
@@ -331,9 +1320,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       }
     }
 
-    // My Won must load all pipeline statuses (filter Won client-side).
-    // Using the Requirements tab status filter here hid Won rows after updates.
-    final statusForFetch = _activeMainTab == 'My Won' ? 'All' : _selectedStatus;
+    // Fetch all pipeline statuses and perform status filtering client-side
+    // so mapped statuses (such as Rejected, Suspended, Dead, etc.) filter accurately.
+    final statusForFetch = 'All';
 
     context.read<RequirementsBloc>().add(
       FetchRequirementsEvent(
@@ -352,26 +1341,72 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _selectedConfigIds.clear();
       _selectedCategoryId = null;
       _selectedStatus = "All";
+      _selectedUserFilterId = "All";
       _selectedReadiness = "All";
+      _selectedLeadDateFilter = LeadDateFilterPreset.allTime;
+      _customStartDate = null;
+      _customEndDate = null;
       _activeListingTab = "Rent";
       _currentPage = 1;
     });
     _triggerFetch();
   }
 
-  void _showAddEditDialog([RequirementModel? req]) {
-    showDialog(
+  void _showAddEditDialog([
+    RequirementModel? req,
+    int initialStep = 0,
+    bool allowTelecallerEdit = true,
+  ]) async {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    if (!allowTelecallerEdit && req?.hasUnmappedArea != true && RoleGuard.isTelecaller(currentUser?.role)) {
+      AppStatusSnackBar.show(
+        context,
+        message: 'Telecallers have read-only pipeline tracking access.',
+        isSuccess: false,
+      );
+      return;
+    }
+
+    String? currentListingTypeId;
+    if (_metadata != null && _metadata!.listingTypes.isNotEmpty) {
+      try {
+        final matched = _metadata!.listingTypes.firstWhere(
+          (lt) => lt.name.toLowerCase().contains(_activeListingTab == 'Rent' ? 'rent' : 'sale'),
+        );
+        currentListingTypeId = matched.id;
+      } catch (_) {}
+    }
+
+    await showDialog(
       context: context,
       builder: (dialogContext) => AddEditRequirementScreen(
         requirement: req,
+        initialListingTypeId: currentListingTypeId,
+        initialListingTab: _activeListingTab,
+        initialStep: initialStep,
         onSaved: () {
           _triggerFetch();
         },
       ),
     );
+    if (mounted) {
+      _triggerFetch();
+    }
   }
 
   void _showDeleteConfirmDialog(RequirementModel req) {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    if (RoleGuard.isTelecaller(currentUser?.role)) {
+      AppStatusSnackBar.show(
+        context,
+        message: 'Telecallers cannot delete pipeline leads.',
+        isSuccess: false,
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -415,8 +1450,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       useRootNavigator: true,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) {
-        return _CRMPropertyMatchesDrawer(requirement: req);
+      builder: (bottomSheetContext) {
+        return _CRMPropertyMatchesDrawer(
+          requirement: req,
+          properties: _propertiesForMatches,
+          onEditRequirement: (r) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showAddEditDialog(r, 3, true);
+            });
+          },
+        );
       },
     );
   }
@@ -425,13 +1468,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return true;
   }
 
+  Future<String?> _lookupPropertyStatusId(String needle) async {
+    try {
+      final meta = await PropertiesRepository().getPropertyMetadata();
+      final n = needle.toLowerCase();
+      for (final s in meta.statuses) {
+        if (s.name.toLowerCase().contains(n)) return s.id;
+      }
+    } catch (e) {
+      debugPrint('Error looking up property status "$needle": $e');
+    }
+    return null;
+  }
+
   Future<void> _revertWonPropertiesToAvailable(RequirementModel req) async {
     try {
       final propertiesRepository = PropertiesRepository();
       final propertiesService = PropertiesService();
       final properties = await propertiesRepository.getProperties();
-
-      const availableStatusId = '09521e45-e731-4517-8129-1866f0991ee8';
+      final availableStatusId = await _lookupPropertyStatusId('available');
+      if (availableStatusId == null) {
+        debugPrint('Could not resolve Available property status from metadata.');
+        return;
+      }
 
       for (final p in properties) {
         final currentStatus = (p.propertyStatusName ?? '').toLowerCase();
@@ -463,8 +1522,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _removeNotesPopover();
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
+    if (RoleGuard.isTelecaller(currentUser?.role)) {
+      AppStatusSnackBar.show(
+        context,
+        message: 'Telecallers have read-only tracking access on this page.',
+        isSuccess: false,
+      );
+      return;
+    }
     if (_isLeadTransferredAway(req, currentUser)) return;
-    if (newStatus == req.status && newStatus != 'Re-Followup') return;
+
+    final bool isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
+    if (!isUnhandledAssigned && newStatus == req.status && newStatus != 'Re-Followup') return;
+
+    final Map<String, dynamic> nextCustomFields = Map<String, dynamic>.from(req.metaCustomFields ?? {});
+    if (currentUser?.role == 'Sales') {
+      nextCustomFields['handled_by_sales'] = true;
+      nextCustomFields['telecaller_status'] ??= _getTelecallerStatusLabel(req);
+      nextCustomFields['sales_handled_at'] ??= DateTime.now().toIso8601String();
+    }
+    if (newStatus.toLowerCase().startsWith('rejected')) {
+      nextCustomFields['rejected_at'] = DateTime.now().toIso8601String();
+    }
+    final RequirementModel baseReq = req.copyWith(metaCustomFields: nextCustomFields);
 
     if (req.status == 'Won' && newStatus != 'Won') {
       await _revertWonPropertiesToAvailable(req);
@@ -489,9 +1569,23 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       showDialog(
         context: context,
         builder: (dialogContext) => RequirementStepperDialog(
-          requirement: req,
+          requirement: baseReq,
           initialStep: 1,
           updateStatusOnSave: true,
+          onSavedWithDate: (scheduledDate) {
+            final now = DateTime.now();
+            final todayDate = DateTime(now.year, now.month, now.day);
+            final targetDay = DateTime(scheduledDate.year, scheduledDate.month, scheduledDate.day);
+            if (targetDay.isBefore(todayDate)) {
+              _selectedFollowupSubTab = 'Due';
+            } else if (targetDay.isAfter(todayDate)) {
+              _selectedFollowupSubTab = 'Future';
+            } else {
+              _selectedFollowupSubTab = 'Today';
+            }
+            _reqFollowupDateFilter = scheduledDate;
+            _currentFollowupPage = 1;
+          },
           onSaved: () {
             if (isReFollowup) {
               NotificationCenter.addNotification(
@@ -528,7 +1622,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       showDialog(
         context: context,
         builder: (dialogContext) => RequirementStepperDialog(
-          requirement: req,
+          requirement: baseReq,
           initialStep: 1,
           updateStatusOnSave: true,
           isSiteVisit: true,
@@ -541,10 +1635,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       showDialog(
         context: context,
         builder: (dialogContext) => RequirementWinPropertySelectionDialog(
-          requirement: req,
+          requirement: baseReq,
           onConfirmed: (List<PropertyModel> selectedProperties) async {
             context.read<RequirementsBloc>().add(
-              UpdateRequirementEvent(req.copyWith(status: 'Won')),
+              PatchRequirementStatusEvent(baseReq.copyWith(status: 'Won')),
             );
             await RequirementsRepository().updateRequirementFields(req.id, {
               'status': 'Won',
@@ -554,23 +1648,31 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             await PropertyDealClientStore.setWonRequirementProperties(req.id, selectedIds);
 
             final propertiesService = PropertiesService();
+            final rentedStatusId = await _lookupPropertyStatusId('rented');
+            final soldStatusId = await _lookupPropertyStatusId('sold');
+            var propertyStatusUpdated = selectedProperties.isEmpty;
+
             for (final p in selectedProperties) {
               await PropertyDealClientStore.setClientName(p.id, req.clientName);
 
               final listingType = p.listingTypeName.toLowerCase();
               final isRent = listingType.contains('rent') ||
-                  (LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase().contains('rent') ?? false) ||
-                  p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
+                  (LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase().contains('rent') ?? false);
 
-              final targetStatusId = isRent
-                  ? '7c1d9611-8cad-4058-a9fa-3d68b8adb6f6' // Rented Out
-                  : '33fa8cf3-910d-4f0b-9142-8862974311ab'; // Sold Out
+              final targetStatusId = isRent ? rentedStatusId : soldStatusId;
+              if (targetStatusId == null) {
+                propertyStatusUpdated = false;
+                debugPrint('Could not resolve ${isRent ? 'Rented' : 'Sold'} property status from metadata.');
+                continue;
+              }
 
               try {
                 await propertiesService.updateProperty(p.id, {
                   'property_status_id': targetStatusId,
                 });
+                propertyStatusUpdated = true;
               } catch (e) {
+                propertyStatusUpdated = false;
                 debugPrint("Error updating property status on win: $e");
               }
             }
@@ -580,9 +1682,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Requirement marked as Won and property status updated!'),
-                  backgroundColor: CRMColors.success,
+                SnackBar(
+                  content: Text(
+                    propertyStatusUpdated
+                        ? 'Requirement marked as Won and property status updated!'
+                        : 'Requirement marked as Won. Property status could not be updated.',
+                  ),
+                  backgroundColor: propertyStatusUpdated ? CRMColors.success : CRMColors.warning,
                 ),
               );
             }
@@ -591,13 +1697,48 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       );
     } else {
       NotificationCenter.removeNotificationsForClient(req.clientName);
+      final updatedReq = baseReq.copyWith(status: newStatus);
+      _patchCachedRequirement(updatedReq);
       context.read<RequirementsBloc>().add(
-        UpdateRequirementEvent(req.copyWith(status: newStatus)),
+        PatchRequirementStatusEvent(updatedReq),
       );
       RequirementsRepository().updateRequirementFields(req.id, {
         'status': newStatus,
       });
     }
+  }
+
+  void _patchCachedRequirement(RequirementModel updated) {
+    RequirementLocalRepository.rememberMetaCustomFields(updated.id, updated.metaCustomFields);
+    _localRequirementOverrides[updated.id] = updated;
+    _cachedRequirements = _withLocalRequirementOverrides(
+      _cachedRequirements.map((r) => r.id == updated.id ? updated : r).toList(),
+    );
+    if (mounted) {
+      setState(() {
+        _refreshFollowupsFuture();
+      });
+    }
+  }
+
+  List<RequirementModel> _withLocalRequirementOverrides(List<RequirementModel> source) {
+    if (_localRequirementOverrides.isEmpty) return source;
+    return source.map((r) {
+      final local = _localRequirementOverrides[r.id];
+      if (local == null) return r;
+      final localHandled = local.metaCustomFields?['handled_by_sales'];
+      final remoteHandled = r.metaCustomFields?['handled_by_sales'];
+      final localReassign = local.metaCustomFields?['reassigned_by'];
+      final remoteReassign = r.metaCustomFields?['reassigned_by'];
+      if (local.status == r.status &&
+          local.assignedTo == r.assignedTo &&
+          localHandled == remoteHandled &&
+          localReassign == remoteReassign) {
+        _localRequirementOverrides.remove(r.id);
+        return r;
+      }
+      return local;
+    }).toList();
   }
 
   void _showAddAnotherRequirementDialog(RequirementModel existing) {
@@ -613,13 +1754,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       maxBudget: 0,
       areaIds: [],
       areaNames: [],
-      status: 'Not Started',
+      status: 'New',
       createdAt: DateTime.now(),
     );
     showDialog(
       context: context,
       builder: (dialogContext) => AddEditRequirementScreen(
         requirement: prefilled,
+        initialListingTab: _activeListingTab,
         onSaved: () {
           _triggerFetch();
         },
@@ -632,7 +1774,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         "Requirement Code: ${req.requirementCode}\n"
         "Specs: ${req.propertyTypeName} (${req.configurationName ?? 'N/A'})\n"
         "Budget: ${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}\n"
-        "Target Areas: ${req.areaNames.join(', ')}";
+        "Target Areas: ${req.displayAreasText}";
         
     Clipboard.setData(ClipboardData(text: shareText));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -643,36 +1785,80 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  void _onRequirementEntered(RequirementModel req, {bool scrollToTop = true}) {
+    if (!mounted) return;
+    setState(() {
+      _highlightedRequirementId = req.id;
+    });
+    if (scrollToTop && _scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOut,
+      );
+    }
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          if (_highlightedRequirementId == req.id) {
+            _highlightedRequirementId = null;
+          }
+        });
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final authState = context.watch<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    if (currentUser?.role == 'Telecaller' && _activeMainTab == 'Follow-ups') {
+      _activeMainTab = 'Leads';
+    }
+    final reqBlocState = context.watch<RequirementsBloc>().state;
+    if (reqBlocState is RequirementsLoaded) {
+      _cachedRequirements = _withLocalRequirementOverrides(reqBlocState.requirements);
+    }
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: BlocListener<RequirementsBloc, RequirementsState>(
         listener: (context, state) {
+          if (state is RequirementsLoaded) {
+            _cachedRequirements = _withLocalRequirementOverrides(state.requirements);
+          }
           if (state is RequirementsSuccess) {
-            final msg = _activeMainTab == 'My Won'
-                ? '${state.message} (My Won only shows Won items.)'
+            final isWonActive = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
+            final msg = isWonActive
+                ? '${state.message} (${_activeMainTab} only shows Won items.)'
                 : state.message;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(msg),
-                backgroundColor: CRMColors.success,
-                behavior: SnackBarBehavior.floating,
-              ),
+            AppStatusSnackBar.show(
+              context,
+              message: msg,
+              isSuccess: true,
             );
-            _triggerFetch();
+            if (state.newlyAdded != null) {
+              _onRequirementEntered(state.newlyAdded!, scrollToTop: true);
+            } else if (state.requirement != null) {
+              _onRequirementEntered(state.requirement!, scrollToTop: false);
+            } else {
+              _triggerFetch();
+            }
+          } else if (state is RequirementsLoaded && state.newlyAdded != null) {
+            _onRequirementEntered(state.newlyAdded!, scrollToTop: true);
           } else if (state is RequirementsError) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Error: ${state.message}"),
-                backgroundColor: CRMColors.danger,
-                behavior: SnackBarBehavior.floating,
-              ),
+            AppStatusSnackBar.show(
+              context,
+              message: "Error: ${state.message}",
+              isSuccess: false,
             );
           }
         },
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(CRMSpacing.l),
+          controller: _scrollController,
+          padding: EdgeInsets.all(
+            MediaQuery.sizeOf(context).width < 600 ? CRMSpacing.m : CRMSpacing.l,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -680,7 +1866,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               _buildPageHeader(),
               const SizedBox(height: CRMSpacing.m),
 
-              // Main View Tabs (Requirements vs Follow-ups vs My Won)
+              // Main View Tabs (Requirements vs Follow-ups vs Won)
               Container(
                 height: 48,
                 padding: const EdgeInsets.all(4),
@@ -695,17 +1881,35 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _buildMainViewTabButton('Leads'),
+                      if (currentUser?.role != 'Telecaller') ...[
+                        const SizedBox(width: 4),
+                        _buildMainViewTabButton('Follow-ups'),
+                      ],
                       const SizedBox(width: 4),
-                      _buildMainViewTabButton('Follow-ups'),
+                      _buildMainViewTabButton(
+                        currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')
+                            ? 'Won'
+                            : 'My Won',
+                      ),
                       const SizedBox(width: 4),
-                      _buildMainViewTabButton('My Won'),
+                      _buildMainViewTabButton('Rejected'),
+                      if (currentUser != null &&
+                          (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')) ...[
+                        const SizedBox(width: 4),
+                        _buildMainViewTabButton('Leads Added by Me'),
+                      ],
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: CRMSpacing.l),
 
-              if (_activeMainTab == 'Leads') ...[
+              if (_activeMainTab == 'Leads' || _activeMainTab == 'Leads Added by Me' || _activeMainTab == 'Rejected') ...[
+                if (_activeMainTab == 'Leads' && currentUser != null && currentUser.role == 'Sales') ...[
+                  _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
+                  const SizedBox(height: CRMSpacing.m),
+                ],
+
                 // Filters & Search Card
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -721,14 +1925,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             child: _isMobileFiltersExpanded
                                 ? Padding(
                                     padding: const EdgeInsets.only(top: CRMSpacing.m),
-                                    child: _buildSearchAndFiltersCard(),
+                                    child: _buildSearchAndFiltersCard(_cachedRequirements),
                                   )
                                 : const SizedBox.shrink(),
                           ),
                         ],
                       );
                     } else {
-                      return _buildSearchAndFiltersCard();
+                      return _buildSearchAndFiltersCard(_cachedRequirements);
                     }
                   },
                 ),
@@ -736,7 +1940,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
                 // Data Table
                 _buildRequirementsTable(),
-              ] else if (_activeMainTab == 'My Won') ...[
+              ] else if (_activeMainTab == 'My Won' || _activeMainTab == 'Won') ...[
                 _buildMyWonFiltersAndTable(),
               ] else ...[
                 // Follow-ups View
@@ -771,16 +1975,28 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       ),
     );
 
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final bool isTelecaller = RoleGuard.isTelecaller(currentUser?.role);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CRMPageHeader(
-          title: 'Leads',
-          trailing: CRMButton(
-            label: 'Add Lead',
-            prefixIcon: Icons.add_rounded,
-            height: 40,
-            onPressed: () => _showAddEditDialog(),
+          title: isTelecaller ? 'All Leads (Track)' : 'Leads',
+          trailing: ListenableBuilder(
+            listenable: PermissionMatrixService.instance,
+            builder: (context, _) {
+              final canAddLead = !isTelecaller ||
+                  RoleGuard.hasPermission(currentUser?.role, 'leads.create');
+              if (!canAddLead) return const SizedBox.shrink();
+              return CRMButton(
+                label: 'Add Lead',
+                prefixIcon: Icons.add_rounded,
+                height: 40,
+                onPressed: () => _showAddEditDialog(),
+              );
+            },
           ),
         ),
         const SizedBox(height: CRMSpacing.s),
@@ -828,7 +2044,25 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  Widget _buildSearchAndFiltersCard() {
+  Widget _buildSearchAndFiltersCard([
+    List<RequirementModel> baseList = const [],
+    bool hideStatusFilter = false,
+  ]) {
+    List<RequirementModel> allReqs = baseList;
+    if (allReqs.isEmpty) {
+      final blocState = context.read<RequirementsBloc>().state;
+      if (blocState is RequirementsLoaded) {
+        allReqs = blocState.requirements;
+      }
+    }
+
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final bool showUnassign = _canSeeUnassignStatusFilter(currentUser);
+    final statusItems = _statusFilterItems(showUnassign: showUnassign);
+    final String statusFilterValue =
+        (!showUnassign && _selectedStatus == 'Unassign') ? 'All' : _selectedStatus;
+
     final bool isMobile = MediaQuery.of(context).size.width < 600;
     String configDropdownLabel = 'BHK';
     final selectedCat = _metadata?.categories.firstWhere(
@@ -916,12 +2150,27 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     ),
                   ),
                   onChanged: (val) {
+                    AuditTelemetryService.instance.trackSearch(
+                      query: val,
+                      module: 'Leads',
+                    );
                     setState(() {});
                   },
                 ),
               ),
               const SizedBox(width: CRMSpacing.s),
-              CRMButton(label: "Search", onPressed: _triggerFetch),
+              CRMButton(
+                label: "Search",
+                onPressed: () {
+                  AuditTelemetryService.instance.trackButtonClick(
+                    buttonId: 'btn_search_leads',
+                    buttonLabel: 'Search Leads',
+                    page: '/requirements',
+                    extra: {'query': _searchController.text.trim()},
+                  );
+                  _triggerFetch();
+                },
+              ),
             ],
           ),
           const SizedBox(height: CRMSpacing.m),
@@ -955,28 +2204,21 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         _triggerFetch();
                       },
                     ),
+                    if (!hideStatusFilter) ...[
+                      const SizedBox(height: CRMSpacing.s),
+                      _buildDropdownFilter(
+                        label: 'Status',
+                        value: statusFilterValue,
+                        items: statusItems,
+                        isMobile: isMobile,
+                        onChanged: (val) {
+                          setState(() => _selectedStatus = val ?? "All");
+                          _triggerFetch();
+                        },
+                      ),
+                    ],
                     const SizedBox(height: CRMSpacing.s),
-                    _buildDropdownFilter(
-                      label: 'Status',
-                      value: _selectedStatus,
-                      items: const [
-                        DropdownMenuItem(value: "All", child: Text("All")),
-                        DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
-                        DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
-                        DropdownMenuItem(value: "Interested", child: Text("Interested")),
-                        DropdownMenuItem(value: "Site Visit", child: Text("Site Visit Sche.")),
-                        DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
-                        DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
-                        DropdownMenuItem(value: "Won", child: Text("Won")),
-                        DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
-                        DropdownMenuItem(value: "Not Interested", child: Text("Not Interested")),
-                      ],
-                      isMobile: isMobile,
-                      onChanged: (val) {
-                        setState(() => _selectedStatus = val ?? "All");
-                        _triggerFetch();
-                      },
-                    ),
+                    _buildUserFilterDropdown(isMobile: isMobile),
                     const SizedBox(height: CRMSpacing.s),
                     CRMButton(
                       label: "Clear Filters",
@@ -1018,27 +2260,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         },
                       ),
                     ),
-                    _buildDropdownFilter(
-                      label: 'Status',
-                      value: _selectedStatus,
-                      items: const [
-                        DropdownMenuItem(value: "All", child: Text("All")),
-                        DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
-                        DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
-                        DropdownMenuItem(value: "Interested", child: Text("Interested")),
-                        DropdownMenuItem(value: "Site Visit", child: Text("Site Visit Sche.")),
-                        DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
-                        DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
-                        DropdownMenuItem(value: "Won", child: Text("Won")),
-                        DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
-                        DropdownMenuItem(value: "Not Interested", child: Text("Not Interested")),
-                      ],
-                      isMobile: isMobile,
-                      onChanged: (val) {
-                        setState(() => _selectedStatus = val ?? "All");
-                        _triggerFetch();
-                      },
-                    ),
+                    if (!hideStatusFilter)
+                      _buildDropdownFilter(
+                        label: 'Status',
+                        value: statusFilterValue,
+                        items: statusItems,
+                        isMobile: isMobile,
+                        onChanged: (val) {
+                          setState(() => _selectedStatus = val ?? "All");
+                          _triggerFetch();
+                        },
+                      ),
+                    _buildUserFilterDropdown(isMobile: isMobile),
                     CRMButton(
                       label: "Clear Filters",
                       variant: CRMButtonVariant.outline,
@@ -1046,9 +2279,388 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     ),
                   ],
                 ),
+          const SizedBox(height: CRMSpacing.m),
+          const Divider(height: 1),
+          const SizedBox(height: CRMSpacing.m),
+          _buildDateFilterBar(context, allReqs),
+        ],
+      ),
+    );
+  }
+
+  bool _matchesLeadDateFilter(RequirementModel req) {
+    return _matchesLeadDateFilterWithPreset(req, _selectedLeadDateFilter);
+  }
+
+  bool _matchesLeadDateFilterWithPreset(RequirementModel req, LeadDateFilterPreset preset) {
+    final createdAt = _dateForLeadFilter(req);
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+    switch (preset) {
+      case LeadDateFilterPreset.today:
+        return !createdAt.isBefore(todayStart) && !createdAt.isAfter(todayEnd);
+      case LeadDateFilterPreset.yesterday:
+        final yestStart = todayStart.subtract(const Duration(days: 1));
+        final yestEnd = DateTime(yestStart.year, yestStart.month, yestStart.day, 23, 59, 59);
+        return !createdAt.isBefore(yestStart) && !createdAt.isAfter(yestEnd);
+      case LeadDateFilterPreset.last7Days:
+        final start = todayStart.subtract(const Duration(days: 6));
+        return !createdAt.isBefore(start) && !createdAt.isAfter(todayEnd);
+      case LeadDateFilterPreset.thisMonth:
+        final monthStart = DateTime(now.year, now.month, 1);
+        return !createdAt.isBefore(monthStart) && !createdAt.isAfter(todayEnd);
+      case LeadDateFilterPreset.customRange:
+        if (_customStartDate != null && _customEndDate != null) {
+          final start = DateTime(_customStartDate!.year, _customStartDate!.month, _customStartDate!.day);
+          final end = DateTime(_customEndDate!.year, _customEndDate!.month, _customEndDate!.day, 23, 59, 59);
+          return !createdAt.isBefore(start) && !createdAt.isAfter(end);
+        }
+        return true;
+      case LeadDateFilterPreset.allTime:
+        return true;
+    }
+  }
+
+  users_model.UserModel? _selectedUserForDateCounts() {
+    if (_selectedUserFilterId == 'All' || _selectedUserFilterId.isEmpty) return null;
+    try {
+      final usersState = context.read<UsersBloc>().state;
+      if (usersState is UsersLoaded) {
+        return usersState.users.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  bool _isRequirementVisibleToUser(RequirementModel req, UserModel? currentUser) {
+    if (currentUser == null) return false;
+    final role = currentUser.role;
+
+    if (role == 'Super Admin') return true;
+
+    if (role == 'Sales') {
+      if (_isLeadTransferredAway(req, currentUser)) return false;
+      return _salesCanViewRequirement(req, currentUser);
+    }
+
+    if (role == 'Admin') {
+      if (req.adminId != null && req.adminId!.isNotEmpty && req.adminId == currentUser.id) return true;
+      if (req.createdBy == currentUser.id) return true;
+      if (req.organizationId != null && currentUser.organizationId != null && req.organizationId == currentUser.organizationId) return true;
+      try {
+        final usersState = context.read<UsersBloc>().state;
+        if (usersState is UsersLoaded) {
+          final isManagedUserLead = usersState.users.any((u) =>
+              (u.adminId == currentUser.id || u.id == currentUser.id) &&
+              TeamUserVisibility.requirementBelongsToUser(req, u));
+          if (isManagedUserLead) return true;
+        }
+      } catch (_) {}
+      return true;
+    }
+
+    if (role == 'Telecaller') {
+      if (currentUser.adminId != null && currentUser.adminId!.isNotEmpty && req.adminId == currentUser.adminId) return true;
+      if (req.createdBy == currentUser.id) return true;
+      return true;
+    }
+
+    return true;
+  }
+
+  int _getLeadDateFilterCount(List<RequirementModel> baseList, LeadDateFilterPreset preset) {
+    final selectedUser = _selectedUserForDateCounts();
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+
+    return baseList.where((req) {
+      if (!_isRequirementVisibleToUser(req, currentUser)) return false;
+
+      final matchesListingType = getListingTypeLabel(req) == _activeListingTab;
+      if (!matchesListingType) return false;
+
+      if (_activeMainTab == 'Rejected') {
+        if (!_isLeadRejected(req)) return false;
+      } else if (_activeMainTab == 'Leads Added by Me') {
+        if (currentUser == null || !_isUserCreator(req, currentUser)) return false;
+      } else if (_activeMainTab == 'My Won' || _activeMainTab == 'Won') {
+        if (!_isLeadWon(req)) return false;
+      } else {
+        if (_isLeadRejected(req)) return false;
+        if (_selectedStatus != 'Won' && _isLeadWon(req)) return false;
+        if (currentUser != null && currentUser.role == 'Sales') {
+          if (_salesLeadGroupFilter == 'assigned' && (!_isUserAssignee(req, currentUser) || _isUserCreator(req, currentUser))) {
+            return false;
+          }
+          if (_salesLeadGroupFilter == 'added' && !_isUserCreator(req, currentUser)) {
+            return false;
+          }
+        }
+      }
+
+      if (selectedUser != null &&
+          !(_activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser)) &&
+          !TeamUserVisibility.requirementBelongsToUser(req, selectedUser)) {
+        return false;
+      }
+
+      if (_selectedCategoryId != null && req.categoryId != _selectedCategoryId) {
+        return false;
+      }
+
+      if (_selectedConfigIds.isNotEmpty) {
+        final matchesSpec = _selectedConfigIds.contains(req.configurationId) ||
+            _selectedConfigIds.contains(req.propertyTypeId) ||
+            req.configurationIds.any((id) => _selectedConfigIds.contains(id)) ||
+            req.propertyTypeIds.any((id) => _selectedConfigIds.contains(id));
+        if (!matchesSpec) return false;
+      }
+
+      if (_activeMainTab != 'My Won' && _activeMainTab != 'Won') {
+        if (_selectedStatus != 'All') {
+        if (_selectedStatus == 'Unassign') {
+          if (!_isLeadUnassigned(req)) return false;
+        } else {
+          final isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
+          String mappedStatus = _isLeadRejected(req)
+              ? getEffectiveStatus(req)
+              : ((req.status == 'Assigned')
+                  ? 'Assigned'
+                  : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req)));
+          if (mappedStatus == 'Active' || mappedStatus == 'Live') mappedStatus = 'Interested';
+          if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
+          if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
+          if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
+
+          if (mappedStatus != _selectedStatus && req.status != _selectedStatus) {
+            final matchesCallAttempted = _selectedStatus == 'Call Attempted' &&
+                (req.status.startsWith('Call Attempted') || req.status.startsWith('Call attempted'));
+            final matchesRejected = _selectedStatus == 'Rejected' && req.status.startsWith('Rejected');
+            if (!matchesCallAttempted && !matchesRejected) return false;
+          }
+        }
+      }
+    }
+
+      final query = _searchController.text.trim().toLowerCase();
+      if (query.isNotEmpty) {
+        final clientName = req.clientName.toLowerCase();
+        final clientMobile = req.clientMobile.toLowerCase();
+        final specs = '${req.propertyTypeName} ${req.configurationName ?? ""} ${req.listingTypeName ?? ""} ${req.categoryName ?? ""}'.toLowerCase();
+        final remarks = (req.remarks ?? '').toLowerCase();
+        final areas = req.areaNames.join(' ').toLowerCase();
+
+        bool matchesSalesman = false;
+        if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
+          final creator = (req.creatorName ?? '').toLowerCase();
+          final assignee = (req.assigneeName ?? '').toLowerCase();
+          matchesSalesman = creator.contains(query) || assignee.contains(query);
+        }
+
+        final matchesSearch = clientName.contains(query) ||
+            clientMobile.contains(query) ||
+            specs.contains(query) ||
+            remarks.contains(query) ||
+            areas.contains(query) ||
+            matchesSalesman;
+        if (!matchesSearch) return false;
+      }
+
+      return _matchesLeadDateFilterWithPreset(req, preset);
+    }).length;
+  }
+
+  Future<void> _pickCustomDateRange(BuildContext context) async {
+    final initialRange = DateTimeRange(
+      start: _customStartDate ?? DateTime.now().subtract(const Duration(days: 7)),
+      end: _customEndDate ?? DateTime.now(),
+    );
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: initialRange,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      builder: (ctx, child) {
+        final isDark = ThemeManager().isDarkMode;
+        return Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: isDark
+                ? ColorScheme.dark(
+                    primary: CRMColors.primaryOf(ctx),
+                    onPrimary: Colors.white,
+                    surface: const Color(0xFF1E293B),
+                    onSurface: Colors.white,
+                  )
+                : ColorScheme.light(
+                    primary: CRMColors.primaryOf(ctx),
+                    onPrimary: Colors.white,
+                    surface: Colors.white,
+                    onSurface: Colors.black87,
+                  ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _customStartDate = picked.start;
+        _customEndDate = picked.end;
+        _selectedLeadDateFilter = LeadDateFilterPreset.customRange;
+        _currentPage = 1;
+      });
+    }
+  }
+
+  Widget _buildDateFilterBar(BuildContext context, List<RequirementModel> baseList) {
+    final isDark = ThemeManager().isDarkMode;
+    final primaryColor = CRMColors.primaryOf(context);
+
+    final todayCount = _getLeadDateFilterCount(baseList, LeadDateFilterPreset.today);
+    final yesterdayCount = _getLeadDateFilterCount(baseList, LeadDateFilterPreset.yesterday);
+    final last7Count = _getLeadDateFilterCount(baseList, LeadDateFilterPreset.last7Days);
+    final thisMonthCount = _getLeadDateFilterCount(baseList, LeadDateFilterPreset.thisMonth);
+    final allTimeCount = _getLeadDateFilterCount(baseList, LeadDateFilterPreset.allTime);
+
+    final items = [
+      (LeadDateFilterPreset.today, 'Today', todayCount, Icons.calendar_today_rounded),
+      (LeadDateFilterPreset.yesterday, 'Yesterday', yesterdayCount, Icons.history_rounded),
+      (LeadDateFilterPreset.last7Days, 'Last 7 Days', last7Count, Icons.date_range_rounded),
+      (LeadDateFilterPreset.thisMonth, 'This Month', thisMonthCount, Icons.calendar_month_rounded),
+      (LeadDateFilterPreset.customRange, 'Custom Range', null, Icons.event_repeat_rounded),
+      (LeadDateFilterPreset.allTime, 'All Time', allTimeCount, Icons.all_inclusive_rounded),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.calendar_month_rounded, size: 16, color: primaryColor),
+            const SizedBox(width: 8),
+            Text(
+              'DATE FILTER:',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 6),
+            if (_selectedLeadDateFilter == LeadDateFilterPreset.today)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'DEFAULT',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF10B981),
+                  ),
+                ),
+              ),
           ],
         ),
-      );
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: items.map((item) {
+              final filter = item.$1;
+              final label = item.$2;
+              final count = item.$3;
+              final icon = item.$4;
+              final isSelected = _selectedLeadDateFilter == filter;
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    if (filter == LeadDateFilterPreset.customRange) {
+                      _pickCustomDateRange(context);
+                    } else {
+                      setState(() {
+                        _selectedLeadDateFilter = filter;
+                        _currentPage = 1;
+                      });
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? primaryColor
+                          : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected
+                            ? primaryColor
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          icon,
+                          size: 14,
+                          color: isSelected
+                              ? Colors.white
+                              : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                            color: isSelected
+                                ? Colors.white
+                                : (isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155)),
+                          ),
+                        ),
+                        if (count != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.white.withValues(alpha: 0.25)
+                                  : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$count',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isSelected
+                                    ? Colors.white
+                                    : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildListingTabButton(String label) {
@@ -1085,15 +2697,72 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  Widget _buildUserFilterDropdown({required bool isMobile}) {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    if (currentUser == null || !TeamUserVisibility.canUseFilter(currentUser.role)) {
+      return const SizedBox.shrink();
+    }
+
+    return BlocBuilder<UsersBloc, UsersState>(
+      builder: (context, state) {
+        final rawUsers = state is UsersLoaded
+            ? _mergedAssignUsers(state.users)
+            : _assignUsers;
+        final users = TeamUserVisibility.visibleUsers(
+          users: rawUsers,
+          currentRole: currentUser.role,
+          currentUserId: currentUser.id,
+        );
+        final items = <DropdownMenuItem<String>>[
+          const DropdownMenuItem(value: 'All', child: Text('All Users')),
+          ...users.map(
+            (u) => DropdownMenuItem(
+              value: u.id,
+              child: Text(
+                '${u.fullName} (${u.roleName})',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ];
+        final value = items.any((i) => i.value == _selectedUserFilterId)
+            ? _selectedUserFilterId
+            : 'All';
+
+        return _buildDropdownFilter<String>(
+          label: 'User',
+          value: value,
+          items: items,
+          isMobile: isMobile,
+          onChanged: (val) {
+            setState(() {
+              _selectedUserFilterId = val ?? 'All';
+              _currentPage = 1;
+            });
+            _triggerFetch();
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildDropdownFilter<T>({
     required String label,
     required T value,
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
     bool isMobile = false,
+    bool highlight = false,
   }) {
     final bool hasValue = value == null || items.any((item) => item.value == value);
     final T? safeValue = hasValue ? value : null;
+    final Color borderColor = highlight
+        ? CRMColors.primaryOf(context)
+        : CRMColors.borderOf(context).withOpacity(0.6);
+    final Color fillColor = highlight
+        ? CRMColors.primaryOf(context).withValues(alpha: 0.10)
+        : CRMColors.backgroundOf(context);
 
     return SizedBox(
       width: isMobile ? double.infinity : 200,
@@ -1102,20 +2771,26 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         value: safeValue,
         isExpanded: true,
         dropdownColor: CRMColors.cardBgOf(context),
-        style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+        style: CRMTypography.body.copyWith(
+          color: highlight ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+          fontWeight: highlight ? FontWeight.w700 : FontWeight.normal,
+        ),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+          labelStyle: CRMTypography.caption.copyWith(
+            color: highlight ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context),
+            fontWeight: highlight ? FontWeight.w700 : FontWeight.normal,
+          ),
           contentPadding: EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: isMobile ? 12 : 8),
           filled: true,
-          fillColor: CRMColors.backgroundOf(context),
+          fillColor: fillColor,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-            borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+            borderSide: BorderSide(color: borderColor, width: highlight ? 1.5 : 1.0),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-            borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+            borderSide: BorderSide(color: borderColor, width: highlight ? 1.5 : 1.0),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
@@ -1128,23 +2803,160 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  bool _canSeeUnassignStatusFilter(UserModel? user) {
+    if (user == null) return false;
+    final role = user.role;
+    return role == 'Admin' || role == 'Super Admin' || role == 'Telecaller';
+  }
+
+  bool _canViewAllRejectedLeads(UserModel? user) {
+    if (user == null) return false;
+    final role = user.role;
+    return role == 'Admin' || role == 'Super Admin' || role == 'Telecaller';
+  }
+
+  bool _isLeadUnassigned(RequirementModel req) {
+    try {
+      final usersState = context.read<UsersBloc>().state;
+      final blocUsers = usersState is UsersLoaded ? usersState.users : <users_model.UserModel>[];
+      final currentAssignedTo = _currentAssignedUserId(req, _mergedAssignUsers(blocUsers));
+      if (currentAssignedTo == null || currentAssignedTo.trim().isEmpty) return true;
+      return currentAssignedTo.trim().toLowerCase() == 'unassigned';
+    } catch (_) {
+      final assigned = (req.assignedTo ?? '').trim();
+      if (assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned') return false;
+      final name = (req.assigneeName ?? '').trim();
+      if (name.isNotEmpty && name.toLowerCase() != 'unassigned') return false;
+      return true;
+    }
+  }
+
+  List<DropdownMenuItem<String>> _statusFilterItems({required bool showUnassign}) {
+    final bool unassignActive = _selectedStatus == 'Unassign';
+    return [
+      const DropdownMenuItem(value: 'All', child: Text('All')),
+      if (showUnassign)
+        DropdownMenuItem(
+          value: 'Unassign',
+          child: Text(
+            'Unassign',
+            style: unassignActive
+                ? TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: CRMColors.primaryOf(context),
+                  )
+                : null,
+          ),
+        ),
+      const DropdownMenuItem(value: 'New', child: Text('New')),
+      const DropdownMenuItem(value: 'Assigned', child: Text('Assigned')),
+      const DropdownMenuItem(value: 'Not Started', child: Text('Not Started')),
+      const DropdownMenuItem(value: 'Call Attempted', child: Text('Call Attempted')),
+      const DropdownMenuItem(value: 'Follow-up', child: Text('Follow-up')),
+      const DropdownMenuItem(value: 'Interested', child: Text('Interested')),
+      const DropdownMenuItem(value: 'Site Visit', child: Text('Site Visit Sche.')),
+      const DropdownMenuItem(value: 'Site Visit Done', child: Text('Site Visit Done')),
+      const DropdownMenuItem(value: 'Negotiation', child: Text('Negotiation')),
+      const DropdownMenuItem(value: 'Won', child: Text('Won')),
+    ];
+  }
+
+  bool _looksLikeUserId(String value) {
+    return RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    ).hasMatch(value.trim());
+  }
+
+  String? _liveUserName(String? idOrName) {
+    if (idOrName == null || idOrName.trim().isEmpty) return null;
+    final needle = idOrName.trim();
+    try {
+      final usersState = context.read<UsersBloc>().state;
+      final blocUsers = usersState is UsersLoaded ? usersState.users : <users_model.UserModel>[];
+      final match = _mergedAssignUsers(blocUsers).firstWhereOrNull(
+        (u) =>
+            u.id == needle ||
+            u.fullName.trim().toLowerCase() == needle.toLowerCase(),
+      );
+      if (match != null && match.fullName.trim().isNotEmpty) {
+        return match.fullName.trim();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  String _getAddedByName(RequirementModel req) {
+    final fromCreatorId = _liveUserName(req.createdBy);
+    if (fromCreatorId != null) return fromCreatorId;
+
+    final rawName = req.creatorName?.trim();
+    if (rawName != null && rawName.isNotEmpty && rawName != 'System') {
+      final fromCreatorName = _liveUserName(rawName);
+      if (fromCreatorName != null) return fromCreatorName;
+      if (!_looksLikeUserId(rawName)) return rawName;
+    }
+
+    return 'Propkart Admin';
+  }
+
+  String? _getReassignedByName(RequirementModel req) {
+    final name = req.metaCustomFields?['reassigned_by_name']?.toString().trim();
+    if (name != null && name.isNotEmpty) return name;
+    return null;
+  }
+
+  String _getAddedByColumnName(RequirementModel req) {
+    return _getReassignedByName(req) ?? _getAddedByName(req);
+  }
+
+  String _getAddedByDisplayLine(RequirementModel req) {
+    final reassigned = _getReassignedByName(req);
+    if (reassigned != null) return 'Re-Assigned By: $reassigned';
+    return 'Added by: ${_getAddedByName(req)}';
+  }
+
+  bool _canInitiallyAssignLead(UserModel? user) {
+    return user != null &&
+        (user.role == 'Super Admin' || user.role == 'Admin' || user.role == 'Telecaller');
+  }
+
+  bool _canSalesReassignLead(UserModel? user) {
+    return user != null && user.role == 'Sales';
+  }
+
+  void _submitLeadAssignment(RequirementModel req, String? newSalesmanId, String? newSalesmanName) {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final Map<String, dynamic> nextCustomFields = Map<String, dynamic>.from(req.metaCustomFields ?? {});
+    if (currentUser?.role == 'Sales') {
+      nextCustomFields['original_added_by_name'] ??= _getAddedByName(req);
+      nextCustomFields['original_added_by'] ??= req.createdBy;
+      nextCustomFields['reassigned_by'] = currentUser!.id;
+      nextCustomFields['reassigned_by_name'] = currentUser.fullName;
+      nextCustomFields['reassigned_at'] = DateTime.now().toIso8601String();
+    }
+    final updated = req.copyWith(
+      assignedTo: newSalesmanId ?? '',
+      assigneeName: newSalesmanName ?? '',
+      metaCustomFields: nextCustomFields,
+    );
+    _patchCachedRequirement(updated);
+    context.read<RequirementsBloc>().add(UpdateRequirementEvent(updated));
+  }
+
   String _getSalesmanName(RequirementModel req, UserModel? currentUser) {
-    if (req.assigneeName != null && req.assigneeName!.isNotEmpty) {
-      return req.assigneeName!;
+    if (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty) {
+      return req.assigneeName!.trim();
     }
-    if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
-      try {
-        final usersState = context.read<UsersBloc>().state;
-        if (usersState is UsersLoaded) {
-          final match = usersState.users.firstWhereOrNull((u) => u.id == req.assignedTo);
-          if (match != null && match.fullName.isNotEmpty) {
-            return match.fullName;
-          }
-        }
-      } catch (_) {}
+    if (req.assignedTo != null && req.assignedTo!.trim().isNotEmpty) {
+      final fromAssignId = _liveUserName(req.assignedTo);
+      if (fromAssignId != null) return fromAssignId;
+      if (req.assignedTo!.trim() != 'Unassigned' && !_looksLikeUserId(req.assignedTo!)) {
+        return req.assignedTo!.trim();
+      }
     }
-    if (req.creatorName != null && req.creatorName!.isNotEmpty) {
-      return req.creatorName!;
+    if (req.creatorName != null && req.creatorName!.trim().isNotEmpty) {
+      return req.creatorName!.trim();
     }
     if (currentUser != null && req.adminId == currentUser.id) {
       return currentUser.fullName;
@@ -1252,116 +3064,54 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildTargetAreasCell(RequirementModel req) {
-    final areasText = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : 'Any Area';
+    final areasText = req.displayAreasText;
     final listingLabel = getListingTypeLabel(req);
     final isRent = listingLabel == 'Rent';
 
-    final tooltipMessage = 'Target Area(s):\n$areasText';
+    final tooltipMessage = req.hasUnmappedArea
+        ? '⚠️ Unmapped Locality: "$areasText"\nThis locality does not match any registered area in CRM.\nMatch engine cannot fetch properties without a valid area.'
+        : 'Target Area(s):\n$areasText';
+
+    final cellContent = Row(
+      children: [
+        if (req.hasUnmappedArea) ...[
+          const Icon(Icons.warning_amber_rounded, size: 13, color: CRMColors.warning),
+          const SizedBox(width: 3),
+        ],
+        Expanded(
+          child: Text(
+            areasText,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: CRMTypography.body.copyWith(
+              color: req.hasUnmappedArea ? CRMColors.warning : CRMColors.textSecondary,
+              fontWeight: req.hasUnmappedArea ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+      ],
+    );
 
     return SizedBox(
       width: 125,
       child: _buildCustomTooltip(
         message: tooltipMessage,
         isRent: isRent,
-        child: Text(
-          areasText,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
-        ),
+        child: req.hasUnmappedArea
+            ? InkWell(
+                onTap: () => _showAddEditDialog(req, 3, true),
+                borderRadius: BorderRadius.circular(4),
+                child: cellContent,
+              )
+            : cellContent,
       ),
     );
   }
 
+
   static bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
-    // 1. Status Match
-    final statusName = p.propertyStatusName.toLowerCase();
-    final statusActive = statusName == 'available' || statusName.contains('available') || statusName.isEmpty;
-    if (!statusActive) return false;
-
-    // 2. Listing Type Match (Rent vs Re-Sale)
-    final reqListing = (req.listingTypeName ?? '').toLowerCase();
-    final propListing = (p.listingTypeName).toLowerCase();
-    bool listingTypeMatch = true;
-    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
-      final isReqRent = reqListing.contains('rent');
-      final isPropRent = propListing.contains('rent');
-      listingTypeMatch = (isReqRent == isPropRent);
-    } else if (req.listingTypeId != null && req.listingTypeId!.isNotEmpty && p.listingTypeId.isNotEmpty) {
-      listingTypeMatch = (p.listingTypeId == req.listingTypeId);
-    }
-    if (!listingTypeMatch) return false;
-
-    // 3. Category Match
-    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
-      if (p.categoryId != req.categoryId) return false;
-    }
-
-    // 4. Property Type Match (Supports multiple selected property types)
-    if (req.propertyTypeIds.isNotEmpty) {
-      bool typeMatch = req.propertyTypeIds.contains(p.propertyTypeId);
-      if (!typeMatch && req.propertyTypeName.isNotEmpty && p.propertyTypeName.isNotEmpty) {
-        final pTypeName = p.propertyTypeName.toLowerCase();
-        typeMatch = req.propertyTypeName.toLowerCase().split(',').any((t) {
-          final trimmed = t.trim();
-          return trimmed.isNotEmpty && (pTypeName.contains(trimmed) || trimmed.contains(pTypeName));
-        });
-      }
-      if (!typeMatch) return false;
-    } else if (req.propertyTypeId.isNotEmpty && p.propertyTypeId.isNotEmpty) {
-      if (p.propertyTypeId != req.propertyTypeId) {
-        final pTypeName = p.propertyTypeName.toLowerCase();
-        final reqTypeName = req.propertyTypeName.toLowerCase();
-        if (!reqTypeName.contains(pTypeName) && !pTypeName.contains(reqTypeName)) return false;
-      }
-    }
-
-    // 5. Configuration Match (Supports multiple selected configurations e.g. 2 BHK, 3 BHK, 4 BHK)
-    if (req.configurationIds.isNotEmpty) {
-      bool configMatch = p.configurationId != null && req.configurationIds.contains(p.configurationId);
-      if (!configMatch && req.configurationName != null && req.configurationName!.isNotEmpty && p.configurationName != null && p.configurationName!.isNotEmpty) {
-        final pConfigName = p.configurationName!.toLowerCase();
-        configMatch = req.configurationName!.toLowerCase().split(',').any((c) {
-          final trimmed = c.trim();
-          return trimmed.isNotEmpty && (pConfigName.contains(trimmed) || trimmed.contains(pConfigName));
-        });
-      }
-      if (!configMatch) return false;
-    } else if (req.configurationId != null && req.configurationId!.isNotEmpty) {
-      if (p.configurationId != null && p.configurationId!.isNotEmpty && p.configurationId != req.configurationId) {
-        final pConfigName = (p.configurationName ?? '').toLowerCase();
-        final reqConfigName = (req.configurationName ?? '').toLowerCase();
-        if (pConfigName.isNotEmpty && reqConfigName.isNotEmpty) {
-          if (!reqConfigName.contains(pConfigName) && !pConfigName.contains(reqConfigName)) {
-            return false;
-          }
-        }
-      }
-    }
-
-    // 6. Target Area Match (Matches if property is in ANY ONE of the target areas)
-    if (req.areaIds.isNotEmpty) {
-      bool areaMatch = req.areaIds.contains(p.areaId);
-      if (!areaMatch && req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
-        final pArea = p.areaName.trim().toLowerCase();
-        areaMatch = req.areaNames.any((aName) {
-          final trimmed = aName.trim().toLowerCase();
-          return trimmed.isNotEmpty && (trimmed == pArea || pArea.contains(trimmed) || trimmed.contains(pArea));
-        });
-      }
-      if (!areaMatch) return false;
-    }
-
-    // 7. Budget Range Match
-    if (req.maxBudget > 0) {
-      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
-      final maxB = req.maxBudget;
-      if (p.price < minB || p.price > maxB) {
-        return false;
-      }
-    }
-
-    return true;
+    final result = PropertyRequirementMatcher.match(p, req);
+    return result.matchPercentage >= MatchCriteriaManager().threshold;
   }
 
   static Future<bool> _isRequirementPropertyMatchAsync(PropertyModel p, RequirementModel req) async {
@@ -1383,254 +3133,773 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return _isRequirementPropertyMatch(p, req);
   }
 
-  Widget _buildAssignToDropdown(RequirementModel req) {
+  Future<void> _loadAssignUsers() async {
+    if (_assignUsersLoading || _assignUsers.isNotEmpty) return;
+    _assignUsersLoading = true;
+    List<users_model.UserModel> users = [];
+    final role = (RoleGuard.currentUser?.role ?? '').toLowerCase();
+    if (role != 'telecaller' && role != 'sales') {
+      try {
+        users = await _usersRepository.getUsers();
+      } catch (_) {}
+    }
+    if (users.isEmpty) {
+      try {
+        final team = await TeamMessagesService().getTeamUsers();
+        users = team
+            .map((u) => users_model.UserModel(
+                  id: u.id,
+                  roleId: '',
+                  roleName: u.role,
+                  fullName: u.name,
+                  email: u.email,
+                  isActive: true,
+                  adminId: u.adminId,
+                ))
+            .where((u) => u.id.isNotEmpty)
+            .toList();
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() {
+      _assignUsers = users.where((u) => u.isActive).toList();
+      _assignUsersLoading = false;
+    });
+  }
+
+  List<users_model.UserModel> _mergedAssignUsers(List<users_model.UserModel> blocUsers) {
+    final byId = <String, users_model.UserModel>{};
+    for (final u in blocUsers) {
+      if (u.id.isNotEmpty) byId[u.id] = u;
+    }
+    for (final u in _assignUsers) {
+      if (u.id.isNotEmpty) byId.putIfAbsent(u.id, () => u);
+    }
+    return byId.values.toList();
+  }
+
+  String? _currentAssignedUserId(RequirementModel req, List<users_model.UserModel> users) {
+    if (req.assignedTo != null && req.assignedTo!.trim().isNotEmpty) {
+      return req.assignedTo!.trim();
+    }
+    if (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty) {
+      final needle = req.assigneeName!.trim().toLowerCase();
+      final match = users.firstWhereOrNull((u) => u.fullName.trim().toLowerCase() == needle);
+      if (match != null) return match.id;
+    }
+    if (req.createdBy != null && req.createdBy!.isNotEmpty) {
+      final creatorUser = users.firstWhereOrNull((u) => u.id == req.createdBy);
+      if (creatorUser != null) {
+        final role = creatorUser.roleName.toLowerCase();
+        final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
+        if (!isCreatorAdminOrTelecaller) return req.createdBy;
+      } else if (req.creatorName != null && req.creatorName!.isNotEmpty) {
+        final creatorMatch = users.firstWhereOrNull(
+          (u) => u.fullName.toLowerCase() == req.creatorName!.toLowerCase(),
+        );
+        if (creatorMatch != null) {
+          final role = creatorMatch.roleName.toLowerCase();
+          final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
+          if (!isCreatorAdminOrTelecaller) return creatorMatch.id;
+        }
+      }
+    }
+    return null;
+  }
+
+  bool _isSalesPersonRole(String roleName) {
+    final r = roleName.toLowerCase().trim();
+    if (r.contains('admin') || r.contains('telecaller') || r.contains('super')) {
+      return false;
+    }
+    return r.contains('sales') ||
+        r.contains('executive') ||
+        r.contains('agent') ||
+        r.contains('advisor');
+  }
+
+  List<users_model.UserModel> _salesmenForLeadAssign({
+    required RequirementModel req,
+    required UserModel? currentUser,
+    required List<users_model.UserModel> users,
+    required String? currentAssignedTo,
+  }) {
+    final curRole = (currentUser?.role ?? '').toLowerCase();
+    final isTelecaller = curRole == 'telecaller';
+
+    var salesmen = users.where((u) {
+      if (currentAssignedTo != null && u.id == currentAssignedTo) return true;
+
+      if (isTelecaller) {
+        return _isSalesPersonRole(u.roleName);
+      }
+
+      final role = u.roleName.toLowerCase();
+      final isSales = role.contains('sales') ||
+          role.contains('executive') ||
+          role.contains('telecaller') ||
+          role == 'employee' ||
+          role.contains('agent') ||
+          role.contains('advisor');
+      if (!isSales) return false;
+
+      if (currentUser == null) return true;
+      if (curRole == 'super admin') return true;
+      if (curRole == 'admin') {
+        return u.adminId == currentUser.id || u.id == currentUser.id;
+      }
+      if (curRole.contains('sales')) {
+        return _isSalesPersonRole(u.roleName);
+      }
+      return true;
+    }).toList();
+
+    if (currentAssignedTo != null &&
+        currentAssignedTo.isNotEmpty &&
+        !salesmen.any((u) => u.id == currentAssignedTo)) {
+      final name = (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty)
+          ? req.assigneeName!.trim()
+          : (_liveUserName(currentAssignedTo) ?? 'Assigned');
+      final assignedUser = users.firstWhereOrNull((u) => u.id == currentAssignedTo);
+      if (!isTelecaller || assignedUser == null || _isSalesPersonRole(assignedUser.roleName)) {
+        salesmen = [
+          users_model.UserModel(
+            id: currentAssignedTo,
+            roleId: '',
+            roleName: assignedUser?.roleName.isNotEmpty == true ? assignedUser!.roleName : 'Sales',
+            fullName: assignedUser?.fullName.isNotEmpty == true ? assignedUser!.fullName : name,
+            email: assignedUser?.email ?? '',
+            isActive: true,
+            adminId: assignedUser?.adminId,
+          ),
+          ...salesmen,
+        ];
+      }
+    }
+    return salesmen;
+  }
+
+  Widget _buildAssignToDropdown(RequirementModel req, {bool isReassign = false}) {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
-        if (state is UsersLoaded) {
-          String? currentAssignedTo;
-          if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
-            currentAssignedTo = req.assignedTo;
-          } else if (req.assignedTo == null && req.createdBy != null && req.createdBy!.isNotEmpty) {
-            final creatorUser = state.users.firstWhereOrNull((u) => u.id == req.createdBy);
-            if (creatorUser != null) {
-              final role = creatorUser.roleName.toLowerCase();
-              final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
-              if (!isCreatorAdminOrTelecaller) {
-                currentAssignedTo = req.createdBy;
-              }
-            } else if (req.creatorName != null && req.creatorName!.isNotEmpty) {
-              final creatorMatch = state.users.firstWhereOrNull((u) => u.fullName.toLowerCase() == req.creatorName!.toLowerCase());
-              if (creatorMatch != null) {
-                final role = creatorMatch.roleName.toLowerCase();
-                final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
-                if (!isCreatorAdminOrTelecaller) {
-                  currentAssignedTo = creatorMatch.id;
-                }
-              }
-            }
-          }
+        final authState = context.read<AuthBloc>().state;
+        final currentUser = authState is Authenticated ? authState.user : null;
+        final blocUsers = state is UsersLoaded ? state.users : <users_model.UserModel>[];
+        final users = _mergedAssignUsers(blocUsers);
+        final currentAssignedTo = _currentAssignedUserId(req, users);
+        var salesmen = _salesmenForLeadAssign(
+          req: req,
+          currentUser: currentUser,
+          users: users,
+          currentAssignedTo: currentAssignedTo,
+        );
+        if (isReassign) {
+          salesmen = salesmen
+              .where((u) => _isSalesPersonRole(u.roleName) || u.id == currentAssignedTo)
+              .toList();
+        }
 
-          final salesmen = state.users.where((u) {
-            final role = u.roleName.toLowerCase();
-            final isSales = role.contains('sales') || role.contains('executive') || role.contains('telecaller') || role == 'employee';
-            final isAssigned = currentAssignedTo != null && u.id == currentAssignedTo;
-            return isSales || isAssigned;
-          }).toList();
-
-          final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
-          final dropdownValue = hasValue ? currentAssignedTo : null;
-          return DropdownButton<String?>(
-            value: dropdownValue,
-            hint: Text(
-              'Assign to',
-              style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
-            ),
-            underline: Container(),
-            items: [
-              DropdownMenuItem<String?>(
-                value: null,
-                child: Text(
-                  'Unassigned',
-                  style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
-                ),
-              ),
-              ...salesmen.map((u) {
-                return DropdownMenuItem<String?>(
-                  value: u.id,
-                  child: Text(
-                    u.fullName,
-                    style: CRMTypography.bodyMedium.copyWith(
-                      color: CRMColors.textOf(context),
-                      fontWeight: u.id == currentAssignedTo ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                );
-              }),
-            ],
-            onChanged: (String? newSalesmanId) {
-              String? newSalesmanName;
-              if (newSalesmanId != null) {
-                final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
-                newSalesmanName = u.fullName;
-              }
-              
-              context.read<RequirementsBloc>().add(
-                UpdateRequirementEvent(
-                  req.copyWith(
-                    assignedTo: newSalesmanId ?? '',
-                    assigneeName: newSalesmanName ?? '',
-                  ),
-                ),
-              );
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(newSalesmanName != null 
-                      ? 'Lead assigned to $newSalesmanName successfully.'
-                      : 'Lead unassigned successfully.'),
-                  backgroundColor: CRMColors.success,
-                ),
-              );
-            },
-            icon: Icon(Icons.arrow_drop_down, color: CRMColors.textSecondaryOf(context), size: 18),
-            dropdownColor: CRMColors.cardBgOf(context),
+        if (state is UsersLoading && users.isEmpty && currentAssignedTo == null) {
+          return const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
           );
         }
-        return const SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        );
+
+        final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
+        final dropdownValue = hasValue ? currentAssignedTo : null;
+          return Container(
+            height: 36,
+            constraints: const BoxConstraints(minWidth: 125, maxWidth: 160),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: CRMColors.borderOf(context),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                value: dropdownValue,
+                isDense: true,
+                isExpanded: true,
+                hint: Text(
+                  isReassign ? 'Re-Assign' : 'Assign to',
+                  style: CRMTypography.caption.copyWith(
+                    color: CRMColors.textSecondaryOf(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                items: [
+                  if (!isReassign || dropdownValue == null)
+                    DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(
+                        'Unassigned',
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  ...salesmen.map((u) {
+                    final isSelected = u.id == currentAssignedTo;
+                    return DropdownMenuItem<String?>(
+                      value: u.id,
+                      child: Text(
+                        u.fullName,
+                        style: CRMTypography.caption.copyWith(
+                          color: isSelected ? CRMColors.primary : CRMColors.textOf(context),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: (String? newSalesmanId) {
+                  String? newSalesmanName;
+                  if (newSalesmanId != null) {
+                    final u = salesmen.where((s) => s.id == newSalesmanId).firstOrNull;
+                    newSalesmanName = u?.fullName;
+                  }
+                  _submitLeadAssignment(req, newSalesmanId, newSalesmanName);
+                },
+                icon: Container(
+                  margin: const EdgeInsets.only(left: 4),
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: CRMColors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Icon(
+                    Icons.arrow_drop_down_rounded,
+                    color: CRMColors.primary,
+                    size: 18,
+                  ),
+                ),
+                dropdownColor: CRMColors.cardBgOf(context),
+              ),
+            ),
+          );
       },
     );
   }
 
-  Widget _buildMobileAssignToDropdown(RequirementModel req) {
+  Widget _buildMobileAssignToDropdown(RequirementModel req, {bool isReassign = false}) {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
-        if (state is UsersLoaded) {
-          String? currentAssignedTo;
-          if (req.assignedTo != null && req.assignedTo!.isNotEmpty) {
-            currentAssignedTo = req.assignedTo;
-          } else if (req.assignedTo == null && req.createdBy != null && req.createdBy!.isNotEmpty) {
-            final creatorUser = state.users.firstWhereOrNull((u) => u.id == req.createdBy);
-            if (creatorUser != null) {
-              final role = creatorUser.roleName.toLowerCase();
-              final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
-              if (!isCreatorAdminOrTelecaller) {
-                currentAssignedTo = req.createdBy;
-              }
-            } else if (req.creatorName != null && req.creatorName!.isNotEmpty) {
-              final creatorMatch = state.users.firstWhereOrNull((u) => u.fullName.toLowerCase() == req.creatorName!.toLowerCase());
-              if (creatorMatch != null) {
-                final role = creatorMatch.roleName.toLowerCase();
-                final isCreatorAdminOrTelecaller = role == 'admin' || role == 'super admin' || role == 'telecaller';
-                if (!isCreatorAdminOrTelecaller) {
-                  currentAssignedTo = creatorMatch.id;
-                }
-              }
-            }
-          }
+        final authState = context.read<AuthBloc>().state;
+        final currentUser = authState is Authenticated ? authState.user : null;
+        final blocUsers = state is UsersLoaded ? state.users : <users_model.UserModel>[];
+        final users = _mergedAssignUsers(blocUsers);
+        final currentAssignedTo = _currentAssignedUserId(req, users);
+        var salesmen = _salesmenForLeadAssign(
+          req: req,
+          currentUser: currentUser,
+          users: users,
+          currentAssignedTo: currentAssignedTo,
+        );
+        if (isReassign) {
+          salesmen = salesmen
+              .where((u) => _isSalesPersonRole(u.roleName) || u.id == currentAssignedTo)
+              .toList();
+        }
 
-          final salesmen = state.users.where((u) {
-            final role = u.roleName.toLowerCase();
-            final isSales = role.contains('sales') || role.contains('executive') || role.contains('telecaller') || role == 'employee';
-            final isAssigned = currentAssignedTo != null && u.id == currentAssignedTo;
-            return isSales || isAssigned;
-          }).toList();
-
-          final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
-          final dropdownValue = hasValue ? currentAssignedTo : null;
-          return DropdownButtonHideUnderline(
-            child: DropdownButton<String?>(
-              value: dropdownValue,
-              isDense: true,
-              isExpanded: true,
-              hint: Text(
-                'Assign to',
-                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
-              ),
-              items: [
-                DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text(
-                    'Unassigned',
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
-                  ),
-                ),
-                ...salesmen.map((u) {
-                  return DropdownMenuItem<String?>(
-                    value: u.id,
-                    child: Text(
-                      u.fullName,
-                      style: CRMTypography.captionBold.copyWith(
-                        color: CRMColors.textOf(context),
-                        fontWeight: u.id == currentAssignedTo ? FontWeight.bold : FontWeight.normal,
-                        fontSize: 11,
-                      ),
-                    ),
-                  );
-                }),
-              ],
-              onChanged: (String? newSalesmanId) {
-                String? newSalesmanName;
-                if (newSalesmanId != null) {
-                  final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
-                  newSalesmanName = u.fullName;
-                }
-                
-                context.read<RequirementsBloc>().add(
-                  UpdateRequirementEvent(
-                    req.copyWith(
-                      assignedTo: newSalesmanId ?? '',
-                      assigneeName: newSalesmanName ?? '',
-                    ),
-                  ),
-                );
-                
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(newSalesmanName != null 
-                        ? 'Lead assigned to $newSalesmanName successfully.'
-                        : 'Lead unassigned successfully.'),
-                    backgroundColor: CRMColors.success,
-                  ),
-                );
-              },
-              icon: Icon(Icons.arrow_drop_down, color: CRMColors.textSecondaryOf(context), size: 14),
-              dropdownColor: CRMColors.cardBgOf(context),
-            ),
+        if (state is UsersLoading && users.isEmpty && currentAssignedTo == null) {
+          return const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
           );
         }
-        return const SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        );
+
+        final bool hasValue = currentAssignedTo != null && salesmen.any((u) => u.id == currentAssignedTo);
+        final dropdownValue = hasValue ? currentAssignedTo : null;
+        return Container(
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: CRMColors.borderOf(context),
+                width: 1.2,
+              ),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                value: dropdownValue,
+                isDense: true,
+                isExpanded: true,
+                hint: Text(
+                  isReassign ? 'Re-Assign' : 'Assign to',
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                items: [
+                  if (!isReassign || dropdownValue == null)
+                    DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(
+                        'Unassigned',
+                        style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                      ),
+                    ),
+                  ...salesmen.map((u) {
+                    final isSelected = u.id == currentAssignedTo;
+                    return DropdownMenuItem<String?>(
+                      value: u.id,
+                      child: Text(
+                        u.fullName,
+                        style: CRMTypography.captionBold.copyWith(
+                          color: isSelected ? CRMColors.primary : CRMColors.textOf(context),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: (String? newSalesmanId) {
+                  String? newSalesmanName;
+                  if (newSalesmanId != null) {
+                    final u = salesmen.firstWhere((s) => s.id == newSalesmanId);
+                    newSalesmanName = u.fullName;
+                  }
+                  _submitLeadAssignment(req, newSalesmanId, newSalesmanName);
+                },
+                icon: Container(
+                  margin: const EdgeInsets.only(left: 2),
+                  padding: const EdgeInsets.all(1),
+                  decoration: BoxDecoration(
+                    color: CRMColors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Icon(
+                    Icons.arrow_drop_down_rounded,
+                    color: CRMColors.primary,
+                    size: 16,
+                  ),
+                ),
+                dropdownColor: CRMColors.cardBgOf(context),
+              ),
+            ),
+          );
       },
     );
+  }
+
+  bool _isUserCreator(RequirementModel r, UserModel user) {
+    if (r.createdBy == user.id) return true;
+    final uName = user.fullName.trim().toLowerCase();
+    if (uName.isNotEmpty) {
+      if (r.createdBy != null && r.createdBy!.trim().toLowerCase() == uName) return true;
+      if (r.creatorName != null && r.creatorName!.trim().toLowerCase() == uName) return true;
+    }
+    return false;
+  }
+
+  bool _isUserAssignee(RequirementModel r, UserModel user) {
+    final uName = user.fullName.trim().toLowerCase();
+    if (r.assignedTo != null && r.assignedTo!.isNotEmpty) {
+      if (r.assignedTo == user.id) return true;
+      if (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName) return true;
+    }
+    if (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName) return true;
+    return false;
   }
 
   bool _hasEditAccess(RequirementModel r, UserModel? currentUser) {
     if (currentUser == null) return false;
     if (currentUser.role == 'Super Admin') return true;
     if (currentUser.role == 'Admin') {
-      return r.createdBy == currentUser.id || r.adminId == currentUser.id;
+      return _isUserCreator(r, currentUser) || r.adminId == currentUser.id;
     }
     if (currentUser.role == 'Telecaller') {
-      return r.createdBy == currentUser.id || r.adminId == currentUser.adminId;
+      return false;
     }
     if (currentUser.role == 'Sales') {
       if (_isLeadTransferredAway(r, currentUser)) return false;
-      return r.createdBy == currentUser.id || r.assignedTo == currentUser.id;
+      return _isUserCreator(r, currentUser) || _isUserAssignee(r, currentUser);
     }
     return false;
   }
 
   bool _isLeadTransferredAway(RequirementModel r, UserModel? currentUser) {
     if (currentUser == null || currentUser.role != 'Sales') return false;
+    final isAssignee = _isUserAssignee(r, currentUser);
+    final isCreator = _isUserCreator(r, currentUser);
+    if (!isCreator) return false;
     final assigned = r.assignedTo;
     if (assigned == null || assigned.isEmpty) return false;
-    return r.createdBy == currentUser.id && assigned != currentUser.id;
+    return !isAssignee;
   }
 
   bool _salesCanViewRequirement(RequirementModel r, UserModel currentUser) {
-    final isCreator = r.createdBy == currentUser.id;
-    final isAssignee = r.assignedTo != null &&
-        r.assignedTo!.isNotEmpty &&
-        r.assignedTo == currentUser.id;
-    return isCreator || isAssignee;
+    if (_isLeadTransferredAway(r, currentUser)) return false;
+    return _isUserCreator(r, currentUser) || _isUserAssignee(r, currentUser);
+  }
+
+  bool _isUnhandledAssignedLead(RequirementModel req, UserModel? currentUser) {
+    if (currentUser == null || currentUser.role != 'Sales') return false;
+    if (_isLeadTransferredAway(req, currentUser)) return false;
+
+    // Lead must be assigned to this sales user and NOT created by them
+    final isAssigned = _isUserAssignee(req, currentUser);
+    final isCreator = _isUserCreator(req, currentUser);
+    if (!isAssigned || isCreator) return false;
+
+    // If the lead was re-assigned from another salesperson or staff, preserve status & follow-up
+    final meta = req.metaCustomFields;
+    if (meta != null && (meta['reassigned_by'] != null || meta['reassigned_by_name'] != null)) {
+      return false;
+    }
+
+    // If the lead already has a next follow-up date, preserve follow-up status & history
+    if (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty) {
+      return false;
+    }
+
+    // Check if sales user has already handled the lead
+    if (_salesHasHandledLead(req)) return false;
+
+    // If terminal or closed state, it is not unhandled
+    if (req.status == 'Won' || req.status == 'Closed') return false;
+    if (_isLeadRejected(req)) return false;
+
+    // Once sales stores a pipeline status, show that status instead of
+    // forcing Not Started. Only mask typical telecaller leftover statuses.
+    final status = req.status.trim();
+    if (status == 'Not Started' ||
+        status == 'Follow-up' ||
+        status == 'Re-Followup' ||
+        status == 'Interested' ||
+        status == 'Active' ||
+        status == 'Live' ||
+        status == 'Site Visit' ||
+        status == 'Site Visit Done' ||
+        status == 'Site Visit Scheduled' ||
+        status == 'Negotiation') {
+      return false;
+    }
+    if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) {
+      return false;
+    }
+
+    return true;
+  }
+
+  bool _salesHasHandledLead(RequirementModel req) {
+    final meta = {
+      ...?RequirementLocalRepository.metaCustomFieldsById[req.id],
+      ...?req.metaCustomFields,
+    };
+    if (meta.isEmpty) return false;
+    final handled = meta['handled_by_sales'];
+    if (handled == true ||
+        handled == 'true' ||
+        handled == 1 ||
+        handled == '1') {
+      return true;
+    }
+    if (meta['sales_handled_at'] != null &&
+        meta['sales_handled_at'].toString().trim().isNotEmpty) {
+      return true;
+    }
+    final telecallerStatus = meta['telecaller_status']?.toString().trim() ?? '';
+    if (telecallerStatus.isNotEmpty &&
+        req.status.trim() != telecallerStatus &&
+        req.status != 'Assigned' &&
+        req.status != 'New') {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isLeadClosedOrTerminal(RequirementModel req) {
+    final status = req.status.trim().toLowerCase();
+    if (status == 'won' || status == 'closed') return true;
+    if (status.startsWith('rejected')) return true;
+    if (status == 'lost' ||
+        status == 'bin' ||
+        status == 'dead' ||
+        status == 'not interested' ||
+        status == 'junk') {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isLeadWon(RequirementModel req) {
+    final status = req.status.trim().toLowerCase();
+    return status == 'won' || status == 'closed' || status == 'deal won';
+  }
+
+  bool _isLeadRejected(RequirementModel req) {
+    final status = req.status.trim();
+    if (status.isEmpty) return false;
+    final lower = status.toLowerCase();
+    if (lower == 'bin') return false;
+    return lower.startsWith('rejected');
+  }
+
+  DateTime? _rejectedAt(RequirementModel req) {
+    final meta = req.metaCustomFields;
+    if (meta == null) return null;
+    for (final key in ['rejected_at', 'rejectedAt', 'sales_handled_at']) {
+      final raw = meta[key];
+      if (raw == null) continue;
+      final parsed = DateTime.tryParse(raw.toString());
+      if (parsed != null) return parsed.toLocal();
+    }
+    return null;
+  }
+
+  DateTime _dateForLeadFilter(RequirementModel req) {
+    if (_activeMainTab == 'Rejected') {
+      return _rejectedAt(req) ?? req.createdAt.toLocal();
+    }
+    return req.createdAt.toLocal();
+  }
+
+  String _getTelecallerStatusLabel(RequirementModel req) {
+    final meta = req.metaCustomFields;
+    if (meta != null && meta['telecaller_status'] != null) {
+      final s = meta['telecaller_status'].toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    final raw = req.status;
+    if (raw == 'Active' || raw == 'Live' || raw == 'Interested') return 'Interested';
+    if (raw == 'New' || raw.isEmpty) return 'Interested';
+    return displayStatusLabel(raw);
+  }
+
+  bool _shouldShowTelecallerStatusBadge(RequirementModel req, UserModel? currentUser) {
+    if (currentUser == null) return false;
+    final role = currentUser.role.trim().toLowerCase();
+    final isAdmin = role == 'admin' || role == 'super admin';
+    final isSales = role == 'sales' || role.contains('sales');
+
+    if (!isAdmin && !isSales) return false;
+
+    final hasTelecallerInfo = (req.metaCustomFields != null && req.metaCustomFields!['telecaller_status'] != null) ||
+        (req.remarks != null && req.remarks!.contains('[Telecaller Key Points]')) ||
+        (req.creatorName != null && req.creatorName!.toLowerCase().contains('telecaller'));
+
+    if (isAdmin) {
+      return hasTelecallerInfo || _isUnhandledAssignedLead(req, currentUser);
+    }
+
+    if (_isLeadTransferredAway(req, currentUser)) return false;
+
+    final isAssigned = _isUserAssignee(req, currentUser);
+    final isCreator = _isUserCreator(req, currentUser);
+    if (!isAssigned || isCreator) return false;
+
+    // Show if unhandled OR if handled with telecaller_status recorded
+    return _isUnhandledAssignedLead(req, currentUser) || hasTelecallerInfo;
+  }
+
+  Widget _buildTelecallerStatusBadge(RequirementModel req, {bool compact = false}) {
+    final statusLabel = _getTelecallerStatusLabel(req);
+    final creator = (req.creatorName != null && req.creatorName!.trim().isNotEmpty)
+        ? req.creatorName!.trim()
+        : 'telecaller';
+    final tooltipText = 'Marked as $statusLabel by $creator';
+
+    return Tooltip(
+      message: tooltipText,
+      child: Container(
+        margin: const EdgeInsets.only(top: 3),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 6 : 8,
+          vertical: compact ? 2 : 3,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE0F2FE),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+          border: Border.all(
+            color: const Color(0xFF38BDF8).withValues(alpha: 0.5),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.phone_in_talk_rounded,
+              size: 11,
+              color: Color(0xFF0284C7),
+            ),
+            const SizedBox(width: 4),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: compact ? 120 : 160),
+              child: Text(
+                '$statusLabel by telecaller',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: const Color(0xFF0369A1),
+                  fontWeight: FontWeight.w600,
+                  fontSize: compact ? 10 : 11,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSalesLeadGroupSelector(UserModel currentUser, List<RequirementModel> allLoadedReqs) {
+    final activeTabReqs = allLoadedReqs.where((r) => getListingTypeLabel(r) == _activeListingTab).toList();
+
+    final assignedCount = activeTabReqs.where((r) =>
+        _salesCanViewRequirement(r, currentUser) &&
+        _isUserAssignee(r, currentUser) &&
+        !_isUserCreator(r, currentUser) &&
+        !_isLeadTransferredAway(r, currentUser) &&
+        r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
+    ).length;
+
+    final addedCount = activeTabReqs.where((r) =>
+        _salesCanViewRequirement(r, currentUser) &&
+        _isUserCreator(r, currentUser) &&
+        !_isLeadTransferredAway(r, currentUser) &&
+        r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
+    ).length;
+
+    final allCount = activeTabReqs.where((r) =>
+        _salesCanViewRequirement(r, currentUser) &&
+        !_isLeadTransferredAway(r, currentUser) &&
+        r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
+    ).length;
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+        border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildSalesGroupFilterButton(
+              label: 'Leads Assigned to Me',
+              icon: Icons.assignment_ind_rounded,
+              value: 'assigned',
+              count: assignedCount,
+            ),
+            const SizedBox(width: 6),
+            _buildSalesGroupFilterButton(
+              label: 'Leads Added by Me',
+              icon: Icons.person_add_alt_1_rounded,
+              value: 'added',
+              count: addedCount,
+            ),
+            const SizedBox(width: 6),
+            _buildSalesGroupFilterButton(
+              label: 'All My Leads',
+              icon: Icons.dashboard_customize_rounded,
+              value: 'all',
+              count: allCount,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSalesGroupFilterButton({
+    required String label,
+    required IconData icon,
+    required String value,
+    required int count,
+  }) {
+    final bool isSelected = _salesLeadGroupFilter == value;
+    final primaryColor = CRMColors.primaryOf(context);
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _salesLeadGroupFilter = value;
+          _currentPage = 1;
+        });
+      },
+      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+      child: AnimatedContainer(
+        duration: CRMMotion.fast,
+        curve: CRMMotion.easeInOut,
+        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? primaryColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? Colors.white : CRMColors.textSecondaryOf(context),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: CRMTypography.bodyMedium.copyWith(
+                color: isSelected ? Colors.white : CRMColors.textOf(context),
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white.withValues(alpha: 0.25) : CRMColors.backgroundOf(context),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected ? Colors.white.withValues(alpha: 0.3) : CRMColors.borderOf(context),
+                  width: 0.8,
+                ),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : CRMColors.textSecondaryOf(context),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildSalesAssignToLabel(RequirementModel req, UserModel? currentUser) {
     final assignee = req.assigneeName?.trim() ?? '';
     final creator = req.creatorName?.trim() ?? '';
     final isReceivedTransfer = currentUser != null &&
-        req.assignedTo != null &&
-        req.assignedTo!.isNotEmpty &&
-        req.assignedTo == currentUser.id &&
-        req.createdBy != null &&
-        req.createdBy != currentUser.id;
+        _isUserAssignee(req, currentUser) &&
+        !_isUserCreator(req, currentUser);
 
     if (_isLeadTransferredAway(req, currentUser)) {
       return Text(
@@ -1686,9 +3955,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   String displayStatusLabel(String status) {
+    if (status == 'Assigned') return 'Assigned';
+    if (status == 'New') return 'New';
+    if (status == 'Not Started') return 'Not Started';
+    if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) return 'Call Attempted';
+    if (status == 'Not Interested') return 'Not Interested';
     if (status == 'Active' || status == 'Live') return 'Interested';
     if (status == 'Closed' || status == 'Won') return 'Won';
-    if (status.startsWith('Rejected') || status == 'Not Interested' || status == 'Bin') return 'Rejected';
+    if (status.startsWith('Rejected') || status == 'Bin') return 'Rejected';
     return status;
   }
 
@@ -1699,6 +3973,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     Color? color,
   }) {
     final bool isSelected = currentStatus == value ||
+        (value == 'Assigned' && currentStatus == 'Assigned') ||
+        (value == 'New' && currentStatus == 'New') ||
+        (value == 'Not Started' && currentStatus == 'Not Started') ||
+        (value == 'Not Interested' && (currentStatus == 'Not Interested' || currentStatus == 'Dead' || currentStatus == 'Suspended')) ||
         (value == 'Follow-up' && (currentStatus == 'Follow-up' || currentStatus == 'Re-Followup')) ||
         (value == 'Interested' && (currentStatus == 'Interested' || currentStatus == 'Active' || currentStatus == 'Live')) ||
         (value == 'Won' && (currentStatus == 'Won' || currentStatus == 'Closed'));
@@ -1835,6 +4113,104 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     overlay.insert(_rejectionOverlayEntry!);
   }
 
+  OverlayEntry? _callAttemptedOverlayEntry;
+
+  void _removeCallAttemptedOverlay() {
+    if (_callAttemptedOverlayEntry != null) {
+      _callAttemptedOverlayEntry?.remove();
+      _callAttemptedOverlayEntry = null;
+    }
+  }
+
+  void _showCallAttemptedOverlayAtContext(BuildContext itemContext, RequirementModel req) {
+    if (_callAttemptedOverlayEntry != null) return;
+
+    final RenderBox? renderBox = itemContext.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final Offset itemGlobalOffset = renderBox.localToGlobal(Offset.zero);
+    final overlay = Overlay.of(itemContext);
+    final size = MediaQuery.of(itemContext).size;
+
+    double left = (itemGlobalOffset.dx - 172).clamp(10.0, size.width - 180.0);
+    double top = (itemGlobalOffset.dy - 30).clamp(40.0, size.height - 380.0);
+
+    final List<String> options = [
+      'Picked Up',
+      'Open',
+    ];
+
+    _callAttemptedOverlayEntry = OverlayEntry(
+      builder: (overlayContext) {
+        return Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(8),
+            color: CRMColors.cardBgOf(context),
+            child: Container(
+              width: 170,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              decoration: BoxDecoration(
+                color: CRMColors.cardBgOf(context),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: options.map((opt) {
+                  final String fullStatus = 'Call Attempted ($opt)';
+                  final bool isSelected = req.status == fullStatus || req.status == 'Call Attempted - $opt';
+                  return InkWell(
+                    onTap: () {
+                      _removeCallAttemptedOverlay();
+                      _removeRejectionOverlay();
+                      Navigator.of(context, rootNavigator: true).maybePop();
+                      _changeStatus(req, fullStatus);
+                    },
+                    hoverColor: CRMColors.backgroundOf(context),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            opt,
+                            style: TextStyle(
+                              color: CRMColors.textOf(context),
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              fontSize: 13,
+                            ),
+                          ),
+                          if (isSelected)
+                            const Icon(
+                              Icons.check_rounded,
+                              size: 16,
+                              color: Color(0xFF0288D1),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_callAttemptedOverlayEntry!);
+  }
+
   Widget _buildStatusControl(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
     if (_isLeadTransferredAway(req, currentUser)) {
       return Container(
@@ -1857,7 +4233,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       );
     }
 
-    final String currentStatus = req.status;
+    final bool isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
+    final String currentStatus = _isLeadRejected(req)
+        ? getEffectiveStatus(req)
+        : ((req.status == 'Assigned')
+            ? 'Assigned'
+            : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req)));
     final statusColor = compact ? _getStatusColor(currentStatus) : CRMColors.primary;
     final bool hasPreviousFollowup = currentStatus == 'Follow-up' ||
         currentStatus == 'Re-Followup' ||
@@ -1873,6 +4254,50 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     } else if (currentStatus.startsWith('Rejected: ')) {
       mainLabel = 'Rejected';
       subReason = currentStatus.replaceFirst('Rejected: ', '').trim();
+    } else if (currentStatus.startsWith('Call Attempted') || currentStatus.startsWith('Call attempted')) {
+      mainLabel = 'Call Attempted';
+      if (currentStatus.contains('(') && currentStatus.contains(')')) {
+        subReason = currentStatus.substring(currentStatus.indexOf('(') + 1, currentStatus.indexOf(')')).trim();
+      } else if (currentStatus.contains('-')) {
+        subReason = currentStatus.split('-').last.trim();
+      }
+    }
+
+    final bool isTelecaller = RoleGuard.isTelecaller(currentUser?.role);
+    if (isTelecaller) {
+      return Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? CRMSpacing.xs : CRMSpacing.s,
+          vertical: compact ? CRMSpacing.xxs : CRMSpacing.xxs,
+        ),
+        decoration: BoxDecoration(
+          color: statusColor.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+          border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              mainLabel,
+              style: CRMTypography.captionBold.copyWith(
+                color: statusColor,
+                fontSize: compact ? 11 : 12,
+              ),
+            ),
+            if (subReason != null && subReason.isNotEmpty)
+              Text(
+                subReason,
+                style: CRMTypography.caption.copyWith(
+                  color: statusColor.withOpacity(0.85),
+                  fontSize: compact ? 9.5 : 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+          ],
+        ),
+      );
     }
 
     return GestureDetector(
@@ -1883,18 +4308,76 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         tooltip: 'Change Status',
         onCanceled: () {
           _removeRejectionOverlay();
+          _removeCallAttemptedOverlay();
         },
         onSelected: (String newStatus) {
-          if (newStatus == 'Rejected') {
+          if (newStatus == 'Rejected' || newStatus == 'Call Attempted') {
             // Handled via overlay
           } else {
             _removeRejectionOverlay();
+            _removeCallAttemptedOverlay();
             _changeStatus(req, newStatus);
           }
         },
         itemBuilder: (BuildContext context) {
           return [
+            _buildStatusMenuItem('New', 'New', currentStatus),
+            _buildStatusMenuItem('Assigned', 'Assigned', currentStatus, color: const Color(0xFF0F766E)),
             _buildStatusMenuItem('Not Started', 'Not Started', currentStatus),
+            PopupMenuItem<String>(
+              value: 'Call Attempted',
+              child: Builder(
+                builder: (itemContext) {
+                  return StatefulBuilder(
+                    builder: (context, setItemState) {
+                      final bool isOpen = _callAttemptedOverlayEntry != null;
+                      final bool isCallAttemptedActive = currentStatus.startsWith('Call Attempted') || currentStatus.startsWith('Call attempted');
+                      return MouseRegion(
+                        onEnter: (_) {
+                          _removeRejectionOverlay();
+                          setItemState(() {});
+                          _showCallAttemptedOverlayAtContext(itemContext, req);
+                        },
+                        onExit: (_) {
+                          setItemState(() {});
+                        },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  isOpen ? '>  ' : '<  ',
+                                  style: const TextStyle(
+                                    color: Color(0xFF0288D1),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                Text(
+                                  'Call Attempted',
+                                  style: TextStyle(
+                                    color: CRMColors.textOf(context),
+                                    fontWeight: isCallAttemptedActive ? FontWeight.bold : FontWeight.normal,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (isCallAttemptedActive)
+                              const Icon(
+                                Icons.check_rounded,
+                                size: 16,
+                                color: Color(0xFF5C6BC0),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
             _buildStatusMenuItem(followupValue, followupLabel, currentStatus),
             _buildStatusMenuItem('Interested', 'Interested', currentStatus),
             _buildStatusMenuItem('Site Visit', 'Site Visit Sche.', currentStatus),
@@ -2000,12 +4483,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   String? _getCleanNote(RequirementModel req) {
-    if (req.notes == null) return null;
-    final text = req.notes!.trim();
-    if (text.isEmpty || text.toLowerCase() == 'null' || text.toLowerCase() == 'n/a') {
-      return null;
-    }
-    return text;
+    return getTelecallerRemarks(req);
   }
 
   void _removeNotesPopover() {
@@ -2027,10 +4505,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final double maxCanvasWidth = overlayBox?.size.width ?? MediaQuery.of(anchorContext).size.width;
     final double maxCanvasHeight = overlayBox?.size.height ?? MediaQuery.of(anchorContext).size.height;
 
-    final existingCleanNote = _getCleanNote(req);
-    final notesController = TextEditingController(text: existingCleanNote ?? '');
+    final notesController = TextEditingController(text: '');
 
-    const double popoverWidth = 320.0;
+    final double popoverWidth = (maxCanvasWidth - 32).clamp(240.0, 320.0);
     const double popoverHeight = 245.0;
 
     final double targetCenterX = offset.dx + (size.width / 2);
@@ -2108,7 +4585,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Notes',
+                                  '+ Add Note',
                                   style: TextStyle(
                                     fontSize: 17,
                                     fontWeight: FontWeight.bold,
@@ -2137,7 +4614,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                       color: CRMColors.textOf(anchorContext),
                                     ),
                                     decoration: InputDecoration(
-                                      hintText: 'Type your notes here...',
+                                      hintText: 'Type your note here...',
                                       hintStyle: TextStyle(
                                         fontSize: 13,
                                         color: CRMColors.textSecondaryOf(anchorContext).withOpacity(0.6),
@@ -2176,32 +4653,40 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                           borderRadius: BorderRadius.circular(10),
                                         ),
                                       ),
-                                      onPressed: isSaving
+                                      onPressed: (isSaving || !hasText)
                                           ? null
                                           : () async {
                                               setOverlayState(() => isSaving = true);
-                                              final newCleanNotes = notesController.text.trim();
+                                              final newNoteText = notesController.text.trim();
+                                              final timeStr = DateFormat("dd MMM ''yy, h:mm a").format(DateTime.now());
+                                              final formattedEntry = '[$timeStr] $newNoteText';
+                                              final existingClean = _getCleanNote(req);
+                                              final updatedNotes = (existingClean != null && existingClean.isNotEmpty)
+                                                  ? '$existingClean\n$formattedEntry'
+                                                  : formattedEntry;
 
                                               try {
                                                 context.read<RequirementsBloc>().add(
                                                   UpdateRequirementEvent(
-                                                    req.copyWith(notes: newCleanNotes),
+                                                    req.copyWith(notes: updatedNotes),
                                                   ),
                                                 );
 
                                                 await RequirementsRepository().updateRequirementFields(
                                                   req.id,
-                                                  {'notes': newCleanNotes},
+                                                  {'notes': updatedNotes, 'new_note': formattedEntry},
                                                 );
 
                                                 _removeNotesPopover();
 
                                                 if (mounted) {
+                                                  setState(() {
+                                                    _refreshFollowupsFuture();
+                                                  });
+                                                  _triggerFetch();
                                                   ScaffoldMessenger.of(context).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(newCleanNotes.isEmpty
-                                                          ? 'Note cleared successfully.'
-                                                          : 'Note saved successfully.'),
+                                                    const SnackBar(
+                                                      content: Text('Note saved successfully.'),
                                                       backgroundColor: CRMColors.success,
                                                     ),
                                                   );
@@ -2211,7 +4696,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                                 if (mounted) {
                                                   ScaffoldMessenger.of(context).showSnackBar(
                                                     SnackBar(
-                                                      content: Text('Failed to save notes: $e'),
+                                                      content: Text('Failed to save note: $e'),
                                                       backgroundColor: CRMColors.danger,
                                                     ),
                                                   );
@@ -2266,7 +4751,38 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     overlay.insert(_notesOverlayEntry!);
   }
 
+  void _showViewAllNotesDialog(BuildContext context, RequirementModel req) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return _ViewAllNotesDialogWidget(
+          requirement: req,
+          onSave: (updatedNotes, updatedReqModel, newNote, [deletedNote]) async {
+            context.read<RequirementsBloc>().add(
+              UpdateRequirementEvent(updatedReqModel),
+            );
+            await RequirementsRepository().updateRequirementFields(
+              req.id,
+              {
+                'notes': updatedNotes,
+                if (newNote != null && newNote.isNotEmpty) 'new_note': newNote,
+                if (deletedNote != null && deletedNote.isNotEmpty) 'deleted_note': deletedNote,
+              },
+            );
+            if (mounted) {
+              setState(() {
+                _refreshFollowupsFuture();
+              });
+              _triggerFetch();
+            }
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildStatusControlWithNotes(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
+    final bool isClosed = _isLeadClosedOrTerminal(req);
     final String? userNote = _getCleanNote(req);
     final bool hasNotes = userNote != null && userNote.isNotEmpty;
 
@@ -2275,26 +4791,28 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _buildStatusControl(req, currentUser, compact: compact),
-        const SizedBox(height: 4),
-        Builder(
-          builder: (btnContext) {
-            return InkWell(
-              onTap: () => _showNotesPopover(btnContext, req),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text(
-                  hasNotes ? 'View Notes' : '+Add Notes',
-                  style: TextStyle(
-                    fontSize: compact ? 11 : 12,
-                    fontWeight: FontWeight.bold,
-                    decoration: TextDecoration.underline,
-                    color: CRMColors.textOf(context),
+        if (!isClosed) ...[
+          const SizedBox(height: 4),
+          Builder(
+            builder: (btnContext) {
+              return InkWell(
+                onTap: () => _showNotesPopover(btnContext, req),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Text(
+                    '+Add Notes',
+                    style: TextStyle(
+                      fontSize: compact ? 11 : 12,
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.underline,
+                      color: CRMColors.textOf(context),
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
-        ),
+              );
+            },
+          ),
+        ],
       ],
     );
   }
@@ -2313,14 +4831,53 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           current is RequirementsInitial ||
           current is RequirementsError,
       builder: (context, state) {
-        final isLoading = state is RequirementsLoading || state is RequirementsInitial;
+        if (state is RequirementsLoaded) {
+          _cachedRequirements = _withLocalRequirementOverrides(state.requirements);
+        }
+        final rawLoadedList = _withLocalRequirementOverrides(
+          state is RequirementsLoaded ? state.requirements : _cachedRequirements,
+        );
+        final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
         List<RequirementModel> requirements = [];
 
-        if (state is RequirementsLoaded) {
+        if (rawLoadedList.isNotEmpty) {
           final query = _searchController.text.trim().toLowerCase();
-          requirements = state.requirements.where((r) {
+          requirements = rawLoadedList.where((r) {
+            if (_activeMainTab == 'Leads Added by Me') {
+              if (currentUser == null || !_isUserCreator(r, currentUser)) {
+                return false;
+              }
+            }
             if (currentUser != null && currentUser.role == 'Sales') {
               if (!_salesCanViewRequirement(r, currentUser)) {
+                return false;
+              }
+              if (_activeMainTab == 'Leads') {
+                if (_salesLeadGroupFilter == 'assigned') {
+                  if (!(_isUserAssignee(r, currentUser) && !_isUserCreator(r, currentUser))) {
+                    return false;
+                  }
+                } else if (_salesLeadGroupFilter == 'added') {
+                  if (!_isUserCreator(r, currentUser)) {
+                    return false;
+                  }
+                }
+              }
+            }
+            if (currentUser != null && RoleGuard.isTelecaller(currentUser.role)) {
+              final uName = currentUser.fullName.trim().toLowerCase();
+              final isCreator = r.createdBy == currentUser.id ||
+                  (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                  (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+              final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+                  (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
+              final isTaggedTelecaller = (r.assignedTelecallerId != null && r.assignedTelecallerId == currentUser.id) ||
+                  (r.metaCustomFields != null &&
+                    (r.metaCustomFields!['telecaller_id'] == currentUser.id ||
+                     r.metaCustomFields!['assigned_telecaller_id'] == currentUser.id ||
+                     r.metaCustomFields!['telecaller_by'] == currentUser.id ||
+                     (r.metaCustomFields!['telecaller_by'] != null && uName.isNotEmpty && r.metaCustomFields!['telecaller_by'].toString().trim().toLowerCase() == uName)));
+              if (!isCreator && !isAssignee && !isTaggedTelecaller) {
                 return false;
               }
             }
@@ -2333,19 +4890,82 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 r.configurationIds.any((id) => _selectedConfigIds.contains(id)) ||
                 r.propertyTypeIds.any((id) => _selectedConfigIds.contains(id));
             
+            final bool isUnhandledAssigned = _isUnhandledAssignedLead(r, currentUser);
             // Map legacy status strings to new pipeline statuses for backward compatibility
-            String mappedStatus = r.status;
+            String mappedStatus = _isLeadRejected(r)
+                ? getEffectiveStatus(r)
+                : ((r.status == 'Assigned')
+                    ? 'Assigned'
+                    : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(r)));
             if (mappedStatus == 'Active' || mappedStatus == 'Live') mappedStatus = 'Interested';
             if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
-            if (mappedStatus == 'Suspended' || mappedStatus == 'Dead' || mappedStatus.startsWith('Rejected') || mappedStatus == 'Not Interested' || mappedStatus == 'Bin') mappedStatus = 'Rejected';
+            if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
+            if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
 
-            // Exclude Won requirements from the active Requirements view
-            if (mappedStatus == 'Won') return false;
+            final userFilterActive = _selectedUserFilterId != "All" && _selectedUserFilterId.isNotEmpty;
+            final bool viewAllRejected =
+                _activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser);
 
-            final matchesStatus = _selectedStatus == "All" ||
-                r.status == _selectedStatus ||
+            final bool isWonTab = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
+            if (isWonTab) {
+              if (!_isLeadWon(r) && mappedStatus != 'Won' && r.status != 'Won' && r.status != 'Closed') {
+                return false;
+              }
+            } else if (_activeMainTab == 'Rejected') {
+              if (!_isLeadRejected(r)) return false;
+            } else if (_activeMainTab == 'Leads') {
+              if (_isLeadRejected(r)) return false;
+              if (_isLeadWon(r) || mappedStatus == 'Won' || r.status == 'Won' || r.status == 'Closed') {
+                if (_selectedStatus != 'Won') return false;
+              }
+            }
+
+            // Exclude Won requirements from the active Requirements view unless user explicitly selected "Won"
+            // or is viewing a specific team member's complete lead set.
+            final bool unassignFilter =
+                !viewAllRejected &&
+                !isWonTab &&
+                _selectedStatus == 'Unassign' &&
+                _canSeeUnassignStatusFilter(currentUser);
+
+            if (_activeMainTab != 'Leads Added by Me' &&
+                !isWonTab &&
+                !userFilterActive &&
+                _selectedStatus != 'Won' &&
+                !unassignFilter &&
+                mappedStatus == 'Won') return false;
+
+            final matchesStatus = isWonTab
+                ? true
+                : viewAllRejected
+                ? true
+                : unassignFilter
+                ? _isLeadUnassigned(r)
+                : (userFilterActive
+                ? (_selectedStatus == "All" ||
+                    mappedStatus == _selectedStatus ||
+                    r.status == _selectedStatus)
+                : (_selectedStatus == "All" ||
                 mappedStatus == _selectedStatus ||
-                (_selectedStatus == 'Rejected' && r.status.startsWith('Rejected'));
+                (!isUnhandledAssigned && r.status == _selectedStatus) ||
+                (!isUnhandledAssigned && _selectedStatus == 'Rejected' && r.status.startsWith('Rejected')) ||
+                (!isUnhandledAssigned && _selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')))));
+
+            final matchesDate = _matchesLeadDateFilter(r);
+
+            bool matchesUser = true;
+            if (_activeMainTab != 'Leads Added by Me' && userFilterActive) {
+              users_model.UserModel? selectedUser;
+              try {
+                final usersState = context.read<UsersBloc>().state;
+                final allKnownUsers = usersState is UsersLoaded ? _mergedAssignUsers(usersState.users) : _assignUsers;
+                selectedUser = allKnownUsers.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
+              } catch (_) {}
+              matchesUser = selectedUser != null &&
+                  (currentUser != null && currentUser.role == 'Telecaller'
+                      ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedUser, currentUser)
+                      : TeamUserVisibility.requirementBelongsToUser(r, selectedUser));
+            }
 
             bool matchesSearch = true;
             if (query.isNotEmpty) {
@@ -2354,7 +4974,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
               final remarks = (r.remarks ?? '').toLowerCase();
               final areas = r.areaNames.join(' ').toLowerCase();
-              
+
               bool matchesSalesman = false;
               if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
                 final creator = (r.creatorName ?? '').toLowerCase();
@@ -2370,12 +4990,693 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   matchesSalesman;
             }
 
-            return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch;
+            final matchesReadiness = _selectedReadiness == "All" ||
+                (_selectedReadiness == "Needs Details" ? r.matchingReadiness != 'Ready' : r.matchingReadiness == _selectedReadiness);
+
+            return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch && matchesDate && matchesReadiness && matchesUser;
           }).toList();
-          
-          // Sort by recently updated/created (descending)
-          requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+          if (_activeMainTab == 'Rejected') {
+            requirements.sort((a, b) {
+              final da = _rejectedAt(a) ?? a.createdAt;
+              final db = _rejectedAt(b) ?? b.createdAt;
+              return db.compareTo(da);
+            });
+          } else {
+            requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          }
         }
+
+    final totalCount = requirements.length;
+    final totalPages = (totalCount / _requirementsPerPage).ceil();
+    final currentPage = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);
+
+    final startIndex = (currentPage - 1) * _requirementsPerPage;
+    final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalCount);
+
+    final pageItems = (startIndex < totalCount)
+        ? requirements.sublist(startIndex, endIndex)
+        : <RequirementModel>[];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 700;
+
+        if (isMobile || !_isTableView) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildActionBar(requirements, currentUser),
+              _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount),
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildActionBar(requirements, currentUser),
+            CRMDataTable(
+              isLoading: isLoading,
+              emptyTitle: _activeMainTab == 'Rejected' ? 'No Rejected Leads' : 'No Requirements Found',
+              emptyDescription: _activeMainTab == 'Rejected'
+                  ? 'Leads marked as Rejected will appear here.'
+                  : 'Try adjusting filters or create a new requirement pipeline.',
+              dataRowMinHeight: 88.0,
+              dataRowMaxHeight: 160.0,
+              columnSpacing: 10.0,
+              horizontalMargin: 12.0,
+              columns: [
+                const DataColumn(label: Text('Client')),
+                if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
+                  const DataColumn(label: Text('Added By')),
+                const DataColumn(label: Text('Assign to')),
+                const DataColumn(label: Text('Specs / Config')),
+                const DataColumn(label: Text('Budget Range')),
+                const DataColumn(label: Text('Target Area(s)')),
+                const DataColumn(label: Text('Status')),
+                const DataColumn(label: Text('Matches')),
+                const DataColumn(label: Text('Actions')),
+              ],
+              rows: pageItems.map((req) {
+                final qualityColor = req.requirementQuality == 'High'
+                    ? CRMColors.success
+                    : req.requirementQuality == 'Medium'
+                        ? CRMColors.warning
+                        : CRMColors.danger;
+
+                final isHighlighted = req.id == _highlightedRequirementId;
+                final bool isClosed = _isLeadClosedOrTerminal(req);
+                final bool isWon = _isLeadWon(req);
+
+                return DataRow(
+                  color: isHighlighted
+                      ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
+                      : (isClosed ? WidgetStateProperty.all(CRMColors.sidebarBgOf(context).withValues(alpha: 0.6)) : null),
+                  cells: [
+                    DataCell(
+                      SizedBox(
+                        width: 135,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            GestureDetector(
+                              onTap: () => _showRequirementDetailDrawer(req),
+                              child: Text(
+                                req.clientName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: CRMTypography.bodyMedium.copyWith(
+                                  color: CRMColors.primary,
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              req.clientMobile,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Added: ${DateFormat('dd/MM/yyyy').format(req.createdAt)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
+                            ),
+                            if (req.isMetaLead) ...[
+                              const SizedBox(height: 3),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1877F2).withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFF1877F2).withOpacity(0.35)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.campaign_rounded, size: 10, color: Color(0xFF1877F2)),
+                                    const SizedBox(width: 3),
+                                    Flexible(
+                                      child: Text(
+                                        req.metaCampaignDisplayName != null ? 'Meta: ${req.metaCampaignDisplayName}' : 'Meta Ads',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Color(0xFF1877F2),
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            if (req.matchingReadiness != 'Ready') ...[
+                              const SizedBox(height: 3),
+                              _buildNeedsMoreDetailsBadge(req, compact: true),
+                            ],
+                            Builder(
+                              builder: (context) {
+                                final telecallerKeyPoints = getTelecallerRemarks(req);
+                                if (telecallerKeyPoints == null || telecallerKeyPoints.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Tooltip(
+                                    message: 'Telecaller Key Points:\n$telecallerKeyPoints',
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0F766E).withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.35)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.speaker_notes_rounded, size: 10, color: Color(0xFF0F766E)),
+                                          const SizedBox(width: 3),
+                                          Flexible(
+                                            child: Text(
+                                              'Key Points: $telecallerKeyPoints',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Color(0xFF0F766E),
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            if (req.nextFollowupDate != null) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.alarm_rounded, size: 12, color: CRMColors.warning),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal()),
+                                    style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
+                      DataCell(
+                        Text(
+                          _getAddedByColumnName(req),
+                          style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    DataCell(
+                      isClosed
+                          ? Text(
+                              _getSalesmanName(req, currentUser),
+                              style: CRMTypography.caption.copyWith(
+                                color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            )
+                          : ((_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser))
+                              ? _buildAssignToDropdown(
+                                  req,
+                                  isReassign: _canSalesReassignLead(currentUser),
+                                )
+                              : _buildSalesAssignToLabel(req, currentUser)),
+                    ),
+                    DataCell(_buildSpecsConfigCell(req)),
+                    DataCell(
+                      Text(
+                        '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}',
+                        style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primaryOf(context)),
+                      ),
+                    ),
+                    DataCell(_buildTargetAreasCell(req)),
+                    DataCell(
+                      _buildStatusControlWithNotes(req, currentUser),
+                    ),
+
+                    DataCell(
+                      isClosed
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isWon
+                                    ? CRMColors.success.withValues(alpha: 0.12)
+                                    : CRMColors.danger.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: isWon
+                                      ? CRMColors.success.withValues(alpha: 0.3)
+                                      : CRMColors.danger.withValues(alpha: 0.25),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isWon ? Icons.verified_rounded : Icons.block_rounded,
+                                    size: 13,
+                                    color: isWon ? CRMColors.success : CRMColors.danger,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    isWon ? 'Deal Won' : 'Lead Closed',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: isWon ? CRMColors.success : CRMColors.danger,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : _RunMatchesButtonWithBadge(
+                              requirement: req,
+                              onPressed: () => _showMatchesDrawer(req),
+                              properties: _propertiesForMatches,
+                            ),
+                    ),
+                    DataCell(
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert_rounded),
+                        tooltip: 'More Actions',
+                        onSelected: (action) {
+                          if (action == 'add_another') {
+                            _showAddAnotherRequirementDialog(req);
+                          } else if (action == 'share') {
+                            _showSharePropertiesDialog(req);
+                          } else if (action == 'view_details') {
+                            _showRequirementDetailDrawer(req);
+                          } else if (action == 'edit') {
+                            _showAddEditDialog(req, 0, true);
+                          } else if (action == 'delete') {
+                            _showDeleteConfirmDialog(req);
+                          } else if (action == 'upload_doc') {
+                            final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
+                            context.go(
+                              isRent ? '/rental-library' : '/resale-library',
+                              extra: {
+                                'autoOpenUpload': true,
+                                'clientName': req.clientName,
+                              },
+                            );
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'view_details',
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded, size: 18),
+                                SizedBox(width: 8),
+                                Text('View Details'),
+                              ],
+                            ),
+                          ),
+                          if (!isClosed && !_isLeadTransferredAway(req, currentUser))
+                            const PopupMenuItem(
+                              value: 'add_another',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.add_circle_outline_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Add Another'),
+                                ],
+                              ),
+                            ),
+                          if (!isClosed)
+                            const PopupMenuItem(
+                              value: 'share',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.share_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Share Properties'),
+                                ],
+                              ),
+                            ),
+                          if (isWon)
+                            const PopupMenuItem(
+                              value: 'upload_doc',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.upload_file_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Upload Document'),
+                                ],
+                              ),
+                            ),
+                          if (!isClosed && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role))) ...[
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Edit'),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
+                                  SizedBox(width: 8),
+                                  Text('Delete', style: TextStyle(color: CRMColors.danger)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ],
+        );
+      },
+    );
+      },
+    );
+  }
+
+  Widget _buildWonSearchAndFiltersCard(List<RequirementModel> requirements) {
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+    String configDropdownLabel = 'BHK';
+    final selectedCat = _metadata?.categories.firstWhere(
+      (c) => c.id == _selectedCategoryId,
+      orElse: () => LookupItem(id: '', name: ''),
+    );
+    final catName = selectedCat?.name.toLowerCase() ?? '';
+    List<LookupItem> specLookupItems = [];
+
+    if (catName.contains('commercial')) {
+      configDropdownLabel = 'Property Type';
+      var filtered = _metadata?.types.where((t) => t.categoryId == _selectedCategoryId).toList() ?? [];
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types.where((t) {
+          final n = t.name.toLowerCase();
+          return n.contains('office') || n.contains('shop') || n.contains('showroom') || n.contains('commercial');
+        }).toList();
+      }
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types;
+      }
+      specLookupItems = filtered;
+    } else if (catName.contains('land') || catName.contains('plot')) {
+      configDropdownLabel = 'Property Type';
+      var filtered = _metadata?.types.where((t) => t.categoryId == _selectedCategoryId).toList() ?? [];
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types.where((t) {
+          final n = t.name.toLowerCase();
+          return n.contains('plot') || n.contains('land');
+        }).toList();
+      }
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types;
+      }
+      specLookupItems = filtered;
+    } else if (catName.contains('industrial')) {
+      configDropdownLabel = 'Property Type';
+      var filtered = _metadata?.types.where((t) => t.categoryId == _selectedCategoryId).toList() ?? [];
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types.where((t) {
+          final n = t.name.toLowerCase();
+          return n.contains('warehouse') || n.contains('shed') || n.contains('industrial');
+        }).toList();
+      }
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.types;
+      }
+      specLookupItems = filtered;
+    } else {
+      configDropdownLabel = 'BHK';
+      var filtered = _metadata?.configurations.where((c) => _selectedCategoryId == null || c.categoryId == _selectedCategoryId).toList() ?? [];
+      if (filtered.isEmpty && _metadata != null) {
+        filtered = _metadata!.configurations;
+      }
+      specLookupItems = filtered;
+    }
+
+    return CRMCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _wonSearchController,
+                  style: CRMTypography.body.copyWith(color: CRMColors.text),
+                  decoration: InputDecoration(
+                    hintText: 'Search won clients by name, mobile, specs...',
+                    hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMuted),
+                    prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMuted),
+                    filled: true,
+                    fillColor: CRMColors.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                      borderSide: BorderSide(color: CRMColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                      borderSide: BorderSide(color: CRMColors.border),
+                    ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: CRMSpacing.s),
+              CRMButton(
+                label: "Search",
+                onPressed: () => setState(() {}),
+              ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.m),
+          Wrap(
+            spacing: CRMSpacing.m,
+            runSpacing: CRMSpacing.s,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildDropdownFilter<String?>(
+                label: 'Category',
+                value: _selectedCategoryId,
+                items: [
+                  const DropdownMenuItem(value: null, child: Text("All Categories")),
+                  ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                ],
+                isMobile: isMobile,
+                onChanged: (val) {
+                  setState(() {
+                    _selectedCategoryId = val;
+                    _wonConfigurationIds.clear();
+                  });
+                },
+              ),
+              SizedBox(
+                width: isMobile ? double.infinity : 200,
+                child: CRMMultiSelectDropdown(
+                  label: configDropdownLabel,
+                  selectedIds: _wonConfigurationIds,
+                  items: specLookupItems,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              CRMButton(
+                label: "Clear Filters",
+                variant: CRMButtonVariant.outline,
+                onPressed: () {
+                  setState(() {
+                    _wonSearchController.clear();
+                    _wonConfigurationIds.clear();
+                    _wonCategoryId = null;
+                    _wonPropertyTypeId = null;
+                  });
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMyWonFiltersAndTable() {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final bool isAdminOrSuperAdmin = currentUser != null &&
+        (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
+
+    return BlocBuilder<RequirementsBloc, RequirementsState>(
+      buildWhen: (previous, current) =>
+          current is RequirementsLoaded ||
+          current is RequirementsLoading ||
+          current is RequirementsInitial ||
+          current is RequirementsError,
+      builder: (context, state) {
+        if (state is RequirementsLoaded) {
+          _cachedRequirements = _withLocalRequirementOverrides(state.requirements);
+        }
+        final rawLoadedList = _withLocalRequirementOverrides(
+          state is RequirementsLoaded ? state.requirements : _cachedRequirements,
+        );
+        final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
+
+        List<RequirementModel> requirements;
+
+        if (isAdminOrSuperAdmin || currentUser?.role == 'Telecaller') {
+          // Admin, Super Admin & Telecaller: see Won leads with full filters
+          requirements = rawLoadedList.where((r) {
+            if (!_isLeadWon(r)) return false;
+
+            // In Won tab, Admin and Super Admin can see all Won leads from every person/user.
+            // Listing type match (Rent vs Re-Sale):
+            final matchesListingType = getListingTypeLabel(r) == _activeListingTab;
+            if (!matchesListingType) return false;
+
+            // Category filter:
+            if (_selectedCategoryId != null && _selectedCategoryId!.isNotEmpty) {
+              if (r.categoryId != _selectedCategoryId) return false;
+            }
+
+            // BHK / Property Type filter:
+            if (_selectedConfigIds.isNotEmpty) {
+              final matchesSpec = _selectedConfigIds.contains(r.configurationId) ||
+                  _selectedConfigIds.contains(r.propertyTypeId) ||
+                  r.configurationIds.any((id) => _selectedConfigIds.contains(id)) ||
+                  r.propertyTypeIds.any((id) => _selectedConfigIds.contains(id));
+              if (!matchesSpec) return false;
+            }
+
+            // User filter:
+            final userFilterActive = _selectedUserFilterId != "All" && _selectedUserFilterId.isNotEmpty;
+            if (userFilterActive) {
+              users_model.UserModel? selectedUser;
+              try {
+                final usersState = context.read<UsersBloc>().state;
+                final allKnownUsers = usersState is UsersLoaded ? _mergedAssignUsers(usersState.users) : _assignUsers;
+                selectedUser = allKnownUsers.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
+              } catch (_) {}
+              final matchesUser = selectedUser != null &&
+                  (currentUser?.role == 'Telecaller'
+                      ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedUser, currentUser!)
+                      : TeamUserVisibility.requirementBelongsToUser(r, selectedUser));
+              if (!matchesUser) return false;
+            }
+
+            // Date filter:
+            if (!_matchesLeadDateFilter(r)) return false;
+
+            // Search query filter:
+            final query = _searchController.text.trim().toLowerCase();
+            if (query.isNotEmpty) {
+              final clientName = r.clientName.toLowerCase();
+              final clientMobile = r.clientMobile.toLowerCase();
+              final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
+              final remarks = (r.remarks ?? '').toLowerCase();
+              final areas = r.areaNames.join(' ').toLowerCase();
+
+              final creator = (r.creatorName ?? '').toLowerCase();
+              final assignee = (r.assigneeName ?? '').toLowerCase();
+              final matchesSalesman = creator.contains(query) || assignee.contains(query);
+
+              final matchesSearch = clientName.contains(query) ||
+                  clientMobile.contains(query) ||
+                  specs.contains(query) ||
+                  remarks.contains(query) ||
+                  areas.contains(query) ||
+                  matchesSalesman;
+              if (!matchesSearch) return false;
+            }
+
+            return true;
+          }).toList();
+        } else {
+          // Non-Admin branch (e.g. Sales)
+          requirements = rawLoadedList.where((r) => _isLeadWon(r)).toList();
+
+          if (currentUser != null && currentUser.role == 'Sales') {
+            requirements = requirements.where((r) => _salesCanViewRequirement(r, currentUser)).toList();
+          }
+
+          if (_selectedCategoryId != null && _selectedCategoryId!.isNotEmpty) {
+            requirements = requirements.where((r) => r.categoryId == _selectedCategoryId).toList();
+          }
+
+          final selectedCat = _metadata?.categories.firstWhereOrNull((c) => c.id == _selectedCategoryId);
+          final catName = selectedCat?.name.toLowerCase() ?? '';
+          final isPropertyTypeFilter = catName.contains('commercial') ||
+              catName.contains('land') ||
+              catName.contains('plot') ||
+              catName.contains('industrial');
+
+          if (_wonConfigurationIds.isNotEmpty) {
+            requirements = requirements.where((r) {
+              if (isPropertyTypeFilter) {
+                return _wonConfigurationIds.contains(r.propertyTypeId) ||
+                    _wonConfigurationIds.any((id) => r.propertyTypeIds.contains(id));
+              } else {
+                return (r.configurationId != null && _wonConfigurationIds.contains(r.configurationId)) ||
+                    _wonConfigurationIds.any((id) => r.configurationIds.contains(id));
+              }
+            }).toList();
+          }
+
+          final query = _wonSearchController.text.trim().toLowerCase();
+
+          if (query.isNotEmpty) {
+            requirements = requirements.where((r) {
+              final clientName = r.clientName.toLowerCase();
+              final clientMobile = r.clientMobile.toLowerCase();
+              final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
+              final remarks = (r.remarks ?? '').toLowerCase();
+              final areas = r.areaNames.join(' ').toLowerCase();
+
+              bool matchesSalesman = false;
+              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
+                final creator = (r.creatorName ?? '').toLowerCase();
+                final assignee = (r.assigneeName ?? '').toLowerCase();
+                matchesSalesman = creator.contains(query) || assignee.contains(query);
+              }
+
+              return clientName.contains(query) ||
+                  clientMobile.contains(query) ||
+                  specs.contains(query) ||
+                  remarks.contains(query) ||
+                  areas.contains(query) ||
+                  matchesSalesman;
+            }).toList();
+          }
+        }
+
+        requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
         final totalCount = requirements.length;
         final totalPages = (totalCount / _requirementsPerPage).ceil();
@@ -2388,18 +5689,51 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ? requirements.sublist(startIndex, endIndex)
             : <RequirementModel>[];
 
-        return LayoutBuilder(
+        final filterWidget = (isAdminOrSuperAdmin || currentUser?.role == 'Telecaller')
+            ? LayoutBuilder(
+                builder: (context, constraints) {
+                  final bool isMobile = constraints.maxWidth < 600;
+                  if (isMobile) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildMobileFilterButton(),
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                          child: _isMobileFiltersExpanded
+                              ? Padding(
+                                  padding: const EdgeInsets.only(top: CRMSpacing.m),
+                                  child: _buildSearchAndFiltersCard(
+                                    _cachedRequirements,
+                                    true,
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
+                    );
+                  } else {
+                    return _buildSearchAndFiltersCard(
+                      _cachedRequirements,
+                      true,
+                    );
+                  }
+                },
+              )
+            : _buildWonSearchAndFiltersCard(requirements);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            filterWidget,
+            const SizedBox(height: CRMSpacing.l),
+        LayoutBuilder(
           builder: (context, constraints) {
             final isMobile = constraints.maxWidth < 700;
 
             if (isMobile || !_isTableView) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildActionBar(requirements, currentUser),
-                  _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount),
-                ],
-              );
+              return _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount);
             }
 
             return Column(
@@ -2408,10 +5742,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 _buildActionBar(requirements, currentUser),
                 CRMDataTable(
                   isLoading: isLoading,
-                  emptyTitle: 'No Requirements Found',
-                  emptyDescription: 'Try adjusting filters or create a new requirement pipeline.',
-                  dataRowMinHeight: 56.0,
-                  dataRowMaxHeight: 72.0,
+                  emptyTitle: 'No Won Requirements Found',
+                  emptyDescription: 'Requirements marked as Won or Closed will appear here.',
+                  dataRowMinHeight: 88.0,
+                  dataRowMaxHeight: 160.0,
                   columnSpacing: 10.0,
                   horizontalMargin: 12.0,
                   columns: [
@@ -2427,13 +5761,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     const DataColumn(label: Text('Actions')),
                   ],
                   rows: pageItems.map((req) {
-                    final qualityColor = req.requirementQuality == 'High'
-                        ? CRMColors.success
-                        : req.requirementQuality == 'Medium'
-                            ? CRMColors.warning
-                            : CRMColors.danger;
-
+                    final isHighlighted = req.id == _highlightedRequirementId;
+                    final bool isClosed = _isLeadClosedOrTerminal(req);
+                    final bool isWon = _isLeadWon(req);
                     return DataRow(
+                      color: isHighlighted
+                          ? WidgetStateProperty.all(CRMColors.primaryOf(context).withOpacity(0.12))
+                          : WidgetStateProperty.all(CRMColors.sidebarBgOf(context).withValues(alpha: 0.6)),
                       cells: [
                         DataCell(
                           SizedBox(
@@ -2469,20 +5803,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
                                 ),
-                                if (req.nextFollowupDate != null) ...[
-                                  const SizedBox(height: 2),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.alarm_rounded, size: 12, color: CRMColors.warning),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal()),
-                                        style: CRMTypography.captionBold.copyWith(color: CRMColors.warning, fontSize: 11),
-                                      ),
-                                    ],
-                                  ),
-                                ],
                               ],
                             ),
                           ),
@@ -2490,33 +5810,72 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
                           DataCell(
                             Text(
-                              _getSalesmanName(req, currentUser),
+                              _getAddedByColumnName(req),
                               style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ),
                         DataCell(
-                          currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')
-                              ? _buildAssignToDropdown(req)
-                              : _buildSalesAssignToLabel(req, currentUser),
+                          isClosed
+                              ? Text(
+                                  _getSalesmanName(req, currentUser),
+                                  style: CRMTypography.caption.copyWith(
+                                    color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.7),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )
+                              : (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || _canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser))
+                                  ? _buildAssignToDropdown(req)
+                                  : _buildSalesAssignToLabel(req, currentUser)),
                         ),
                         DataCell(_buildSpecsConfigCell(req)),
                         DataCell(
                           Text(
-                            '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}',
-                            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary),
+                            (req.minBudget > 0 || req.maxBudget > 0)
+                                ? '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}'
+                                : 'On Request',
+                            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primaryOf(context)),
                           ),
                         ),
                         DataCell(_buildTargetAreasCell(req)),
                         DataCell(
                           _buildStatusControlWithNotes(req, currentUser),
                         ),
-
                         DataCell(
-                          _RunMatchesButtonWithBadge(
-                            requirement: req,
-                            onPressed: () => _showMatchesDrawer(req),
-                            properties: _propertiesForMatches,
-                          ),
+                          isClosed
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: isWon
+                                        ? CRMColors.success.withValues(alpha: 0.12)
+                                        : CRMColors.danger.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: isWon
+                                          ? CRMColors.success.withValues(alpha: 0.3)
+                                          : CRMColors.danger.withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isWon ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                                        size: 14,
+                                        color: isWon ? CRMColors.success : CRMColors.danger,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        isWon ? 'Won Deal' : 'Lost / Rejected',
+                                        style: TextStyle(
+                                          color: isWon ? CRMColors.success : CRMColors.danger,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
                         ),
                         DataCell(
                           PopupMenuButton<String>(
@@ -2530,9 +5889,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               } else if (action == 'view_details') {
                                 _showRequirementDetailDrawer(req);
                               } else if (action == 'edit') {
-                                _showAddEditDialog(req);
+                                _showAddEditDialog(req, 0, true);
                               } else if (action == 'delete') {
                                 _showDeleteConfirmDialog(req);
+                              } else if (action == 'upload_doc') {
+                                final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
+                                context.go(
+                                  isRent ? '/rental-library' : '/resale-library',
+                                  extra: {
+                                    'autoOpenUpload': true,
+                                    'clientName': req.clientName,
+                                  },
+                                );
                               }
                             },
                             itemBuilder: (context) => [
@@ -2546,28 +5914,40 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   ],
                                 ),
                               ),
-                              if (!_isLeadTransferredAway(req, currentUser))
-                              const PopupMenuItem(
-                                value: 'add_another',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.add_circle_outline_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('Add Another'),
-                                  ],
+                              if (!isClosed && !_isLeadTransferredAway(req, currentUser) && !RoleGuard.isTelecaller(currentUser?.role))
+                                const PopupMenuItem(
+                                  value: 'add_another',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.add_circle_outline_rounded, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Add Another'),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'share',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.share_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('Share Properties'),
-                                  ],
+                              if (!isClosed)
+                                const PopupMenuItem(
+                                  value: 'share',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.share_rounded, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Share Properties'),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              if (_hasEditAccess(req, currentUser)) ...[
+                              if (isWon)
+                                const PopupMenuItem(
+                                  value: 'upload_doc',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.upload_file_rounded, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Upload Document'),
+                                    ],
+                                  ),
+                                ),
+                              if (!isClosed && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role))) ...[
                                 const PopupMenuItem(
                                   value: 'edit',
                                   child: Row(
@@ -2578,6 +5958,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                     ],
                                   ),
                                 ),
+                              ],
+                              if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
                                 const PopupMenuItem(
                                   value: 'delete',
                                   child: Row(
@@ -2601,7 +5983,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ],
             );
           },
-        );
+        ),
+      ],
+    );
       },
     );
   }
@@ -2764,46 +6148,192 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
 
     if (requirements.isEmpty) {
-      return CRMCard(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: CRMSpacing.xl),
-          child: Column(
-            children: [
-              Icon(Icons.folder_open_rounded, size: 48, color: CRMColors.textMuted),
-              const SizedBox(height: CRMSpacing.s),
-              Text('No Requirements Found', style: CRMTypography.cardTitle.copyWith(color: CRMColors.text)),
-              const SizedBox(height: CRMSpacing.xxs),
-              Text(
-                'Try adjusting filters or create a new requirement pipeline.',
-                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
-                textAlign: TextAlign.center,
-              ),
-            ],
+      return SizedBox(
+        width: double.infinity,
+        child: CRMCard(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: CRMSpacing.xl),
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(Icons.folder_open_rounded, size: 48, color: CRMColors.textMuted),
+                const SizedBox(height: CRMSpacing.s),
+                Text(
+                  _activeMainTab == 'Rejected'
+                      ? 'No Rejected Leads'
+                      : ((_activeMainTab == 'My Won' || _activeMainTab == 'Won')
+                          ? 'No Won Requirements Found'
+                          : 'No Requirements Found'),
+                  style: CRMTypography.cardTitle.copyWith(color: CRMColors.textOf(context)),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: CRMSpacing.xxs),
+                Text(
+                  _activeMainTab == 'Rejected'
+                      ? 'Leads marked as Rejected will appear here.'
+                      : ((_activeMainTab == 'My Won' || _activeMainTab == 'Won')
+                          ? 'Requirements marked as Won or Closed will appear here.'
+                          : 'Try adjusting filters or create a new requirement pipeline.'),
+                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
       );
     }
     return Column(
       children: [
+        if (_selectedRequirementIds.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: CRMColors.primaryOf(context).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: CRMColors.primaryOf(context).withOpacity(0.3),
+              ),
+            ),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      value: _selectedRequirementIds.length == requirements.length && requirements.isNotEmpty,
+                      activeColor: CRMColors.primaryOf(context),
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            _selectedRequirementIds.addAll(requirements.map((r) => r.id));
+                          } else {
+                            _selectedRequirementIds.clear();
+                          }
+                        });
+                      },
+                    ),
+                    Text(
+                      '${_selectedRequirementIds.length} Lead(s) Selected',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13.5,
+                        color: CRMColors.textOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _selectedRequirementIds.clear();
+                        });
+                      },
+                      icon: const Icon(Icons.close_rounded, size: 16),
+                      label: const Text('Cancel'),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () => _confirmBulkMoveToBin(requirements),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: CRMColors.danger,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                      label: const Text(
+                        'Move to Bin',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ...requirements.map((req) {
-          final String budgetText = '₹${BudgetFormatter.format(req.minBudget)} - ₹${BudgetFormatter.format(req.maxBudget)}';
+          final String budgetText = (req.minBudget > 0 || req.maxBudget > 0)
+              ? '₹${BudgetFormatter.format(req.minBudget)} - ₹${BudgetFormatter.format(req.maxBudget)}'
+              : 'Budget on Request';
           final String dateText = DateFormat("dd MMM ''yy, h:mm a").format(req.createdAt.toLocal());
-          final String specsText = '${req.propertyTypeName} (${req.configurationName ?? "Any Config"})';
-          final String areasText = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : 'All Areas';
+          final String specsText = '${req.propertyTypeName} (${(req.configurationName != null && req.configurationName!.isNotEmpty) ? req.configurationName : "Any Config"})';
+          final String areasText = req.displayAreasText;
           final String listingType = getListingTypeLabel(req);
+          final bool isSelected = _selectedRequirementIds.contains(req.id);
+          final bool isHighlighted = req.id == _highlightedRequirementId;
+          final bool isClosed = _isLeadClosedOrTerminal(req);
+          final bool isWon = _isLeadWon(req);
 
           return Padding(
             padding: const EdgeInsets.only(bottom: CRMSpacing.m),
             child: CRMCard(
+              borderColor: isHighlighted
+                  ? CRMColors.primaryOf(context)
+                  : (isClosed ? CRMColors.borderOf(context).withValues(alpha: 0.5) : null),
+              backgroundColor: isHighlighted
+                  ? CRMColors.primaryOf(context).withOpacity(0.08)
+                  : (isClosed ? CRMColors.sidebarBgOf(context).withValues(alpha: 0.6) : null),
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Top Row: Client Name, User badge, Share button, Status dropdown
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
+                  if (isClosed)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isWon
+                            ? CRMColors.success.withValues(alpha: 0.12)
+                            : CRMColors.danger.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isWon
+                              ? CRMColors.success.withValues(alpha: 0.3)
+                              : CRMColors.danger.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isWon ? Icons.emoji_events_rounded : Icons.block_rounded,
+                            size: 14,
+                            color: isWon ? CRMColors.success : CRMColors.danger,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              isWon
+                                  ? 'Deal Won (Closed) • Lead is locked. Change status to reopen.'
+                                  : 'Lead Closed (${req.status}) • Locked. Toggle status to reopen.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isWon ? CRMColors.success : CRMColors.danger,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  // Top Row: Checkbox, Client Name, User badge, Share button, Status dropdown
+                  Builder(
+                    builder: (context) {
+                      final isNarrowCard = MediaQuery.sizeOf(context).width < 700;
+                      final nameBlock = Expanded(
                         child: Wrap(
                           spacing: 8,
                           runSpacing: 4,
@@ -2837,88 +6367,173 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 ),
                               ),
                             ),
+                            if (req.matchingReadiness != 'Ready')
+                              _buildNeedsMoreDetailsBadge(req, compact: true),
                           ],
                         ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildStatusControlWithNotes(req, currentUser, compact: true),
-                          PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert_rounded, size: 18),
-                            tooltip: 'More Actions',
-                            onSelected: (action) {
-                              if (action == 'add_another') {
-                                _showAddAnotherRequirementDialog(req);
-                              } else if (action == 'share') {
-                                _showSharePropertiesDialog(req);
-                              } else if (action == 'view_details') {
-                                _showRequirementDetailDrawer(req);
-                              } else if (action == 'edit') {
-                                _showAddEditDialog(req);
-                              } else if (action == 'delete') {
-                                _showDeleteConfirmDialog(req);
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(
-                                value: 'view_details',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.info_outline_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('View Details'),
-                                  ],
-                                ),
-                              ),
-                              if (!_isLeadTransferredAway(req, currentUser))
-                                const PopupMenuItem(
-                                  value: 'add_another',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.add_circle_outline_rounded, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Add Another Requirement'),
-                                    ],
-                                  ),
-                                ),
-                              const PopupMenuItem(
-                                value: 'share',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.share_outlined, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('Share Properties'),
-                                  ],
-                                ),
-                              ),
-                              if (_hasEditAccess(req, currentUser)) ...[
-                                const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.edit_outlined, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Edit'),
-                                    ],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
-                                      SizedBox(width: 8),
-                                      Text('Delete', style: TextStyle(color: CRMColors.danger)),
-                                    ],
-                                  ),
-                                ),
+                      );
+                      final moreMenu = PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert_rounded, size: 18),
+                        tooltip: 'More Actions',
+                        onSelected: (action) {
+                          if (action == 'add_another') {
+                            _showAddAnotherRequirementDialog(req);
+                          } else if (action == 'share') {
+                            _showSharePropertiesDialog(req);
+                          } else if (action == 'view_details') {
+                            _showRequirementDetailDrawer(req);
+                          } else if (action == 'edit') {
+                            _showAddEditDialog(req, 0, true);
+                          } else if (action == 'delete') {
+                            _showDeleteConfirmDialog(req);
+                          } else if (action == 'upload_doc') {
+                            final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
+                            context.go(
+                              isRent ? '/rental-library' : '/resale-library',
+                              extra: {
+                                'autoOpenUpload': true,
+                                'clientName': req.clientName,
+                              },
+                            );
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'view_details',
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded, size: 18),
+                                SizedBox(width: 8),
+                                Text('View Details'),
                               ],
+                            ),
+                          ),
+                          if (!isClosed && !_isLeadTransferredAway(req, currentUser) && !RoleGuard.isTelecaller(currentUser?.role))
+                            const PopupMenuItem(
+                              value: 'add_another',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.add_circle_outline_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Add Another Requirement'),
+                                ],
+                              ),
+                            ),
+                          if (!isClosed)
+                            const PopupMenuItem(
+                              value: 'share',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.share_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Share Properties'),
+                                ],
+                              ),
+                            ),
+                          if (isWon)
+                            const PopupMenuItem(
+                              value: 'upload_doc',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.upload_file_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Upload Document'),
+                                ],
+                              ),
+                            ),
+                          if (!isClosed && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role))) ...[
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Edit'),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
+                                  SizedBox(width: 8),
+                                  Text('Delete', style: TextStyle(color: CRMColors.danger)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      );
+                      final checkbox = SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: Checkbox(
+                          value: isSelected,
+                          activeColor: CRMColors.primaryOf(context),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          onChanged: isClosed
+                              ? null
+                              : (_) {
+                                  setState(() {
+                                    if (isSelected) {
+                                      _selectedRequirementIds.remove(req.id);
+                                    } else {
+                                      _selectedRequirementIds.add(req.id);
+                                    }
+                                  });
+                                },
+                        ),
+                      );
+
+                      if (isNarrowCard) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                checkbox,
+                                const SizedBox(width: 6),
+                                nameBlock,
+                                moreMenu,
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: _buildStatusControlWithNotes(req, currentUser, compact: true),
+                            ),
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                checkbox,
+                                const SizedBox(width: 6),
+                                nameBlock,
+                              ],
+                            ),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildStatusControlWithNotes(req, currentUser, compact: true),
+                              moreMenu,
                             ],
                           ),
                         ],
-                      ),
-                    ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 4),
 
@@ -3002,49 +6617,88 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           ),
                         ],
                       ),
-                      InkWell(
-                        onTap: () async {
-                          final phone = req.clientMobile.replaceAll(RegExp(r'\D'), '');
-                          final formattedPhone = phone.length == 10 ? '91$phone' : phone;
-                          final url = "https://wa.me/$formattedPhone";
-                          final uri = Uri.parse(url);
-                          if (await canLaunchUrl(uri)) {
-                            await launchUrl(uri, mode: LaunchMode.externalApplication);
-                          }
-                        },
-                        child: const Row(
+                      if (isClosed)
+                        Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.chat_bubble_outline_rounded, size: 14, color: kWhatsAppGreen),
-                            SizedBox(width: 4),
+                            Icon(Icons.chat_bubble_outline_rounded, size: 14, color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.4)),
+                            const SizedBox(width: 4),
                             Text(
-                              'Chat on WhatsApp',
+                              'WhatsApp (Disabled)',
                               style: TextStyle(
-                                color: kWhatsAppGreen,
-                                fontWeight: FontWeight.bold,
+                                color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.5),
+                                fontWeight: FontWeight.w600,
                                 fontSize: 12,
                               ),
                             ),
                           ],
+                        )
+                      else
+                        InkWell(
+                          onTap: () async {
+                            final phone = req.clientMobile.replaceAll(RegExp(r'\D'), '');
+                            final formattedPhone = phone.length == 10 ? '91$phone' : phone;
+                            final url = "https://wa.me/$formattedPhone";
+                            final uri = Uri.parse(url);
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            }
+                          },
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.chat_bubble_outline_rounded, size: 14, color: kWhatsAppGreen),
+                              SizedBox(width: 4),
+                              Text(
+                                'Chat on WhatsApp',
+                                style: TextStyle(
+                                  color: kWhatsAppGreen,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.person_add_alt_1_outlined, size: 13, color: CRMColors.textMutedOf(context)),
                           const SizedBox(width: 4),
                           Text(
-                            'Added by: ${req.creatorName ?? "System"}',
+                            _getAddedByDisplayLine(req),
                             style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
+                      if (req.leadSourceDisplay != null && req.leadSourceDisplay!.isNotEmpty)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              req.isMetaLead ? Icons.campaign_rounded : Icons.hub_outlined,
+                              size: 13,
+                              color: req.isMetaLead ? const Color(0xFF1877F2) : CRMColors.textMutedOf(context),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Source: ${req.leadSourceDisplay}',
+                              style: TextStyle(
+                                color: req.isMetaLead ? const Color(0xFF1877F2) : CRMColors.textSecondaryOf(context),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.person_outline_rounded, size: 13, color: CRMColors.textMutedOf(context)),
                           const SizedBox(width: 4),
-                          if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
+                          if (!isClosed && currentUser != null && (_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser) || currentUser.role == 'Super Admin' || currentUser.role == 'Admin'))
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -3053,15 +6707,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                   style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5, fontWeight: FontWeight.w600),
                                 ),
                                 SizedBox(
-                                  width: 120,
-                                  child: _buildMobileAssignToDropdown(req),
+                                  width: 130,
+                                  child: _buildMobileAssignToDropdown(
+                                    req,
+                                    isReassign: _canSalesReassignLead(currentUser),
+                                  ),
                                 ),
                               ],
                             )
                           else
                             Text(
                               'Assign: ${_getSalesmanName(req, currentUser)}',
-                              style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 11.5, fontWeight: FontWeight.w600),
+                              style: TextStyle(color: CRMColors.textSecondaryOf(context).withValues(alpha: isClosed ? 0.7 : 1.0), fontSize: 11.5, fontWeight: FontWeight.w600),
                             ),
                         ],
                       ),
@@ -3069,50 +6726,198 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Bottom Details Box (Subtle Container with Budget, Localities, and Run Matches Button)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: CRMColors.backgroundOf(context).withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Localities Interested in:',
-                                style: TextStyle(
-                                  color: CRMColors.textMutedOf(context),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
+                  // Bottom Details Box (Subtle Container with Budget, Localities, Notes Link, and Run Matches Button)
+                  Builder(
+                    builder: (context) {
+                      final String? userNote = _getCleanNote(req);
+                      final bool hasNotes = userNote != null && userNote.isNotEmpty;
+
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: CRMColors.backgroundOf(context).withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Localities Interested in:',
+                                        style: TextStyle(
+                                          color: CRMColors.textMutedOf(context),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              areasText,
+                                              style: TextStyle(
+                                                color: req.hasUnmappedArea ? const Color(0xFFD97706) : CRMColors.textOf(context),
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                          if (req.hasUnmappedArea) ...[
+                                            const SizedBox(width: 6),
+                                            Tooltip(
+                                              message: 'This locality does not match any registered area in CRM. Click to edit and assign CRM area.',
+                                              child: InkWell(
+                                                onTap: () => _showAddEditDialog(req, 3, true),
+                                                borderRadius: BorderRadius.circular(4),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFFEF3C7),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: const Color(0xFFF59E0B)),
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.warning_amber_rounded, size: 10, color: Color(0xFFD97706)),
+                                                      SizedBox(width: 3),
+                                                      Text(
+                                                        'Unmapped Area',
+                                                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                areasText,
-                                style: TextStyle(
-                                  color: CRMColors.textOf(context),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                const SizedBox(width: 12),
+                                isClosed
+                                    ? Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: isWon
+                                              ? CRMColors.success.withValues(alpha: 0.12)
+                                              : CRMColors.danger.withValues(alpha: 0.08),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: isWon
+                                                ? CRMColors.success.withValues(alpha: 0.3)
+                                                : CRMColors.danger.withValues(alpha: 0.25),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              isWon ? Icons.verified_rounded : Icons.cancel_outlined,
+                                              size: 13,
+                                              color: isWon ? CRMColors.success : CRMColors.danger,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              isWon ? 'Deal Won' : 'Lead Closed',
+                                              style: TextStyle(
+                                                color: isWon ? CRMColors.success : CRMColors.danger,
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : _RunMatchesButtonWithBadge(
+                                        requirement: req,
+                                        onPressed: () => _showMatchesDrawer(req),
+                                        properties: _propertiesForMatches,
+                                      ),
+                              ],
+                            ),
+                             if (req.remarks != null && req.remarks!.trim().isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.notes_rounded,
+                                    size: 14,
+                                    color: CRMColors.primaryOf(context),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: RichText(
+                                      text: TextSpan(
+                                        children: [
+                                          TextSpan(
+                                            text: 'Remarks: ',
+                                            style: TextStyle(
+                                              color: CRMColors.textSecondaryOf(context),
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          TextSpan(
+                                            text: req.remarks!.trim(),
+                                            style: TextStyle(
+                                              color: CRMColors.textOf(context),
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
-                          ),
+                            if (hasNotes) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.sticky_note_2_outlined,
+                                    size: 13,
+                                    color: CRMColors.primaryOf(context),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Builder(
+                                    builder: (btnContext) {
+                                      return InkWell(
+                                        onTap: () => _showViewAllNotesDialog(context, req),
+                                        child: Text(
+                                          'View All Notes',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            decoration: TextDecoration.underline,
+                                            color: CRMColors.primaryOf(context),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
                         ),
-                        const SizedBox(width: 12),
-                        _RunMatchesButtonWithBadge(
-                          requirement: req,
-                          onPressed: () => _showMatchesDrawer(req),
-                          properties: _propertiesForMatches,
-                        ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -3245,8 +7050,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
         children: [
           if (canExport)
             ElevatedButton.icon(
@@ -3265,7 +7073,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ),
             )
           else
-            const SizedBox(),
+            const SizedBox.shrink(),
           _buildViewSwitcher(),
         ],
       ),
@@ -3318,18 +7126,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         req.listingTypeName ?? '',
         BudgetFormatter.format(req.minBudget),
         BudgetFormatter.format(req.maxBudget),
-        req.areaNames.join('; '),
+        req.displayAreasText,
         req.status,
         req.nextFollowupDate != null && req.nextFollowupDate!.isNotEmpty
             ? DateFormat('dd/MM/yyyy').format(DateTime.parse(req.nextFollowupDate!).toLocal())
             : '',
-        req.creatorName ?? 'System',
+        (req.creatorName != null && req.creatorName != 'System' && req.creatorName!.trim().isNotEmpty) ? req.creatorName! : 'Propkart Admin',
         _getSalesmanName(req, currentUser),
         _getCleanNote(req) ?? '',
         req.createdAt != null ? DateFormat('dd/MM/yyyy hh:mm a').format(req.createdAt!.toLocal()) : '',
       ];
 
-      csvBuffer.writeln(row.map((val) => '"${val.toString().replaceAll('"', '""')}"').join(','));
+      csvBuffer.writeln(row.map((val) => '"${CsvSanitizer.sanitize(val)}"').join(','));
     }
 
     final bytes = utf8.encode(csvBuffer.toString());
@@ -3346,7 +7154,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   Color _getStatusColor(String status) {
     if (status.startsWith('Rejected')) return CRMColors.danger;
+    if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) return const Color(0xFF0288D1);
     switch (status) {
+      case 'Assigned':
+        return const Color(0xFF0F766E);
       case 'Won':
         return CRMColors.success;
       case 'Follow-up':
@@ -3368,6 +7179,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       case 'Suspended':
       case 'Rejected':
         return CRMColors.danger;
+      case 'New':
       case 'Not Started':
       default:
         return CRMColors.primary;
@@ -3398,15 +7210,24 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildMainViewTabButton(String label) {
-    final isSelected = _activeMainTab == label;
+    final bool isWonTab = label == 'Won' || label == 'My Won';
+    final bool currentIsWon = _activeMainTab == 'Won' || _activeMainTab == 'My Won';
+    final isSelected = isWonTab ? currentIsWon : _activeMainTab == label;
     return GestureDetector(
       onTap: () {
         setState(() {
           _activeMainTab = label;
         });
-        // My Won needs an unfiltered status fetch so Won rows are present.
-        if (label == 'My Won' || label == 'Leads' || label == 'Requirements') {
+        // Won / My Won needs an unfiltered status fetch so Won rows are present.
+        if (label == 'My Won' ||
+            label == 'Won' ||
+            label == 'Rejected' ||
+            label == 'Leads' ||
+            label == 'Requirements' ||
+            label == 'Leads Added by Me') {
           _triggerFetch();
+        } else if (label == 'Follow-ups') {
+          _refreshFollowupsFuture(force: true);
         }
       },
       child: AnimatedContainer(
@@ -3429,7 +7250,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  void _showFollowupMessageDialog(BuildContext context, String clientName, String message) {
+  void _showFollowupMessageDialog(BuildContext context, String clientName, String message, {DashboardFollowup? followup}) {
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -3472,6 +7293,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ),
           ),
           actions: [
+            if (followup != null)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+                label: const Text("Edit Follow-up"),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: CRMColors.primary,
+                  side: BorderSide(color: CRMColors.primary.withValues(alpha: 0.5)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _showEditFollowupDialog(context, followup);
+                },
+              ),
             CRMButton(
               label: "Close",
               variant: CRMButtonVariant.primary,
@@ -3483,7 +7318,299 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  void _openFollowupStepper(RequirementModel req, String status, {int initialStep = 1}) {
+  void _showEditFollowupDialog(BuildContext context, DashboardFollowup followup) {
+    final DateTime initialDateTime = DateTime.tryParse(followup.followupDate)?.toLocal() ?? DateTime.now();
+    DateTime selectedDate = DateTime(initialDateTime.year, initialDateTime.month, initialDateTime.day);
+    TimeOfDay selectedTime = TimeOfDay.fromDateTime(initialDateTime);
+    final notesController = TextEditingController(text: followup.notes ?? '');
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final dateDisplay = DateFormat('dd/MM/yyyy').format(selectedDate);
+            final timeDisplay = selectedTime.format(context);
+
+            return AlertDialog(
+              backgroundColor: CRMColors.cardBgOf(context),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+              title: Row(
+                children: [
+                  Icon(Icons.edit_calendar_rounded, color: CRMColors.primary, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "Edit Follow-up (${followup.clientName})",
+                      style: CRMTypography.sectionTitle.copyWith(
+                        color: CRMColors.textOf(context),
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: CRMBreakpoints.adaptiveWidth(context, 450),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Date & Time",
+                        style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: isSaving
+                                  ? null
+                                  : () async {
+                                      final pickedDate = await showDatePicker(
+                                        context: context,
+                                        initialDate: selectedDate,
+                                        firstDate: DateTime(2020),
+                                        lastDate: DateTime(2035),
+                                      );
+                                      if (pickedDate != null) {
+                                        setDialogState(() {
+                                          selectedDate = pickedDate;
+                                        });
+                                      }
+                                    },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.backgroundOf(context),
+                                  borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                                  border: Border.all(color: CRMColors.borderOf(context)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.calendar_today_rounded, size: 16, color: CRMColors.primary),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      dateDisplay,
+                                      style: TextStyle(
+                                        color: CRMColors.textOf(context),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: InkWell(
+                              onTap: isSaving
+                                  ? null
+                                  : () async {
+                                      final pickedTime = await showTimePicker(
+                                        context: context,
+                                        initialTime: selectedTime,
+                                      );
+                                      if (pickedTime != null) {
+                                        setDialogState(() {
+                                          selectedTime = pickedTime;
+                                        });
+                                      }
+                                    },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.backgroundOf(context),
+                                  borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                                  border: Border.all(color: CRMColors.borderOf(context)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.access_time_rounded, size: 16, color: CRMColors.primary),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      timeDisplay,
+                                      style: TextStyle(
+                                        color: CRMColors.textOf(context),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        "Remarks / Agenda",
+                        style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: notesController,
+                        enabled: !isSaving,
+                        maxLines: 4,
+                        style: TextStyle(color: CRMColors.textOf(context), fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: "Enter follow-up agenda or notes...",
+                          hintStyle: TextStyle(color: CRMColors.textMutedOf(context)),
+                          filled: true,
+                          fillColor: CRMColors.backgroundOf(context),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                            borderSide: BorderSide(color: CRMColors.primary),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+                  child: Text("Cancel", style: TextStyle(color: CRMColors.textMutedOf(context))),
+                ),
+                CRMButton(
+                  label: isSaving ? "Saving..." : "Save Changes",
+                  prefixIcon: isSaving ? null : Icons.check_rounded,
+                  variant: CRMButtonVariant.primary,
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            isSaving = true;
+                          });
+
+                          try {
+                            final combined = DateTime(
+                              selectedDate.year,
+                              selectedDate.month,
+                              selectedDate.day,
+                              selectedTime.hour,
+                              selectedTime.minute,
+                            );
+                            final isoUtcString = combined.toUtc().toIso8601String();
+
+                            final newNotes = notesController.text.trim();
+
+                            // Try remote patch if valid server ID (non-local)
+                            if (!followup.id.startsWith('local_') && !followup.id.startsWith('sv_') && followup.id.isNotEmpty) {
+                              try {
+                                await DioClient.dio.patch(
+                                  '/followups/${followup.id}',
+                                  data: {
+                                    'followup_date': isoUtcString,
+                                    'notes': newNotes,
+                                  },
+                                );
+                              } catch (e) {
+                                debugPrint('⚠️ Remote update patch error (falling back to local): $e');
+                              }
+                            }
+
+                            // Update local memory cache & persistent database
+                            try {
+                              for (final fl in FollowupLocalRepository.inMemory.values) {
+                                if ((followup.requirementId != null && followup.requirementId!.isNotEmpty && fl.requirementId == followup.requirementId) ||
+                                    (fl.clientName.isNotEmpty && fl.clientName.trim().toLowerCase() == followup.clientName.trim().toLowerCase()) ||
+                                    fl.id == followup.id) {
+                                  fl.followupDate = combined;
+                                  fl.notes = newNotes;
+                                }
+                              }
+
+                              final localItem = FollowupLocalRepository.inMemory[followup.id];
+                              if (localItem != null) {
+                                localItem.followupDate = combined;
+                                localItem.notes = newNotes;
+                                await RepositoryCoordinator().followupLocal.saveFollowups([localItem]);
+                              } else {
+                                final authState = context.read<AuthBloc>().state;
+                                final currentUser = authState is Authenticated ? authState.user : null;
+
+                                final newLocal = FollowupLocal()
+                                  ..id = followup.id.isNotEmpty ? followup.id : 'local_${DateTime.now().millisecondsSinceEpoch}'
+                                  ..requirementId = followup.requirementId ?? ''
+                                  ..clientName = followup.clientName
+                                  ..mobile = followup.mobile
+                                  ..followupDate = combined
+                                  ..notes = newNotes
+                                  ..status = followup.status.isNotEmpty ? followup.status : (_selectedMainFollowupSection == 'Site Visit Scheduled' ? 'Site Visit Scheduled' : 'Pending')
+                                  ..createdBy = followup.creatorName ?? currentUser?.fullName ?? 'Propkart Admin'
+                                  ..createdAt = DateTime.now();
+
+                                await RepositoryCoordinator().followupLocal.saveFollowups([newLocal]);
+                              }
+
+                              // Update requirement local nextFollowupDate
+                              final reqId = (followup.requirementId != null && followup.requirementId!.isNotEmpty) ? followup.requirementId! : followup.id;
+                              if (reqId.isNotEmpty) {
+                                try {
+                                  final reqLocal = await RepositoryCoordinator().requirementLocal.getRequirementById(reqId);
+                                  if (reqLocal != null) {
+                                    reqLocal.nextFollowupDate = isoUtcString;
+                                    await RepositoryCoordinator().requirementLocal.saveRequirements([reqLocal]);
+                                  }
+                                } catch (_) {}
+                              }
+                            } catch (e) {
+                              debugPrint('⚠️ Local storage save error: $e');
+                            }
+
+                            if (mounted) {
+                              Navigator.pop(dialogContext);
+                              setState(() {
+                                _refreshFollowupsFuture();
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(_selectedMainFollowupSection == 'Site Visit Scheduled' ? 'Site Visit updated successfully' : 'Follow-up updated successfully'),
+                                  backgroundColor: CRMColors.success,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              setDialogState(() {
+                                isSaving = false;
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error updating follow-up: $e'),
+                                  backgroundColor: CRMColors.danger,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _openFollowupStepper(RequirementModel req, String status, {int initialStep = 1, bool? isSiteVisit}) {
+    final bool isSiteVisitMode = isSiteVisit ?? (status == 'Site Visit Scheduled' || _selectedMainFollowupSection == 'Site Visit Scheduled');
     final bool isReFollowup = status == 'Re-Followup' ||
         req.status == 'Follow-up' ||
         req.status == 'Re-Followup' ||
@@ -3492,20 +7619,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
-      barrierLabel: 'Re-Followup',
+      barrierLabel: isSiteVisitMode ? 'Site Visit Scheduled' : 'Re-Followup',
       barrierColor: Colors.black.withValues(alpha: 0.12),
       transitionDuration: const Duration(milliseconds: 250),
       pageBuilder: (dialogContext, anim1, anim2) {
         return RequirementStepperDialog(
           requirement: req,
           initialStep: initialStep,
+          isSiteVisit: isSiteVisitMode,
           updateStatusOnSave: true,
+          onSavedWithDate: (scheduledDate) {
+            final now = DateTime.now();
+            final todayDate = DateTime(now.year, now.month, now.day);
+            final targetDay = DateTime(scheduledDate.year, scheduledDate.month, scheduledDate.day);
+            if (targetDay.isBefore(todayDate)) {
+              _selectedFollowupSubTab = 'Due';
+            } else if (targetDay.isAfter(todayDate)) {
+              _selectedFollowupSubTab = 'Future';
+            } else {
+              _selectedFollowupSubTab = 'Today';
+            }
+            _currentFollowupPage = 1;
+          },
           onSaved: () {
             if (isReFollowup) {
               NotificationCenter.addNotification(
-                title: 'Re-Followup Scheduled',
-                message: 'Re-Followup scheduled for ${req.clientName}. Notification reminder active.',
-                type: 'refollowup',
+                title: isSiteVisitMode ? 'Site Visit Scheduled' : 'Re-Followup Scheduled',
+                message: isSiteVisitMode
+                    ? 'Site Visit scheduled for ${req.clientName}. Notification reminder active.'
+                    : 'Re-Followup scheduled for ${req.clientName}. Notification reminder active.',
+                type: isSiteVisitMode ? 'sitevisit' : 'refollowup',
               );
             }
             _triggerFetch();
@@ -3528,12 +7671,25 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildFollowupStatusActionCell(DashboardFollowup f, RequirementModel? reqModel) {
-    if (reqModel == null) {
-      return const SizedBox.shrink();
-    }
+    final targetReq = reqModel ?? RequirementModel(
+      id: (f.requirementId != null && f.requirementId!.isNotEmpty) ? f.requirementId! : (f.id.isNotEmpty ? f.id : 'temp_req'),
+      clientName: f.clientName,
+      clientMobile: f.mobile,
+      categoryId: '',
+      categoryName: '',
+      propertyTypeId: '',
+      propertyTypeName: (f.propertyTitle != null && f.propertyTitle!.isNotEmpty) ? f.propertyTitle! : '',
+      minBudget: 0.0,
+      maxBudget: 0.0,
+      areaIds: const [],
+      areaNames: const [],
+      status: f.status.isNotEmpty ? f.status : 'Re-Followup',
+      remarks: null,
+      createdAt: DateTime.now(),
+    );
 
     if (_selectedFollowupSubTab == 'AllClients') {
-      return OutlinedButton.icon(
+      final historyBtn = OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           side: BorderSide(color: CRMColors.primary.withValues(alpha: 0.5)),
@@ -3544,15 +7700,48 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           'History',
           style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
         ),
-        onPressed: () => _openFollowupStepper(reqModel, reqModel.status ?? 'Re-Followup', initialStep: 2),
+        onPressed: () => _openFollowupStepper(targetReq, targetReq.status ?? 'Re-Followup', initialStep: 2),
+      );
+
+      final authState = context.read<AuthBloc>().state;
+      final currentUser = authState is Authenticated ? authState.user : null;
+      final isAdminOrSuperAdmin = currentUser != null &&
+          (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
+
+      if (!isAdminOrSuperAdmin) {
+        return historyBtn;
+      }
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          historyBtn,
+          const SizedBox(width: 8),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: const Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 20),
+            tooltip: _selectedMainFollowupSection == 'Site Visit Scheduled' ? 'Delete Client Site Visit' : 'Delete Client Follow-ups',
+            onPressed: () => _confirmAndDeleteClientFollowup(f, reqModel),
+          ),
+        ],
       );
     }
 
     return _FollowupActionButton(
       followup: f,
-      reqModel: reqModel,
+      reqModel: targetReq,
+      isSiteVisit: _selectedMainFollowupSection == 'Site Visit Scheduled',
       onSelect: (req, status) {
-        _openFollowupStepper(req, status);
+        if (status == 'Edit Followup' || status == 'Edit Site Visit') {
+          _showEditFollowupDialog(context, f);
+        } else if (status == 'Re-scheduled') {
+          _openFollowupStepper(req, 'Site Visit Scheduled');
+        } else if (status == 'Interested' || status.startsWith('Rejected')) {
+          _changeStatus(req, status);
+        } else {
+          _openFollowupStepper(req, status);
+        }
       },
     );
   }
@@ -3567,7 +7756,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final currentUser = authState is Authenticated ? authState.user : null;
     final isHighRole = currentUser != null &&
         (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
-    final reqModel = reqsList.firstWhereOrNull((r) => r.id == f.requirementId);
+    final reqModel = reqsList.firstWhereOrNull((r) =>
+        (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+        (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+        (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
 
     return Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.m),
@@ -3611,10 +7803,24 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: CRMColors.textSecondaryOf(context),
-                    size: 20,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+                        color: CRMColors.primary,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        tooltip: 'Edit Follow-up',
+                        onPressed: () => _showEditFollowupDialog(context, f),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: CRMColors.textSecondaryOf(context),
+                        size: 20,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -3625,7 +7831,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     Icon(Icons.person_outline_rounded, size: 13, color: CRMColors.textSecondaryOf(context)),
                     const SizedBox(width: 4),
                     Text(
-                      'Added by: ${f.creatorName ?? (reqModel != null ? _getSalesmanName(reqModel, currentUser) : "N/A")}',
+                      'Added by: ${f.salespersonName ?? (reqModel != null ? _getSalesmanName(reqModel, currentUser) : (f.creatorName ?? "N/A"))}',
                       style: CRMTypography.caption.copyWith(
                         color: CRMColors.textSecondaryOf(context),
                         fontWeight: FontWeight.w600,
@@ -3651,27 +7857,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ),
                     ],
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.access_time_rounded, size: 14, color: CRMColors.primary),
-                      const SizedBox(width: 4),
-                      Text(
-                        displayDate,
-                        style: CRMTypography.bodyMedium.copyWith(
-                          color: CRMColors.primary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
+                  InkWell(
+                    onTap: () => _showEditFollowupDialog(context, f),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.access_time_rounded, size: 14, color: CRMColors.primary),
+                          const SizedBox(width: 4),
+                          Text(
+                            displayDate,
+                            style: CRMTypography.bodyMedium.copyWith(
+                              color: CRMColors.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.edit_outlined, size: 12, color: CRMColors.primary),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
               if (f.notes != null && f.notes!.trim().isNotEmpty) ...[
                 const SizedBox(height: CRMSpacing.s),
                 GestureDetector(
-                  onTap: () => _showFollowupMessageDialog(context, f.clientName, f.notes!),
+                  onTap: () => _showFollowupMessageDialog(context, f.clientName, f.notes!, followup: f),
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(CRMSpacing.s),
@@ -3700,6 +7915,158 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         ),
       ),
     );
+  }
+
+  String _getFollowupClientKey(DashboardFollowup f) {
+    if (f.requirementId != null && f.requirementId!.isNotEmpty) {
+      return f.requirementId!;
+    }
+    if (f.id.isNotEmpty) {
+      return f.id;
+    }
+    return '${f.clientName}_${f.mobile}';
+  }
+
+  Future<void> _confirmAndDeleteClientFollowup(DashboardFollowup f, RequirementModel? reqModel) async {
+    final isSiteVisit = _selectedMainFollowupSection == 'Site Visit Scheduled';
+    final titleText = isSiteVisit ? 'Delete Site Visit' : 'Delete Follow-ups';
+    final contentText = isSiteVisit
+        ? 'Are you sure you want to delete all scheduled site visits for client "${f.clientName}" from the database?'
+        : 'Are you sure you want to delete all follow-ups for client "${f.clientName}" from the database?';
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 22),
+            const SizedBox(width: 8),
+            Text(titleText),
+          ],
+        ),
+        content: Text(contentText, style: TextStyle(fontSize: 13.5, color: CRMColors.textOf(context))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final reqId = reqModel?.id ?? f.requirementId;
+      final endpoint = isSiteVisit ? '/site_visits/delete-client' : '/followups/delete-client';
+      
+      await DioClient.dio.post(endpoint, data: {
+        'requirement_id': reqId,
+        'mobile': f.mobile,
+        'client_name': f.clientName,
+      });
+
+      if (mounted) {
+        _selectedFollowupClientKeys.remove(_getFollowupClientKey(f));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('All records for "${f.clientName}" deleted successfully.'),
+            backgroundColor: CRMColors.success,
+          ),
+        );
+        context.read<RequirementsBloc>().add(FetchRequirementsEvent());
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete client records: $e'),
+            backgroundColor: CRMColors.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmAndDeleteSelectedClients(List<DashboardFollowup> pageItems, List<RequirementModel> reqsList) async {
+    final selectedCount = _selectedFollowupClientKeys.length;
+    if (selectedCount == 0) return;
+
+    final isSiteVisit = _selectedMainFollowupSection == 'Site Visit Scheduled';
+    final titleText = isSiteVisit ? 'Delete Selected Site Visits' : 'Delete Selected Client Follow-ups';
+    final contentText = 'Are you sure you want to delete all records for the $selectedCount selected client(s) from the database? This action cannot be undone.';
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 22),
+            const SizedBox(width: 8),
+            Text(titleText),
+          ],
+        ),
+        content: Text(contentText, style: TextStyle(fontSize: 13.5, color: CRMColors.textOf(context))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete Selected'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final itemsToDelete = pageItems.where((f) => _selectedFollowupClientKeys.contains(_getFollowupClientKey(f))).toList();
+    int successCount = 0;
+
+    for (final f in itemsToDelete) {
+      try {
+        final reqModel = reqsList.firstWhereOrNull((r) =>
+            (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+            (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+            (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
+
+        final reqId = reqModel?.id ?? f.requirementId;
+        final endpoint = isSiteVisit ? '/site_visits/delete-client' : '/followups/delete-client';
+
+        await DioClient.dio.post(endpoint, data: {
+          'requirement_id': reqId,
+          'mobile': f.mobile,
+          'client_name': f.clientName,
+        });
+
+        _selectedFollowupClientKeys.remove(_getFollowupClientKey(f));
+        successCount++;
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$successCount client(s) deleted successfully.'),
+          backgroundColor: CRMColors.success,
+        ),
+      );
+      context.read<RequirementsBloc>().add(FetchRequirementsEvent());
+    }
   }
 
   Widget _buildFollowupsView() {
@@ -3750,7 +8117,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
 
     return CRMCard(
-      title: 'Follow-ups Management',
+      title: _selectedMainFollowupSection == 'Site Visit Scheduled'
+          ? 'Site Visit Management'
+          : 'Follow-ups Management',
       subtitle: 'Scheduled client communications and appointments',
       headerAction: isMobile ? null : dateFilterWidget,
       child: Column(
@@ -3763,6 +8132,109 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ),
             const SizedBox(height: CRMSpacing.m),
           ],
+          // Mode Toggle Buttons: "Follow ups" & "Site Visit Scheduled"
+          Container(
+            margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: CRMColors.backgroundOf(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedMainFollowupSection = 'Follow ups';
+                        _currentFollowupPage = 1;
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _selectedMainFollowupSection == 'Follow ups'
+                            ? CRMColors.primary
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.phone_in_talk_rounded,
+                              size: 16,
+                              color: _selectedMainFollowupSection == 'Follow ups'
+                                  ? Colors.white
+                                  : CRMColors.textSecondaryOf(context),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Follow ups',
+                              style: CRMTypography.bodyMedium.copyWith(
+                                color: _selectedMainFollowupSection == 'Follow ups'
+                                    ? Colors.white
+                                    : CRMColors.textSecondaryOf(context),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedMainFollowupSection = 'Site Visit Scheduled';
+                        _currentFollowupPage = 1;
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _selectedMainFollowupSection == 'Site Visit Scheduled'
+                            ? const Color(0xFF6C5CE7)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.location_on_rounded,
+                              size: 16,
+                              color: _selectedMainFollowupSection == 'Site Visit Scheduled'
+                                  ? Colors.white
+                                  : CRMColors.textSecondaryOf(context),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Site Visit Scheduled',
+                              style: CRMTypography.bodyMedium.copyWith(
+                                color: _selectedMainFollowupSection == 'Site Visit Scheduled'
+                                    ? Colors.white
+                                    : CRMColors.textSecondaryOf(context),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           FutureBuilder<List<dynamic>>(
             future: _followupsFuture,
             builder: (context, snapshot) {
@@ -3777,153 +8249,56 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               }
 
               final dashboardData = snapshot.data?[0] as DashboardData?;
-              final reqsList = snapshot.data?[1] as List<RequirementModel>? ?? [];
+              final reqsList = _withLocalRequirementOverrides(
+                snapshot.data?[1] as List<RequirementModel>? ?? [],
+              );
+              final authState = context.read<AuthBloc>().state;
+              final currentUser = authState is Authenticated ? authState.user : null;
 
-              final followups = dashboardData?.followups ?? [];
+              final serverFollowups = dashboardData?.followups ?? [];
+              final localFollowups = FollowupLocalRepository.inMemory.values.map((fl) => fl.toModel()).toList();
+              final followups = [
+                ...localFollowups,
+                ...serverFollowups,
+              ];
 
-              final now = DateTime.now();
-              final todayDate = DateTime(now.year, now.month, now.day);
+              final syncResult = FollowupSyncEngine.categorizeFollowups(
+                serverFollowups: serverFollowups,
+                localFollowups: localFollowups,
+                reqsList: reqsList,
+                siteVisits: dashboardData?.siteVisits,
+                isSiteVisitSection: _selectedMainFollowupSection == 'Site Visit Scheduled',
+                targetListingType: _activeListingTab,
+                currentUser: currentUser,
+                users: _assignUsers,
+                customDateFilter: (_selectedFollowupSubTab == 'Future') ? _reqFollowupDateFilter : null,
+                selectedSalesperson: _selectedSalespersonFilter,
+              );
 
-              // Deduplicate followups by requirementId keeping only the active pending entry per lead
-              final Map<String, DashboardFollowup> latestReqFollowupsMap = {};
-              for (final f in followups) {
-                final reqIdStr = f.requirementId ?? '';
-                final key = reqIdStr.isNotEmpty ? reqIdStr : f.id;
-                final existing = latestReqFollowupsMap[key];
-                if (existing == null) {
-                  latestReqFollowupsMap[key] = f;
-                } else {
-                  final bool fIsPending = f.status == 'Pending' || f.status == 'Follow-up' || f.status == 'Re-Followup';
-                  final bool existingIsPending = existing.status == 'Pending' || existing.status == 'Follow-up' || existing.status == 'Re-Followup';
-
-                  if (fIsPending && !existingIsPending) {
-                    latestReqFollowupsMap[key] = f;
-                  } else if (fIsPending == existingIsPending) {
-                    final dtExisting = DateTime.tryParse(existing.followupDate)?.toLocal() ?? DateTime(1970);
-                    final dtCurrent = DateTime.tryParse(f.followupDate)?.toLocal() ?? DateTime(1970);
-                    if (dtCurrent.isAfter(dtExisting)) {
-                      latestReqFollowupsMap[key] = f;
-                    }
-                  }
-                }
-              }
-
-              // Also include any requirements with pending followups or nextFollowupDate not yet in dashboard payload
-              for (final req in reqsList) {
-                final reqStatus = req.status;
-                final hasFollowupStatus = reqStatus == 'Follow-up' || reqStatus == 'Re-Followup' || reqStatus == 'Site Visit';
-                final hasNextDate = req.nextFollowupDate != null && req.nextFollowupDate!.isNotEmpty;
-
-                if ((hasFollowupStatus || hasNextDate) && reqStatus != 'Won' && reqStatus != 'Closed' && !reqStatus.startsWith('Rejected') && reqStatus != 'Dead') {
-                  final key = req.id;
-                  if (!latestReqFollowupsMap.containsKey(key)) {
-                    latestReqFollowupsMap[key] = DashboardFollowup(
-                      id: 'local_${req.id}',
-                      requirementId: req.id,
-                      clientName: req.clientName,
-                      mobile: req.clientMobile,
-                      followupDate: (req.nextFollowupDate != null && req.nextFollowupDate!.isNotEmpty)
-                          ? req.nextFollowupDate!
-                          : req.createdAt.toIso8601String(),
-                      status: reqStatus,
-                      notes: req.notes ?? req.remarks,
-                      creatorName: req.creatorName ?? req.assigneeName,
-                    );
-                  }
-                }
-              }
-
-              final List<DashboardFollowup> todayFollowups = [];
-              final List<DashboardFollowup> dueFollowups = [];
-              final List<DashboardFollowup> futureFollowups = [];
-              final List<DashboardFollowup> allClientsFollowups = [];
-
-              for (final f in latestReqFollowupsMap.values) {
-                final req = reqsList.firstWhereOrNull((r) => r.id == f.requirementId);
-                if (req == null) continue;
-
-                final reqStatus = req.status;
-                if (reqStatus == 'Won' || reqStatus == 'Closed' || reqStatus.startsWith('Rejected') || reqStatus == 'Dead') continue;
-
-                final isRentTab = _activeListingTab == 'Rent';
-                final listingNameLower = (req.listingTypeName ?? '').toLowerCase();
-                final reqIsRent = listingNameLower.contains('rent') ||
-                    (req.listingTypeId != null && (LookupLocalRepository.getLookupNameSync(req.listingTypeId!)?.toLowerCase().contains('rent') ?? false)) ||
-                    req.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
-                if (isRentTab != reqIsRent) continue;
-
-                allClientsFollowups.add(f);
-
-                DateTime? parsed = DateTime.tryParse(f.followupDate)?.toLocal();
-                if (parsed == null && f.followupDate.isNotEmpty) {
-                  try {
-                    final parts = f.followupDate.split(RegExp(r'[/\\-]'));
-                    if (parts.length >= 3) {
-                      final d = int.tryParse(parts[0]);
-                      final m = int.tryParse(parts[1]);
-                      final y = int.tryParse(parts[2]);
-                      if (d != null && m != null && y != null) {
-                        parsed = DateTime(y, m, d);
-                      }
-                    }
-                  } catch (_) {}
-                }
-                if (parsed == null) continue;
-                final fDate = DateTime(parsed.year, parsed.month, parsed.day);
-
-                if (fDate.isBefore(todayDate)) {
-                  dueFollowups.add(f);
-                } else if (fDate.isAfter(todayDate)) {
-                  futureFollowups.add(f);
-                } else {
-                  todayFollowups.add(f);
-                }
-              }
+              final todayFollowups = syncResult.today;
+              final dueFollowups = syncResult.due;
+              final futureFollowups = syncResult.future;
+              final allClientsFollowups = syncResult.allClients;
+              final followupToReqMap = syncResult.followupToReqMap;
+              final distinctSalespersons = syncResult.distinctSalespersons;
 
               List<DashboardFollowup> selectedList;
               if (_selectedFollowupSubTab == 'Due') {
                 selectedList = dueFollowups;
               } else if (_selectedFollowupSubTab == 'Future') {
                 selectedList = futureFollowups;
-                if (_reqFollowupDateFilter != null) {
-                  final filterDay = DateTime(
-                    _reqFollowupDateFilter!.year,
-                    _reqFollowupDateFilter!.month,
-                    _reqFollowupDateFilter!.day,
-                  );
-                  if (filterDay != todayDate) {
-                    selectedList = futureFollowups.where((f) {
-                      final parsed = DateTime.tryParse(f.followupDate);
-                      if (parsed == null) return false;
-                      return parsed.year == _reqFollowupDateFilter!.year &&
-                          parsed.month == _reqFollowupDateFilter!.month &&
-                          parsed.day == _reqFollowupDateFilter!.day;
-                    }).toList();
-                  }
-                }
               } else if (_selectedFollowupSubTab == 'AllClients') {
                 selectedList = allClientsFollowups;
               } else {
                 selectedList = todayFollowups;
-                if (_reqFollowupDateFilter != null) {
-                  final filterDay = DateTime(
-                    _reqFollowupDateFilter!.year,
-                    _reqFollowupDateFilter!.month,
-                    _reqFollowupDateFilter!.day,
-                  );
-                  if (filterDay != todayDate) {
-                    selectedList = todayFollowups.where((f) {
-                      final parsed = DateTime.tryParse(f.followupDate);
-                      if (parsed == null) return false;
-                      return parsed.year == _reqFollowupDateFilter!.year &&
-                          parsed.month == _reqFollowupDateFilter!.month &&
-                          parsed.day == _reqFollowupDateFilter!.day;
-                    }).toList();
-                  }
-                }
               }
 
-              final filtered = selectedList;
+              final activeTabQuery = _getTabSearchQuery(_selectedFollowupSubTab);
+              final filtered = FollowupSyncEngine.filterBySearch(
+                items: selectedList,
+                query: activeTabQuery,
+                followupToReqMap: followupToReqMap,
+              );
 
               final totalCount = filtered.length;
               final totalPages = (totalCount / _followupsPerPage).ceil();
@@ -3932,10 +8307,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               final startIndex = (currentPage - 1) * _followupsPerPage;
               final endIndex = (startIndex + _followupsPerPage).clamp(0, totalCount);
 
-              final authState = context.watch<AuthBloc>().state;
-              final currentUser = authState is Authenticated ? authState.user : null;
               final isHighRole = currentUser != null &&
                   (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
+              final isAdminOrSuperAdmin = currentUser != null &&
+                  (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
+              final bool showSelectColumn = _selectedFollowupSubTab == 'AllClients' && isAdminOrSuperAdmin;
 
               final pageItems = (startIndex < totalCount)
                   ? filtered.sublist(startIndex, endIndex)
@@ -3965,6 +8341,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     setState(() {
                       _selectedFollowupSubTab = tabKey;
                       _currentFollowupPage = 1;
+                      if (tabKey == 'Today') {
+                        _reqFollowupDateFilter = DateTime.now();
+                      } else {
+                        _reqFollowupDateFilter = null;
+                      }
                     });
                   },
                   child: AnimatedContainer(
@@ -4011,6 +8392,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 );
               }
 
+              final bool isSiteVisitTab = _selectedMainFollowupSection == 'Site Visit Scheduled';
+              final todayLabel = isSiteVisitTab ? "Today's Site Visit Scheduled" : "Today's Follow-ups";
+              final dueLabel = isSiteVisitTab ? "Due Site Visit Scheduled" : "Due Follow-ups";
+              final futureLabel = isSiteVisitTab ? "Future Site Visit Scheduled" : "Future Follow-ups";
+              final allLabel = isSiteVisitTab ? "All Site Visit Scheduled" : "All clients follow ups";
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -4018,19 +8405,216 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        buildSubTabPill("Today's Follow-ups", "Today", todayFollowups.length, Icons.today_rounded),
+                        buildSubTabPill(todayLabel, "Today", todayFollowups.length, Icons.today_rounded),
                         const SizedBox(width: CRMSpacing.s),
-                        buildSubTabPill("Due Follow-ups", "Due", dueFollowups.length, Icons.warning_amber_rounded),
+                        buildSubTabPill(dueLabel, "Due", dueFollowups.length, Icons.warning_amber_rounded),
                         const SizedBox(width: CRMSpacing.s),
-                        buildSubTabPill("Future Follow-ups", "Future", futureFollowups.length, Icons.next_plan_rounded),
+                        buildSubTabPill(futureLabel, "Future", futureFollowups.length, Icons.next_plan_rounded),
                         const SizedBox(width: CRMSpacing.s),
-                        buildSubTabPill("All clients follow ups", "AllClients", allClientsFollowups.length, Icons.people_alt_rounded),
+                        buildSubTabPill(allLabel, "AllClients", allClientsFollowups.length, Icons.people_alt_rounded),
                       ],
                     ),
                   ),
                   const SizedBox(height: CRMSpacing.m),
+                  Builder(
+                    builder: (context) {
+                      final searchCtrl = _getTabSearchController(_selectedFollowupSubTab);
+                      final String currentSearchQuery = _getTabSearchQuery(_selectedFollowupSubTab);
+
+                      String tabDisplayName;
+                      if (_selectedFollowupSubTab == 'Today') {
+                        tabDisplayName = "today's";
+                      } else if (_selectedFollowupSubTab == 'Due') {
+                        tabDisplayName = "due";
+                      } else if (_selectedFollowupSubTab == 'Future') {
+                        tabDisplayName = "future";
+                      } else {
+                        tabDisplayName = "all";
+                      }
+
+                      final searchField = SizedBox(
+                        height: 38,
+                        child: TextField(
+                          controller: searchCtrl,
+                          onChanged: (val) {
+                            _tabSearchDebounce?.cancel();
+                            _tabSearchDebounce = Timer(const Duration(milliseconds: 200), () {
+                              if (!mounted) return;
+                              setState(() {
+                                final key = '${_selectedMainFollowupSection}_$_selectedFollowupSubTab';
+                                _tabSearchQueries[key] = val.trim().toLowerCase();
+                                _currentFollowupPage = 1;
+                              });
+                            });
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Search $tabDisplayName ${isSiteVisitTab ? "site visits" : "follow-ups"} by name, phone, requirement, config...',
+                            hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                            prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                            suffixIcon: currentSearchQuery.isNotEmpty || searchCtrl.text.isNotEmpty
+                                ? IconButton(
+                                    tooltip: 'Clear',
+                                    icon: const Icon(Icons.close_rounded, size: 16),
+                                    onPressed: () {
+                                      _tabSearchDebounce?.cancel();
+                                      searchCtrl.clear();
+                                      setState(() {
+                                        final key = '${_selectedMainFollowupSection}_$_selectedFollowupSubTab';
+                                        _tabSearchQueries[key] = '';
+                                        _currentFollowupPage = 1;
+                                      });
+                                    },
+                                  )
+                                : null,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                            ),
+                            filled: true,
+                            fillColor: CRMColors.cardBgOf(context),
+                          ),
+                        ),
+                      );
+
+                      if (!isAdminOrSuperAdmin) {
+                        return searchField;
+                      }
+
+                      final Set<String> dropdownOptionsSet = {'All Salespersons'};
+                      for (final sp in distinctSalespersons) {
+                        if (sp.isNotEmpty && sp != 'Unassigned' && sp != 'System') {
+                          dropdownOptionsSet.add(sp);
+                        }
+                      }
+                      for (final u in _assignUsers) {
+                        if (u.roleName == 'Sales' && u.fullName.trim().isNotEmpty) {
+                          dropdownOptionsSet.add(u.fullName.trim());
+                        }
+                      }
+                      final dropdownOptions = dropdownOptionsSet.toList()..sort((a, b) {
+                        if (a == 'All Salespersons') return -1;
+                        if (b == 'All Salespersons') return 1;
+                        return a.compareTo(b);
+                      });
+
+                      final currentDropdownValue = (_selectedSalespersonFilter != null && dropdownOptions.contains(_selectedSalespersonFilter))
+                          ? _selectedSalespersonFilter!
+                          : 'All Salespersons';
+
+                      final salespersonDropdown = Container(
+                        height: 38,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: CRMColors.cardBgOf(context),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: CRMColors.borderOf(context)),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: currentDropdownValue,
+                            icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: CRMColors.textSecondaryOf(context)),
+                            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontSize: 13),
+                            dropdownColor: CRMColors.cardBgOf(context),
+                            isDense: true,
+                            items: dropdownOptions.map((name) {
+                              final isAll = name == 'All Salespersons';
+                              return DropdownMenuItem<String>(
+                                value: name,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isAll ? Icons.people_outline_rounded : Icons.person_outline_rounded,
+                                      size: 15,
+                                      color: isAll ? CRMColors.textSecondaryOf(context) : CRMColors.primary,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      name,
+                                      style: TextStyle(
+                                        fontWeight: (name == currentDropdownValue) ? FontWeight.bold : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == null || val == 'All Salespersons') {
+                                  _selectedSalespersonFilter = null;
+                                } else {
+                                  _selectedSalespersonFilter = val;
+                                }
+                                _currentFollowupPage = 1;
+                              });
+                            },
+                          ),
+                        ),
+                      );
+
+                      return LayoutBuilder(
+                        builder: (context, constraints) {
+                          if (constraints.maxWidth < 650) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                searchField,
+                                const SizedBox(height: 8),
+                                salespersonDropdown,
+                              ],
+                            );
+                          }
+                          return Row(
+                            children: [
+                              Expanded(child: searchField),
+                              const SizedBox(width: 12),
+                              salespersonDropdown,
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  ),
+                  if (showSelectColumn && _selectedFollowupClientKeys.isNotEmpty) ...[
+                    const SizedBox(height: CRMSpacing.m),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: CRMColors.danger.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: CRMColors.danger.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${_selectedFollowupClientKeys.length} client(s) selected',
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: CRMColors.danger),
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: CRMColors.danger,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            ),
+                            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                            label: const Text('Delete Selected Clients'),
+                            onPressed: () => _confirmAndDeleteSelectedClients(pageItems, reqsList),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: CRMSpacing.m),
+                  ],
 
                   if (_selectedFollowupSubTab == 'Due' && dueFollowups.isNotEmpty) ...[
+                    const SizedBox(height: CRMSpacing.m),
                     Container(
                       padding: const EdgeInsets.all(CRMSpacing.m),
                       decoration: BoxDecoration(
@@ -4044,7 +8628,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           const SizedBox(width: CRMSpacing.s),
                           Expanded(
                             child: Text(
-                              '⚠️ Overdue Follow-up Reminder: You have ${dueFollowups.length} overdue follow-up(s)! Please contact these clients immediately to take action.',
+                              isSiteVisitTab
+                                   ? '⚠️ Overdue Site Visit Reminder: You have ${dueFollowups.length} overdue site visit(s)! Please follow up immediately.'
+                                  : '⚠️ Overdue Follow-up Reminder: You have ${dueFollowups.length} overdue follow-up(s)! Please contact these clients immediately to take action.',
                               style: CRMTypography.captionBold.copyWith(color: CRMColors.danger, fontSize: 12),
                             ),
                           ),
@@ -4059,11 +8645,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 32),
                       child: Center(
                         child: Text(
-                          _selectedFollowupSubTab == 'Due'
-                              ? 'No overdue follow-ups found.'
-                              : (_selectedFollowupSubTab == 'Future'
-                                  ? 'No future follow-ups scheduled.'
-                                  : (_reqFollowupDateFilter != null ? 'No follow-ups for $dateStr.' : 'No follow-ups for today.')),
+                          _selectedFollowupSubTab == 'AllClients' && _allClientsFollowupSearchQuery.isNotEmpty
+                              ? 'No matching clients found.'
+                              : (_selectedFollowupSubTab == 'Due'
+                                  ? (isSiteVisitTab ? 'No overdue site visits found.' : 'No overdue follow-ups found.')
+                                  : (_selectedFollowupSubTab == 'Future'
+                                      ? (isSiteVisitTab ? 'No future site visits scheduled.' : 'No future follow-ups scheduled.')
+                                      : (_selectedFollowupSubTab == 'AllClients'
+                                          ? (isSiteVisitTab ? 'No site visit clients found.' : 'No follow-up clients found.')
+                                          : (_reqFollowupDateFilter != null
+                                              ? (isSiteVisitTab ? 'No site visits for $dateStr.' : 'No follow-ups for $dateStr.')
+                                              : (isSiteVisitTab ? 'No site visits for today.' : 'No follow-ups for today.'))))),
                           style: TextStyle(color: CRMColors.textSecondaryOf(context)),
                         ),
                       ),
@@ -4079,6 +8671,25 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       dataRowMaxHeight: 72.0,
                       columnSpacing: 16.0,
                       columns: [
+                        if (showSelectColumn)
+                          DataColumn(
+                            label: Checkbox(
+                              value: pageItems.isNotEmpty && pageItems.every((f) => _selectedFollowupClientKeys.contains(_getFollowupClientKey(f))),
+                              onChanged: (val) {
+                                setState(() {
+                                  if (val == true) {
+                                    for (final f in pageItems) {
+                                      _selectedFollowupClientKeys.add(_getFollowupClientKey(f));
+                                    }
+                                  } else {
+                                    for (final f in pageItems) {
+                                      _selectedFollowupClientKeys.remove(_getFollowupClientKey(f));
+                                    }
+                                  }
+                                });
+                              },
+                            ),
+                          ),
                         const DataColumn(label: Text('Client Details')),
                         if (isHighRole) const DataColumn(label: Text('Added by')),
                         const DataColumn(label: Text('Requirement / Config')),
@@ -4087,29 +8698,95 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         const DataColumn(label: Text('Actions')),
                       ],
                       rows: pageItems.map((f) {
-                        final reqModel = reqsList.firstWhereOrNull((r) => r.id == f.requirementId);
+                        final reqModel = reqsList.firstWhereOrNull((r) =>
+                            (f.requirementId != null && f.requirementId!.isNotEmpty && r.id == f.requirementId) ||
+                            (f.mobile.isNotEmpty && r.clientMobile.replaceAll(RegExp(r'\D'), '') == f.mobile.replaceAll(RegExp(r'\D'), '')) ||
+                            (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
 
-                        final parsedDate = DateTime.tryParse(f.followupDate)?.toLocal();
+                        final parsedDate = _parseFollowupDateTime(f.followupDate);
                         final displayDate = parsedDate != null
                             ? DateFormat('dd/MM/yyyy hh:mm a').format(parsedDate)
                             : f.followupDate;
 
-                        final configText = reqModel != null
-                            ? '${reqModel.propertyTypeName} (${reqModel.configurationName ?? "-"})'
-                            : 'N/A';
+                        String configText = 'General Requirement';
+                        if (reqModel != null) {
+                          final config = (reqModel.configurationName ?? '').trim();
+                          final pType = (reqModel.propertyTypeName.isNotEmpty
+                                  ? reqModel.propertyTypeName
+                                  : (reqModel.categoryName.isNotEmpty ? reqModel.categoryName : ''))
+                              .trim();
+                          final listing = (reqModel.listingTypeName ?? '').trim();
+
+                          final List<String> parts = [];
+                          if (config.isNotEmpty && config != '-') parts.add(config);
+                          if (pType.isNotEmpty && pType != 'N/A') parts.add(pType);
+                          if (listing.isNotEmpty && listing != 'N/A') parts.add('($listing)');
+
+                          if (parts.isNotEmpty) {
+                            configText = parts.join(' ');
+                          } else if (reqModel.remarks != null && reqModel.remarks!.trim().isNotEmpty) {
+                            configText = reqModel.remarks!.trim();
+                          }
+                        } else if (f.propertyTitle != null && f.propertyTitle!.isNotEmpty) {
+                          configText = f.propertyTitle!;
+                        }
+
                         final budgetText = reqModel != null
                             ? '${BudgetFormatter.format(reqModel.minBudget)} - ${BudgetFormatter.format(reqModel.maxBudget)}'
                             : '';
-                        final areasText = reqModel != null && reqModel.areaNames.isNotEmpty
-                            ? reqModel.areaNames.join(', ')
-                            : 'Any Area';
+                        final areasText = reqModel?.displayAreasText ?? 'All Areas';
 
                         final tooltipMsg = reqModel != null
                             ? 'Client: ${f.clientName}\nRequirement: $configText\nBudget: $budgetText\nAreas: $areasText'
                             : 'Client: ${f.clientName}\nMobile: ${f.mobile}';
 
+                        String addedByName = 'N/A';
+                        if (f.salespersonName != null && f.salespersonName!.trim().isNotEmpty && f.salespersonName != 'System' && f.salespersonName != 'Unassigned') {
+                          addedByName = f.salespersonName!.trim();
+                        } else if (reqModel != null) {
+                          final salesman = _getSalesmanName(reqModel, currentUser);
+                          if (salesman.isNotEmpty && salesman != 'System' && salesman != 'N/A') {
+                            addedByName = salesman;
+                          }
+                        }
+                        if (addedByName == 'N/A' && f.creatorName != null && f.creatorName!.isNotEmpty && f.creatorName != 'System') {
+                          try {
+                            final usersState = context.read<UsersBloc>().state;
+                            if (usersState is UsersLoaded) {
+                              final match = usersState.users.firstWhereOrNull((u) => u.id == f.creatorName);
+                              if (match != null && match.fullName.isNotEmpty) {
+                                addedByName = match.fullName;
+                              }
+                            }
+                          } catch (_) {}
+                          if (addedByName == 'N/A') {
+                            addedByName = f.creatorName!;
+                          }
+                        }
+                        if (addedByName == 'N/A' || addedByName == 'System') {
+                          if (currentUser != null && currentUser.fullName.isNotEmpty) {
+                            addedByName = currentUser.fullName;
+                          }
+                        }
+
+                        final clientKey = _getFollowupClientKey(f);
                         return DataRow(
                           cells: [
+                            if (showSelectColumn)
+                              DataCell(
+                                Checkbox(
+                                  value: _selectedFollowupClientKeys.contains(clientKey),
+                                  onChanged: (val) {
+                                    setState(() {
+                                      if (val == true) {
+                                        _selectedFollowupClientKeys.add(clientKey);
+                                      } else {
+                                        _selectedFollowupClientKeys.remove(clientKey);
+                                      }
+                                    });
+                                  },
+                                ),
+                              ),
                             // 1. Client Details
                             DataCell(
                               SizedBox(
@@ -4175,8 +8852,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                           const SizedBox(width: 4),
                                           Expanded(
                                             child: Text(
-                                              f.creatorName ??
-                                                  (reqModel != null ? _getSalesmanName(reqModel, currentUser) : 'N/A'),
+                                              addedByName,
                                               style: CRMTypography.bodyMedium.copyWith(
                                                 fontWeight: FontWeight.bold,
                                                 color: CRMColors.textOf(context),
@@ -4223,27 +8899,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             // 3. Scheduled Date
                             if (_selectedFollowupSubTab != 'AllClients')
                               DataCell(
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: CRMColors.primary.withValues(alpha: 0.08),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: CRMColors.primary.withValues(alpha: 0.2)),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.access_time_rounded, size: 13, color: CRMColors.primary),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        displayDate,
-                                        style: TextStyle(
-                                          color: CRMColors.primary,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
-                                        ),
+                                InkWell(
+                                  onTap: () => _showEditFollowupDialog(context, f),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Tooltip(
+                                    message: 'Click to edit date & time',
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: CRMColors.primary.withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: CRMColors.primary.withValues(alpha: 0.2)),
                                       ),
-                                    ],
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.access_time_rounded, size: 13, color: CRMColors.primary),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            displayDate,
+                                            style: TextStyle(
+                                              color: CRMColors.primary,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Icon(Icons.edit_outlined, size: 12, color: CRMColors.primary.withValues(alpha: 0.7)),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -4253,9 +8938,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 SizedBox(
                                   width: 300,
                                   child: GestureDetector(
-                                    onTap: f.notes != null && f.notes!.trim().isNotEmpty
-                                        ? () => _showFollowupMessageDialog(context, f.clientName, f.notes!)
-                                        : null,
+                                    onTap: () => _showFollowupMessageDialog(context, f.clientName, f.notes ?? 'No notes noted', followup: f),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                       decoration: BoxDecoration(
@@ -4271,7 +8954,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                           const SizedBox(width: 6),
                                           Expanded(
                                             child: Text(
-                                              f.notes != null && f.notes!.trim().isNotEmpty ? f.notes! : 'No remarks noted',
+                                              f.notes != null && f.notes!.trim().isNotEmpty ? f.notes! : 'No notes noted',
                                               style: TextStyle(
                                                 color: f.notes != null && f.notes!.trim().isNotEmpty
                                                     ? CRMColors.textOf(context)
@@ -4282,8 +8965,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                          if (f.notes != null && f.notes!.trim().isNotEmpty)
-                                            Icon(Icons.open_in_full_rounded, size: 12, color: CRMColors.textMutedOf(context)),
+                                          const SizedBox(width: 4),
+                                          Icon(Icons.edit_calendar_rounded, size: 13, color: CRMColors.primary.withValues(alpha: 0.7)),
                                         ],
                                       ),
                                     ),
@@ -4310,31 +8993,66 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   void _showSharePropertiesDialog(RequirementModel req) {
+    final searchController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) {
-        List<PropertyModel> matchedProps = [];
-        List<String> selectedPropIds = [];
+        List<PropertyMatchResult> allMatches = [];
+        final Set<String> selectedPropIds = {};
         bool isInitLoading = true;
         bool isGeneratingLink = false;
         bool isSharingPdf = false;
         String? error;
         String? generatedLink;
+        String searchQuery = '';
+        int? minScoreFilter;
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
             Future<void> loadMatches() async {
               try {
-                final properties = await PropertiesRepository().getProperties();
-                final List<PropertyModel> matches = [];
-                for (final p in properties) {
-                  if (await _isRequirementPropertyMatchAsync(p, req)) {
-                    matches.add(p);
+                final List<PropertyMatchResult> results = [];
+
+                // 1. Authoritative Backend Matching
+                try {
+                  final serverResponse = await RequirementsRepository().getRequirementMatches(
+                    req.id,
+                    minScore: MatchCriteriaManager().threshold,
+                  );
+                  final data = serverResponse['data'] as Map<String, dynamic>? ?? {};
+                  final rawMatches = data['matches'] as List? ?? [];
+                  if (rawMatches.isNotEmpty || data.containsKey('matching_metadata')) {
+                    for (final item in rawMatches) {
+                      final pJson = item['property'] as Map<String, dynamic>? ?? {};
+                      final prop = PropertyModel.fromJson(pJson);
+                      if (!PropertyRequirementMatcher.isEligibleByCategoryAndType(prop, req)) continue;
+                      results.add(PropertyMatchResult.fromServerJson(item as Map<String, dynamic>, prop));
+                    }
+                  }
+                } catch (serverErr) {
+                  debugPrint("⚠️ [Share Dialog Backend Match Fallback] $serverErr");
+                }
+
+                // 2. Offline / Local fallback if backend returns empty or fails
+                if (results.isEmpty) {
+                  final properties = await PropertiesRepository().getProperties();
+                  for (final p in properties) {
+                    if (await _isRequirementPropertyMatchAsync(p, req)) {
+                      final res = PropertyRequirementMatcher.match(p, req);
+                      results.add(res);
+                    }
                   }
                 }
 
+                // 3. Strictly sort by match percentage descending (highest first)
+                results.sort((a, b) {
+                  final cmp = b.matchPercentage.compareTo(a.matchPercentage);
+                  if (cmp != 0) return cmp;
+                  return a.property.price.compareTo(b.property.price);
+                });
+
                 setDialogState(() {
-                  matchedProps = matches;
+                  allMatches = results;
                   isInitLoading = false;
                 });
               } catch (e) {
@@ -4396,7 +9114,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               final url = "https://wa.me/?text=$text";
                               final uri = Uri.parse(url);
                               if (await canLaunchUrl(uri)) {
-                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                await launchUrl(uri, mode: LaunchMode.externalApplication);
                               }
                             },
                           ),
@@ -4431,136 +9149,664 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               );
             }
 
+            // Compute filtered list based on search and min-score filter
+            final filteredMatches = allMatches.where((m) {
+              if (minScoreFilter != null && m.matchPercentage < minScoreFilter!) {
+                return false;
+              }
+              if (searchQuery.trim().isNotEmpty) {
+                final q = searchQuery.trim().toLowerCase();
+                final p = m.property;
+                final bhk = (p.configurationName ?? "${p.bedrooms} BHK").toLowerCase();
+                final area = p.areaName.toLowerCase();
+                final code = p.propertyCode.toLowerCase();
+                final title = p.title.toLowerCase();
+                final reasons = m.matchedCriteria.join(' ').toLowerCase();
+                final match = bhk.contains(q) || area.contains(q) || code.contains(q) || title.contains(q) || reasons.contains(q);
+                if (!match) return false;
+              }
+              return true;
+            }).toList();
+
+            Future<void> shareViaWhatsAppDirect() async {
+              setDialogState(() => isGeneratingLink = true);
+              try {
+                final response = await DioClient.dio.post(
+                  '/share-sessions',
+                  data: {
+                    'requirement_id': req.id,
+                    'property_ids': selectedPropIds.toList(),
+                    'expiry_days': 7
+                  },
+                );
+                if (response.data != null && response.data['success'] == true) {
+                  final sessionId = response.data['data']['session']['id'];
+                  final authState = context.read<AuthBloc>().state;
+                  String? currentAgentName;
+                  String? currentAgentMobile;
+                  if (authState is Authenticated) {
+                    currentAgentName = authState.user.fullName;
+                    currentAgentMobile = authState.user.mobile;
+                  }
+
+                  var link = "${AppConfig.publicShareBaseUrl}/$sessionId";
+                  final queryParams = <String>[];
+                  if (currentAgentName != null && currentAgentName.isNotEmpty) {
+                    queryParams.add("agentName=${Uri.encodeComponent(currentAgentName)}");
+                  }
+                  if (currentAgentMobile != null && currentAgentMobile.isNotEmpty) {
+                    queryParams.add("agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+                  }
+                  if (queryParams.isNotEmpty) {
+                    link += "?${queryParams.join('&')}";
+                  }
+
+                  final selectedItems = allMatches.where((m) => selectedPropIds.contains(m.property.id)).toList();
+                  final StringBuffer sb = StringBuffer();
+                  final clientGreeting = req.clientName.trim().isNotEmpty ? req.clientName.trim() : 'Sir/Madam';
+                  sb.writeln("Hello $clientGreeting,");
+                  sb.writeln("Here are the top matching properties curated for your requirement:");
+                  sb.writeln("");
+                  int counter = 1;
+                  for (final item in selectedItems) {
+                    final p = item.property;
+                    final bhk = p.configurationName ?? "${p.bedrooms} BHK";
+                    final price = '₹${BudgetFormatter.format(p.price)}';
+                    sb.writeln("$counter. *$bhk in ${p.areaName}* – $price (${item.matchPercentage}% Match) [${p.propertyCode}]");
+                    counter++;
+                  }
+                  sb.writeln("");
+                  sb.writeln("View photos, amenities & complete details here:\n$link");
+
+                  final phone = req.clientMobile;
+                  final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+                  String formattedPhone = cleanPhone;
+                  if (cleanPhone.length == 10) {
+                    formattedPhone = '91$cleanPhone';
+                  }
+
+                  final encodedMsg = Uri.encodeComponent(sb.toString());
+                  final nativeUrl = "whatsapp://send?phone=$formattedPhone&text=$encodedMsg";
+                  final nativeUri = Uri.parse(nativeUrl);
+
+                  if (await canLaunchUrl(nativeUri)) {
+                    await launchUrl(nativeUri, mode: LaunchMode.externalApplication);
+                  } else {
+                    final webUrl = "https://web.whatsapp.com/send?phone=$formattedPhone&text=$encodedMsg";
+                    final webUri = Uri.parse(webUrl);
+                    if (await canLaunchUrl(webUri)) {
+                      await launchUrl(webUri, mode: LaunchMode.externalApplication);
+                    } else {
+                      final fallbackUrl = "https://wa.me/$formattedPhone?text=$encodedMsg";
+                      final fallbackUri = Uri.parse(fallbackUrl);
+                      if (await canLaunchUrl(fallbackUri)) {
+                        await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
+                      }
+                    }
+                  }
+
+                  setDialogState(() {
+                    generatedLink = link;
+                    isGeneratingLink = false;
+                  });
+                } else {
+                  setDialogState(() {
+                    error = "Failed to create share session.";
+                    isGeneratingLink = false;
+                  });
+                }
+              } catch (e) {
+                setDialogState(() {
+                  error = "Failed to share via WhatsApp: $e";
+                  isGeneratingLink = false;
+                });
+              }
+            }
+
+            final double screenWidth = MediaQuery.of(context).size.width;
+            final double dialogWidth = (screenWidth < 560 ? (screenWidth - 32) : 500.0).clamp(280.0, 500.0);
+
             return Stack(
               children: [
                 AlertDialog(
                   backgroundColor: CRMColors.cardBgOf(context),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
-                  title: Text("Share Matching Properties", style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                  insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
+                  titlePadding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
+                  contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  title: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: CRMColors.primaryOf(context).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(Icons.share_rounded, size: 18, color: CRMColors.primaryOf(context)),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Share Matching Properties",
+                              style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontSize: 16),
+                            ),
+                            Text(
+                              "Ranked by Match Score • ${req.clientName.trim().isNotEmpty ? req.clientName : 'Client'}",
+                              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: (isGeneratingLink || isSharingPdf) ? null : () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
                   content: isInitLoading
-                      ? const SizedBox(
-                          height: 150,
-                          child: Center(child: CircularProgressIndicator()),
+                      ? SizedBox(
+                          height: 200,
+                          width: dialogWidth,
+                          child: const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(),
+                                SizedBox(height: 12),
+                                Text("Analyzing and ranking matches...", style: TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                          ),
                         )
                       : error != null
-                          ? Text(error!, style: const TextStyle(color: CRMColors.danger))
-                          : matchedProps.isEmpty
-                              ? const Text("No matching properties found for this requirement.")
+                          ? SizedBox(
+                              width: dialogWidth,
+                              height: 100,
+                              child: Center(child: Text(error!, style: const TextStyle(color: CRMColors.danger))),
+                            )
+                          : allMatches.isEmpty
+                              ? SizedBox(
+                                  width: dialogWidth,
+                                  height: 100,
+                                  child: const Center(child: Text("No matching properties found for this requirement.")),
+                                )
                               : SizedBox(
-                                  width: 400,
-                                  height: 300,
-                                  child: ListView.builder(
-                                    itemCount: matchedProps.length,
-                                    itemBuilder: (context, idx) {
-                                      final p = matchedProps[idx];
-                                      final isSelected = selectedPropIds.contains(p.id);
-                                      final bhk = p.configurationName ?? "${p.bedrooms} BHK";
-                                      final price = '₹${BudgetFormatter.format(p.price)}';
-                                      final title = "$bhk in ${p.areaName} - $price (${p.propertyCode})";
-
-                                      return CheckboxListTile(
-                                        title: Text(title, style: CRMTypography.body.copyWith(color: CRMColors.textOf(context))),
-                                        value: isSelected,
-                                        activeColor: CRMColors.primary,
-                                        onChanged: (isGeneratingLink || isSharingPdf) ? null : (val) {
+                                  width: dialogWidth,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      // Search Bar
+                                      TextField(
+                                        controller: searchController,
+                                        style: const TextStyle(fontSize: 13),
+                                        decoration: InputDecoration(
+                                          hintText: "Filter by locality, BHK, price, code...",
+                                          hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                                          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                                          suffixIcon: searchQuery.isNotEmpty
+                                              ? IconButton(
+                                                  icon: const Icon(Icons.clear_rounded, size: 16),
+                                                  onPressed: () {
+                                                    setDialogState(() {
+                                                      searchController.clear();
+                                                      searchQuery = '';
+                                                    });
+                                                  },
+                                                )
+                                              : null,
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: BorderSide(color: CRMColors.primaryOf(context)),
+                                          ),
+                                          filled: true,
+                                          fillColor: CRMColors.backgroundOf(context),
+                                        ),
+                                        onChanged: (val) {
                                           setDialogState(() {
-                                            if (val == true) {
-                                              selectedPropIds.add(p.id);
-                                            } else {
-                                              selectedPropIds.remove(p.id);
-                                            }
+                                            searchQuery = val;
                                           });
                                         },
-                                      );
-                                    },
+                                      ),
+                                      const SizedBox(height: 8),
+                                      // Filter Chips & Quick Selectors Bar (Responsive Wrap)
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 6,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        alignment: WrapAlignment.spaceBetween,
+                                        children: [
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 4,
+                                            crossAxisAlignment: WrapCrossAlignment.center,
+                                            children: [
+                                              // All filter
+                                              InkWell(
+                                                onTap: () => setDialogState(() => minScoreFilter = null),
+                                                borderRadius: BorderRadius.circular(12),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                  decoration: BoxDecoration(
+                                                    color: minScoreFilter == null
+                                                        ? CRMColors.primaryOf(context).withValues(alpha: 0.12)
+                                                        : CRMColors.backgroundOf(context),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(
+                                                      color: minScoreFilter == null
+                                                          ? CRMColors.primaryOf(context)
+                                                          : CRMColors.borderOf(context),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    "All (${allMatches.length})",
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: minScoreFilter == null ? FontWeight.w700 : FontWeight.w500,
+                                                      color: minScoreFilter == null ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              // 90%+ filter chip
+                                              if (allMatches.any((m) => m.matchPercentage >= 90))
+                                                InkWell(
+                                                  onTap: () => setDialogState(() => minScoreFilter = minScoreFilter == 90 ? null : 90),
+                                                  borderRadius: BorderRadius.circular(12),
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                    decoration: BoxDecoration(
+                                                      color: minScoreFilter == 90
+                                                          ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                                          : CRMColors.backgroundOf(context),
+                                                      borderRadius: BorderRadius.circular(12),
+                                                      border: Border.all(
+                                                        color: minScoreFilter == 90
+                                                            ? const Color(0xFF059669)
+                                                            : CRMColors.borderOf(context),
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      "90%+ (${allMatches.where((m) => m.matchPercentage >= 90).length})",
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: minScoreFilter == 90 ? FontWeight.w700 : FontWeight.w500,
+                                                        color: minScoreFilter == 90 ? const Color(0xFF059669) : CRMColors.textSecondaryOf(context),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 4,
+                                            crossAxisAlignment: WrapCrossAlignment.center,
+                                            children: [
+                                              // Top 3 quick button
+                                              InkWell(
+                                                onTap: filteredMatches.isEmpty ? null : () {
+                                                  setDialogState(() {
+                                                    selectedPropIds.clear();
+                                                    for (final m in filteredMatches.take(3)) {
+                                                      selectedPropIds.add(m.property.id);
+                                                    }
+                                                  });
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: CRMColors.surfaceElevatedOf(context),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: CRMColors.borderOf(context)),
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.bolt_rounded, size: 12, color: Color(0xFFD97706)),
+                                                      SizedBox(width: 2),
+                                                      Text("Top 3", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                              // Select / Deselect All
+                                              InkWell(
+                                                onTap: filteredMatches.isEmpty ? null : () {
+                                                  setDialogState(() {
+                                                    final allSel = filteredMatches.every((m) => selectedPropIds.contains(m.property.id));
+                                                    if (allSel) {
+                                                      for (final m in filteredMatches) {
+                                                        selectedPropIds.remove(m.property.id);
+                                                      }
+                                                    } else {
+                                                      for (final m in filteredMatches) {
+                                                        selectedPropIds.add(m.property.id);
+                                                      }
+                                                    }
+                                                  });
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: CRMColors.surfaceElevatedOf(context),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: CRMColors.borderOf(context)),
+                                                  ),
+                                                  child: Text(
+                                                    filteredMatches.every((m) => selectedPropIds.contains(m.property.id)) ? "Deselect" : "All",
+                                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      // Selected Counter strip
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: selectedPropIds.isNotEmpty
+                                              ? CRMColors.primary.withValues(alpha: 0.08)
+                                              : CRMColors.backgroundOf(context),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              selectedPropIds.isNotEmpty ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+                                              size: 13,
+                                              color: selectedPropIds.isNotEmpty ? CRMColors.primary : CRMColors.textSecondaryOf(context),
+                                            ),
+                                            const SizedBox(width: 5),
+                                            Text(
+                                              "${selectedPropIds.length} of ${filteredMatches.length} selected",
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: selectedPropIds.isNotEmpty ? CRMColors.primary : CRMColors.textSecondaryOf(context),
+                                              ),
+                                            ),
+                                            if (selectedPropIds.isNotEmpty) ...[
+                                              const Spacer(),
+                                              InkWell(
+                                                onTap: () => setDialogState(() => selectedPropIds.clear()),
+                                                child: const Text(
+                                                  "Clear",
+                                                  style: TextStyle(fontSize: 11, color: CRMColors.danger, fontWeight: FontWeight.w600),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      // List of prioritized matches
+                                      SizedBox(
+                                        height: 310,
+                                        child: filteredMatches.isEmpty
+                                            ? Center(
+                                                child: Text(
+                                                  searchQuery.isNotEmpty
+                                                      ? "No matches found matching '$searchQuery'"
+                                                      : "No properties meet the current filter.",
+                                                  style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                                                ),
+                                              )
+                                            : ListView.separated(
+                                                itemCount: filteredMatches.length,
+                                                separatorBuilder: (context, idx) => Divider(
+                                                  height: 1,
+                                                  color: CRMColors.borderOf(context).withValues(alpha: 0.4),
+                                                ),
+                                                itemBuilder: (context, idx) {
+                                                  final m = filteredMatches[idx];
+                                                  final p = m.property;
+                                                  final isSelected = selectedPropIds.contains(p.id);
+                                                  final bhk = p.configurationName ?? "${p.bedrooms} BHK";
+                                                  final price = '₹${BudgetFormatter.format(p.price)}';
+                                                  final area = p.areaName.isNotEmpty ? p.areaName : 'Ahmedabad';
+                                                  final score = m.matchPercentage;
+
+                                                  Color badgeBg;
+                                                  Color badgeText;
+                                                  if (score >= 90) {
+                                                    badgeBg = const Color(0xFF10B981).withValues(alpha: 0.14);
+                                                    badgeText = const Color(0xFF047857);
+                                                  } else if (score >= 75) {
+                                                    badgeBg = const Color(0xFF3B82F6).withValues(alpha: 0.14);
+                                                    badgeText = const Color(0xFF1D4ED8);
+                                                  } else {
+                                                    badgeBg = const Color(0xFFF59E0B).withValues(alpha: 0.14);
+                                                    badgeText = const Color(0xFFB45309);
+                                                  }
+
+                                                  return Material(
+                                                    color: isSelected
+                                                        ? CRMColors.primary.withValues(alpha: 0.06)
+                                                        : Colors.transparent,
+                                                    child: InkWell(
+                                                      onTap: (isGeneratingLink || isSharingPdf)
+                                                          ? null
+                                                          : () {
+                                                              setDialogState(() {
+                                                                if (isSelected) {
+                                                                  selectedPropIds.remove(p.id);
+                                                                } else {
+                                                                  selectedPropIds.add(p.id);
+                                                                }
+                                                              });
+                                                            },
+                                                      child: Padding(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                                        child: Row(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Padding(
+                                                              padding: const EdgeInsets.only(top: 2, right: 8),
+                                                              child: SizedBox(
+                                                                width: 18,
+                                                                height: 18,
+                                                                child: Checkbox(
+                                                                  value: isSelected,
+                                                                  activeColor: CRMColors.primary,
+                                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                                  onChanged: (isGeneratingLink || isSharingPdf)
+                                                                      ? null
+                                                                      : (val) {
+                                                                          setDialogState(() {
+                                                                            if (val == true) {
+                                                                              selectedPropIds.add(p.id);
+                                                                            } else {
+                                                                              selectedPropIds.remove(p.id);
+                                                                            }
+                                                                          });
+                                                                        },
+                                                                ),
+                                                             ),
+                                                            ),
+                                                            Expanded(
+                                                              child: Column(
+                                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                                children: [
+                                                                  Row(
+                                                                    children: [
+                                                                      Expanded(
+                                                                        child: Text(
+                                                                          "$bhk in $area",
+                                                                          style: TextStyle(
+                                                                            fontSize: 13,
+                                                                            fontWeight: FontWeight.w600,
+                                                                            color: CRMColors.textOf(context),
+                                                                          ),
+                                                                          maxLines: 1,
+                                                                          overflow: TextOverflow.ellipsis,
+                                                                        ),
+                                                                      ),
+                                                                      const SizedBox(width: 6),
+                                                                      Container(
+                                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                                                        decoration: BoxDecoration(
+                                                                          color: badgeBg,
+                                                                          borderRadius: BorderRadius.circular(10),
+                                                                          border: Border.all(color: badgeText.withValues(alpha: 0.25)),
+                                                                        ),
+                                                                        child: Row(
+                                                                          mainAxisSize: MainAxisSize.min,
+                                                                          children: [
+                                                                            Icon(Icons.verified_rounded, size: 10, color: badgeText),
+                                                                            const SizedBox(width: 2.5),
+                                                                            Text(
+                                                                              "$score% Match",
+                                                                              style: TextStyle(
+                                                                                fontSize: 10.5,
+                                                                                fontWeight: FontWeight.w700,
+                                                                                color: badgeText,
+                                                                              ),
+                                                                            ),
+                                                                          ],
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                  const SizedBox(height: 2),
+                                                                  Row(
+                                                                    children: [
+                                                                      Text(
+                                                                        price,
+                                                                        style: TextStyle(
+                                                                          fontSize: 12,
+                                                                          fontWeight: FontWeight.w700,
+                                                                          color: CRMColors.primaryOf(context),
+                                                                        ),
+                                                                      ),
+                                                                      if (p.propertyCode.isNotEmpty) ...[
+                                                                        const SizedBox(width: 5),
+                                                                        Text(
+                                                                          "(${p.propertyCode})",
+                                                                          style: TextStyle(
+                                                                            fontSize: 11,
+                                                                            color: CRMColors.textSecondaryOf(context),
+                                                                          ),
+                                                                        ),
+                                                                      ],
+                                                                      if (p.listingTypeName != null && p.listingTypeName!.isNotEmpty) ...[
+                                                                        const SizedBox(width: 5),
+                                                                        Container(
+                                                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                                          decoration: BoxDecoration(
+                                                                            color: CRMColors.backgroundOf(context),
+                                                                            borderRadius: BorderRadius.circular(3),
+                                                                            border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
+                                                                          ),
+                                                                          child: Text(
+                                                                            p.listingTypeName!,
+                                                                            style: TextStyle(
+                                                                              fontSize: 9.5,
+                                                                              color: CRMColors.textSecondaryOf(context),
+                                                                            ),
+                                                                          ),
+                                                                        ),
+                                                                      ],
+                                                                    ],
+                                                                  ),
+                                                                  if (m.matchedCriteria.isNotEmpty) ...[
+                                                                    const SizedBox(height: 3),
+                                                                    Wrap(
+                                                                      spacing: 4,
+                                                                      runSpacing: 2,
+                                                                      children: m.matchedCriteria.take(3).map((r) => Container(
+                                                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                                        decoration: BoxDecoration(
+                                                                          color: CRMColors.success.withValues(alpha: 0.08),
+                                                                          borderRadius: BorderRadius.circular(3),
+                                                                        ),
+                                                                        child: Text(
+                                                                          r,
+                                                                          style: const TextStyle(
+                                                                            fontSize: 9.5,
+                                                                            color: CRMColors.success,
+                                                                            fontWeight: FontWeight.w500,
+                                                                          ),
+                                                                          maxLines: 1,
+                                                                          overflow: TextOverflow.ellipsis,
+                                                                        ),
+                                                                      )).toList(),
+                                                                    ),
+                                                                  ],
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                  actionsAlignment: MainAxisAlignment.spaceBetween,
                   actions: [
                     TextButton(
                       onPressed: (isGeneratingLink || isSharingPdf) ? null : () => Navigator.pop(context),
                       child: const Text("Cancel"),
                     ),
-                    if (!isInitLoading && error == null && matchedProps.isNotEmpty)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+                    if (!isInitLoading && error == null && allMatches.isNotEmpty)
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        alignment: WrapAlignment.end,
                         children: [
-                          OutlinedButton(
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
+                            label: const Text("Share PDF", style: TextStyle(fontSize: 12)),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            ),
                             onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
                                 ? null
                                 : () async {
-                                    setDialogState(() => isSharingPdf = true);
-                                    try {
-                                      final selected = matchedProps
-                                          .where((p) => selectedPropIds.contains(p.id))
-                                          .toList();
-                                      final bytes = await PropertySharePdf.build(selected);
-                                      final fileName = selected.length == 1
-                                          ? PropertySharePdf.fileName(selected.first)
-                                          : 'Selected_Properties_Details.pdf';
-                                      
-                                      await FileDownloader.download(bytes, fileName);
-                                      
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              selected.length == 1
-                                                  ? 'Property PDF ready to share.'
-                                                  : 'Selected properties PDF ready to share.',
-                                            ),
-                                          ),
-                                        );
-                                      }
-
-                                      final phone = req.clientMobile;
-                                      final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
-                                      String formattedPhone = cleanPhone;
-                                      if (cleanPhone.length == 10) {
-                                        formattedPhone = '91$cleanPhone';
-                                      }
-
-                                      // Try launching native WhatsApp scheme first to open desktop/mobile app directly
-                                      final nativeUrl = "whatsapp://send?phone=$formattedPhone";
-                                      final nativeUri = Uri.parse(nativeUrl);
-                                      
-                                      if (await canLaunchUrl(nativeUri)) {
-                                        await launchUrl(nativeUri, mode: LaunchMode.externalApplication);
-                                      } else {
-                                        // Fallback to WhatsApp Web directly, which bypasses the landing page
-                                        final webUrl = "https://web.whatsapp.com/send?phone=$formattedPhone";
-                                        final webUri = Uri.parse(webUrl);
-                                        if (await canLaunchUrl(webUri)) {
-                                          await launchUrl(webUri, mode: LaunchMode.externalApplication);
-                                        } else {
-                                          // Last resort fallback
-                                          final fallbackUrl = "https://wa.me/$formattedPhone";
-                                          final fallbackUri = Uri.parse(fallbackUrl);
-                                          if (await canLaunchUrl(fallbackUri)) {
-                                            await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
-                                          }
-                                        }
-                                      }
-                                    } catch (e) {
-                                      debugPrint('Share PDF failed: $e');
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Failed to create property PDF.'),
-                                            backgroundColor: CRMColors.danger,
-                                          ),
-                                        );
-                                      }
-                                    } finally {
-                                      if (context.mounted) {
-                                        setDialogState(() => isSharingPdf = false);
-                                      }
-                                    }
+                                    final selected = allMatches
+                                        .where((m) => selectedPropIds.contains(m.property.id))
+                                        .map((m) => m.property)
+                                        .toList();
+                                    await PdfOptionSelectionDialog.show(
+                                      context,
+                                      properties: selected,
+                                      recipientPhone: req.clientMobile,
+                                    );
                                   },
-                            child: const Text("Share PDF"),
                           ),
-                          const SizedBox(width: CRMSpacing.s),
-                          ElevatedButton(
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.link_rounded, size: 15),
+                            label: const Text("Generate Link", style: TextStyle(fontSize: 12)),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            ),
                             onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
                                 ? null
                                 : () async {
@@ -4570,7 +9816,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                         '/share-sessions',
                                         data: {
                                           'requirement_id': req.id,
-                                          'property_ids': selectedPropIds,
+                                          'property_ids': selectedPropIds.toList(),
                                           'expiry_days': 7
                                         },
                                       );
@@ -4612,7 +9858,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                       });
                                     }
                                   },
-                            child: const Text("Generate Link"),
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: kWhatsAppGreen,
+                              foregroundColor: Colors.white,
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 15),
+                            label: const Text("Share on WhatsApp", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                            onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
+                                ? null
+                                : () => shareViaWhatsAppDirect(),
                           ),
                         ],
                       ),
@@ -4629,7 +9887,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             const CircularProgressIndicator(),
                             const SizedBox(height: CRMSpacing.s),
                             Text(
-                              isSharingPdf ? 'Preparing property PDF(s)...' : 'Generating link...',
+                              isSharingPdf ? 'Preparing property PDF(s)...' : 'Generating share link & message...',
                               style: CRMTypography.caption.copyWith(color: CRMColors.textOf(context)),
                             ),
                           ],
@@ -4642,428 +9900,26 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           },
         );
       },
-    );
+    ).then((_) => searchController.dispose());
   }
 
   void _showRequirementDetailDrawer(RequirementModel req) {
-    showCRMRequirementDrawer(context, req);
-  }
-
-
-
-  Widget _buildMyWonFiltersAndTable() {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 700;
-
-    final selectedCat = _metadata?.categories.firstWhereOrNull((c) => c.id == _wonCategoryId);
-    final isResidential = selectedCat?.name.toLowerCase().contains('residential') ?? false;
-
-    // Filtered types and configs for My Won
-    final filteredTypes = _metadata != null
-        ? _metadata!.types.where((t) => t.categoryId == _wonCategoryId).toList()
-        : <LookupItem>[];
-
-    final filteredConfigs = _metadata != null
-        ? _metadata!.configurations.where((c) {
-            final configName = c.name.toLowerCase();
-            if (isResidential) {
-              return !configName.contains('office') &&
-                  !configName.contains('shop') &&
-                  !configName.contains('showroom') &&
-                  !configName.contains('plot') &&
-                  !configName.contains('warehouse') &&
-                  !configName.contains('shed') &&
-                  !configName.contains('industrial');
-            }
-            return false;
-          }).toList()
-        : <LookupItem>[];
-
-    final filterCard = CRMCard(
-      child: Padding(
-        padding: const EdgeInsets.all(CRMSpacing.m),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Search field
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _wonSearchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search by client name, mobile, specs, remarks...',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
-                      filled: true,
-                      fillColor: CRMColors.background,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                        borderSide: BorderSide(color: CRMColors.border),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                        borderSide: BorderSide(color: CRMColors.border),
-                      ),
-                    ),
-                    onChanged: (val) {
-                      setState(() {});
-                    },
-                  ),
-                ),
-                const SizedBox(width: CRMSpacing.s),
-                CRMButton(
-                  label: "Search",
-                  onPressed: () {
-                    setState(() {});
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: CRMSpacing.m),
-
-            // Category dropdown filter and dependent configuration/type filters
-            Wrap(
-              spacing: CRMSpacing.m,
-              runSpacing: CRMSpacing.s,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                // Category dropdown filter
-                _buildDropdownFilter<String?>(
-                  label: 'Category',
-                  value: _wonCategoryId,
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text("All Categories")),
-                    ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
-                  ],
-                  isMobile: isMobile,
-                  onChanged: (val) {
-                    setState(() {
-                      _wonCategoryId = val;
-                      _wonPropertyTypeId = null;
-                      _wonConfigurationIds.clear();
-                      _currentPage = 1;
-                    });
-                  },
-                ),
-
-                // Category-dependent configuration or property type filters
-                if (_wonCategoryId != null) ...[
-                  if (isResidential)
-                    SizedBox(
-                      width: isMobile ? double.infinity : 200,
-                      child: CRMMultiSelectDropdown(
-                        label: 'BHK',
-                        selectedIds: _wonConfigurationIds,
-                        items: filteredConfigs,
-                        onChanged: (vals) {
-                          setState(() {
-                            _currentPage = 1;
-                          });
-                        },
-                      ),
-                    )
-                  else
-                    SizedBox(
-                      width: isMobile ? double.infinity : 200,
-                      child: _buildDropdownFilter<String?>(
-                        label: 'Property Type',
-                        value: _wonPropertyTypeId,
-                        items: [
-                          const DropdownMenuItem(value: null, child: Text("All Types")),
-                          ...filteredTypes.map((t) => DropdownMenuItem(value: t.id, child: Text(t.name))),
-                        ],
-                        isMobile: isMobile,
-                        onChanged: (val) {
-                          setState(() {
-                            _wonPropertyTypeId = val;
-                            _currentPage = 1;
-                          });
-                        },
-                      ),
-                    ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-
-    final table = BlocBuilder<RequirementsBloc, RequirementsState>(
-      builder: (context, state) {
-        final authState = context.read<AuthBloc>().state;
-        UserModel? currentUser;
-        if (authState is Authenticated) {
-          currentUser = authState.user;
-        }
-
-        final isLoading = state is RequirementsLoading || state is RequirementsInitial;
-        List<RequirementModel> requirements = [];
-
-        if (state is RequirementsLoaded) {
-          requirements = state.requirements.where((r) {
-            if (currentUser != null && currentUser.role == 'Sales') {
-              if (!_salesCanViewRequirement(r, currentUser)) {
-                return false;
-              }
-            }
-
-            final matchesListingType = getListingTypeLabel(r) == _activeListingTab;
-            
-            // Category filter
-            final matchesCategory = _wonCategoryId == null || r.categoryId == _wonCategoryId;
-
-            // Property Type filter
-            final matchesPropertyType = _wonPropertyTypeId == null || r.propertyTypeId == _wonPropertyTypeId;
-
-            // Configuration filter
-            final matchesConfig = _wonConfigurationIds.isEmpty ||
-                _wonConfigurationIds.contains(r.configurationId) ||
-                r.configurationIds.any((id) => _wonConfigurationIds.contains(id));
-
-            // Search query filter
-            bool matchesSearch = true;
-            final query = _wonSearchController.text.trim().toLowerCase();
-            if (query.isNotEmpty) {
-              final name = r.clientName.toLowerCase();
-              final mobile = r.clientMobile.toLowerCase();
-              final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
-              final remarks = (r.remarks ?? '').toLowerCase();
-              final areas = r.areaNames.join(' ').toLowerCase();
-              
-              bool matchesSalesman = false;
-              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
-                final creator = (r.creatorName ?? '').toLowerCase();
-                final assignee = (r.assigneeName ?? '').toLowerCase();
-                matchesSalesman = creator.contains(query) || assignee.contains(query);
-              }
-
-              matchesSearch = name.contains(query) ||
-                  mobile.contains(query) ||
-                  specs.contains(query) ||
-                  remarks.contains(query) ||
-                  areas.contains(query) ||
-                  matchesSalesman;
-            }
-
-            // Strictly filter for Won status
-            String mappedStatus = r.status;
-            if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
-            
-            final matchesStatus = mappedStatus == 'Won';
-
-            return matchesListingType && matchesStatus && matchesCategory && matchesPropertyType && matchesConfig && matchesSearch;
-          }).toList();
-          
-          requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        }
-
-        final totalCount = requirements.length;
-        final totalPages = (totalCount / _requirementsPerPage).ceil();
-        final currentPage = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);
-        final startIndex = (currentPage - 1) * _requirementsPerPage;
-        final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalCount);
-        final pageItems = (startIndex < totalCount) ? requirements.sublist(startIndex, endIndex) : <RequirementModel>[];
-
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final isMobileLayout = constraints.maxWidth < 700;
-
-            if (isMobileLayout) {
-              return _buildRequirementCards(pageItems, isLoading, currentUser, currentPage, totalPages, totalCount);
-            }
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                CRMDataTable(
-                  isLoading: isLoading,
-                  emptyTitle: 'No Won Requirements',
-                  emptyDescription: 'Requirements marked as "Won" will appear here.',
-                  dataRowMinHeight: 56.0,
-                  dataRowMaxHeight: 72.0,
-                  columnSpacing: 10.0,
-                  horizontalMargin: 12.0,
-                  columns: [
-                    const DataColumn(label: Text('Client')),
-                    if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
-                      const DataColumn(label: Text('Added By')),
-                    const DataColumn(label: Text('Assign to')),
-                    const DataColumn(label: Text('Specs / Config')),
-                    const DataColumn(label: Text('Budget Range')),
-                    const DataColumn(label: Text('Target Area(s)')),
-                    const DataColumn(label: Text('Status')),
-                    const DataColumn(label: Text('Matches')),
-                    const DataColumn(label: Text('Actions')),
-                  ],
-                  rows: pageItems.map((req) {
-                    return DataRow(
-                      cells: [
-                        DataCell(
-                          SizedBox(
-                            width: 135,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                GestureDetector(
-                                  onTap: () => _showRequirementDetailDrawer(req),
-                                  child: Text(
-                                    req.clientName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: CRMTypography.bodyMedium.copyWith(
-                                      color: CRMColors.primary,
-                                      fontWeight: FontWeight.bold,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  req.clientMobile,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Added: ${DateFormat('dd/MM/yyyy').format(req.createdAt)}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller'))
-                          DataCell(
-                            Text(
-                              _getSalesmanName(req, currentUser),
-                              style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        DataCell(
-                          currentUser != null && (currentUser.role == 'Super Admin' || currentUser.role == 'Admin' || currentUser.role == 'Telecaller')
-                              ? _buildAssignToDropdown(req)
-                              : _buildSalesAssignToLabel(req, currentUser),
-                        ),
-                        DataCell(_buildSpecsConfigCell(req)),
-                        DataCell(
-                          Text(
-                            '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}',
-                            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary),
-                          ),
-                        ),
-                        DataCell(_buildTargetAreasCell(req)),
-                        DataCell(
-                          _buildStatusControl(req, currentUser),
-                        ),
-
-                        DataCell(
-                          _RunMatchesButtonWithBadge(
-                            requirement: req,
-                            onPressed: () => _showMatchesDrawer(req),
-                            properties: _propertiesForMatches,
-                          ),
-                        ),
-                        DataCell(
-                          PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert_rounded),
-                            tooltip: 'More Actions',
-                            onSelected: (action) {
-                              if (action == 'add_another') {
-                                _showAddAnotherRequirementDialog(req);
-                              } else if (action == 'share') {
-                                _showSharePropertiesDialog(req);
-                              } else if (action == 'view_details') {
-                                _showRequirementDetailDrawer(req);
-                              } else if (action == 'edit') {
-                                _showAddEditDialog(req);
-                              } else if (action == 'delete') {
-                                _showDeleteConfirmDialog(req);
-                              } else if (action == 'upload_doc') {
-                                final isRent = req.listingTypeName?.toLowerCase().contains('rent') ?? false;
-                                context.go(
-                                  isRent ? '/rental-library' : '/resale-library',
-                                  extra: {
-                                    'autoOpenUpload': true,
-                                    'clientName': req.clientName,
-                                  },
-                                );
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(
-                                value: 'view_details',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.info_outline_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('View Details'),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'upload_doc',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.upload_file_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('Upload Document'),
-                                  ],
-                                ),
-                              ),
-                              if (_hasEditAccess(req, currentUser)) ...[
-                                const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.edit_outlined, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Edit'),
-                                    ],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
-                                      SizedBox(width: 8),
-                                      Text('Delete', style: TextStyle(color: CRMColors.danger)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: CRMSpacing.m),
-                _buildPagination(totalCount, totalPages, currentPage),
-              ],
-            );
-          },
-        );
+    AuditTelemetryService.instance.trackPropertyTouch(
+      propertyId: req.id,
+      propertyTitle: req.clientName,
+      touchType: 'lead_detail_view',
+      extra: {
+        'client_name': req.clientName,
+        'client_mobile': req.clientMobile,
+        'category': req.categoryName,
+        'areas': req.displayAreasText,
+        'min_budget': req.minBudget,
+        'max_budget': req.maxBudget,
       },
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        filterCard,
-        const SizedBox(height: CRMSpacing.l),
-        table,
-      ],
     );
   }
 }
+
 
 class RequirementStepperDialog extends StatefulWidget {
   final RequirementModel requirement;
@@ -5071,12 +9927,14 @@ class RequirementStepperDialog extends StatefulWidget {
   final VoidCallback onSaved;
   final bool updateStatusOnSave;
   final bool isSiteVisit;
+  final void Function(DateTime scheduledDate)? onSavedWithDate;
 
   const RequirementStepperDialog({
     super.key,
     required this.requirement,
     this.initialStep = 1,
     required this.onSaved,
+    this.onSavedWithDate,
     this.updateStatusOnSave = false,
     this.isSiteVisit = false,
   });
@@ -5091,18 +9949,15 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
   TimeOfDay _followupTime = TimeOfDay.now();
   final TextEditingController _remarksController = TextEditingController();
   bool _isSavingFollowup = false;
+  final Set<String> _completedFollowupIds = {};
+  final List<Map<String, dynamic>> _localAddedFollowups = [];
 
   @override
   void initState() {
     super.initState();
     _currentStep = widget.initialStep;
-    if (widget.requirement.nextFollowupDate != null) {
-      final parsed = DateTime.tryParse(widget.requirement.nextFollowupDate!)?.toLocal();
-      if (parsed != null) {
-        _followupDate = parsed;
-        _followupTime = TimeOfDay(hour: parsed.hour, minute: parsed.minute);
-      }
-    }
+    _followupDate = DateTime.now();
+    _followupTime = TimeOfDay.now();
   }
 
   @override
@@ -5129,28 +9984,138 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         _followupTime.hour,
         _followupTime.minute,
       );
+      final isoDateStr = scheduledDateTime.toUtc().toIso8601String();
 
       if (widget.isSiteVisit) {
-        await DioClient.dio.post('/site-visits', data: {
-          'requirement_id': widget.requirement.id,
-          'visit_date': scheduledDateTime.toIso8601String(),
-          'remarks': remarks,
-        });
-
-        if (widget.updateStatusOnSave) {
-          final RequirementsRepository requirementsRepository = RequirementsRepository();
-          await requirementsRepository.updateRequirement(
-            widget.requirement.copyWith(status: 'Site Visit'),
-          );
+        try {
+          await DioClient.dio.post('/site-visits', data: {
+            'requirement_id': widget.requirement.id,
+            'visit_date': isoDateStr,
+            'remarks': remarks,
+          });
+        } catch (e) {
+          debugPrint('⚠️ Site visit API error: $e');
         }
+
+        try {
+          await DioClient.dio.post('/followups', data: {
+            'client_name': widget.requirement.clientName,
+            'mobile': widget.requirement.clientMobile,
+            'notes': remarks,
+            'followup_date': isoDateStr,
+            'requirement_id': widget.requirement.id,
+            'status': 'Site Visit Scheduled',
+          });
+        } catch (e) {
+          debugPrint('⚠️ Site visit followup API error: $e');
+        }
+
+        try {
+          final authState = context.read<AuthBloc>().state;
+          final currentUser = authState is Authenticated ? authState.user : null;
+
+          final newFollowupLocal = FollowupLocal()
+            ..id = 'local_sv_${DateTime.now().millisecondsSinceEpoch}'
+            ..requirementId = widget.requirement.id
+            ..clientName = widget.requirement.clientName
+            ..mobile = widget.requirement.clientMobile
+            ..followupDate = scheduledDateTime
+            ..notes = remarks
+            ..status = 'Site Visit Scheduled'
+            ..createdBy = currentUser?.fullName ?? 'Propkart Admin'
+            ..createdAt = DateTime.now();
+
+          await RepositoryCoordinator().followupLocal.saveFollowups([newFollowupLocal]);
+        } catch (e) {
+          debugPrint('⚠️ Local site visit followup save error: $e');
+        }
+
+        final authState = context.read<AuthBloc>().state;
+        final currentUser = authState is Authenticated ? authState.user : null;
+
+        final Map<String, dynamic> nextCustomFields = Map<String, dynamic>.from(widget.requirement.metaCustomFields ?? {});
+        if (currentUser?.role == 'Sales') {
+          nextCustomFields['handled_by_sales'] = true;
+          if (!nextCustomFields.containsKey('telecaller_status')) {
+            nextCustomFields['telecaller_status'] = widget.requirement.status;
+          }
+          nextCustomFields['sales_handled_at'] = DateTime.now().toIso8601String();
+        }
+
+        final RequirementsRepository requirementsRepository = RequirementsRepository();
+        final updatedReq = widget.requirement.copyWith(
+          status: 'Site Visit',
+          nextFollowupDate: isoDateStr,
+          remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) ? widget.requirement.remarks : remarks,
+          metaCustomFields: nextCustomFields,
+        );
+        final saved = await requirementsRepository.updateLeadStatus(updatedReq);
+        final finalReq = saved.copyWith(
+          nextFollowupDate: (saved.nextFollowupDate != null && saved.nextFollowupDate!.isNotEmpty) ? saved.nextFollowupDate : isoDateStr,
+          remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty)
+              ? widget.requirement.remarks
+              : ((saved.remarks != null && saved.remarks!.isNotEmpty) ? saved.remarks : null),
+          createdBy: (saved.createdBy != null && saved.createdBy!.isNotEmpty) ? saved.createdBy : widget.requirement.createdBy,
+          creatorName: (saved.creatorName != null && saved.creatorName!.isNotEmpty) ? saved.creatorName : widget.requirement.creatorName,
+          assignedTo: (saved.assignedTo != null && saved.assignedTo!.isNotEmpty) ? saved.assignedTo : widget.requirement.assignedTo,
+          assigneeName: (saved.assigneeName != null && saved.assigneeName!.isNotEmpty) ? saved.assigneeName : widget.requirement.assigneeName,
+          metaCustomFields: nextCustomFields,
+        );
+        await RepositoryCoordinator().requirementLocal.saveRequirements([finalReq.toLocal()]);
+
+        RepositoryCoordinator().refreshDashboard();
+        RepositoryCoordinator().refreshRequirements();
       } else {
         await DioClient.dio.post('/followups', data: {
           'client_name': widget.requirement.clientName,
           'mobile': widget.requirement.clientMobile,
           'notes': remarks,
-          'followup_date': scheduledDateTime.toIso8601String(),
+          'followup_date': isoDateStr,
           'requirement_id': widget.requirement.id,
         });
+
+        _localAddedFollowups.add({
+          'id': 'local_${DateTime.now().millisecondsSinceEpoch}',
+          'requirement_id': widget.requirement.id,
+          'client_name': widget.requirement.clientName,
+          'mobile': widget.requirement.clientMobile,
+          'followup_date': isoDateStr,
+          'notes': remarks,
+          'status': 'Pending',
+          'creator_name': 'Propkart Admin',
+        });
+
+        try {
+          final authState = context.read<AuthBloc>().state;
+          final currentUser = authState is Authenticated ? authState.user : null;
+
+          final newFollowupLocal = FollowupLocal()
+            ..id = 'local_${DateTime.now().millisecondsSinceEpoch}'
+            ..requirementId = widget.requirement.id
+            ..clientName = widget.requirement.clientName
+            ..mobile = widget.requirement.clientMobile
+            ..followupDate = scheduledDateTime
+            ..notes = remarks
+            ..status = 'Pending'
+            ..createdBy = currentUser?.fullName ?? 'Propkart Admin'
+            ..createdAt = DateTime.now();
+
+          await RepositoryCoordinator().followupLocal.saveFollowups([newFollowupLocal]);
+        } catch (e) {
+          debugPrint('⚠️ Local followup save error: $e');
+        }
+
+        final authState = context.read<AuthBloc>().state;
+        final currentUser = authState is Authenticated ? authState.user : null;
+
+        final Map<String, dynamic> nextCustomFields = Map<String, dynamic>.from(widget.requirement.metaCustomFields ?? {});
+        if (currentUser?.role == 'Sales') {
+          nextCustomFields['handled_by_sales'] = true;
+          if (!nextCustomFields.containsKey('telecaller_status')) {
+            nextCustomFields['telecaller_status'] = widget.requirement.status;
+          }
+          nextCustomFields['sales_handled_at'] = DateTime.now().toIso8601String();
+        }
 
         final RequirementsRepository requirementsRepository = RequirementsRepository();
         final bool hasPreviousFollowup = widget.requirement.status == 'Follow-up' ||
@@ -5160,18 +10125,34 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
 
         final updatedReq = widget.requirement.copyWith(
           status: targetStatus,
-          nextFollowupDate: scheduledDateTime.toIso8601String(),
-          remarks: remarks,
+          nextFollowupDate: isoDateStr,
+          remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) ? widget.requirement.remarks : remarks,
+          metaCustomFields: nextCustomFields,
         );
-        await requirementsRepository.updateRequirement(updatedReq);
+        final saved = await requirementsRepository.updateLeadStatus(updatedReq);
+        final finalReq = saved.copyWith(
+          nextFollowupDate: (saved.nextFollowupDate != null && saved.nextFollowupDate!.isNotEmpty) ? saved.nextFollowupDate : isoDateStr,
+          remarks: (widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty)
+              ? widget.requirement.remarks
+              : ((saved.remarks != null && saved.remarks!.isNotEmpty) ? saved.remarks : null),
+          createdBy: (saved.createdBy != null && saved.createdBy!.isNotEmpty) ? saved.createdBy : widget.requirement.createdBy,
+          creatorName: (saved.creatorName != null && saved.creatorName!.isNotEmpty) ? saved.creatorName : widget.requirement.creatorName,
+          assignedTo: (saved.assignedTo != null && saved.assignedTo!.isNotEmpty) ? saved.assignedTo : widget.requirement.assignedTo,
+          assigneeName: (saved.assigneeName != null && saved.assigneeName!.isNotEmpty) ? saved.assigneeName : widget.requirement.assigneeName,
+          metaCustomFields: nextCustomFields,
+        );
+        await RepositoryCoordinator().requirementLocal.saveRequirements([finalReq.toLocal()]);
+
         RepositoryCoordinator().refreshDashboard();
         RepositoryCoordinator().refreshRequirements();
       }
 
       if (mounted) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        widget.onSavedWithDate?.call(scheduledDateTime);
         widget.onSaved();
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger?.showSnackBar(
           SnackBar(
             content: Text(widget.isSiteVisit ? 'Site visit scheduled successfully!' : 'Followup added successfully!'),
             backgroundColor: CRMColors.success,
@@ -5181,7 +10162,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
     } catch (e) {
       if (mounted) {
         setState(() => _isSavingFollowup = false);
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           SnackBar(
             content: Text(widget.isSiteVisit ? 'Failed to schedule site visit: $e' : 'Failed to add followup: $e'),
             backgroundColor: CRMColors.danger,
@@ -5191,50 +10172,141 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
     }
   }
 
-  DateTime? _parseFollowupDateTime(dynamic raw) {
-    if (raw == null) return null;
-    String str = raw.toString().trim();
-    if (str.isEmpty) return null;
 
-    if (!str.contains('Z') && !str.contains('+') && str.contains('T')) {
-      str += 'Z';
-    } else if (!str.contains('Z') && !str.contains('+') && str.contains(' ')) {
-      str = str.replaceFirst(' ', 'T') + 'Z';
-    }
-
-    final parsed = DateTime.tryParse(str);
-    if (parsed == null) return null;
-    return parsed.isUtc ? parsed.toLocal() : parsed;
-  }
 
   Future<List<Map<String, dynamic>>> _fetchClientPastFollowups() async {
     final List<Map<String, dynamic>> result = [];
-    try {
-      final response = await DioClient.dio.get('/followups', queryParameters: {
-        'requirement_id': widget.requirement.id,
-        'mobile': widget.requirement.clientMobile,
-      });
 
-      if (response.statusCode == 200 && response.data != null) {
-        final followupsData = response.data['data']?['followups'] as List?;
-        if (followupsData != null) {
-          for (final item in followupsData) {
-            result.add(Map<String, dynamic>.from(item as Map));
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('⚠️ Error fetching past followups API: $e');
+    bool isSiteVisitStatus(String statusStr) {
+      final s = statusStr.trim().toLowerCase();
+      return s.contains('site visit') || s.contains('sitevisit') || s == 'sv' || s.startsWith('site visit');
     }
 
-    // Combine with local requirement remarks if fallback is needed
-    if (result.isEmpty && widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty) {
-      result.add({
-        'followup_date': widget.requirement.nextFollowupDate ?? DateTime.now().toIso8601String(),
-        'notes': widget.requirement.remarks,
-        'status': widget.requirement.status,
-        'creator_name': 'Sales Executive',
-      });
+    if (widget.isSiteVisit) {
+      // 1. Fetch site visits API
+      try {
+        final response = await DioClient.dio.get('/site-visits', queryParameters: {
+          'requirement_id': widget.requirement.id,
+        });
+
+        if (response.statusCode == 200 && response.data != null) {
+          final svList = response.data['data']?['site_visits'] as List? ?? response.data['data'] as List?;
+          if (svList != null) {
+            for (final item in svList) {
+              final mapItem = Map<String, dynamic>.from(item as Map);
+              mapItem['status'] = mapItem['status'] ?? 'Site Visit Scheduled';
+              mapItem['followup_date'] = mapItem['visit_date'] ?? mapItem['followup_date'] ?? mapItem['created_at'];
+              mapItem['notes'] = mapItem['remarks'] ?? mapItem['notes'] ?? 'Site Visit';
+              result.add(mapItem);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error fetching site-visits API: $e');
+      }
+
+      // 2. Fetch followups API filtered to Site Visit status
+      try {
+        final response = await DioClient.dio.get('/followups', queryParameters: {
+          'requirement_id': widget.requirement.id,
+          'mobile': widget.requirement.clientMobile,
+        });
+
+        if (response.statusCode == 200 && response.data != null) {
+          final followupsData = response.data['data']?['followups'] as List?;
+          if (followupsData != null) {
+            for (final item in followupsData) {
+              final mapItem = Map<String, dynamic>.from(item as Map);
+              final st = (mapItem['status'] ?? '').toString();
+              if (isSiteVisitStatus(st)) {
+                final exists = result.any((r) => r['notes'] == mapItem['notes'] && r['followup_date'] == mapItem['followup_date']);
+                if (!exists) result.add(mapItem);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error fetching past followups API: $e');
+      }
+
+      // 3. Include local added site visit followups
+      final localFollowups = FollowupLocalRepository.inMemory.values
+          .where((fl) => fl.requirementId == widget.requirement.id && isSiteVisitStatus(fl.status))
+          .map((fl) => {
+                'id': fl.id,
+                'requirement_id': fl.requirementId,
+                'client_name': fl.clientName,
+                'mobile': fl.mobile,
+                'followup_date': fl.followupDate.toIso8601String(),
+                'notes': fl.notes,
+                'status': fl.status,
+                'creator_name': fl.createdBy,
+              });
+      for (final loc in localFollowups) {
+        final exists = result.any((r) => r['notes'] == loc['notes'] && r['followup_date'] == loc['followup_date']);
+        if (!exists) result.add(loc);
+      }
+    } else {
+      // Regular Follow-ups mode
+      try {
+        final response = await DioClient.dio.get('/followups', queryParameters: {
+          'requirement_id': widget.requirement.id,
+          'mobile': widget.requirement.clientMobile,
+        });
+
+        if (response.statusCode == 200 && response.data != null) {
+          final followupsData = response.data['data']?['followups'] as List?;
+          if (followupsData != null) {
+            for (final item in followupsData) {
+              final mapItem = Map<String, dynamic>.from(item as Map);
+              final st = (mapItem['status'] ?? '').toString();
+              // EXCLUDE Site Visit status in regular follow-ups history
+              if (!isSiteVisitStatus(st)) {
+                result.add(mapItem);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error fetching past followups API: $e');
+      }
+
+      // Include local added followups excluding site visits
+      for (final loc in _localAddedFollowups) {
+        final st = (loc['status'] ?? '').toString();
+        if (!isSiteVisitStatus(st)) {
+          final exists = result.any((r) => r['notes'] == loc['notes'] && r['followup_date'] == loc['followup_date']);
+          if (!exists) result.add(loc);
+        }
+      }
+
+      final localFollowups = FollowupLocalRepository.inMemory.values
+          .where((fl) => fl.requirementId == widget.requirement.id && !isSiteVisitStatus(fl.status))
+          .map((fl) => {
+                'id': fl.id,
+                'requirement_id': fl.requirementId,
+                'client_name': fl.clientName,
+                'mobile': fl.mobile,
+                'followup_date': fl.followupDate.toIso8601String(),
+                'notes': fl.notes,
+                'status': fl.status,
+                'creator_name': fl.createdBy,
+              });
+      for (final loc in localFollowups) {
+        final exists = result.any((r) => r['notes'] == loc['notes'] && r['followup_date'] == loc['followup_date']);
+        if (!exists) result.add(loc);
+      }
+
+      // Combine with local requirement remarks if fallback is needed
+      if (result.isEmpty && widget.requirement.remarks != null && widget.requirement.remarks!.isNotEmpty && !isSiteVisitStatus(widget.requirement.status)) {
+        result.add({
+          'id': 'fallback_${widget.requirement.id}',
+          'followup_date': widget.requirement.nextFollowupDate ?? DateTime.now().toIso8601String(),
+          'notes': widget.requirement.remarks,
+          'status': widget.requirement.status,
+          'creator_name': 'Sales Executive',
+        });
+      }
     }
 
     // Sort newest first
@@ -5275,7 +10347,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
             decoration: BoxDecoration(
               color: CRMColors.cardBgOf(context),
               borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-              border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.3)),
+              border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.3)),
             ),
             child: Text(
               'No past follow-ups recorded yet for ${widget.requirement.clientName}.',
@@ -5286,12 +10358,12 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         }
 
         return Container(
-          constraints: const BoxConstraints(maxHeight: 260),
+          constraints: const BoxConstraints(maxHeight: 320),
           margin: const EdgeInsets.only(bottom: CRMSpacing.m),
           decoration: BoxDecoration(
-            color: CRMColors.primary.withOpacity(0.02),
+            color: CRMColors.primary.withValues(alpha: 0.02),
             borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-            border: Border.all(color: CRMColors.primary.withOpacity(0.2), width: 1.2),
+            border: Border.all(color: CRMColors.primary.withValues(alpha: 0.2), width: 1.2),
           ),
           child: ListView.separated(
             shrinkWrap: true,
@@ -5300,6 +10372,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
             separatorBuilder: (_, __) => const SizedBox(height: CRMSpacing.xs),
             itemBuilder: (context, index) {
               final f = items[index];
+              final itemId = f['id']?.toString() ?? 'item_$index';
               final parsedDate = _parseFollowupDateTime(f['followup_date'] ?? f['created_at']);
               final formattedDate = parsedDate != null
                   ? DateFormat('dd/MM/yyyy hh:mm a').format(parsedDate)
@@ -5308,24 +10381,30 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
               final remarks = f['notes'] ?? f['remarks'] ?? 'No remarks recorded';
               final creatorName = f['creator_name'] ?? f['creator']?['full_name'] ?? 'Sales Executive';
               
-              // Follow-up is Pending if scheduled date/time is in the FUTURE (after current time)
-              // Follow-up automatically becomes Completed once scheduled date/time HAS PASSED
               final now = DateTime.now();
-              final bool isPending = parsedDate != null && parsedDate.isAfter(now);
-              final status = isPending ? 'Pending' : 'Completed';
+              String rawStatus = (f['status'] ?? '').toString();
+              bool isExplicitlyCompleted = _completedFollowupIds.contains(itemId) ||
+                  rawStatus == 'Completed' ||
+                  rawStatus == 'Done' ||
+                  rawStatus == 'Resolved';
+
+              final bool isFutureDate = parsedDate != null && parsedDate.isAfter(now);
+              final bool isCompleted = isExplicitlyCompleted;
+              final String status = (isFutureDate && !isCompleted) ? 'Pending' : (isCompleted ? 'Completed' : 'Pending');
 
               return Container(
                 padding: const EdgeInsets.all(CRMSpacing.s),
                 decoration: BoxDecoration(
                   color: CRMColors.cardBgOf(context),
                   borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                  border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.3)),
+                  border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.3)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
@@ -5340,23 +10419,78 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
                             ),
                           ],
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: (status == 'Pending' || status == 'Follow-up')
-                                ? CRMColors.warning.withOpacity(0.15)
-                                : CRMColors.success.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            status,
-                            style: CRMTypography.captionBold.copyWith(
-                              color: (status == 'Pending' || status == 'Follow-up')
-                                  ? CRMColors.warning
-                                  : CRMColors.success,
-                              fontSize: 10,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isCompleted
+                                    ? CRMColors.success.withValues(alpha: 0.15)
+                                    : CRMColors.warning.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                status,
+                                style: CRMTypography.captionBold.copyWith(
+                                  color: isCompleted
+                                      ? CRMColors.success
+                                      : CRMColors.warning,
+                                  fontSize: 10,
+                                ),
+                              ),
                             ),
-                          ),
+                            if (!isCompleted) ...[
+                              const SizedBox(height: 4),
+                              InkWell(
+                                onTap: () async {
+                                  setState(() {
+                                    f['status'] = 'Completed';
+                                    _completedFollowupIds.add(itemId);
+                                  });
+                                  try {
+                                    if (itemId.isNotEmpty && !itemId.startsWith('local_') && !itemId.startsWith('fallback_')) {
+                                      await DioClient.dio.put('/followups/$itemId', data: {'status': 'Completed'});
+                                    }
+                                  } catch (e) {
+                                    debugPrint('Error completing followup: $e');
+                                  }
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Followup marked as Completed!'),
+                                        backgroundColor: CRMColors.success,
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                },
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.success.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: CRMColors.success.withValues(alpha: 0.4)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.check_circle_rounded, size: 14, color: CRMColors.success),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        'Complete',
+                                        style: CRMTypography.captionBold.copyWith(
+                                          color: CRMColors.success,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
@@ -5479,10 +10613,12 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
                                 Expanded(
                                   child: InkWell(
                                     onTap: () async {
+                                      final now = DateTime.now();
+                                      final todayStart = DateTime(now.year, now.month, now.day);
                                       final picked = await showDatePicker(
                                         context: context,
-                                        initialDate: _followupDate,
-                                        firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                                        initialDate: _followupDate.isBefore(todayStart) ? todayStart : _followupDate,
+                                        firstDate: DateTime.now().subtract(const Duration(days: 30)),
                                         lastDate: DateTime(2030),
                                       );
                                       if (picked != null) {
@@ -5618,7 +10754,20 @@ class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> 
   @override
   void initState() {
     super.initState();
+    MatchCriteriaManager().addListener(_onCriteriaChanged);
     _computeCount();
+  }
+
+  void _onCriteriaChanged() {
+    if (mounted) {
+      _computeCount();
+    }
+  }
+
+  @override
+  void dispose() {
+    MatchCriteriaManager().removeListener(_onCriteriaChanged);
+    super.dispose();
   }
 
   @override
@@ -5680,6 +10829,49 @@ class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> 
       );
     }
 
+    if (widget.requirement.hasUnmappedArea) {
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          button,
+          Positioned(
+            top: widget.isMobileIconOnly ? -4 : -6,
+            right: widget.isMobileIconOnly ? -4 : -6,
+            child: Tooltip(
+              message: 'Locality is not mapped to CRM. Match engine cannot fetch properties.',
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: Text(
+                    '⚠️',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.bold,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     if (_matchCount == null) {
       return button;
     }
@@ -5726,8 +10918,14 @@ class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> 
 
 class _CRMPropertyMatchesDrawer extends StatefulWidget {
   final RequirementModel requirement;
+  final List<PropertyModel>? properties;
+  final void Function(RequirementModel req)? onEditRequirement;
 
-  const _CRMPropertyMatchesDrawer({required this.requirement});
+  const _CRMPropertyMatchesDrawer({
+    required this.requirement,
+    this.properties,
+    this.onEditRequirement,
+  });
 
   @override
   State<_CRMPropertyMatchesDrawer> createState() => _CRMPropertyMatchesDrawerState();
@@ -5737,7 +10935,17 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
   final PropertiesRepository _propertiesRepository = PropertiesRepository();
   bool _isLoading = true;
   List<PropertyModel> _matchedProperties = [];
+  Map<String, PropertyMatchResult> _matchResults = {};
   bool _includePhotos = true;
+  String? _unmappedError;
+  bool _isAutoMapping = false;
+
+  Color _getMatchScoreColor(int pct) {
+    if (pct >= 80) return const Color(0xFF10B981);
+    if (pct >= 60) return const Color(0xFF0F766E);
+    if (pct >= 40) return const Color(0xFF0288D1);
+    return const Color(0xFFD97706);
+  }
 
   Future<void> _shareProperty(PropertyModel p) async {
     final BHK = p.configurationName ?? "${p.bedrooms} BHK";
@@ -5828,20 +11036,148 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
     return _RequirementsScreenState._isRequirementPropertyMatchAsync(p, req);
   }
 
+  Future<void> _autoMapGotaAndVaishnodevi() async {
+    setState(() => _isAutoMapping = true);
+    try {
+      const gotaId = '7024abff-e4ff-4e19-a2f2-486cf13c7844';
+      const vaishnoId = 'a65fe177-6d11-48b9-9c4a-dabefebdd862';
+
+      await RequirementsRepository().updateRequirementFields(widget.requirement.id, {
+        'area_id': gotaId,
+        'area_ids': [gotaId, vaishnoId],
+        'meta_custom_fields': {
+          ...(widget.requirement.metaCustomFields ?? {}),
+          'match_engine_status': 'READY',
+        },
+      });
+
+      RequirementsRepository().invalidateCache();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFF0F766E),
+            content: Text('Requirement successfully mapped to Gota & Vaishnodevi! Re-running match engine...'),
+          ),
+        );
+        setState(() {
+          _isAutoMapping = false;
+          _unmappedError = null;
+          _isLoading = true;
+        });
+        _loadAndFilterMatches();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isAutoMapping = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red.shade700,
+            content: Text('Auto-map failed: $e'),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _loadAndFilterMatches() async {
     try {
-      final properties = await _propertiesRepository.getProperties();
       final req = widget.requirement;
+      final isWonReq = req.status.toLowerCase() == 'won' || req.status.toLowerCase() == 'closed';
 
-      final List<PropertyModel> matches = [];
+      if (isWonReq) {
+        final properties = await _propertiesRepository.getProperties();
+        List<String> wonIds = await PropertyDealClientStore.getWonPropertyIds(req.id);
+        String? wonClientName = await PropertyDealClientStore.getClientName(req.id);
+        final List<PropertyMatchResult> results = [];
+        for (final p in properties) {
+          final isWon = wonIds.contains(p.id) || (wonClientName != null && wonClientName.trim().toLowerCase() == req.clientName.trim().toLowerCase());
+          if (isWon) {
+            results.add(PropertyMatchResult(
+              property: p,
+              matchPercentage: 100,
+              matchedCriteria: ['✓ Finalized Deal Property'],
+            ));
+          }
+        }
+        setState(() {
+          _matchedProperties = results.map((r) => r.property).toList();
+          _matchResults = { for (var r in results) r.property.id: r };
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // 1. Authoritative Backend Matching, then local engine so valid
+      // Apartment / Flat-Apartment inventory is never dropped at the active threshold.
+      final Map<String, PropertyMatchResult> byId = {};
+      final threshold = MatchCriteriaManager().threshold;
+      try {
+        final serverResponse = await RequirementsRepository().getRequirementMatches(
+          req.id,
+          minScore: threshold,
+          limit: 200,
+        );
+        final data = serverResponse['data'] as Map<String, dynamic>? ?? {};
+        final rawMatches = data['matches'] as List? ?? [];
+        final metadata = data['matching_metadata'] as Map<String, dynamic>? ?? {};
+
+        if (metadata['status'] == 'UNMAPPED_LOCATION' || metadata['has_unmapped_area'] == true) {
+          setState(() {
+            _unmappedError = metadata['error']?.toString() ?? metadata['note']?.toString() ?? "Locality does not match any registered area in CRM.";
+            _matchedProperties = [];
+            _matchResults = {};
+            _isLoading = false;
+          });
+          return;
+        }
+
+        for (final item in rawMatches) {
+          if (item is! Map) continue;
+          final pJson = item['property'] as Map<String, dynamic>? ?? {};
+          final prop = PropertyModel.fromJson(pJson);
+          if (!PropertyRequirementMatcher.isEligibleByCategoryAndType(prop, req)) continue;
+          byId[prop.id] = PropertyMatchResult.fromServerJson(
+            Map<String, dynamic>.from(item),
+            prop,
+          );
+        }
+      } catch (serverErr) {
+        debugPrint("⚠️ [Backend Match Fallback] Falling back to local engine: $serverErr");
+      }
+
+      if (req.hasUnmappedArea) {
+        setState(() {
+          _unmappedError = "Locality does not match any registered area in CRM. Run match engine cannot fetch properties.";
+          _matchedProperties = [];
+          _matchResults = {};
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final properties = (widget.properties != null && widget.properties!.isNotEmpty)
+          ? widget.properties!
+          : await _propertiesRepository.getProperties();
       for (final p in properties) {
-        if (await _isRequirementPropertyMatchAsync(p, req)) {
-          matches.add(p);
+        final res = PropertyRequirementMatcher.match(p, req);
+        if (res.matchPercentage >= threshold) {
+          final existing = byId[p.id];
+          if (existing == null || res.matchPercentage >= existing.matchPercentage) {
+            byId[p.id] = res;
+          }
         }
       }
 
+      final results = byId.values.toList()
+        ..sort((a, b) {
+          final cmp = b.matchPercentage.compareTo(a.matchPercentage);
+          if (cmp != 0) return cmp;
+          return a.property.price.compareTo(b.property.price);
+        });
+
       setState(() {
-        _matchedProperties = matches;
+        _matchedProperties = results.map((r) => r.property).toList();
+        _matchResults = { for (var r in results) r.property.id: r };
         _isLoading = false;
       });
     } catch (e) {
@@ -5887,11 +11223,106 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
           Text(
             isWonReq
                 ? "Property selected and finalized for client deal: ${widget.requirement.clientName}"
-                : "Showing properties that match criteria: ${widget.requirement.configurationName ?? '-'} ${widget.requirement.propertyTypeName} in ${widget.requirement.areaNames.isNotEmpty ? widget.requirement.areaNames.join(', ') : 'Any Area'}",
+                : "Showing ${_matchedProperties.length} matching properties for ${widget.requirement.clientName} (≥${MatchCriteriaManager().threshold}% match criteria)",
             style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
+          if (!isWonReq && (widget.requirement.hasUnmappedArea || _unmappedError != null))
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 4),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFF59E0B)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Match Engine Notice: Unmapped Locality Detail',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF92400E),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _unmappedError ??
+                        'The locality "${widget.requirement.areaNames.isNotEmpty ? widget.requirement.areaNames.join(', ') : 'Unmapped'}" does not match any registered area in CRM. Run match engine is not able to fetch properties without a valid area.',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      if (widget.requirement.areaNames.any((a) => a.toLowerCase().contains('both')))
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFD97706),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          icon: _isAutoMapping
+                              ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.bolt_rounded, size: 16),
+                          label: const Text('⚡ Auto-Map to Gota & Vaishnodevi'),
+                          onPressed: _isAutoMapping ? null : _autoMapGotaAndVaishnodevi,
+                        ),
+                      if (widget.onEditRequirement != null)
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF92400E),
+                            side: const BorderSide(color: Color(0xFFD97706)),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                          icon: const Icon(Icons.edit_location_alt_rounded, size: 16),
+                          label: const Text('Edit Requirement Areas'),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            widget.onEditRequirement!(widget.requirement);
+                          },
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          if (!isWonReq && PropertyRequirementMatcher.isAllAreas(widget.requirement))
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F766E).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.location_on_outlined, size: 15, color: Color(0xFF0F766E)),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Client is interested in All Areas. All matching configurations and price ranges across the city are included.',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF0F766E)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: CRMSpacing.s),
           if (isWonReq)
             Container(
@@ -5941,11 +11372,30 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
               padding: const EdgeInsets.symmetric(vertical: 40.0),
               child: Column(
                 children: [
-                  Icon(Icons.search_off_rounded, size: 48, color: CRMColors.textMuted),
+                  Icon(
+                    (widget.requirement.hasUnmappedArea || _unmappedError != null)
+                        ? Icons.wrong_location_rounded
+                        : Icons.search_off_rounded,
+                    size: 48,
+                    color: (widget.requirement.hasUnmappedArea || _unmappedError != null)
+                        ? const Color(0xFFD97706)
+                        : CRMColors.textMuted,
+                  ),
                   const SizedBox(height: CRMSpacing.s),
-                  Text("No Active Matches Found", style: CRMTypography.cardTitle),
+                  Text(
+                    (widget.requirement.hasUnmappedArea || _unmappedError != null)
+                        ? "Match Engine Unable to Fetch Properties"
+                        : "No Active Matches Found",
+                    style: CRMTypography.cardTitle,
+                  ),
                   const SizedBox(height: 4),
-                  Text("No database properties currently fit these filters.", style: CRMTypography.body.copyWith(color: CRMColors.textSecondary)),
+                  Text(
+                    (widget.requirement.hasUnmappedArea || _unmappedError != null)
+                        ? "Locality detail is not mapped to CRM. Please assign valid CRM areas above to find matching properties."
+                        : "No database properties currently fit these filters.",
+                    textAlign: TextAlign.center,
+                    style: CRMTypography.body.copyWith(color: CRMColors.textSecondary),
+                  ),
                 ],
               ),
             )
@@ -5976,37 +11426,51 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                               spacing: 8,
                               children: [
                                 Text(p.title, style: CRMTypography.bodyMedium),
-                                if (isWonReq) ...[
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                Builder(builder: (context) {
+                                  final matchRes = _matchResults[p.id];
+                                  final matchPct = matchRes?.matchPercentage ?? 0;
+                                  if (isWonReq) {
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: CRMColors.success.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: CRMColors.success.withValues(alpha: 0.4)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.check_circle_rounded, size: 12, color: CRMColors.success),
+                                          const SizedBox(width: 4),
+                                          Text('Won Deal Property', style: CRMTypography.caption.copyWith(color: CRMColors.success, fontWeight: FontWeight.bold, fontSize: 10)),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                                     decoration: BoxDecoration(
-                                      color: CRMColors.success.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: CRMColors.success.withValues(alpha: 0.4)),
+                                      color: _getMatchScoreColor(matchPct).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: _getMatchScoreColor(matchPct).withValues(alpha: 0.45)),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.check_circle_rounded, size: 12, color: CRMColors.success),
+                                        Icon(Icons.auto_awesome_rounded, size: 12, color: _getMatchScoreColor(matchPct)),
                                         const SizedBox(width: 4),
-                                        Text('Won Deal Property', style: CRMTypography.caption.copyWith(color: CRMColors.success, fontWeight: FontWeight.bold, fontSize: 10)),
+                                        Text(
+                                          '$matchPct% Match',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: _getMatchScoreColor(matchPct),
+                                          ),
+                                        ),
                                       ],
                                     ),
-                                  ),
-                                  if (!isWonReq && p.propertyStatusName.toLowerCase() == 'available')
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: CRMColors.info.withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: CRMColors.info.withValues(alpha: 0.4)),
-                                      ),
-                                      child: Text(
-                                        'Available',
-                                        style: CRMTypography.caption.copyWith(color: CRMColors.info, fontWeight: FontWeight.bold, fontSize: 10),
-                                      ),
-                                    ),
-                                ],
+                                  );
+                                }),
                               ],
                             ),
                           ),
@@ -6019,6 +11483,48 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Builder(builder: (context) {
+                            final matchRes = _matchResults[p.id];
+                            if (matchRes == null || isWonReq) {
+                              return const SizedBox.shrink();
+                            }
+                            final hasTags = matchRes.matchedCriteria.isNotEmpty || matchRes.unmatchedPreferences.isNotEmpty;
+                            if (!hasTags) return const SizedBox.shrink();
+
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 5, bottom: 4),
+                              child: Wrap(
+                                spacing: 5,
+                                runSpacing: 4,
+                                children: [
+                                  ...matchRes.matchedCriteria.map((tag) => Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: CRMColors.success.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: CRMColors.success.withValues(alpha: 0.3)),
+                                    ),
+                                    child: Text(
+                                      tag,
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: CRMColors.success),
+                                    ),
+                                  )),
+                                  ...matchRes.unmatchedPreferences.map((tag) => Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.3)),
+                                    ),
+                                    child: Text(
+                                      '~ $tag',
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFFD97706)),
+                                    ),
+                                  )),
+                                ],
+                              ),
+                            );
+                          }),
                           if (!isWonReq && p.propertyStatusName.toLowerCase() == 'available')
                             Padding(
                               padding: const EdgeInsets.only(top: 4, bottom: 4),
@@ -6168,7 +11674,24 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
   }
 }
 
+String getEffectiveStatus(RequirementModel req) {
+  String status = req.status;
+  if (status == 'New' || status.isEmpty) {
+    final now = DateTime.now();
+    final difference = now.difference(req.createdAt);
+    if (difference >= const Duration(hours: 24)) {
+      return 'Not Started';
+    }
+    return 'New';
+  }
+  return status;
+}
+
 String displayStatusLabel(String status) {
+  if (status == 'Assigned') return 'Assigned';
+  if (status == 'New') return 'New';
+  if (status == 'Not Started') return 'Not Started';
+  if (status == 'Not Interested') return 'Not Interested';
   if (status == 'Live' || status == 'Active') return 'Interested';
   if (status == 'Dead' || status == 'Suspended') return 'Not Interested';
   if (status == 'Re-Followup') return 'Re-Followup';
@@ -6188,6 +11711,20 @@ String getListingTypeLabel(RequirementModel r) {
 }
 
 void showCRMRequirementDrawer(BuildContext context, RequirementModel req) {
+  AuditTelemetryService.instance.trackButtonClick(
+    buttonId: 'lead_detail_drawer_open',
+    buttonLabel: 'View Lead Details',
+    page: '/requirements',
+    extra: {
+      'lead_id': req.id,
+      'client_name': req.clientName,
+      'client_mobile': req.clientMobile,
+      'category': req.categoryName,
+      'areas': req.displayAreasText,
+      'min_budget': req.minBudget,
+      'max_budget': req.maxBudget,
+    },
+  );
   showDialog(
     context: context,
     barrierDismissible: true,
@@ -6538,10 +12075,14 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                             color: CRMColors.textSecondaryOf(context),
                                           ),
                                         ),
+                                        if (req.matchingReadiness != 'Ready') ...[
+                                          const SizedBox(height: CRMSpacing.xs),
+                                          _buildNeedsMoreDetailsBadge(req),
+                                        ],
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
                                         _buildDetailRow("Date", DateFormat('dd/MM/yyyy').format(req.createdAt), Icons.calendar_today_rounded),
-                                        _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
+                                        ..._buildLeadPipelineDetailRows(req),
                                         _buildChipDetailRow(
                                           "Specs",
                                           Icons.business_rounded,
@@ -6551,17 +12092,68 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         _buildChipDetailRow(
                                           "Target Areas",
                                           Icons.location_on_rounded,
-                                          req.areaNames,
-                                          emptyLabel: "Any Area",
+                                          req.isAllAreas ? const ['All Areas'] : req.areaNames,
+                                          emptyLabel: "All Areas",
                                         ),
                                         if (furnishingName.isNotEmpty)
                                           _buildDetailRow("Furnishing", furnishingName, Icons.chair_rounded),
                                         if (facingName.isNotEmpty)
                                           _buildDetailRow("Facing", facingName, Icons.explore_rounded),
+                                        Builder(
+                                          builder: (context) {
+                                            final telecallerRemarks = getTelecallerRemarks(req);
+                                            if (telecallerRemarks == null || telecallerRemarks.isEmpty) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final isDark = Theme.of(context).brightness == Brightness.dark;
+                                            return Padding(
+                                              padding: const EdgeInsets.only(top: 12),
+                                              child: Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.all(12),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF0F766E).withValues(alpha: 0.08),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.25)),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Row(
+                                                      children: [
+                                                        Icon(Icons.speaker_notes_rounded, size: 15, color: Color(0xFF0F766E)),
+                                                        SizedBox(width: 6),
+                                                        Text(
+                                                          'Telecaller Key Points / Remarks',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Color(0xFF0F766E),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    SelectableText(
+                                                      telecallerRemarks,
+                                                      style: TextStyle(
+                                                        fontSize: 12.5,
+                                                        color: isDark ? Colors.grey.shade200 : const Color(0xFF1E293B),
+                                                        height: 1.4,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
                                       ],
                                     ),
                                   ),
                                 ),
+                                if (req.isMetaLead)
+                                  _buildMetaAttributionCard(req),
                                 const SizedBox(height: CRMSpacing.l),
                                 if (!_isLoading && _error == null) ...[
                                   Row(
@@ -6621,10 +12213,14 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                             color: CRMColors.textSecondaryOf(context),
                                           ),
                                         ),
+                                        if (req.matchingReadiness != 'Ready') ...[
+                                          const SizedBox(height: CRMSpacing.xs),
+                                          _buildNeedsMoreDetailsBadge(req),
+                                        ],
                                         const Divider(height: 24),
                                         _buildDetailRow("Code", req.requirementCode, Icons.qr_code_rounded),
                                         _buildDetailRow("Date", DateFormat('dd/MM/yyyy').format(req.createdAt), Icons.calendar_today_rounded),
-                                        _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
+                                        ..._buildLeadPipelineDetailRows(req),
                                         _buildChipDetailRow(
                                           "Specs",
                                           Icons.business_rounded,
@@ -6634,17 +12230,68 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                         _buildChipDetailRow(
                                           "Target Areas",
                                           Icons.location_on_rounded,
-                                          req.areaNames,
-                                          emptyLabel: "Any Area",
+                                          req.isAllAreas ? const ['All Areas'] : req.areaNames,
+                                          emptyLabel: "All Areas",
                                         ),
                                         if (furnishingName.isNotEmpty)
                                           _buildDetailRow("Furnishing", furnishingName, Icons.chair_rounded),
                                         if (facingName.isNotEmpty)
                                           _buildDetailRow("Facing", facingName, Icons.explore_rounded),
+                                        Builder(
+                                          builder: (context) {
+                                            final telecallerRemarks = getTelecallerRemarks(req);
+                                            if (telecallerRemarks == null || telecallerRemarks.isEmpty) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final isDark = Theme.of(context).brightness == Brightness.dark;
+                                            return Padding(
+                                              padding: const EdgeInsets.only(top: 12),
+                                              child: Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.all(12),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF0F766E).withValues(alpha: 0.08),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.25)),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Row(
+                                                      children: [
+                                                        Icon(Icons.speaker_notes_rounded, size: 15, color: Color(0xFF0F766E)),
+                                                        SizedBox(width: 6),
+                                                        Text(
+                                                          'Telecaller Key Points / Remarks',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Color(0xFF0F766E),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    SelectableText(
+                                                      telecallerRemarks,
+                                                      style: TextStyle(
+                                                        fontSize: 12.5,
+                                                        color: isDark ? Colors.grey.shade200 : const Color(0xFF1E293B),
+                                                        height: 1.4,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
                                       ],
                                     ),
                                   ),
                                 ),
+                                if (req.isMetaLead)
+                                  _buildMetaAttributionCard(req),
                                 const SizedBox(height: CRMSpacing.l),
                                 if (!_isLoading && _error == null) ...[
                                   Row(
@@ -6681,6 +12328,108 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
     ),
   );
 }
+
+  Widget _buildMetaAttributionCard(RequirementModel req) {
+    if (!req.isMetaLead) return const SizedBox.shrink();
+    final customFields = req.metaCustomFields ?? {};
+
+    return Container(
+      margin: const EdgeInsets.only(top: CRMSpacing.m),
+      padding: const EdgeInsets.all(CRMSpacing.m),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1877F2).withOpacity(0.05),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+        border: Border.all(color: const Color(0xFF1877F2).withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.campaign_rounded, size: 16, color: Color(0xFF1877F2)),
+              const SizedBox(width: 6),
+              Text(
+                "Meta Ads Attribution",
+                style: CRMTypography.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF1877F2),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1877F2).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  req.leadQuality ?? "Pending",
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1877F2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 16),
+          _buildDetailRow("Campaign", req.metaCampaignName ?? req.metaCampaignId ?? "N/A", Icons.folder_special_outlined),
+          if (req.metaAdName != null || req.metaAdId != null)
+            _buildDetailRow("Ad", req.metaAdName ?? req.metaAdId ?? "N/A", Icons.ad_units_outlined),
+          if (req.metaAdsetName != null || req.metaAdsetId != null)
+            _buildDetailRow("AdSet", req.metaAdsetName ?? req.metaAdsetId ?? "N/A", Icons.layers_outlined),
+          _buildDetailRow("Meta Lead ID", req.metaLeadId ?? "N/A", Icons.fingerprint_rounded),
+          if (req.metaFormId != null)
+            _buildDetailRow("Form ID", req.metaFormId!, Icons.assignment_outlined),
+          if (customFields.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              "Form Responses:",
+              style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
+            ),
+            const SizedBox(height: 4),
+            ...customFields.entries.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 4.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "• ${e.key.replaceAll('_', ' ')}: ",
+                    style: CRMTypography.caption.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  Expanded(
+                    child: Text(
+                      "${e.value}",
+                      style: CRMTypography.caption.copyWith(color: CRMColors.textOf(context)),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildLeadPipelineDetailRows(RequirementModel req) {
+    final assignee = (req.assigneeName ?? '').trim().isNotEmpty
+        ? req.assigneeName!.trim()
+        : 'Unassigned';
+    final parsedFu = _parseFollowupDateTime(req.nextFollowupDate);
+    final followup = parsedFu != null
+        ? DateFormat('dd/MM/yyyy').format(parsedFu)
+        : ((req.nextFollowupDate ?? '').trim().isNotEmpty
+            ? req.nextFollowupDate!.trim()
+            : '—');
+    return [
+      _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
+      _buildDetailRow("Status", displayStatusLabel(req.status), Icons.flag_outlined),
+      _buildDetailRow("Assigned To", assignee, Icons.person_outline_rounded),
+      _buildDetailRow("Follow-up", followup, Icons.event_rounded),
+    ];
+  }
 
   Widget _buildDetailRow(String label, String value, IconData icon) {
     return Padding(
@@ -6871,87 +12620,7 @@ class _RequirementWinPropertySelectionDialogState
   }
 
   bool _isRequirementPropertyMatch(PropertyModel p, RequirementModel req) {
-    final statusName = p.propertyStatusName.toLowerCase();
-    final statusActive = statusName == 'available' || statusName.contains('available') || statusName.isEmpty;
-    if (!statusActive) return false;
-
-    final reqListing = (req.listingTypeName ?? '').toLowerCase();
-    final propListing = (p.listingTypeName).toLowerCase();
-    bool listingTypeMatch = true;
-    if (reqListing.isNotEmpty && propListing.isNotEmpty) {
-      final isReqRent = reqListing.contains('rent');
-      final isPropRent = propListing.contains('rent');
-      listingTypeMatch = (isReqRent == isPropRent);
-    } else if (req.listingTypeId != null && req.listingTypeId!.isNotEmpty && p.listingTypeId.isNotEmpty) {
-      listingTypeMatch = (p.listingTypeId == req.listingTypeId);
-    }
-    if (!listingTypeMatch) return false;
-
-    if (req.categoryId.isNotEmpty && p.categoryId.isNotEmpty) {
-      if (p.categoryId != req.categoryId) return false;
-    }
-
-    if (req.propertyTypeIds.isNotEmpty) {
-      bool typeMatch = req.propertyTypeIds.contains(p.propertyTypeId);
-      if (!typeMatch && req.propertyTypeName.isNotEmpty && p.propertyTypeName.isNotEmpty) {
-        final pTypeName = p.propertyTypeName.toLowerCase();
-        typeMatch = req.propertyTypeName.toLowerCase().split(',').any((t) {
-          final trimmed = t.trim();
-          return trimmed.isNotEmpty && (pTypeName.contains(trimmed) || trimmed.contains(pTypeName));
-        });
-      }
-      if (!typeMatch) return false;
-    } else if (req.propertyTypeId.isNotEmpty && p.propertyTypeId.isNotEmpty) {
-      if (p.propertyTypeId != req.propertyTypeId) {
-        final pTypeName = p.propertyTypeName.toLowerCase();
-        final reqTypeName = req.propertyTypeName.toLowerCase();
-        if (!reqTypeName.contains(pTypeName) && !pTypeName.contains(reqTypeName)) return false;
-      }
-    }
-
-    if (req.configurationIds.isNotEmpty) {
-      bool configMatch = p.configurationId != null && req.configurationIds.contains(p.configurationId);
-      if (!configMatch && req.configurationName != null && req.configurationName!.isNotEmpty && p.configurationName != null && p.configurationName!.isNotEmpty) {
-        final pConfigName = p.configurationName!.toLowerCase();
-        configMatch = req.configurationName!.toLowerCase().split(',').any((c) {
-          final trimmed = c.trim();
-          return trimmed.isNotEmpty && (pConfigName.contains(trimmed) || trimmed.contains(pConfigName));
-        });
-      }
-      if (!configMatch) return false;
-    } else if (req.configurationId != null && req.configurationId!.isNotEmpty) {
-      if (p.configurationId != null && p.configurationId!.isNotEmpty && p.configurationId != req.configurationId) {
-        final pConfigName = (p.configurationName ?? '').toLowerCase();
-        final reqConfigName = (req.configurationName ?? '').toLowerCase();
-        if (pConfigName.isNotEmpty && reqConfigName.isNotEmpty) {
-          if (!reqConfigName.contains(pConfigName) && !pConfigName.contains(reqConfigName)) {
-            return false;
-          }
-        }
-      }
-    }
-
-    if (req.areaIds.isNotEmpty) {
-      bool areaMatch = req.areaIds.contains(p.areaId);
-      if (!areaMatch && req.areaNames.isNotEmpty && p.areaName.isNotEmpty) {
-        final pArea = p.areaName.trim().toLowerCase();
-        areaMatch = req.areaNames.any((aName) {
-          final trimmed = aName.trim().toLowerCase();
-          return trimmed.isNotEmpty && (trimmed == pArea || pArea.contains(trimmed) || trimmed.contains(pArea));
-        });
-      }
-      if (!areaMatch) return false;
-    }
-
-    if (req.maxBudget > 0) {
-      final minB = req.minBudget > 0 ? req.minBudget : 0.0;
-      final maxB = req.maxBudget;
-      if (p.price < minB || p.price > maxB) {
-        return false;
-      }
-    }
-
-    return true;
+    return PropertyRequirementMatcher.calculateMatchPercentage(p, req) >= MatchCriteriaManager().threshold;
   }
 
   Future<void> _loadProperties() async {
@@ -6960,6 +12629,9 @@ class _RequirementWinPropertySelectionDialogState
       final req = widget.requirement;
 
       final matches = properties.where((p) => _isRequirementPropertyMatch(p, req)).toList();
+      matches.sort((a, b) =>
+        PropertyRequirementMatcher.calculateMatchPercentage(b, req)
+          .compareTo(PropertyRequirementMatcher.calculateMatchPercentage(a, req)));
 
       setState(() {
         _allProperties = matches;
@@ -7291,56 +12963,354 @@ class PropertyDealClientStore {
 class _FollowupActionButton extends StatelessWidget {
   final DashboardFollowup followup;
   final RequirementModel reqModel;
+  final bool isSiteVisit;
   final Function(RequirementModel, String) onSelect;
 
   const _FollowupActionButton({
     super.key,
     required this.followup,
     required this.reqModel,
+    this.isSiteVisit = false,
     required this.onSelect,
   });
 
   void _showMenuAt(BuildContext context, Offset globalPos) {
-    final RenderBox? overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (overlay == null) return;
+    final RenderBox? overlayBox = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlayBox == null) return;
 
     final RelativeRect position = RelativeRect.fromRect(
-      Rect.fromLTWH(globalPos.dx - 60, globalPos.dy - 46, 130, 40),
-      Offset.zero & overlay.size,
+      Rect.fromLTWH(globalPos.dx - 60, globalPos.dy - 46, 140, 40),
+      Offset.zero & overlayBox.size,
     );
+
+    OverlayEntry? rejectionOverlay;
+
+    void removeRejectionOverlay() {
+      rejectionOverlay?.remove();
+      rejectionOverlay = null;
+    }
+
+    void showRejectionOverlay(BuildContext itemContext) {
+      if (rejectionOverlay != null) return;
+      final RenderBox? renderBox = itemContext.findRenderObject() as RenderBox?;
+      if (renderBox == null) return;
+
+      final Offset itemGlobalOffset = renderBox.localToGlobal(Offset.zero);
+      final overlay = Overlay.of(itemContext);
+      final size = MediaQuery.of(itemContext).size;
+      double left = (itemGlobalOffset.dx - 192).clamp(10.0, size.width - 200.0);
+      double top = (itemGlobalOffset.dy - 120).clamp(40.0, size.height - 380.0);
+
+      const reasons = [
+        'Not Answering',
+        'No Requirement',
+        'Budget Mismatch',
+        'Locality Mismatch',
+        'Broker',
+        'Already rented',
+        'Want Ready-To-Move',
+        'Negotiation Failed',
+        'Others',
+      ];
+
+      rejectionOverlay = OverlayEntry(
+        builder: (overlayContext) {
+          return Positioned(
+            left: left,
+            top: top,
+            child: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(8),
+              color: CRMColors.cardBgOf(context),
+              child: Container(
+                width: 190,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                decoration: BoxDecoration(
+                  color: CRMColors.cardBgOf(context),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.12),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: reasons.map((reason) {
+                    return InkWell(
+                      onTap: () {
+                        removeRejectionOverlay();
+                        Navigator.of(context, rootNavigator: true).maybePop();
+                        onSelect(reqModel, 'Rejected ($reason)');
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            reason,
+                            style: TextStyle(
+                              color: CRMColors.textOf(context),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+      overlay.insert(rejectionOverlay!);
+    }
 
     showMenu<String>(
       context: context,
       position: position,
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      items: [
-        PopupMenuItem<String>(
-          value: 'Re-Followup',
-          height: 38,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.update_rounded,
-                size: 16,
-                color: CRMColors.warning,
+      items: isSiteVisit
+          ? [
+              PopupMenuItem<String>(
+                value: 'Edit Site Visit',
+                height: 38,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.edit_calendar_rounded,
+                        size: 16,
+                        color: CRMColors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Edit Site Visit',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                'Re-Followup',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: CRMColors.textOf(context),
-                  fontSize: 13,
+              PopupMenuItem<String>(
+                value: 'Re-scheduled',
+                height: 38,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.update_rounded,
+                        size: 16,
+                        color: CRMColors.warning,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Re-scheduled',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'Interested',
+                height: 38,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.thumb_up_alt_outlined,
+                        size: 16,
+                        color: CRMColors.success,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Interested',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'Rejected',
+                height: 38,
+                child: Builder(
+                  builder: (itemContext) {
+                    return MouseRegion(
+                      onEnter: (_) => showRejectionOverlay(itemContext),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.cancel_outlined,
+                            size: 16,
+                            color: CRMColors.danger,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Rejected',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: CRMColors.danger,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 16,
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ]
+          : [
+              PopupMenuItem<String>(
+                value: 'Edit Followup',
+                height: 38,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.edit_calendar_rounded,
+                        size: 16,
+                        color: CRMColors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Edit Followup',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'Re-Followup',
+                height: 38,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.update_rounded,
+                        size: 16,
+                        color: CRMColors.warning,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Re-Followup',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'Interested',
+                height: 38,
+                child: MouseRegion(
+                  onEnter: (_) => removeRejectionOverlay(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.thumb_up_alt_outlined,
+                        size: 16,
+                        color: CRMColors.success,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Interested',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'Rejected',
+                height: 38,
+                child: Builder(
+                  builder: (itemContext) {
+                    return MouseRegion(
+                      onEnter: (_) => showRejectionOverlay(itemContext),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.cancel_outlined,
+                            size: 16,
+                            color: CRMColors.danger,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Rejected',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: CRMColors.danger,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 16,
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
-          ),
-        ),
-      ],
     ).then((val) {
-      if (val != null) {
+      removeRejectionOverlay();
+      if (val != null && val != 'Rejected') {
         onSelect(reqModel, val);
       }
     });
@@ -7348,17 +13318,25 @@ class _FollowupActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String statusStr = (reqModel.status == 'Re-Followup') ? 'Re-Followup' : 'Follow-up';
-    final bool isRe = statusStr == 'Re-Followup';
+    final String statusStr = isSiteVisit
+        ? 'Site Visit Scheduled'
+        : ((reqModel.status == 'Re-Followup') ? 'Re-Followup' : 'Follow-up');
+    final bool isRe = !isSiteVisit && statusStr == 'Re-Followup';
 
-    final Color badgeBg = isRe ? CRMColors.warning.withValues(alpha: 0.15) : CRMColors.info.withValues(alpha: 0.15);
-    final Color badgeColor = isRe ? CRMColors.warning : CRMColors.info;
-    final Color borderColor = isRe ? CRMColors.warning.withValues(alpha: 0.4) : CRMColors.info.withValues(alpha: 0.4);
+    final Color badgeBg = isSiteVisit
+        ? CRMColors.primary.withValues(alpha: 0.15)
+        : (isRe ? CRMColors.warning.withValues(alpha: 0.15) : CRMColors.info.withValues(alpha: 0.15));
+    final Color badgeColor = isSiteVisit
+        ? CRMColors.primary
+        : (isRe ? CRMColors.warning : CRMColors.info);
+    final Color borderColor = isSiteVisit
+        ? CRMColors.primary.withValues(alpha: 0.4)
+        : (isRe ? CRMColors.warning.withValues(alpha: 0.4) : CRMColors.info.withValues(alpha: 0.4));
 
     if (isRe) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => onSelect(reqModel, 'Re-Followup'),
+        onTapDown: (details) => _showMenuAt(context, details.globalPosition),
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           child: Container(
@@ -7438,4 +13416,394 @@ class _PopoverTrianglePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _NoteItemData {
+  final String timestamp;
+  final String content;
+
+  _NoteItemData({required this.timestamp, required this.content});
+}
+
+List<_NoteItemData> _parseNotesList(String? rawNotes) {
+  if (rawNotes == null || rawNotes.trim().isEmpty) return [];
+  final text = rawNotes.trim();
+  if (text.toLowerCase() == 'null' || text.toLowerCase() == 'n/a') return [];
+
+  final List<_NoteItemData> result = [];
+  final lines = text.split('\n');
+
+  String currentTimestamp = '';
+  StringBuffer currentContent = StringBuffer();
+
+  final regExp = RegExp(r'^\[(.*?)\]\s*(.*)$');
+
+  for (final line in lines) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) continue;
+
+    final match = regExp.firstMatch(trimmed);
+
+    if (match != null) {
+      if (currentContent.isNotEmpty) {
+        result.add(_NoteItemData(
+          timestamp: currentTimestamp.isEmpty ? 'Saved Note' : currentTimestamp,
+          content: currentContent.toString().trim(),
+        ));
+        currentContent.clear();
+      }
+      currentTimestamp = match.group(1) ?? '';
+      currentContent.write(match.group(2) ?? '');
+    } else {
+      if (currentContent.isNotEmpty) {
+        currentContent.write('\n$trimmed');
+      } else {
+        currentContent.write(trimmed);
+      }
+    }
+  }
+
+  if (currentContent.isNotEmpty) {
+    result.add(_NoteItemData(
+      timestamp: currentTimestamp.isEmpty ? 'Saved Note' : currentTimestamp,
+      content: currentContent.toString().trim(),
+    ));
+  }
+
+  return result;
+}
+
+class _ViewAllNotesDialogWidget extends StatefulWidget {
+  final RequirementModel requirement;
+  final Function(String updatedNotes, RequirementModel updatedReqModel, String? newNote, [String? deletedNote]) onSave;
+
+  const _ViewAllNotesDialogWidget({
+    required this.requirement,
+    required this.onSave,
+  });
+
+  @override
+  State<_ViewAllNotesDialogWidget> createState() => _ViewAllNotesDialogWidgetState();
+}
+
+class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
+  late RequirementModel _currentReq;
+  final TextEditingController _newNoteController = TextEditingController();
+  bool _isAdding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentReq = widget.requirement;
+  }
+
+  @override
+  void dispose() {
+    _newNoteController.dispose();
+    super.dispose();
+  }
+
+  void _deleteNote(int indexToDelete, List<_NoteItemData> currentList) {
+    final itemToDelete = currentList[indexToDelete];
+    final deletedNoteStr = (itemToDelete.timestamp == 'Saved Note' || itemToDelete.timestamp == 'Initial Note')
+        ? itemToDelete.content
+        : '[${itemToDelete.timestamp}] ${itemToDelete.content}';
+
+    final newList = List<_NoteItemData>.from(currentList);
+    newList.removeAt(indexToDelete);
+
+    String updatedNotesStr = '';
+    if (newList.isNotEmpty) {
+      updatedNotesStr = newList.map((item) {
+        if (item.timestamp == 'Saved Note' || item.timestamp == 'Initial Note') {
+          return item.content;
+        } else {
+          return '[${item.timestamp}] ${item.content}';
+        }
+      }).join('\n');
+    }
+
+    final updatedReq = _currentReq.copyWith(notes: updatedNotesStr);
+    setState(() {
+      _currentReq = updatedReq;
+    });
+    widget.onSave(updatedNotesStr, updatedReq, null, deletedNoteStr);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Note deleted successfully.'),
+        backgroundColor: CRMColors.success,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _addNote() {
+    final text = _newNoteController.text.trim();
+    if (text.isEmpty) return;
+
+    final timeStr = DateFormat("dd MMM ''yy, h:mm a").format(DateTime.now());
+    final formattedEntry = '[$timeStr] $text';
+    final existingClean = _currentReq.notes?.trim() ?? '';
+    final updatedNotes = (existingClean.isNotEmpty && existingClean.toLowerCase() != 'null')
+        ? '$existingClean\n$formattedEntry'
+        : formattedEntry;
+
+    final updatedReq = _currentReq.copyWith(notes: updatedNotes);
+    setState(() {
+      _currentReq = updatedReq;
+      _newNoteController.clear();
+      _isAdding = false;
+    });
+    widget.onSave(updatedNotes, updatedReq, formattedEntry);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Note added successfully.'),
+        backgroundColor: CRMColors.success,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final notesList = _parseNotesList(_currentReq.notes);
+
+    final screenSize = MediaQuery.sizeOf(context);
+    final dialogWidth = (screenSize.width - 32).clamp(280.0, 480.0);
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      backgroundColor: CRMColors.cardBgOf(context),
+      child: SizedBox(
+        width: dialogWidth,
+        child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: screenSize.height * 0.78,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.sticky_note_2_rounded,
+                  color: CRMColors.primaryOf(context),
+                  size: 22,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'All Notes (${notesList.length})',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: CRMColors.textOf(context),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded, color: CRMColors.textMutedOf(context)),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Divider(color: CRMColors.borderOf(context).withOpacity(0.6), height: 1),
+            const SizedBox(height: 12),
+
+            Flexible(
+              child: notesList.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.notes_outlined,
+                              size: 48,
+                              color: CRMColors.textMutedOf(context).withOpacity(0.5),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No notes added yet.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: CRMColors.textSecondaryOf(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: notesList.length,
+                      separatorBuilder: (context, index) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final note = notesList[index];
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white.withOpacity(0.05)
+                                : const Color(0xFFF8F9FA),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: CRMColors.borderOf(context).withOpacity(0.4),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.access_time_rounded,
+                                        size: 13,
+                                        color: CRMColors.primaryOf(context),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        note.timestamp,
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: CRMColors.primaryOf(context),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  InkWell(
+                                    onTap: () => _deleteNote(index, notesList),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(2),
+                                      child: Icon(
+                                        Icons.delete_outline_rounded,
+                                        size: 16,
+                                        color: CRMColors.danger,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                note.content,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  height: 1.4,
+                                  color: CRMColors.textOf(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+
+            const SizedBox(height: 12),
+            Divider(color: CRMColors.borderOf(context).withOpacity(0.6), height: 1),
+            const SizedBox(height: 12),
+
+            if (!_isAdding)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => setState(() => _isAdding = true),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Add Another Note'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: CRMColors.primaryOf(context),
+                    side: BorderSide(color: CRMColors.primaryOf(context)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.black12
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: CRMColors.primaryOf(context).withOpacity(0.6),
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: TextField(
+                      controller: _newNoteController,
+                      maxLines: 3,
+                      minLines: 2,
+                      autofocus: true,
+                      style: TextStyle(fontSize: 13, color: CRMColors.textOf(context)),
+                      decoration: InputDecoration(
+                        hintText: 'Type new note here...',
+                        hintStyle: TextStyle(
+                          fontSize: 13,
+                          color: CRMColors.textSecondaryOf(context).withOpacity(0.6),
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          _newNoteController.clear();
+                          setState(() => _isAdding = false);
+                        },
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(color: CRMColors.textSecondaryOf(context)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: _addNote,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6C5CE7),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Save Note', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        ),
+      ),
+    );
+  }
 }

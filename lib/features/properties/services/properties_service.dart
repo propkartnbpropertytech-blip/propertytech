@@ -50,6 +50,8 @@ class PropertiesService {
     String? createdBy,
     bool? isVerified,
     bool? includeDeleted,
+    int? page,
+    int? limit,
   }) async {
     try {
       final Map<String, dynamic> queryParameters = {};
@@ -73,6 +75,12 @@ class PropertiesService {
       }
       if (includeDeleted != null) {
         queryParameters['includeDeleted'] = includeDeleted.toString();
+      }
+      if (page != null) {
+        queryParameters['page'] = page;
+      }
+      if (limit != null) {
+        queryParameters['limit'] = limit;
       }
 
       final response = await _apiClient.get(
@@ -339,6 +347,70 @@ class PropertiesService {
   Future<void> emptyBin() async {
     try {
       await _apiClient.delete('/properties/bin/empty');
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<List<dynamic>> getZones({String? cityId}) async {
+    try {
+      final res = await _apiClient.get('/locations/zones', queryParameters: cityId != null ? {'city_id': cityId} : null);
+      if (res.data is Map<String, dynamic>) {
+        final data = res.data['data'] as Map<String, dynamic>? ?? {};
+        return data['zones'] as List<dynamic>? ?? [];
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> createZone(String cityId, String name, {String? slug, String? description}) async {
+    try {
+      final res = await _apiClient.post('/locations/zones', {
+        'city_id': cityId,
+        'name': name,
+        if (slug != null && slug.isNotEmpty) 'slug': slug,
+        if (description != null && description.isNotEmpty) 'description': description,
+      });
+      if (res.data is Map<String, dynamic>) {
+        final data = res.data['data'] as Map<String, dynamic>? ?? {};
+        return data['zone'] as Map<String, dynamic>? ?? {};
+      }
+      return {};
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<List<dynamic>> getAliases({String? areaId}) async {
+    try {
+      final res = await _apiClient.get('/locations/aliases', queryParameters: areaId != null ? {'area_id': areaId} : null);
+      if (res.data is Map<String, dynamic>) {
+        final data = res.data['data'] as Map<String, dynamic>? ?? {};
+        return data['aliases'] as List<dynamic>? ?? [];
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> createAreaAlias(String areaId, String alias) async {
+    try {
+      final res = await _apiClient.post('/locations/aliases', {
+        'area_id': areaId,
+        'alias': alias,
+      });
+      if (res.data is Map<String, dynamic>) {
+        final data = res.data['data'] as Map<String, dynamic>? ?? {};
+        return data['alias'] as Map<String, dynamic>? ?? {};
+      }
+      return {};
     } on DioException catch (e) {
       throw ApiException.fromDioException(e);
     } catch (e) {

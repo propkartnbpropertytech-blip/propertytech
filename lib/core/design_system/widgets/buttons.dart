@@ -90,8 +90,10 @@ class _CRMButtonState extends State<CRMButton> {
       ),
     );
 
+    final bool hasExplicitWidth = widget.width != null;
+
     Widget content = Row(
-      mainAxisSize: widget.width != null ? MainAxisSize.max : MainAxisSize.min,
+      mainAxisSize: hasExplicitWidth ? MainAxisSize.max : MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         if (widget.isLoading) ...[
@@ -108,7 +110,10 @@ class _CRMButtonState extends State<CRMButton> {
           Icon(widget.prefixIcon, size: compact ? 14 : 16, color: fgColor),
           const SizedBox(width: CRMSpacing.xs),
         ],
-        if (widget.width != null) Flexible(child: labelText) else labelText,
+        if (hasExplicitWidth)
+          Flexible(child: labelText)
+        else
+          Flexible(fit: FlexFit.loose, child: labelText),
       ],
     );
 

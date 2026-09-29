@@ -134,19 +134,31 @@ class _OwnersScreenState extends State<OwnersScreen> {
   }
 
   Widget _buildPageHeader() {
+    final isNarrow = MediaQuery.sizeOf(context).width < 600;
+    final title = Text(
+      "Owners",
+      style: CRMTypography.pageTitle.copyWith(color: CRMColors.textOf(context)),
+    );
+    final action = CRMButton(
+      label: "Add Owner",
+      prefixIcon: Icons.person_add_alt_1_rounded,
+      height: 40,
+      onPressed: () => _showAddEditDialog(),
+    );
+    if (isNarrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          title,
+          const SizedBox(height: CRMSpacing.s),
+          action,
+        ],
+      );
+    }
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          "Owners",
-          style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
-        ),
-        CRMButton(
-          label: "Add Owner",
-          prefixIcon: Icons.person_add_alt_1_rounded,
-          height: 40,
-          onPressed: () => _showAddEditDialog(),
-        ),
+        Expanded(child: title),
+        action,
       ],
     );
   }

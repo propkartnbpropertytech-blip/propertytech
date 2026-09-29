@@ -38,12 +38,18 @@ class CrmNetworkImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String cleanUrl = url.trim();
+    if (cleanUrl.isEmpty) {
+      return error?.call(context) ??
+          const Icon(Icons.broken_image_outlined, size: 16);
+    }
+
     final cacheW = _cachePx(context, cacheLogicalWidth ?? width);
     final cacheH = _cachePx(context, cacheLogicalHeight ?? height);
 
-    if (url.startsWith('data:image') || url.contains('base64')) {
+    if (cleanUrl.startsWith('data:image') || cleanUrl.contains('base64')) {
       try {
-        final base64Str = url.split(',').last;
+        final base64Str = cleanUrl.split(',').last;
         return Image.memory(
           base64Decode(base64Str),
           fit: fit,
@@ -59,18 +65,27 @@ class CrmNetworkImage extends StatelessWidget {
       }
     }
 
-    if (kIsWeb) {
+    final normalizedUrl = cleanUrl.startsWith('//') ? 'https:$cleanUrl' : cleanUrl;
+
+    final bool useImageNetwork = kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+
+    if (useImageNetwork) {
       return Image.network(
-        url,
+        normalizedUrl,
         fit: fit,
         width: width,
         height: height,
         cacheWidth: cacheW,
         cacheHeight: cacheH,
         gaplessPlayback: true,
-        errorBuilder: (context, error, stackTrace) =>
-            this.error?.call(context) ??
-            const Icon(Icons.broken_image_outlined, size: 16),
+        errorBuilder: (context, err, stackTrace) {
+          debugPrint('⚠️ [CrmNetworkImage] Error loading: $normalizedUrl -> $err');
+          return error?.call(context) ??
+              const Icon(Icons.broken_image_outlined, size: 16);
+        },
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return placeholder?.call(context) ??
@@ -86,7 +101,7 @@ class CrmNetworkImage extends StatelessWidget {
     }
 
     return CachedNetworkImage(
-      imageUrl: url,
+      imageUrl: normalizedUrl,
       fit: fit,
       width: width,
       height: height,

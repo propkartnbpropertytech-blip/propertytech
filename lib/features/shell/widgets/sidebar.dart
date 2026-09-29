@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/design_system/widgets/crm_brand_lockup.dart';
 import 'user_profile_card.dart';
 
@@ -13,6 +14,7 @@ class ModernSidebar extends StatefulWidget {
   final int leadsBadgeCount;
   final VoidCallback? onItemTapped;
   final bool isCollapsed;
+  final double? customWidth;
 
   const ModernSidebar({
     super.key,
@@ -23,6 +25,7 @@ class ModernSidebar extends StatefulWidget {
     this.leadsBadgeCount = 0,
     this.onItemTapped,
     this.isCollapsed = false,
+    this.customWidth,
   });
 
   @override
@@ -59,9 +62,10 @@ class _ModernSidebarState extends State<ModernSidebar> {
     final userEmail = widget.userEmail;
     final leadsBadgeCount = widget.leadsBadgeCount;
     final isCollapsed = widget.isCollapsed;
+    final sidebarWidth = widget.customWidth ?? (isCollapsed ? 70.0 : 260.0);
 
     return Container(
-      width: isCollapsed ? 70 : 260,
+      width: sidebarWidth,
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF0F172A) : Colors.white,
         border: Border(
@@ -95,75 +99,152 @@ class _ModernSidebarState extends State<ModernSidebar> {
 
             // ── Navigation Items ───────────────────────────────
             Expanded(
-              child: ListView(
-                padding: EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: isCollapsed ? 6 : 12,
+              child: ListenableBuilder(
+                listenable: PermissionMatrixService.instance,
+                builder: (context, _) => ListView(
+                  padding: EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: isCollapsed ? 6 : 12,
+                  ),
+                  children: [
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/dashboard'))
+                      _buildNavItem(
+                        context,
+                        title: 'Dashboard',
+                        icon: Icons.grid_view_rounded,
+                        route: '/dashboard',
+                        isActive:
+                            currentPath.startsWith('/dashboard') ||
+                            currentPath == '/',
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/properties'))
+                      _buildNavItem(
+                        context,
+                        title: 'Properties',
+                        icon: Icons.home_work_outlined,
+                        route: '/properties',
+                        isActive: currentPath.startsWith('/properties'),
+                      ),
+                    if (RoleGuard.isTelecaller(widget.userRole) &&
+                        (RoleGuard.canViewPage(widget.userRole, '/telecaller/leads') ||
+                         RoleGuard.canViewPage(widget.userRole, '/campaign')))
+                      _buildNavItem(
+                        context,
+                        title: 'My Calling Leads',
+                        icon: Icons.phone_in_talk_outlined,
+                        route: '/campaign/leads',
+                        isActive: currentPath.startsWith('/campaign/leads') ||
+                                  currentPath.startsWith('/telecaller/leads'),
+                      ),
+                    if (RoleGuard.isTelecaller(widget.userRole) &&
+                        RoleGuard.canViewPage(widget.userRole, '/telecaller/callbacks'))
+                      _buildNavItem(
+                        context,
+                        title: 'Callbacks',
+                        icon: Icons.event_repeat,
+                        route: '/telecaller/callbacks',
+                        isActive: currentPath.startsWith('/telecaller/callbacks'),
+                      ),
+                    if (RoleGuard.isTelecaller(widget.userRole) &&
+                        RoleGuard.canViewPage(widget.userRole, '/telecaller/cnr'))
+                      _buildNavItem(
+                        context,
+                        title: 'CNR / Retry',
+                        icon: Icons.phone_missed_outlined,
+                        route: '/telecaller/cnr',
+                        isActive: currentPath.startsWith('/telecaller/cnr'),
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/requirements'))
+                      _buildNavItem(
+                        context,
+                        title: RoleGuard.isTelecaller(widget.userRole)
+                            ? 'All Leads (Track)'
+                            : 'Leads',
+                        icon: Icons.assignment_outlined,
+                        route: '/requirements',
+                        isActive: currentPath.startsWith('/requirements'),
+                        badgeCount: leadsBadgeCount > 0 ? leadsBadgeCount : null,
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        (RoleGuard.canManageEmployees(widget.userRole) &&
+                         RoleGuard.canViewPage(widget.userRole, '/users')))
+                      _buildNavItem(
+                        context,
+                        title: 'Employees',
+                        icon: Icons.people_outline_rounded,
+                        route: '/users',
+                        isActive: currentPath.startsWith('/users'),
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        (RoleGuard.canViewReports(widget.userRole) &&
+                         RoleGuard.canViewPage(widget.userRole, '/reports')))
+                      _buildNavItem(
+                        context,
+                        title: 'Reports',
+                        icon: Icons.bar_chart_rounded,
+                        route: '/reports/leads/overall-business-insight',
+                        isActive: currentPath.startsWith('/reports'),
+                      ),
+                    if (!RoleGuard.isTelecaller(widget.userRole) &&
+                        (widget.userRole.isEmpty ||
+                        (RoleGuard.canAccessCampaign(widget.userRole) &&
+                         RoleGuard.canViewPage(widget.userRole, '/campaign'))))
+                      _buildCampaignTreeItem(
+                        context,
+                        isDark: isDark,
+                        primaryColor: primaryColor,
+                        primaryHoverColor: primaryHoverColor,
+                      ),
+                    if ((RoleGuard.isAdmin(widget.userRole) ||
+                            RoleGuard.isSuperAdmin(widget.userRole)) &&
+                        RoleGuard.canViewPage(widget.userRole, '/admin/lead-allocation'))
+                      _buildNavItem(
+                        context,
+                        title: 'Lead Allocation',
+                        icon: Icons.hub_outlined,
+                        route: '/admin/lead-allocation',
+                        isActive: currentPath.startsWith('/admin/lead-allocation'),
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/library'))
+                      _buildNavItem(
+                        context,
+                        title: 'Library',
+                        icon: Icons.folder_outlined,
+                        route: '/library',
+                        isActive: currentPath.startsWith('/library'),
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/settings'))
+                      _buildNavItem(
+                        context,
+                        title: 'Settings',
+                        icon: Icons.settings_outlined,
+                        route: '/settings',
+                        isActive: currentPath == '/settings',
+                      ),
+                    if (RoleGuard.isSuperAdmin(widget.userRole))
+                      _buildNavItem(
+                        context,
+                        title: 'Audit Logs',
+                        icon: Icons.history_rounded,
+                        route: '/settings/audit-logs',
+                        isActive: currentPath.startsWith('/settings/audit-logs'),
+                      ),
+                    if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/bin'))
+                      _buildNavItem(
+                        context,
+                        title: 'Recycle Bin',
+                        icon: Icons.delete_outline_rounded,
+                        route: '/bin',
+                        isActive: currentPath.startsWith('/bin'),
+                      ),
+                  ],
                 ),
-                children: [
-                  _buildNavItem(
-                    context,
-                    title: 'Dashboard',
-                    icon: Icons.grid_view_rounded,
-                    route: '/dashboard',
-                    isActive:
-                        currentPath.startsWith('/dashboard') ||
-                        currentPath == '/',
-                  ),
-                  _buildNavItem(
-                    context,
-                    title: 'Properties',
-                    icon: Icons.home_work_outlined,
-                    route: '/properties',
-                    isActive: currentPath.startsWith('/properties'),
-                  ),
-                  _buildNavItem(
-                    context,
-                    title: 'Leads',
-                    icon: Icons.assignment_outlined,
-                    route: '/requirements',
-                    isActive: currentPath.startsWith('/requirements'),
-                    badgeCount: leadsBadgeCount > 0 ? leadsBadgeCount : null,
-                  ),
-                  if (widget.userRole.isEmpty ||
-                      RoleGuard.canManageEmployees(widget.userRole))
-                    _buildNavItem(
-                      context,
-                      title: 'Employees',
-                      icon: Icons.people_outline_rounded,
-                      route: '/users',
-                      isActive: currentPath.startsWith('/users'),
-                    ),
-                  if (widget.userRole.isEmpty ||
-                      RoleGuard.canAccessCampaign(widget.userRole))
-                    _buildCampaignTreeItem(
-                      context,
-                      isDark: isDark,
-                      primaryColor: primaryColor,
-                      primaryHoverColor: primaryHoverColor,
-                    ),
-                  _buildNavItem(
-                    context,
-                    title: 'Library',
-                    icon: Icons.folder_outlined,
-                    route: '/library',
-                    isActive: currentPath.startsWith('/library'),
-                  ),
-                  _buildNavItem(
-                    context,
-                    title: 'Settings',
-                    icon: Icons.settings_outlined,
-                    route: '/settings',
-                    isActive: currentPath.startsWith('/settings'),
-                  ),
-                  _buildNavItem(
-                    context,
-                    title: 'Recycle Bin',
-                    icon: Icons.delete_outline_rounded,
-                    route: '/bin',
-                    isActive: currentPath.startsWith('/bin'),
-                  ),
-                ],
               ),
             ),
 
@@ -388,7 +469,10 @@ class _ModernSidebarState extends State<ModernSidebar> {
         widget.currentPath.startsWith('/integration');
     final isConnectionsActive =
         widget.currentPath.startsWith('/campaign/connections');
-    final isLeadsActive = widget.currentPath.startsWith('/campaign/leads');
+    final isMetaActive = widget.currentPath.startsWith('/campaign/meta');
+    final isHousingActive = widget.currentPath.startsWith('/campaign/housing');
+    final isLeadsActive = isMetaActive || isHousingActive ||
+        widget.currentPath.startsWith('/campaign/leads');
 
     if (widget.isCollapsed) {
       return Padding(
@@ -460,10 +544,6 @@ class _ModernSidebarState extends State<ModernSidebar> {
                 setState(() {
                   _isCampaignExpanded = !_isCampaignExpanded;
                 });
-                if (_isCampaignExpanded && !isChildActive) {
-                  widget.onItemTapped?.call();
-                  context.go('/campaign/connections');
-                }
               },
               borderRadius: BorderRadius.circular(10),
               hoverColor:
@@ -565,10 +645,21 @@ class _ModernSidebarState extends State<ModernSidebar> {
                     const SizedBox(height: 2),
                     _buildSubNavItem(
                       context,
-                      title: 'Leads',
-                      icon: Icons.table_chart_outlined,
-                      route: '/campaign/leads',
-                      isActive: isLeadsActive,
+                      title: 'Meta',
+                      icon: Icons.campaign_outlined,
+                      route: '/campaign/meta',
+                      isActive: isMetaActive,
+                      isDark: isDark,
+                      primaryColor: primaryColor,
+                      primaryHoverColor: primaryHoverColor,
+                    ),
+                    const SizedBox(height: 2),
+                    _buildSubNavItem(
+                      context,
+                      title: 'Housing',
+                      icon: Icons.apartment_outlined,
+                      route: '/campaign/housing',
+                      isActive: isHousingActive,
                       isDark: isDark,
                       primaryColor: primaryColor,
                       primaryHoverColor: primaryHoverColor,

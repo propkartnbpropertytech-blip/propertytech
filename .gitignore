@@ -1,4 +1,5 @@
 # Miscellaneous
+node_modules/
 *.class
 *.log
 *.pyc
@@ -11,6 +12,18 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+
+# Secrets and Credentials
+.env*
+!env/
+!env/*.example
+!env/local.env
+!env/production.env
+*creds*
+*secret*
+*.txt
+!README.md
+!CMakeLists.txt
 
 # IntelliJ related
 *.iml
@@ -39,6 +52,11 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# Release signing (never commit keystores or passwords)
+/android/key.properties
+**/*.jks
+**/*.keystore
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
@@ -48,3 +66,13 @@ app.*.map.json
 /android/build/
 /android/app/build/
 
+# Platform ephemeral build artifacts
+**/ephemeral/
+**/windows/flutter/ephemeral/
+**/linux/flutter/ephemeral/
+**/macos/Flutter/ephemeral/
+**/ios/Flutter/ephemeral/
+
+# Local version snapshots
+/Versions/
+.sentry-native/

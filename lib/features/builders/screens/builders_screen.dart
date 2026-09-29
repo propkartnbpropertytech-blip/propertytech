@@ -126,19 +126,32 @@ class _BuildersScreenState extends State<BuildersScreen> {
   }
 
   Widget _buildPageHeader() {
+    final isNarrow = MediaQuery.sizeOf(context).width < 600;
+    final title = Text(
+      "Builders",
+      style: CRMTypography.pageTitle.copyWith(color: CRMColors.textOf(context)),
+    );
+    final action = CRMButton(
+      label: "Add Builder",
+      prefixIcon: Icons.add_business_rounded,
+      height: 40,
+      onPressed: () => _showAddEditDialog(),
+    );
+    if (isNarrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          title,
+          const SizedBox(height: CRMSpacing.s),
+          action,
+        ],
+      );
+    }
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          "Builders",
-          style: CRMTypography.pageTitle.copyWith(color: CRMColors.text),
-        ),
-        CRMButton(
-          label: "Add Builder",
-          prefixIcon: Icons.add_business_rounded,
-          height: 40,
-          onPressed: () => _showAddEditDialog(),
-        ),
+        title,
+        action,
       ],
     );
   }
@@ -188,37 +201,52 @@ class _BuildersScreenState extends State<BuildersScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-                  decoration: InputDecoration(
-                    hintText: 'Search by developer company, contact person, project names...',
-                    hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMutedOf(context)),
-                    prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context)),
-                    filled: true,
-                    fillColor: CRMColors.backgroundOf(context),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
-                    ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked = constraints.maxWidth < 560;
+              final field = TextField(
+                controller: _searchController,
+                style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+                decoration: InputDecoration(
+                  hintText: 'Search by developer company, contact person, project names...',
+                  hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMutedOf(context)),
+                  prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMutedOf(context)),
+                  filled: true,
+                  fillColor: CRMColors.backgroundOf(context),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                    borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
                   ),
-                  onChanged: (val) => _triggerFetch(),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                    borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+                    borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
+                  ),
                 ),
-              ),
-              const SizedBox(width: CRMSpacing.s),
-              CRMButton(label: "Search", onPressed: _triggerFetch),
-            ],
+                onChanged: (val) => _triggerFetch(),
+              );
+              final searchButton = CRMButton(label: "Search", onPressed: _triggerFetch);
+              if (stacked) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    field,
+                    const SizedBox(height: CRMSpacing.s),
+                    searchButton,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: field),
+                  const SizedBox(width: CRMSpacing.s),
+                  searchButton,
+                ],
+              );
+            },
           ),
           const SizedBox(height: CRMSpacing.m),
           Wrap(
@@ -254,8 +282,11 @@ class _BuildersScreenState extends State<BuildersScreen> {
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
   }) {
-    return SizedBox(
-      width: 220,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth < 560 ? constraints.maxWidth : 220.0;
+        return SizedBox(
+      width: width,
       height: 44,
       child: DropdownButtonFormField<T>(
         value: value,
@@ -284,6 +315,8 @@ class _BuildersScreenState extends State<BuildersScreen> {
         items: items,
         onChanged: onChanged,
       ),
+    );
+      },
     );
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/requirements_bloc.dart';
 import '../models/requirement_model.dart';
 import '../../properties/repository/properties_repository.dart';
+import '../../properties/services/properties_service.dart';
 import '../../properties/models/property_model.dart';
 import '../../../core/design_system/crm_design_system.dart';
 import '../../../core/storage/crm_draft_repository.dart';
@@ -14,19 +15,25 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
 import '../../settings/screens/location_config_screen.dart';
-import '../../properties/services/properties_service.dart';
 import 'package:dio/dio.dart';
+import '../../integration/services/integration_service.dart';
 
 class AddEditRequirementScreen extends StatefulWidget {
   final RequirementModel? requirement;
   final VoidCallback onSaved;
   final bool isInline;
+  final String? initialListingTypeId;
+  final String? initialListingTab;
+  final int initialStep;
 
   const AddEditRequirementScreen({
     super.key,
     this.requirement,
     required this.onSaved,
     this.isInline = false,
+    this.initialListingTypeId,
+    this.initialListingTab,
+    this.initialStep = 0,
   });
 
   @override
@@ -45,8 +52,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
   final _minAreaController = TextEditingController();
   final _maxAreaController = TextEditingController();
   final _remarksController = TextEditingController();
+  final _referralNameController = TextEditingController();
 
   String? _selectedCategoryId;
+  String? _selectedLeadSource;
   String? _selectedTypeId;
   final List<String> _selectedTypeIds = [];
   List<LookupItem> _cities = [];
@@ -55,7 +64,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
   String? _selectedListingTypeId;
   final List<String> _selectedFurnishingIds = [];
   final List<String> _selectedFacingIds = [];
-  String _selectedStatus = "Not Started";
+  String _selectedStatus = "New";
   final List<String> _selectedAreaIds = [];
   String _areaSearchQuery = '';
   String? _customerFoundMessage;
@@ -73,7 +82,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(initialPage: 0);
+    _activeStep = widget.initialStep;
+    _pageController = PageController(initialPage: widget.initialStep);
     _mobileController.addListener(_handleMobileChange);
     _loadMetadata();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -92,6 +102,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     _minAreaController.dispose();
     _maxAreaController.dispose();
     _remarksController.dispose();
+    _referralNameController.dispose();
     _pageController.dispose();
     if (!_isSaved && widget.requirement == null) {
       _saveCurrentDraft();
@@ -147,13 +158,32 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               _selectedTypeIds.add(firstCatTypes.first.id);
             }
           }
-          if (_listingTypes.isNotEmpty) _selectedListingTypeId = _listingTypes.first.id;
+          if (_listingTypes.isNotEmpty) {
+            if (widget.initialListingTypeId != null &&
+                widget.initialListingTypeId!.isNotEmpty &&
+                _listingTypes.any((lt) => lt.id == widget.initialListingTypeId)) {
+              _selectedListingTypeId = widget.initialListingTypeId;
+            } else if (widget.initialListingTab != null && widget.initialListingTab!.isNotEmpty) {
+              final targetStr = widget.initialListingTab!.toLowerCase();
+              final matched = _listingTypes.firstWhere(
+                (lt) => lt.name.toLowerCase().contains(targetStr == 'rent' ? 'rent' : 'sale'),
+                orElse: () => _listingTypes.first,
+              );
+              _selectedListingTypeId = matched.id;
+            } else {
+              _selectedListingTypeId = _listingTypes.first.id;
+            }
+          }
         } else {
           final req = widget.requirement!;
           _nameController.text = req.clientName;
           _mobileController.text = req.clientMobile;
-          final double avgBudget = req.minBudget == req.maxBudget ? req.minBudget : (req.minBudget + req.maxBudget) / 2;
-          _budgetController.text = CRMCurrencyFormatter.format(avgBudget);
+          if (req.minBudget > 0 && req.maxBudget > 0 && req.minBudget != req.maxBudget) {
+            _budgetController.text = '${CRMCurrencyFormatter.format(req.minBudget)} - ${CRMCurrencyFormatter.format(req.maxBudget)}';
+          } else {
+            final double avgBudget = req.minBudget == req.maxBudget ? req.minBudget : (req.minBudget + req.maxBudget) / 2;
+            _budgetController.text = avgBudget > 0 ? CRMCurrencyFormatter.format(avgBudget) : '';
+          }
           _minAreaController.text = req.minArea?.toStringAsFixed(0) ?? '';
           _maxAreaController.text = req.maxArea?.toStringAsFixed(0) ?? '';
           _remarksController.text = req.remarks ?? '';
@@ -163,26 +193,41 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           if (_selectedTypeIds.isEmpty && req.propertyTypeId != null && req.propertyTypeId!.isNotEmpty) {
             _selectedTypeIds.add(req.propertyTypeId!);
           }
+          _canonicalizeSelectedPropertyTypes(_getFilteredTypes());
           _selectedConfigId = req.configurationId;
           _selectedConfigIds.addAll(req.configurationIds);
           if (_selectedConfigIds.isEmpty && req.configurationId != null) {
             _selectedConfigIds.add(req.configurationId!);
           }
-          _selectedListingTypeId = req.listingTypeId;
+          if (req.listingTypeId != null && req.listingTypeId != 'Unknown' && req.listingTypeId!.isNotEmpty) {
+            _selectedListingTypeId = req.listingTypeId;
+          } else if (_listingTypes.isNotEmpty) {
+            _selectedListingTypeId = _listingTypes.first.id;
+          }
           _selectedFurnishingIds.addAll(req.furnishingIds);
           _selectedFacingIds.addAll(req.facingIds);
           
-          String statusVal = req.status;
-          if (statusVal == 'Active' || statusVal == 'Live') statusVal = 'Interested';
-          if (statusVal == 'Closed' || statusVal == 'Won') statusVal = 'Won';
-          if (statusVal == 'Suspended' || statusVal == 'Dead') statusVal = 'Not Interested';
-          _selectedStatus = statusVal;
+          _selectedStatus = req.status;
 
-          _selectedAreaIds.addAll(req.areaIds);
+          if (req.isAllAreas) {
+            _selectedAreaIds.clear();
+            _selectedAreaIds.addAll(_areas.map((a) => a.id));
+          } else {
+            _selectedAreaIds.addAll(req.areaIds);
+          }
+          _selectedLeadSource = req.leadSource;
+          _referralNameController.text = req.referralName ?? '';
         }
         
         _isLoadingMetadata = false;
       });
+      if (widget.initialStep > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _pageController.hasClients && _activeStep != _pageController.page?.round()) {
+            _pageController.jumpToPage(_activeStep);
+          }
+        });
+      }
     } catch (e) {
       setState(() {
         _isLoadingMetadata = false;
@@ -338,6 +383,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       'minArea': _minAreaController.text,
       'maxArea': _maxAreaController.text,
       'remarks': _remarksController.text,
+      'leadSource': _selectedLeadSource,
+      'referralName': _referralNameController.text,
       'status': _selectedStatus,
       'areaIds': _selectedAreaIds,
       'furnishings': _selectedFurnishingIds,
@@ -384,7 +431,9 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                   _minAreaController.text = draft['minArea'] ?? '';
                   _maxAreaController.text = draft['maxArea'] ?? '';
                   _remarksController.text = draft['remarks'] ?? '';
-                  _selectedStatus = draft['status'] ?? 'Not Started';
+                  _selectedLeadSource = draft['leadSource'];
+                  _referralNameController.text = draft['referralName'] ?? '';
+                  _selectedStatus = draft['status'] ?? 'New';
                   
                   final List<String> areas = List<String>.from(draft['areaIds'] ?? []);
                   _selectedAreaIds.clear();
@@ -468,6 +517,58 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     return _types
         .where((t) => t.categoryId == _selectedCategoryId && t.name.toLowerCase() != 'apartment')
         .toList();
+  }
+
+  bool _isApartmentOrFlatLabel(String raw) {
+    final n = raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    if (n.isEmpty) return false;
+    if (n.contains('apartment') || n.contains('flat')) return true;
+    final tokens = n.split(' ');
+    return tokens.contains('apt') || tokens.contains('apts') || tokens.contains('flats');
+  }
+
+  void _canonicalizeSelectedPropertyTypes(List<LookupItem> filteredTypes) {
+    if (_selectedTypeIds.isEmpty &&
+        _selectedTypeId != null &&
+        _selectedTypeId!.trim().isNotEmpty) {
+      _selectedTypeIds.add(_selectedTypeId!);
+    }
+    if (filteredTypes.isEmpty) {
+      _selectedTypeIds.clear();
+      _selectedTypeId = null;
+      return;
+    }
+
+    LookupItem? flatType;
+    for (final t in filteredTypes) {
+      if (t.name.toLowerCase().trim() == 'flat' || _isApartmentOrFlatLabel(t.name)) {
+        flatType = t;
+        break;
+      }
+    }
+
+    final next = <String>[];
+    for (final id in List<String>.from(_selectedTypeIds)) {
+      if (filteredTypes.any((t) => t.id == id)) {
+        if (!next.contains(id)) next.add(id);
+        continue;
+      }
+      LookupItem? original;
+      for (final t in _types) {
+        if (t.id == id) {
+          original = t;
+          break;
+        }
+      }
+      if (original != null && _isApartmentOrFlatLabel(original.name) && flatType != null) {
+        if (!next.contains(flatType.id)) next.add(flatType.id);
+      }
+    }
+
+    _selectedTypeIds
+      ..clear()
+      ..addAll(next);
+    _selectedTypeId = _selectedTypeIds.isNotEmpty ? _selectedTypeIds.first : null;
   }
 
   List<LookupItem> _getFilteredConfigs() {
@@ -584,10 +685,14 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       orElse: () => LookupItem(id: '', name: 'N/A'),
     );
 
-    final List<String> areaNames = _selectedAreaIds.map((id) {
-      final match = _areas.firstWhere((a) => a.id == id, orElse: () => AreaLookup(id: id, name: id, cityId: '', pincode: ''));
-      return match.name;
-    }).toList();
+    final bool isAllAreasSelected = _areas.isNotEmpty && _selectedAreaIds.length >= _areas.length;
+
+    final List<String> areaNames = isAllAreasSelected
+        ? ['All Areas']
+        : _selectedAreaIds.map((id) {
+            final match = _areas.firstWhere((a) => a.id == id, orElse: () => AreaLookup(id: id, name: id, cityId: '', pincode: ''));
+            return match.name;
+          }).toList();
 
     final authState = context.read<AuthBloc>().state;
     UserModel? currentUser;
@@ -595,9 +700,17 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       currentUser = authState.user;
     }
 
-    final budgetVal = CRMCurrencyFormatter.parse(_budgetController.text);
-    final minBudget = budgetVal * 0.8;
-    final maxBudget = budgetVal * 1.2;
+    final parsedRange = IntegrationService.parseBudgetRange(_budgetController.text);
+    double minBudget = 0.0;
+    double maxBudget = 0.0;
+    if (parsedRange.minBudget > 0 || parsedRange.maxBudget > 0) {
+      minBudget = parsedRange.minBudget;
+      maxBudget = parsedRange.maxBudget;
+    } else {
+      final budgetVal = CRMCurrencyFormatter.parse(_budgetController.text);
+      minBudget = budgetVal * 0.8;
+      maxBudget = budgetVal * 1.2;
+    }
 
     final userRole = (currentUser?.role ?? '').toLowerCase();
     final bool isAdminOrTelecaller = userRole == 'admin' || userRole == 'super admin' || userRole == 'telecaller';
@@ -628,7 +741,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       areaIds: _selectedAreaIds,
       areaNames: areaNames,
       remarks: _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
-      status: _selectedStatus,
+      notes: widget.requirement?.notes,
+      leadSource: _selectedLeadSource,
+      referralName: _selectedLeadSource?.toLowerCase() == 'referral' ? _referralNameController.text.trim() : null,
+      status: widget.requirement?.status ?? _selectedStatus,
       createdAt: widget.requirement?.createdAt ?? DateTime.now(),
       furnishingIds: _selectedFurnishingIds,
       facingIds: _selectedFacingIds,
@@ -637,6 +753,21 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       createdBy: widget.requirement?.createdBy ?? currentUser?.id,
       assignedTo: defaultAssignedTo,
       assigneeName: defaultAssigneeName,
+      metaLeadId: widget.requirement?.metaLeadId,
+      metaPageId: widget.requirement?.metaPageId,
+      metaFormId: widget.requirement?.metaFormId,
+      metaCampaignId: widget.requirement?.metaCampaignId,
+      metaCampaignName: widget.requirement?.metaCampaignName,
+      metaAdsetId: widget.requirement?.metaAdsetId,
+      metaAdsetName: widget.requirement?.metaAdsetName,
+      metaAdId: widget.requirement?.metaAdId,
+      metaAdName: widget.requirement?.metaAdName,
+      metaCustomFields: {
+        ...(widget.requirement?.metaCustomFields ?? {}),
+        if (_selectedAreaIds.isNotEmpty) 'match_engine_status': 'READY',
+        if (isAllAreasSelected) 'is_all_areas': true,
+        if (!isAllAreasSelected && widget.requirement?.metaCustomFields?['is_all_areas'] == true) 'is_all_areas': false,
+      },
     );
 
     _isSaved = true;
@@ -648,9 +779,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       context.read<RequirementsBloc>().add(UpdateRequirementEvent(req));
     }
 
-    if (widget.isInline) {
-      widget.onSaved();
-    }
+    widget.onSaved();
     Navigator.pop(context);
   }
 
@@ -720,9 +849,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     final bool isMobile = screenWidth < 700;
 
     final filteredTypes = _getFilteredTypes();
-    if (_selectedTypeId != null && !filteredTypes.any((t) => t.id == _selectedTypeId)) {
-      _selectedTypeId = filteredTypes.isNotEmpty ? filteredTypes.first.id : null;
-    }
+    _canonicalizeSelectedPropertyTypes(filteredTypes);
     final filteredConfigs = _getFilteredConfigs();
     _selectedConfigIds.retainWhere((id) => filteredConfigs.any((c) => c.id == id));
     if (_selectedConfigId != null && !filteredConfigs.any((c) => c.id == _selectedConfigId)) {
@@ -870,10 +997,24 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 )
               else
                 const SizedBox.shrink(),
-              CRMButton(
-                label: _activeStep == 6 ? "Submit" : "Next",
-                onPressed: _nextStep,
-                height: widget.isInline ? 32 : 40,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.requirement != null && _activeStep != 6) ...[
+                    CRMButton(
+                      label: "Save Changes",
+                      variant: CRMButtonVariant.outline,
+                      onPressed: _submitForm,
+                      height: widget.isInline ? 32 : 40,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  CRMButton(
+                    label: _activeStep == 6 ? "Submit" : "Next",
+                    onPressed: _nextStep,
+                    height: widget.isInline ? 32 : 40,
+                  ),
+                ],
               ),
             ],
           ),
@@ -1039,7 +1180,9 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
               label: 'Pipeline Status Stage *',
               value: _selectedStatus,
               items: const [
+                DropdownMenuItem(value: "New", child: Text("New")),
                 DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
+                DropdownMenuItem(value: "Call Attempted", child: Text("Call Attempted")),
                 DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
                 DropdownMenuItem(value: "Interested", child: Text("Interested")),
                 DropdownMenuItem(value: "Site Visit", child: Text("Site Visit Sche.")),
@@ -1047,7 +1190,6 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
                 DropdownMenuItem(value: "Won", child: Text("Won")),
                 DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
-                DropdownMenuItem(value: "Not Interested", child: Text("Not Interested")),
               ],
               onChanged: (val) {
                 if (val != null && _validateStatusTransition(val)) {
@@ -1209,6 +1351,28 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.requirement?.hasUnmappedArea == true)
+          Container(
+            margin: const EdgeInsets.only(bottom: CRMSpacing.s),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFF59E0B)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFD97706)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Unmapped Locality: "${widget.requirement!.areaNames.isNotEmpty ? widget.requirement!.areaNames.join(', ') : 'Unmapped'}" - Please select one or more CRM areas below.',
+                    style: const TextStyle(fontSize: 11.5, color: Color(0xFF92400E), fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
         isMobile
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1226,6 +1390,61 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 ],
               ),
         const SizedBox(height: CRMSpacing.m),
+        if (_areaSearchQuery.isEmpty && _areas.isNotEmpty) ...[
+          Builder(
+            builder: (context) {
+              final bool isAllAreasSelected = _selectedAreaIds.length >= _areas.length;
+              return Container(
+                margin: const EdgeInsets.only(bottom: CRMSpacing.s),
+                decoration: BoxDecoration(
+                  color: isAllAreasSelected ? CRMColors.primaryOf(context).withValues(alpha: 0.08) : CRMColors.cardBgOf(context),
+                  borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+                  border: Border.all(
+                    color: isAllAreasSelected ? CRMColors.primaryOf(context) : CRMColors.borderOf(context),
+                    width: isAllAreasSelected ? 1.5 : 1.0,
+                  ),
+                ),
+                child: CheckboxListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+                  secondary: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: isAllAreasSelected ? CRMColors.primaryOf(context) : CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      Icons.public_rounded,
+                      color: isAllAreasSelected ? Colors.white : CRMColors.primaryOf(context),
+                      size: 18,
+                    ),
+                  ),
+                  title: const Text(
+                    'All Areas (Entire City)',
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    isAllAreasSelected
+                        ? 'Selected all ${_areas.length} areas across the city'
+                        : 'Select to cover all ${_areas.length} areas across the city',
+                    style: TextStyle(fontSize: 11.5, color: CRMColors.textMutedOf(context)),
+                  ),
+                  value: isAllAreasSelected,
+                  activeColor: CRMColors.primaryOf(context),
+                  onChanged: (val) {
+                    setState(() {
+                      if (val == true) {
+                        _selectedAreaIds.clear();
+                        _selectedAreaIds.addAll(_areas.map((a) => a.id));
+                      } else {
+                        _selectedAreaIds.clear();
+                      }
+                    });
+                  },
+                ),
+              );
+            },
+          ),
+        ],
         Expanded(
           child: Builder(
             builder: (context) {
@@ -1324,6 +1543,32 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
             prefixIcon: Icons.chat_bubble_outline_rounded,
             maxLines: 4,
           ),
+          const SizedBox(height: CRMSpacing.m),
+          _buildDropdown<String?>(
+            label: 'Lead Source',
+            value: _selectedLeadSource,
+            items: const [
+              DropdownMenuItem<String?>(value: 'Social Media', child: Text('Social Media')),
+              DropdownMenuItem<String?>(value: 'MagicBricks', child: Text('MagicBricks')),
+              DropdownMenuItem<String?>(value: '99acres', child: Text('99acres')),
+              DropdownMenuItem<String?>(value: 'housing.com', child: Text('housing.com')),
+              DropdownMenuItem<String?>(value: 'WhatsApp', child: Text('WhatsApp')),
+              DropdownMenuItem<String?>(value: 'Direct', child: Text('Direct')),
+              DropdownMenuItem<String?>(value: 'Referral', child: Text('Referral')),
+            ],
+            onChanged: (val) => setState(() {
+              _selectedLeadSource = val;
+            }),
+          ),
+          if (_selectedLeadSource?.toLowerCase() == 'referral') ...[
+            const SizedBox(height: CRMSpacing.m),
+            CRMTextField(
+              controller: _referralNameController,
+              labelText: 'Referral Name',
+              hintText: 'Enter referrer name...',
+              prefixIcon: Icons.person_outline_rounded,
+            ),
+          ],
         ],
       ),
     );
@@ -1356,6 +1601,12 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     if (_selectedConfigIds.isEmpty) warnings.add("Missing Configuration");
     if (_budgetController.text.isEmpty) warnings.add("Missing Budget");
     if (_selectedAreaIds.isEmpty) warnings.add("Missing Target Area");
+
+    final leadSourceDisplay = (_selectedLeadSource == null || _selectedLeadSource!.isEmpty)
+        ? "None"
+        : (_selectedLeadSource!.toLowerCase() == 'referral' && _referralNameController.text.trim().isNotEmpty
+            ? "${_selectedLeadSource!} (${_referralNameController.text.trim()})"
+            : _selectedLeadSource!);
 
     return SingleChildScrollView(
       child: Column(
@@ -1391,6 +1642,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           _buildSummaryRow("Configuration", configDisplayStr),
           _buildSummaryRow("Target Areas", "${_selectedAreaIds.length} Selected"),
           _buildSummaryRow("Budget", _budgetController.text),
+          _buildSummaryRow("Lead Source", leadSourceDisplay),
           _buildSummaryRow("Pipeline Status", _selectedStatus),
         ],
       ),

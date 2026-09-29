@@ -49,4 +49,27 @@ class CRMBreakpoints {
 
   /// Max content width for ultrawide centering.
   static double get maxContentWidth => 1440;
+
+  /// Preferred width that shrinks to the viewport so dialogs and panels
+  /// stay on screen on phones and small tablets.
+  static double adaptiveWidth(
+    BuildContext context,
+    double preferred, {
+    double horizontalGutter = 48,
+  }) {
+    final available = widthOf(context) - horizontalGutter;
+    if (!available.isFinite || available <= 0) return preferred;
+    return preferred > available ? available : preferred;
+  }
+
+  /// Space to keep clear of the floating mobile tab bar, including the
+  /// system gesture inset. Zero when the keyboard is open.
+  static double mobileNavClearance(BuildContext context) {
+    final media = MediaQuery.of(context);
+    if (media.size.width >= tablet) return 0;
+    if (media.viewInsets.bottom > 0) return 0;
+    final bottomSafe = media.viewPadding.bottom;
+    final safe = bottomSafe < 8 ? 8.0 : bottomSafe;
+    return 76 + safe;
+  }
 }

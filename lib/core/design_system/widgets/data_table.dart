@@ -51,10 +51,20 @@ class CRMDataTable extends StatelessWidget {
     }
 
     if (rows.isEmpty) {
-      return CRMEmptyState(
+      final emptyWidget = CRMEmptyState(
         title: emptyTitle,
         description: emptyDescription,
         icon: emptyIcon,
+      );
+      if (!showDecoration) return emptyWidget;
+      return Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: CRMColors.cardBgOf(context),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+          border: Border.all(color: CRMColors.borderOf(context), width: 1.0),
+        ),
+        child: emptyWidget,
       );
     }
 

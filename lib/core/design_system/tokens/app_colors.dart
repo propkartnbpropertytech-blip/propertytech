@@ -206,6 +206,7 @@ class CRMColors {
       PropKartColors.maybeOf(context)?.background ?? background;
   static Color cardBgOf(BuildContext context) =>
       PropKartColors.maybeOf(context)?.surface ?? cardBg;
+  static Color surfaceOf(BuildContext context) => cardBgOf(context);
   static Color sidebarBgOf(BuildContext context) =>
       PropKartColors.maybeOf(context)?.sidebarBg ?? sidebarBg;
   static Color primaryOf(BuildContext context) =>

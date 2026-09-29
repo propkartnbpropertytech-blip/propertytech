@@ -7,16 +7,15 @@ import '../../features/auth/bloc/auth_bloc.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/reset_password_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
+import '../../features/telecaller/screens/telecaller_callbacks_screen.dart';
+import '../../features/admin/bloc/lead_allocation_monitor_bloc.dart';
 import '../../features/properties/screens/properties_screen.dart';
 import '../../features/properties/screens/property_search_screen.dart';
 import '../../features/properties/screens/property_detail_screen.dart';
 import '../../features/properties/bloc/properties_bloc.dart';
 import '../../features/users/screens/users_screen.dart';
+import '../../features/users/screens/employee_detail_screen.dart';
 import '../../features/requirements/screens/requirements_screen.dart';
-import '../../features/clients/screens/clients_screen.dart';
-
-import '../../features/owners/screens/owners_screen.dart';
-import '../../features/builders/screens/builders_screen.dart';
 import '../../splash.dart';
 import '../../get_started_screen.dart';
 import '../../modules/legal/presentation/terms_and_conditions_page.dart';
@@ -26,6 +25,7 @@ import '../design_system/widgets/crm_page_transition.dart';
 import '../../features/settings/screens/settings_screen.dart';
 import '../../features/settings/screens/audit_logs_screen.dart';
 import '../../features/settings/screens/location_config_screen.dart';
+import '../../features/settings/screens/kpi_config_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/properties/screens/recycle_bin_screen.dart';
 import '../network/sync_manager.dart';
@@ -39,9 +39,22 @@ import '../../features/library/screens/rental_library_screen.dart';
 import '../../features/library/screens/resale_library_screen.dart';
 import '../../features/library/screens/service_agent_library_screen.dart';
 import '../../features/campaign/screens/connections_screen.dart';
+import '../../features/campaign/screens/portal_integration_screen.dart';
+import '../../features/campaign/screens/portal_leads_screen.dart';
 import '../../features/campaign/screens/campaign_leads_screen.dart';
+import '../../features/reports/screens/reports_shell.dart';
+import '../../features/reports/screens/leads/overall_business_insight_screen.dart';
+import '../../features/reports/screens/leads/telecaller_report_screen.dart';
+import '../../features/reports/screens/leads/super_admin_metrics_screen.dart';
+import '../../features/reports/screens/leads/sales_report_placeholder.dart';
+import '../../features/reports/screens/leads/lead_metrics_screen.dart';
+import '../../features/reports/screens/properties/properties_coming_soon_screen.dart';
+import '../../features/reports/bloc/reports_bloc.dart';
+import '../../features/reports/bloc/reports_event.dart';
 import '../utils/seo_helper.dart';
 import 'mobile_system_back_handler.dart';
+import '../../features/team_messages/screens/team_messages_screen.dart';
+import 'audit_route_observer.dart';
 
 
 class GoRouterRefreshStream extends ChangeNotifier {
@@ -62,6 +75,9 @@ class GoRouterRefreshStream extends ChangeNotifier {
 }
 
 class AppRouter {
+  static final GlobalKey<NavigatorState> rootNavigatorKey =
+      GlobalKey<NavigatorState>();
+
   final AuthBloc authBloc;
 
   AppRouter(this.authBloc);
@@ -88,8 +104,12 @@ class AppRouter {
   }
 
   late final router = GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: _getWebInitialLocation(),
     refreshListenable: GoRouterRefreshStream(authBloc.stream),
+    observers: [
+      AuditRouteObserver(),
+    ],
     routes: [
       GoRoute(
         path: '/',
@@ -106,7 +126,10 @@ class AppRouter {
       ),
       GoRoute(
         path: '/get-started',
-        builder: (context, state) => const GetStartedScreen(),
+        builder: (context, state) => MobileSystemBackHandler(
+          homeLocation: '/get-started',
+          child: const GetStartedScreen(),
+        ),
       ),
       GoRoute(
         path: '/terms-and-conditions',
@@ -144,13 +167,16 @@ class AppRouter {
         pageBuilder: (context, state) => crmFadeSlidePage(
           key: state.pageKey,
           name: state.name,
-          child: BlocProvider(
-            create: (context) => PropertiesBloc(),
-            child: PropertySearchScreen(
-              initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
-              initialListingType: state.uri.queryParameters['listingType'],
-              initialCategoryTab: state.uri.queryParameters['categoryTab'],
-              initialBhk: state.uri.queryParameters['bhk'],
+          child: MobileSystemBackHandler(
+            homeLocation: '/get-started',
+            child: BlocProvider(
+              create: (context) => PropertiesBloc(),
+              child: PropertySearchScreen(
+                initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
+                initialListingType: state.uri.queryParameters['listingType'],
+                initialCategoryTab: state.uri.queryParameters['categoryTab'],
+                initialBhk: state.uri.queryParameters['bhk'],
+              ),
             ),
           ),
         ),
@@ -164,6 +190,53 @@ class AppRouter {
               key: state.pageKey,
               name: state.name,
               child: const DashboardScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/telecaller/leads',
+            pageBuilder: (context, state) {
+              final view = state.uri.queryParameters['view'];
+              final search = state.uri.queryParameters['search'];
+              return crmFadeSlidePage(
+                key: state.pageKey,
+                child: CampaignLeadsScreen(initialView: view, initialSearch: search),
+              );
+            },
+          ),
+          GoRoute(
+            path: '/telecaller/callbacks',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: TelecallerCallbacksScreen(
+                telecallerId: state.uri.queryParameters['telecallerId'],
+                telecallerName: state.uri.queryParameters['telecallerName'],
+                initialSearch: state.uri.queryParameters['q'],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/telecaller/cnr',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: TelecallerCnrScreen(
+                telecallerId: state.uri.queryParameters['telecallerId'],
+                telecallerName: state.uri.queryParameters['telecallerName'],
+                initialSearch: state.uri.queryParameters['q'],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/admin/lead-allocation',
+            redirect: (context, state) {
+              final role = RoleGuard.currentUser?.role ?? '';
+              if (!RoleGuard.isAdmin(role) && !RoleGuard.isSuperAdmin(role)) {
+                return '/telecaller/leads';
+              }
+              return null;
+            },
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const LeadAllocationMonitorScreen(),
             ),
           ),
           GoRoute(
@@ -188,6 +261,15 @@ class AppRouter {
             ),
           ),
           GoRoute(
+            path: '/users/:id',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: EmployeeDetailScreen(
+                userId: state.pathParameters['id'] ?? '',
+              ),
+            ),
+          ),
+          GoRoute(
             path: '/campaign',
             redirect: (context, state) => '/campaign/connections',
           ),
@@ -199,10 +281,74 @@ class AppRouter {
             ),
           ),
           GoRoute(
-            path: '/campaign/leads',
+            path: '/campaign/connections/portal/new',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const CampaignLeadsScreen(),
+              child: PortalIntegrationScreen(
+                initialProvider: state.uri.queryParameters['provider'],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/connections/portal/:id',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: PortalIntegrationScreen(
+                integrationId: state.pathParameters['id'],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/connections/meta',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const ConnectionsScreen(providerFocus: 'META'),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/connections/housing',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const ConnectionsScreen(providerFocus: 'HOUSING'),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/leads',
+            pageBuilder: (context, state) {
+              final source = state.uri.queryParameters['source'];
+              final view = state.uri.queryParameters['view'];
+              return crmFadeSlidePage(
+                key: state.pageKey,
+                child: CampaignLeadsScreen(
+                  initialSource: source,
+                  lockSource: source,
+                  initialView: view,
+                  initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
+                ),
+              );
+            },
+          ),
+          GoRoute(
+            path: '/campaign/portal-leads/:id',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: PortalLeadsScreen(
+                integrationId: state.pathParameters['id'] ?? '',
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/housing',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const CampaignLeadsScreen(lockSource: 'Housing.com'),
+            ),
+          ),
+          GoRoute(
+            path: '/campaign/meta',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const CampaignLeadsScreen(lockSource: 'Meta Ads'),
             ),
           ),
           GoRoute(
@@ -210,40 +356,36 @@ class AppRouter {
             redirect: (context, state) => '/campaign/leads',
           ),
           GoRoute(
+            path: '/campaign-leads',
+            redirect: (context, state) => '/campaign/leads',
+          ),
+          GoRoute(
             path: '/requirements',
             pageBuilder: (context, state) {
               final tab = state.uri.queryParameters['tab'];
               final subTab = state.uri.queryParameters['subTab'];
+              final group = state.uri.queryParameters['group'];
               return crmFadeSlidePage(
                 key: state.pageKey,
                 child: RequirementsScreen(
                   initialTab: tab,
                   initialSubTab: subTab,
+                  initialGroup: group,
                 ),
               );
             },
           ),
           GoRoute(
             path: '/clients',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const ClientsScreen(),
-            ),
+            redirect: (context, state) => '/dashboard',
           ),
-
           GoRoute(
             path: '/owners',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const OwnersScreen(),
-            ),
+            redirect: (context, state) => '/dashboard',
           ),
           GoRoute(
             path: '/builders',
-            pageBuilder: (context, state) => crmFadeSlidePage(
-              key: state.pageKey,
-              child: const BuildersScreen(),
-            ),
+            redirect: (context, state) => '/dashboard',
           ),
           GoRoute(
             path: '/settings',
@@ -267,10 +409,24 @@ class AppRouter {
             ),
           ),
           GoRoute(
+            path: '/settings/kpi-config',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const KpiConfigScreen(),
+            ),
+          ),
+          GoRoute(
             path: '/profile',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
               child: const ProfileScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/messages',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const TeamMessagesScreen(),
             ),
           ),
           GoRoute(
@@ -312,6 +468,67 @@ class AppRouter {
               child: const ServiceAgentLibraryScreen(),
             ),
           ),
+          ShellRoute(
+            builder: (context, state, child) => BlocProvider<ReportsBloc>(
+              create: (context) => ReportsBloc()..add(const LoadReportEvent()),
+              child: ReportsShell(child: child),
+            ),
+            routes: [
+              GoRoute(
+                path: '/reports',
+                redirect: (context, state) => '/reports/leads/overall-business-insight',
+              ),
+              GoRoute(
+                path: '/reports/leads',
+                redirect: (context, state) => '/reports/leads/overall-business-insight',
+              ),
+              GoRoute(
+                path: '/reports/leads/overall-business-insight',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const OverallBusinessInsightScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/leads/telecaller',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: TelecallerReportScreen(
+                    initialTelecallerId: state.uri.queryParameters['userId'],
+                    initialTelecallerName: state.uri.queryParameters['userName'],
+                  ),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/leads/super-admin-metrics',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const SuperAdminMetricsScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/leads/sales',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const SalesReportPlaceholderScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/leads/metrics',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const LeadMetricsScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/reports/properties',
+                pageBuilder: (context, state) => crmFadeSlidePage(
+                  key: state.pageKey,
+                  child: const PropertiesComingSoonScreen(),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       GoRoute(
@@ -319,6 +536,7 @@ class AppRouter {
         builder: (context, state) {
           final id = state.pathParameters['id']!;
           return MobileSystemBackHandler(
+            homeLocation: '/properties',
             child: PropertyDetailScreen(propertyId: id),
           );
         },
@@ -393,16 +611,17 @@ class AppRouter {
       final isPublicShare = state.matchedLocation.startsWith('/share/') || state.uri.path.startsWith('/share/');
       final onUsers = state.matchedLocation.startsWith('/users');
       final onAudit = state.matchedLocation.startsWith('/settings/audit-logs');
+      final onReports = state.matchedLocation.startsWith('/reports');
       final onTerms = state.matchedLocation == '/terms-and-conditions' || state.matchedLocation == '/terms_and_conditions' || state.uri.path == '/terms-and-conditions' || state.uri.path == '/terms_and_conditions';
       final onPrivacy = state.matchedLocation == '/privacy-policy' || state.matchedLocation == '/privacy_policy' || state.uri.path == '/privacy-policy' || state.uri.path == '/privacy_policy';
       final onResetPassword = state.matchedLocation == '/reset-password' || state.uri.path == '/reset-password';
       final isAuthGate = loggingIn || onSplash || onGetStarted || isPublicShare || onTerms || onPrivacy || onResetPassword;
 
       if (authState is Authenticated) {
-        // Check 9-hour inactivity timeout
+        // Check session expiration (default 8h or admin configured)
         final secureStorage = SecureStorage();
-        final isInactiveExpired = await secureStorage.isSessionExpiredDueToInactivity();
-        if (isInactiveExpired) {
+        final isExpired = await secureStorage.isSessionExpired();
+        if (isExpired) {
           await SessionCleanup.clearLocalSession(clearToken: true);
           authBloc.add(AuthSessionExpired());
           final target = state.uri.toString();
@@ -425,6 +644,9 @@ class AppRouter {
           return '/dashboard';
         }
         if (onAudit && !RoleGuard.canViewAuditLogs(role)) {
+          return '/dashboard';
+        }
+        if (onReports && !RoleGuard.canViewReports(role)) {
           return '/dashboard';
         }
 
@@ -536,6 +758,12 @@ class AppRouter {
       SeoHelper.updateTags(
         title: 'Shared Libraries | PropKart CRM',
         description: 'View rental and resale property library databases.',
+        noIndex: true,
+      );
+    } else if (location.startsWith('/reports')) {
+      SeoHelper.updateTags(
+        title: 'Reports & Analytics | PropKart CRM',
+        description: 'Review lead performance, overall business insights, and pipeline analytics.',
         noIndex: true,
       );
     } else if (location.startsWith('/splash')) {

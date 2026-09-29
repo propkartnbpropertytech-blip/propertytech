@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:propkart/core/storage/repository_coordinator.dart';
+import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/services/app_notifier_service.dart';
 import '../models/requirement_model.dart';
 import '../repository/requirements_repository.dart';
 
@@ -13,7 +14,15 @@ class FetchRequirementsEvent extends RequirementsEvent {
   final String? propertyTypeId;
   final String? status;
   final String? listingTypeId;
-  FetchRequirementsEvent({this.search, this.configurationId, this.propertyTypeId, this.status, this.listingTypeId});
+  final bool refreshFromServer;
+  FetchRequirementsEvent({
+    this.search,
+    this.configurationId,
+    this.propertyTypeId,
+    this.status,
+    this.listingTypeId,
+    this.refreshFromServer = true,
+  });
 }
 
 class CreateRequirementEvent extends RequirementsEvent {
@@ -24,6 +33,11 @@ class CreateRequirementEvent extends RequirementsEvent {
 class UpdateRequirementEvent extends RequirementsEvent {
   final RequirementModel requirement;
   UpdateRequirementEvent(this.requirement);
+}
+
+class PatchRequirementStatusEvent extends RequirementsEvent {
+  final RequirementModel requirement;
+  PatchRequirementStatusEvent(this.requirement);
 }
 
 class DeleteRequirementEvent extends RequirementsEvent {
@@ -40,7 +54,26 @@ class RequirementsLoading extends RequirementsState {}
 
 class RequirementsLoaded extends RequirementsState {
   final List<RequirementModel> requirements;
-  RequirementsLoaded({required this.requirements});
+  final RequirementModel? newlyAdded;
+  final bool isSilentRefreshing;
+
+  RequirementsLoaded({
+    required this.requirements,
+    this.newlyAdded,
+    this.isSilentRefreshing = false,
+  });
+
+  RequirementsLoaded copyWith({
+    List<RequirementModel>? requirements,
+    RequirementModel? newlyAdded,
+    bool? isSilentRefreshing,
+  }) {
+    return RequirementsLoaded(
+      requirements: requirements ?? this.requirements,
+      newlyAdded: newlyAdded ?? this.newlyAdded,
+      isSilentRefreshing: isSilentRefreshing ?? this.isSilentRefreshing,
+    );
+  }
 }
 
 class RequirementsError extends RequirementsState {
@@ -48,9 +81,19 @@ class RequirementsError extends RequirementsState {
   RequirementsError(this.message);
 }
 
-class RequirementsSuccess extends RequirementsState {
+class RequirementsSuccess extends RequirementsLoaded {
   final String message;
-  RequirementsSuccess(this.message);
+  final RequirementModel? requirement;
+
+  RequirementsSuccess(
+    this.message, {
+    this.requirement,
+    List<RequirementModel>? requirements,
+    super.newlyAdded,
+    super.isSilentRefreshing,
+  }) : super(
+          requirements: requirements ?? (requirement != null ? [requirement] : const []),
+        );
 }
 
 // --- BLoC ---
@@ -64,12 +107,19 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     on<FetchRequirementsEvent>(_onFetchRequirements);
     on<CreateRequirementEvent>(_onCreateRequirement);
     on<UpdateRequirementEvent>(_onUpdateRequirement);
+    on<PatchRequirementStatusEvent>(_onPatchRequirementStatus);
     on<DeleteRequirementEvent>(_onDeleteRequirement);
 
     _requirementsSubscription = RepositoryCoordinator().requirementsStream.listen((_) {
-      if (_lastFetchEvent != null) {
-        add(_lastFetchEvent!);
-      }
+      final last = _lastFetchEvent;
+      add(FetchRequirementsEvent(
+        search: last?.search,
+        configurationId: last?.configurationId,
+        propertyTypeId: last?.propertyTypeId,
+        status: last?.status,
+        listingTypeId: last?.listingTypeId,
+        refreshFromServer: false,
+      ));
     });
   }
 
@@ -84,9 +134,11 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     Emitter<RequirementsState> emit,
   ) async {
     _lastFetchEvent = event;
-    // Avoid blanking My Won / tables when refreshing after a status change.
-    if (state is! RequirementsLoaded) {
+    final hasExistingData = state is RequirementsLoaded && (state as RequirementsLoaded).requirements.isNotEmpty;
+    if (!hasExistingData) {
       emit(RequirementsLoading());
+    } else {
+      emit((state as RequirementsLoaded).copyWith(isSilentRefreshing: true));
     }
     try {
       final list = await requirementsRepository.getRequirements(
@@ -95,10 +147,13 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         propertyTypeId: event.propertyTypeId,
         status: event.status,
         listingTypeId: event.listingTypeId,
+        refreshFromServer: event.refreshFromServer,
       );
-      emit(RequirementsLoaded(requirements: list));
+      emit(RequirementsLoaded(requirements: list, isSilentRefreshing: false));
     } catch (e) {
-      emit(RequirementsError(e.toString()));
+      if (!hasExistingData) {
+        emit(RequirementsError(e.toString()));
+      }
     }
   }
 
@@ -106,10 +161,27 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     CreateRequirementEvent event,
     Emitter<RequirementsState> emit,
   ) async {
-    emit(RequirementsLoading());
     try {
-      await requirementsRepository.createRequirement(event.requirement);
-      emit(RequirementsSuccess("Requirement created successfully."));
+      final saved = await requirementsRepository.createRequirement(event.requirement);
+      unawaited(AppNotifierService.notifyLeadAdded(
+        clientName: saved.clientName.isNotEmpty
+            ? saved.clientName
+            : event.requirement.clientName,
+        requirementId: saved.id,
+      ));
+      final List<RequirementModel> next;
+      if (state is RequirementsLoaded) {
+        final current = state as RequirementsLoaded;
+        next = [saved, ...current.requirements.where((r) => r.id != saved.id)];
+      } else {
+        next = [saved];
+      }
+      emit(RequirementsSuccess(
+        "Requirement created successfully.",
+        requirement: saved,
+        requirements: next,
+        newlyAdded: saved,
+      ));
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }
@@ -123,18 +195,52 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
       final updated = await requirementsRepository.updateRequirement(event.requirement);
 
       // Optimistically patch the in-memory list so My Won status UI updates immediately.
+      List<RequirementModel> next = [updated];
       if (state is RequirementsLoaded) {
         final current = state as RequirementsLoaded;
-        final next = current.requirements.map((r) {
+        final patched = current.requirements.map((r) {
           return r.id == updated.id ? updated : r;
         }).toList();
         final exists = current.requirements.any((r) => r.id == updated.id);
+        next = exists ? patched : [...current.requirements, updated];
         emit(RequirementsLoaded(
-          requirements: exists ? next : [...current.requirements, updated],
+          requirements: next,
         ));
       }
 
-      emit(RequirementsSuccess("Requirement updated successfully."));
+      emit(RequirementsSuccess(
+        "Requirement updated successfully.",
+        requirement: updated,
+        requirements: next,
+      ));
+    } catch (e) {
+      emit(RequirementsError(e.toString()));
+    }
+  }
+
+  Future<void> _onPatchRequirementStatus(
+    PatchRequirementStatusEvent event,
+    Emitter<RequirementsState> emit,
+  ) async {
+    try {
+      final updated = await requirementsRepository.updateLeadStatus(event.requirement);
+
+      List<RequirementModel> next = [updated];
+      if (state is RequirementsLoaded) {
+        final current = state as RequirementsLoaded;
+        final patched = current.requirements.map((r) {
+          return r.id == updated.id ? updated : r;
+        }).toList();
+        final exists = current.requirements.any((r) => r.id == updated.id);
+        next = exists ? patched : [...current.requirements, updated];
+        emit(RequirementsLoaded(requirements: next));
+      }
+
+      emit(RequirementsSuccess(
+        "Status updated successfully.",
+        requirement: updated,
+        requirements: next,
+      ));
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }
@@ -144,10 +250,17 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     DeleteRequirementEvent event,
     Emitter<RequirementsState> emit,
   ) async {
-    emit(RequirementsLoading());
     try {
       await requirementsRepository.deleteRequirement(event.id);
-      emit(RequirementsSuccess("Requirement deleted successfully."));
+      List<RequirementModel> next = [];
+      if (state is RequirementsLoaded) {
+        final current = state as RequirementsLoaded;
+        next = current.requirements.where((r) => r.id != event.id).toList();
+        emit(RequirementsLoaded(
+          requirements: next,
+        ));
+      }
+      emit(RequirementsSuccess("Requirement deleted successfully.", requirements: next));
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }
