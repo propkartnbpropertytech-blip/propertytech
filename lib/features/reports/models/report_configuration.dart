@@ -161,15 +161,67 @@ class ReportConfiguration extends Equatable {
     this.subjectTelecallerName,
   });
 
+  static const List<ReportKpiType> campaignKpiTypes = [
+    ReportKpiType.totalLeads,
+    ReportKpiType.propertyListingLeads,
+    ReportKpiType.requirementLeads,
+    ReportKpiType.telecallers,
+    ReportKpiType.newOpenLeads,
+    ReportKpiType.cnrLeads,
+    ReportKpiType.callbackLeads,
+    ReportKpiType.campaignFollowupLeads,
+    ReportKpiType.notInterestedLeads,
+    ReportKpiType.leadsAssignedToSalesPickedUp,
+  ];
+
+  static const List<ReportKpiType> leadsPageKpiTypes = [
+    ReportKpiType.leadsNotStarted,
+    ReportKpiType.leadsCallAttempted,
+    ReportKpiType.leadsFollowups,
+    ReportKpiType.leadsReFollowups,
+    ReportKpiType.leadsInterested,
+    ReportKpiType.leadsSiteVisitScheduled,
+    ReportKpiType.leadsSiteVisitDone,
+    ReportKpiType.leadsNegotiation,
+    ReportKpiType.leadsRejected,
+  ];
+
+  static const List<ReportKpiType> activeKpiTypes = [
+    ...campaignKpiTypes,
+    ...leadsPageKpiTypes,
+  ];
+
+  static const List<ReportKpiType> removedKpiTypes = [
+    ReportKpiType.leadsContacted,
+    ReportKpiType.leadQualificationRate,
+    ReportKpiType.siteVisitsScheduled,
+    ReportKpiType.callAttempted,
+    ReportKpiType.callPickedUp,
+    ReportKpiType.callOpen,
+    ReportKpiType.lostUnsuccessful,
+  ];
+
   /// Generate default configuration
   factory ReportConfiguration.initial() {
     final List<ReportKpiConfig> defaultKpis = [];
-    for (int i = 0; i < ReportKpiType.values.length; i++) {
+    int order = 0;
+    for (final type in activeKpiTypes) {
       defaultKpis.add(
         ReportKpiConfig(
-          type: ReportKpiType.values[i],
+          type: type,
           isEnabled: true,
-          order: i,
+          order: order++,
+          showCount: true,
+          showPercentage: false,
+        ),
+      );
+    }
+    for (final type in removedKpiTypes) {
+      defaultKpis.add(
+        ReportKpiConfig(
+          type: type,
+          isEnabled: false,
+          order: order++,
           showCount: true,
           showPercentage: false,
         ),
@@ -183,11 +235,24 @@ class ReportConfiguration extends Equatable {
     );
   }
 
-  /// Get enabled KPIs in order
+  /// Get enabled KPIs in order (excluding explicitly removed KPIs)
   List<ReportKpiConfig> get sortedEnabledKpis {
-    final list = kpiConfigs.where((k) => k.isEnabled).toList();
-    list.sort((a, b) => a.order.compareTo(b.order));
-    return list;
+    final activeSet = activeKpiTypes.toSet();
+    final enabled = kpiConfigs.where((k) => k.isEnabled && activeSet.contains(k.type)).toList()
+      ..sort((a, b) => a.order.compareTo(b.order));
+    return enabled;
+  }
+
+  /// Get enabled Campaign KPIs
+  List<ReportKpiConfig> get enabledCampaignKpis {
+    final campaignSet = campaignKpiTypes.toSet();
+    return sortedEnabledKpis.where((k) => campaignSet.contains(k.type)).toList();
+  }
+
+  /// Get enabled Leads Page KPIs
+  List<ReportKpiConfig> get enabledLeadsPageKpis {
+    final leadsPageSet = leadsPageKpiTypes.toSet();
+    return sortedEnabledKpis.where((k) => leadsPageSet.contains(k.type)).toList();
   }
 
   ReportConfiguration copyWith({
@@ -246,7 +311,23 @@ class ReportConfiguration extends Equatable {
     if (jsonString == null || jsonString.isEmpty) return null;
     try {
       final decoded = jsonDecode(jsonString) as List<dynamic>;
-      return decoded.map((item) => ReportKpiConfig.fromJson(item as Map<String, dynamic>)).toList();
+      final list = decoded
+          .map((item) => ReportKpiConfig.fromJson(item as Map<String, dynamic>))
+          .where((k) => !removedKpiTypes.contains(k.type))
+          .toList();
+
+      // Ensure all activeKpiTypes exist
+      int nextOrder = list.isEmpty ? 0 : list.map((e) => e.order).reduce((a, b) => a > b ? a : b) + 1;
+      for (final type in activeKpiTypes) {
+        if (!list.any((k) => k.type == type)) {
+          list.add(ReportKpiConfig(
+            type: type,
+            isEnabled: true,
+            order: nextOrder++,
+          ));
+        }
+      }
+      return list;
     } catch (_) {
       return null;
     }

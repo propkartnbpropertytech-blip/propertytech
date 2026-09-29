@@ -9,6 +9,7 @@ import '../models/report_date_range.dart';
 import '../models/report_configuration.dart';
 import '../models/report_filter_state.dart';
 import '../models/report_data.dart';
+import '../models/business_insight_summary.dart';
 import 'insight_generator.dart';
 
 class ReportDataEngine {
@@ -19,6 +20,7 @@ class ReportDataEngine {
     required List<FollowupLocal> allFollowups,
     required List<String> systemStatuses,
     required ReportConfiguration config,
+    BusinessInsightSummary? insightSummary,
   }) {
     final filteredLeads = allLeads.where((lead) {
       if (!config.dateRange.contains(lead.createdAt)) {
@@ -83,18 +85,159 @@ class ReportDataEngine {
     final callPickedUpCount = filteredFollowups.where((f) => _isCallPickedUp(f)).length;
     final callOpenCount = filteredFollowups.where((f) => _isCallOpen(f)).length;
 
-    // KPI Values map with meaningful denominators
+    // Denominator & Counts for Campaign KPIs
+    final summaryTotalLeads = insightSummary?.totalLeads ?? totalLeadsCount;
+    final summaryPropLeads = insightSummary?.propertyListingLeads.total ??
+        filteredLeads.where((l) => (l.listingTypeName ?? '').toLowerCase().contains('property')).length;
+    final summaryReqLeads = insightSummary?.requirementLeads.total ??
+        filteredLeads.where((l) => !(l.listingTypeName ?? '').toLowerCase().contains('property')).length;
+    final summaryTelecallers = insightSummary?.telecallers.totalCount ?? telecallers.length;
+    final summaryNewOpenLeads = insightSummary?.newOpenLeads.total ??
+        filteredLeads.where((l) => l.status.toLowerCase() == 'new' || l.status.toLowerCase() == 'open' || l.status.toLowerCase() == 'not started').length;
+    final summaryCnrLeads = insightSummary?.cnrLeads.total ??
+        filteredLeads.where((l) => l.status.toUpperCase() == 'CNR').length;
+    final summaryCallbackLeads = insightSummary?.callbackLeads.total ??
+        filteredLeads.where((l) => l.status.toUpperCase() == 'CALLBACK').length;
+    final summaryCampaignFollowups = insightSummary?.followupLeads.total ??
+        filteredLeads.where((l) => l.status.toLowerCase().contains('follow')).length;
+    final summaryNotInterested = insightSummary?.notInterestedLeads.total ??
+        filteredLeads.where((l) => l.status.toLowerCase().contains('not interested')).length;
+    final summaryAssignedToSales = insightSummary?.assignedToSalesPickedUp.total ?? assignedCount;
+
+    // Leads Page Pipeline Counts (Directly from Leads page records / insightSummary)
+    final lpk = insightSummary?.leadsPageKpis;
+    final notStartedCount = lpk?.notStarted ?? filteredLeads.where((l) => l.status.trim().toLowerCase() == 'not started').length;
+    final callAttemptedLeadsCount = lpk?.callAttempted ?? filteredLeads.where((l) =>
+      l.status.toLowerCase().startsWith('call attempted') ||
+      l.status.toLowerCase() == 'picked up' ||
+      l.status.toLowerCase() == 'open' ||
+      l.status.toLowerCase() == 'assigned'
+    ).length;
+    final leadsFollowupsCount = lpk?.followUps ?? filteredLeads.where((l) =>
+      l.status.trim().toLowerCase() == 'follow-up' ||
+      l.status.trim().toLowerCase() == 'followup'
+    ).length;
+    final leadsReFollowupsCount = lpk?.reFollowUps ?? filteredLeads.where((l) =>
+      l.status.trim().toLowerCase() == 're-followup' ||
+      l.status.trim().toLowerCase() == 're-follow-up' ||
+      l.status.trim().toLowerCase() == 'refollowup'
+    ).length;
+    final leadsInterestedCount = lpk?.interested ?? filteredLeads.where((l) => l.status.trim().toLowerCase() == 'interested').length;
+    final leadsSiteVisitScheduledCount = lpk?.siteVisitScheduled ?? filteredLeads.where((l) =>
+      l.status.trim().toLowerCase() == 'site visit' ||
+      l.status.trim().toLowerCase() == 'site visit scheduled'
+    ).length;
+    final leadsSiteVisitDoneCount = lpk?.siteVisitDone ?? filteredLeads.where((l) => l.status.trim().toLowerCase() == 'site visit done').length;
+    final leadsNegotiationCount = lpk?.negotiation ?? filteredLeads.where((l) => l.status.trim().toLowerCase().contains('negotiation')).length;
+    final leadsRejectedCount = lpk?.rejectedLeads ?? filteredLeads.where((l) => l.status.trim().toLowerCase().startsWith('rejected')).length;
+    final leadsPageTotal = notStartedCount + callAttemptedLeadsCount + leadsFollowupsCount + leadsReFollowupsCount + leadsInterestedCount + leadsSiteVisitScheduledCount + leadsSiteVisitDoneCount + leadsNegotiationCount + leadsRejectedCount;
+
     final Map<ReportKpiType, KpiValue> kpiValues = {
+      // 1. Campaign KPIs (Top Row/Section)
       ReportKpiType.totalLeads: KpiValue.create(
-        count: totalLeadsCount,
+        count: summaryTotalLeads,
         percentage: 100.0,
         denominatorLabel: '100% of Total Leads',
       ),
-      ReportKpiType.telecallers: KpiValue.create(
-        count: activeTelecallerCount,
-        percentage: telecallers.isEmpty ? 100.0 : (activeTelecallerCount / telecallers.length * 100).clamp(0.0, 100.0),
-        denominatorLabel: '% of ${telecallers.length} Telecallers',
+      ReportKpiType.propertyListingLeads: KpiValue.create(
+        count: summaryPropLeads,
+        percentage: summaryTotalLeads == 0 ? 0.0 : (summaryPropLeads / summaryTotalLeads * 100),
+        denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
       ),
+      ReportKpiType.requirementLeads: KpiValue.create(
+        count: summaryReqLeads,
+        percentage: summaryTotalLeads == 0 ? 0.0 : (summaryReqLeads / summaryTotalLeads * 100),
+        denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
+      ),
+      ReportKpiType.telecallers: KpiValue.create(
+        count: summaryTelecallers,
+        percentage: telecallers.isEmpty ? 100.0 : (activeTelecallerCount / telecallers.length * 100).clamp(0.0, 100.0),
+        denominatorLabel: '% of $summaryTelecallers Telecallers',
+      ),
+      ReportKpiType.newOpenLeads: KpiValue.create(
+        count: summaryNewOpenLeads,
+        percentage: summaryTotalLeads == 0 ? 0.0 : (summaryNewOpenLeads / summaryTotalLeads * 100),
+        denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
+      ),
+      ReportKpiType.cnrLeads: KpiValue.create(
+        count: summaryCnrLeads,
+        percentage: summaryTotalLeads == 0 ? 0.0 : (summaryCnrLeads / summaryTotalLeads * 100),
+        denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
+      ),
+      ReportKpiType.callbackLeads: KpiValue.create(
+        count: summaryCallbackLeads,
+        percentage: summaryTotalLeads == 0 ? 0.0 : (summaryCallbackLeads / summaryTotalLeads * 100),
+        denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
+      ),
+      ReportKpiType.campaignFollowupLeads: KpiValue.create(
+        count: summaryCampaignFollowups,
+        percentage: summaryTotalLeads == 0 ? 0.0 : (summaryCampaignFollowups / summaryTotalLeads * 100),
+        denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
+      ),
+      ReportKpiType.notInterestedLeads: KpiValue.create(
+        count: summaryNotInterested,
+        percentage: summaryTotalLeads == 0 ? 0.0 : (summaryNotInterested / summaryTotalLeads * 100),
+        denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
+      ),
+      ReportKpiType.leadsAssignedToSalesPickedUp: KpiValue.create(
+        count: summaryAssignedToSales,
+        percentage: summaryTotalLeads == 0 ? 0.0 : (summaryAssignedToSales / summaryTotalLeads * 100),
+        denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
+      ),
+      ReportKpiType.leadsAssignedToSales: KpiValue.create(
+        count: summaryAssignedToSales,
+        percentage: summaryTotalLeads == 0 ? 0.0 : (summaryAssignedToSales / summaryTotalLeads * 100),
+        denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
+      ),
+
+      // 2. Leads Page KPIs (Displayed below Campaign KPIs)
+      ReportKpiType.leadsNotStarted: KpiValue.create(
+        count: notStartedCount,
+        percentage: leadsPageTotal == 0 ? 0.0 : (notStartedCount / leadsPageTotal * 100),
+        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+      ),
+      ReportKpiType.leadsCallAttempted: KpiValue.create(
+        count: callAttemptedLeadsCount,
+        percentage: leadsPageTotal == 0 ? 0.0 : (callAttemptedLeadsCount / leadsPageTotal * 100),
+        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+      ),
+      ReportKpiType.leadsFollowups: KpiValue.create(
+        count: leadsFollowupsCount,
+        percentage: leadsPageTotal == 0 ? 0.0 : (leadsFollowupsCount / leadsPageTotal * 100),
+        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+      ),
+      ReportKpiType.leadsReFollowups: KpiValue.create(
+        count: leadsReFollowupsCount,
+        percentage: leadsPageTotal == 0 ? 0.0 : (leadsReFollowupsCount / leadsPageTotal * 100),
+        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+      ),
+      ReportKpiType.leadsInterested: KpiValue.create(
+        count: leadsInterestedCount,
+        percentage: leadsPageTotal == 0 ? 0.0 : (leadsInterestedCount / leadsPageTotal * 100),
+        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+      ),
+      ReportKpiType.leadsSiteVisitScheduled: KpiValue.create(
+        count: leadsSiteVisitScheduledCount,
+        percentage: leadsPageTotal == 0 ? 0.0 : (leadsSiteVisitScheduledCount / leadsPageTotal * 100),
+        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+      ),
+      ReportKpiType.leadsSiteVisitDone: KpiValue.create(
+        count: leadsSiteVisitDoneCount,
+        percentage: leadsPageTotal == 0 ? 0.0 : (leadsSiteVisitDoneCount / leadsPageTotal * 100),
+        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+      ),
+      ReportKpiType.leadsNegotiation: KpiValue.create(
+        count: leadsNegotiationCount,
+        percentage: leadsPageTotal == 0 ? 0.0 : (leadsNegotiationCount / leadsPageTotal * 100),
+        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+      ),
+      ReportKpiType.leadsRejected: KpiValue.create(
+        count: leadsRejectedCount,
+        percentage: leadsPageTotal == 0 ? 0.0 : (leadsRejectedCount / leadsPageTotal * 100),
+        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+      ),
+
+      // Other / Compatibility KPIs
       ReportKpiType.salesUsers: KpiValue.create(
         count: activeSalesCount,
         percentage: salesUsers.isEmpty ? 100.0 : (activeSalesCount / salesUsers.length * 100).clamp(0.0, 100.0),
@@ -103,11 +246,6 @@ class ReportDataEngine {
       ReportKpiType.leadsContacted: KpiValue.create(
         count: contactedCount,
         percentage: totalLeadsCount == 0 ? 0.0 : (contactedCount / totalLeadsCount * 100),
-        denominatorLabel: '% of Total Leads ($totalLeadsCount)',
-      ),
-      ReportKpiType.leadsAssignedToSales: KpiValue.create(
-        count: assignedCount,
-        percentage: totalLeadsCount == 0 ? 0.0 : (assignedCount / totalLeadsCount * 100),
         denominatorLabel: '% of Total Leads ($totalLeadsCount)',
       ),
       ReportKpiType.leadQualificationRate: KpiValue.create(
@@ -562,6 +700,7 @@ class ReportDataEngine {
       availableProperties: allProperties,
       allLeads: allLeads,
       allFollowups: allFollowups,
+      insightSummary: insightSummary,
     );
   }
 

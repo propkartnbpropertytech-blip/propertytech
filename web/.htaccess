@@ -30,6 +30,9 @@
   RewriteCond %{REQUEST_URI} ^/share/([^/]+)$
   RewriteRule ^share/([^/]+)$ /share-preview.php?sessionId=%1 [L,QSA]
 
+  # Route backend API requests directly to the PropKart Node.js API backend
+  RewriteRule ^api/(.*)$ https://api-propkart.nbpropertytech.com/api/$1 [P,L]
+
   # Fallback for standard Single Page Application routing
   RewriteRule ^index\.html$ - [L]
   RewriteCond %{REQUEST_FILENAME} !-f

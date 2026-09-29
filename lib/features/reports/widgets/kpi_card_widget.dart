@@ -50,10 +50,13 @@ class _KpiCardWidgetState extends State<KpiCardWidget> {
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
+      child: InkWell(
+        onTap: widget.onExpand,
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1E293B) : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
@@ -240,7 +243,8 @@ class _KpiCardWidgetState extends State<KpiCardWidget> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildToggleChip({

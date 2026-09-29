@@ -46,6 +46,15 @@ import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/telemetry/audit_dwell_tracker.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
+enum PropertyDateFilterPreset {
+  today,
+  yesterday,
+  last7Days,
+  thisMonth,
+  customRange,
+  allTime,
+}
+
 class PropertiesScreen extends StatefulWidget {
   final String? openPropertyId;
   const PropertiesScreen({super.key, this.openPropertyId});
@@ -58,6 +67,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String? _highlightedPropertyId;
+  PropertyDateFilterPreset _selectedPropertyDateFilter = PropertyDateFilterPreset.allTime;
+  DateTime? _propertyCustomStartDate;
+  DateTime? _propertyCustomEndDate;
   String _activeTab = 'All';
   String get _activeListingTab => ThemeManager().isRentMode ? 'Rent' : 'Re-Sale';
   set _activeListingTab(String value) {
@@ -2897,170 +2909,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
           if (rawLoadedList.isNotEmpty) {
             properties = rawLoadedList.where((p) {
-              final ltName = p.listingTypeName.toLowerCase();
-              final matchesListing = _activeListingTab == 'Rent'
-                  ? ltName.contains('rent')
-                  : (ltName.contains('sale') ||
-                      ltName.contains('resale') ||
-                      !ltName.contains('rent'));
-
-              final matchesCategory = _selectedCategory == null ||
-                  p.categoryId == _selectedCategory;
-
-              final matchesCategoryTab = _matchesActiveCategory(p);
-
-              bool matchesConfig = true;
-              if (_selectedConfigurations.isNotEmpty) {
-                matchesConfig = _selectedConfigurations.any((id) {
-                  if (p.configurationId == id || p.propertyTypeId == id) return true;
-
-                  final idLower = id.toLowerCase();
-                  final pTypeNameLower = p.propertyTypeName.toLowerCase();
-                  final pConfigNameLower = (p.configurationName ?? '').toLowerCase();
-
-                  if (pTypeNameLower.isNotEmpty && (pTypeNameLower == idLower || pTypeNameLower.contains(idLower))) {
-                    return true;
-                  }
-                  if (pConfigNameLower.isNotEmpty && (pConfigNameLower == idLower || pConfigNameLower.contains(idLower))) {
-                    return true;
-                  }
-
-                  if (metadata != null) {
-                    final configMatch = metadata.configurations.firstWhere(
-                      (c) => c.id == id,
-                      orElse: () => LookupItem(id: '', name: ''),
-                    );
-                    if (configMatch.id.isNotEmpty) {
-                      final nameLower = configMatch.name.toLowerCase();
-                      if (pTypeNameLower.contains(nameLower) || pConfigNameLower.contains(nameLower)) return true;
-                    }
-
-                    final typeMatch = metadata.types.firstWhere(
-                      (t) => t.id == id,
-                      orElse: () => LookupItem(id: '', name: ''),
-                    );
-                    if (typeMatch.id.isNotEmpty) {
-                      final nameLower = typeMatch.name.toLowerCase();
-                      if (pTypeNameLower.contains(nameLower) || pConfigNameLower.contains(nameLower)) return true;
-                    }
-                  }
-
-                  return false;
-                });
-              }
-
-              final matchesArea = _selectedAreas.isEmpty ||
-                  _selectedAreas.contains(p.areaId);
-
-              bool matchesPrice = true;
-              if (_selectedPriceSortOrRange == 'custom') {
-                if (_minPrice != null && p.price < _minPrice!) {
-                  matchesPrice = false;
-                }
-                if (_maxPrice != null && p.price > _maxPrice!) {
-                  matchesPrice = false;
-                }
-              }
-
-              bool matchesSearch = true;
-              bool isDirectMatch = false;
-              if (_searchController.text.trim().isNotEmpty) {
-                final query = _searchController.text.trim().toLowerCase();
-                final words = query.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-                matchesSearch = words.every((word) =>
-                    p.propertyCode.toLowerCase().contains(word) ||
-                    p.title.toLowerCase().contains(word) ||
-                    (p.description?.toLowerCase().contains(word) ?? false) ||
-                    p.ownerName.toLowerCase().contains(word) ||
-                    p.ownerMobile.toLowerCase().contains(word) ||
-                    p.areaName.toLowerCase().contains(word) ||
-                    p.cityName.toLowerCase().contains(word) ||
-                    p.categoryName.toLowerCase().contains(word) ||
-                    (p.configurationName?.toLowerCase().contains(word) ?? false) ||
-                    p.propertyTypeName.toLowerCase().contains(word) ||
-                    (p.showsAddedBy && p.createdByName.toLowerCase().contains(word)));
-
-                if (matchesSearch && words.any((w) => p.propertyCode.toLowerCase() == w || (w.startsWith('pr') && p.propertyCode.toLowerCase().replaceAll('-', '') == w.replaceAll('-', '')))) {
-                  isDirectMatch = true;
-                }
-              }
-
-              final matchesMyAdded = !_myAddedOnly || (p.createdBy == currentUserId);
-              final matchesArchive = _archiveTabOnly
-                  ? _archivedPropertyIds.contains(p.id)
-                  : !_archivedPropertyIds.contains(p.id);
-              final matchesStatus = _selectedStatusFilter == null ||
-                  (p.propertyStatusName ?? '').toLowerCase() == _selectedStatusFilter!.toLowerCase();
-
-              final cat = p.categoryName.toLowerCase();
-              bool matchesTabCategory = false;
-              if (_activeCategoryTab == 'All') {
-                matchesTabCategory = true;
-              } else if (_activeCategoryTab == 'Residential') {
-                matchesTabCategory = cat.contains('resident') ||
-                    cat.contains('apartment') ||
-                    cat.contains('flat') ||
-                    cat.contains('villa') ||
-                    cat.contains('house') ||
-                    cat.contains('bhk') ||
-                    (!cat.contains('commercial') &&
-                        !cat.contains('industrial') &&
-                        !cat.contains('land') &&
-                        !cat.contains('plot'));
-              } else if (_activeCategoryTab == 'Commercial') {
-                matchesTabCategory = cat.contains('commercial') ||
-                    cat.contains('office') ||
-                    cat.contains('shop') ||
-                    cat.contains('showroom') ||
-                    cat.contains('retail');
-              } else if (_activeCategoryTab == 'Industrial') {
-                matchesTabCategory = cat.contains('industrial') ||
-                    cat.contains('factory') ||
-                    cat.contains('warehouse') ||
-                    cat.contains('shed');
-              } else if (_activeCategoryTab == 'Land & Plot') {
-                matchesTabCategory = cat.contains('land') || cat.contains('plot');
-              }
-
-              bool matchesBhk = true;
-              if (_activeBhkFilter != null && _activeBhkFilter != 'All BHK') {
-                if (_activeBhkFilter == '1 BHK') {
-                  matchesBhk = p.bedrooms == 1 || (p.configurationName?.contains('1') ?? false);
-                } else if (_activeBhkFilter == '2 BHK') {
-                  matchesBhk = p.bedrooms == 2 || (p.configurationName?.contains('2') ?? false);
-                } else if (_activeBhkFilter == '3 BHK') {
-                  matchesBhk = p.bedrooms == 3 || (p.configurationName?.contains('3') ?? false);
-                } else if (_activeBhkFilter == '4 BHK') {
-                  matchesBhk = p.bedrooms == 4 || (p.configurationName?.contains('4') ?? false);
-                } else if (_activeBhkFilter == '5+ BHK') {
-                  matchesBhk = p.bedrooms >= 5 || (p.configurationName?.contains('5') ?? false);
-                }
-              }
-
-              bool matchesNoImages = true;
-              if (_imageFilter == 'with_images') {
-                matchesNoImages = p.images.isNotEmpty;
-              } else if (_imageFilter == 'no_images' || _noImagesOnly) {
-                matchesNoImages = p.images.isEmpty;
-              }
-
-              if (isDirectMatch && matchesSearch) {
-                return matchesBhk && matchesMyAdded && matchesArchive;
-              }
-
-              return matchesListing &&
-                  matchesCategory &&
-                  matchesTabCategory &&
-                  matchesConfig &&
-                  matchesArea &&
-                  matchesSearch &&
-                  matchesPrice &&
-                  matchesMyAdded &&
-                  matchesArchive &&
-                  matchesStatus &&
-                  matchesCategoryTab &&
-                  matchesBhk &&
-                  matchesNoImages;
+              return _matchesPropertyFilters(p, metadata, currentUserId);
             }).toList();
 
             // Default sorting: Newest first (latest property appears first)
@@ -3165,11 +3014,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 const SizedBox(height: CRMSpacing.l),
 
                 // 2. Statistics Row (Overflow Fixed Layout)
-                _buildStatisticsRow(state is PropertiesLoaded ? state.properties : const []),
+                _buildStatisticsRow(rawLoadedList),
                 const SizedBox(height: CRMSpacing.l),
 
                 // 3. Search & 4. Advanced Filters
-                _buildSearchAndFilters(_cachedMetadata),
+                _buildSearchAndFilters(metadata, rawLoadedList, currentUserId),
                 const SizedBox(height: CRMSpacing.l),
 
                 // 5. Action Toolbar (Responsive choice chips)
@@ -3604,7 +3453,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       }
     }).toList();
 
-    final filteredByListingAndCategory = filteredByListingTab.where(_matchesActiveCategory).toList();
+    final filteredByListingAndCategory = filteredByListingTab
+        .where(_matchesActiveCategory)
+        .where(_matchesPropertyDateFilter)
+        .toList();
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 600;
 
@@ -3880,7 +3732,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     );
   }
 
-  Widget _buildSearchFiltersCard(PropertyMetadataModel? metadata) {
+  Widget _buildSearchFiltersCard(
+    PropertyMetadataModel? metadata,
+    List<PropertyModel> rawLoadedList,
+    String? currentUserId,
+  ) {
     final categories = metadata != null ? metadata.categories : <LookupItem>[];
     final areas = metadata != null ? metadata.areas.cast<LookupItem>().toList() : <LookupItem>[];
     final listingTypes =
@@ -4267,6 +4123,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 }
               },
             ),
+            const SizedBox(height: CRMSpacing.m),
+            Divider(
+              height: 1,
+              color: ThemeManager().isDarkMode ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            _buildPropertyDateFilterBar(context, rawLoadedList, metadata, currentUserId),
           ],
         ),
       ),
@@ -4321,7 +4184,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     );
   }
 
-  Widget _buildSearchAndFilters(PropertyMetadataModel? metadata) {
+  Widget _buildSearchAndFilters(
+    PropertyMetadataModel? metadata,
+    List<PropertyModel> rawLoadedList,
+    String? currentUserId,
+  ) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 600;
 
@@ -4336,7 +4203,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             child: _isMobileFiltersExpanded
                 ? Padding(
                     padding: const EdgeInsets.only(top: CRMSpacing.m),
-                    child: _buildSearchFiltersCard(metadata),
+                    child: _buildSearchFiltersCard(metadata, rawLoadedList, currentUserId),
                   )
                 : const SizedBox.shrink(),
           ),
@@ -4344,7 +4211,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       );
     }
 
-    return _buildSearchFiltersCard(metadata);
+    return _buildSearchFiltersCard(metadata, rawLoadedList, currentUserId);
   }
 
   Widget _buildPropertyListingTabButton(String label) {
@@ -4546,6 +4413,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       _currentPage = 0;
       _myAddedOnly = false;
       _selectedStatusFilter = null;
+      _selectedPropertyDateFilter = PropertyDateFilterPreset.allTime;
+      _propertyCustomStartDate = null;
+      _propertyCustomEndDate = null;
     });
     _loadProperties();
   }
@@ -5381,6 +5251,390 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       return cat.contains('land') || cat.contains('plot');
     }
     return false;
+  }
+
+  bool _matchesPropertyDateFilter(PropertyModel p) {
+    return _matchesPropertyDateFilterWithPreset(p, _selectedPropertyDateFilter);
+  }
+
+  bool _matchesPropertyDateFilterWithPreset(PropertyModel p, PropertyDateFilterPreset preset) {
+    final createdAt = p.createdAt.toLocal();
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+
+    switch (preset) {
+      case PropertyDateFilterPreset.today:
+        return !createdAt.isBefore(todayStart) && !createdAt.isAfter(todayEnd);
+      case PropertyDateFilterPreset.yesterday:
+        final yestStart = todayStart.subtract(const Duration(days: 1));
+        final yestEnd = DateTime(yestStart.year, yestStart.month, yestStart.day, 23, 59, 59, 999);
+        return !createdAt.isBefore(yestStart) && !createdAt.isAfter(yestEnd);
+      case PropertyDateFilterPreset.last7Days:
+        final start = todayStart.subtract(const Duration(days: 6));
+        return !createdAt.isBefore(start) && !createdAt.isAfter(todayEnd);
+      case PropertyDateFilterPreset.thisMonth:
+        final monthStart = DateTime(now.year, now.month, 1);
+        return !createdAt.isBefore(monthStart) && !createdAt.isAfter(todayEnd);
+      case PropertyDateFilterPreset.customRange:
+        if (_propertyCustomStartDate != null && _propertyCustomEndDate != null) {
+          final start = DateTime(_propertyCustomStartDate!.year, _propertyCustomStartDate!.month, _propertyCustomStartDate!.day);
+          final end = DateTime(_propertyCustomEndDate!.year, _propertyCustomEndDate!.month, _propertyCustomEndDate!.day, 23, 59, 59, 999);
+          return !createdAt.isBefore(start) && !createdAt.isAfter(end);
+        }
+        return true;
+      case PropertyDateFilterPreset.allTime:
+        return true;
+    }
+  }
+
+  bool _matchesPropertyFilters(
+    PropertyModel p,
+    PropertyMetadataModel? metadata,
+    String? currentUserId, {
+    PropertyDateFilterPreset? datePresetOverride,
+  }) {
+    final ltName = p.listingTypeName.toLowerCase();
+    final matchesListing = _activeListingTab == 'Rent'
+        ? ltName.contains('rent')
+        : (ltName.contains('sale') ||
+            ltName.contains('resale') ||
+            !ltName.contains('rent'));
+    if (!matchesListing) return false;
+
+    final matchesCategory = _selectedCategory == null ||
+        p.categoryId == _selectedCategory;
+    if (!matchesCategory) return false;
+
+    final matchesCategoryTab = _matchesActiveCategory(p);
+    if (!matchesCategoryTab) return false;
+
+    if (_selectedConfigurations.isNotEmpty) {
+      final matchesConfig = _selectedConfigurations.any((id) {
+        if (p.configurationId == id || p.propertyTypeId == id) return true;
+
+        final idLower = id.toLowerCase();
+        final pTypeNameLower = p.propertyTypeName.toLowerCase();
+        final pConfigNameLower = (p.configurationName ?? '').toLowerCase();
+
+        if (pTypeNameLower.isNotEmpty && (pTypeNameLower == idLower || pTypeNameLower.contains(idLower))) {
+          return true;
+        }
+        if (pConfigNameLower.isNotEmpty && (pConfigNameLower == idLower || pConfigNameLower.contains(idLower))) {
+          return true;
+        }
+
+        if (metadata != null) {
+          final configMatch = metadata.configurations.firstWhere(
+            (c) => c.id == id,
+            orElse: () => LookupItem(id: '', name: ''),
+          );
+          if (configMatch.id.isNotEmpty) {
+            final nameLower = configMatch.name.toLowerCase();
+            if (pTypeNameLower.contains(nameLower) || pConfigNameLower.contains(nameLower)) return true;
+          }
+
+          final typeMatch = metadata.types.firstWhere(
+            (t) => t.id == id,
+            orElse: () => LookupItem(id: '', name: ''),
+          );
+          if (typeMatch.id.isNotEmpty) {
+            final nameLower = typeMatch.name.toLowerCase();
+            if (pTypeNameLower.contains(nameLower) || pConfigNameLower.contains(nameLower)) return true;
+          }
+        }
+
+        return false;
+      });
+      if (!matchesConfig) return false;
+    }
+
+    final matchesArea = _selectedAreas.isEmpty ||
+        _selectedAreas.contains(p.areaId);
+    if (!matchesArea) return false;
+
+    if (_selectedPriceSortOrRange == 'custom') {
+      if (_minPrice != null && p.price < _minPrice!) {
+        return false;
+      }
+      if (_maxPrice != null && p.price > _maxPrice!) {
+        return false;
+      }
+    }
+
+    bool matchesSearch = true;
+    bool isDirectMatch = false;
+    if (_searchController.text.trim().isNotEmpty) {
+      final query = _searchController.text.trim().toLowerCase();
+      final words = query.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      matchesSearch = words.every((word) =>
+          p.propertyCode.toLowerCase().contains(word) ||
+          p.title.toLowerCase().contains(word) ||
+          (p.description?.toLowerCase().contains(word) ?? false) ||
+          p.ownerName.toLowerCase().contains(word) ||
+          p.ownerMobile.toLowerCase().contains(word) ||
+          p.areaName.toLowerCase().contains(word) ||
+          p.cityName.toLowerCase().contains(word) ||
+          p.categoryName.toLowerCase().contains(word) ||
+          (p.configurationName?.toLowerCase().contains(word) ?? false) ||
+          p.propertyTypeName.toLowerCase().contains(word) ||
+          (p.showsAddedBy && p.createdByName.toLowerCase().contains(word)));
+
+      if (matchesSearch && words.any((w) => p.propertyCode.toLowerCase() == w || (w.startsWith('pr') && p.propertyCode.toLowerCase().replaceAll('-', '') == w.replaceAll('-', '')))) {
+        isDirectMatch = true;
+      }
+      if (!matchesSearch) return false;
+    }
+
+    final matchesMyAdded = !_myAddedOnly || (p.createdBy == currentUserId);
+    if (!matchesMyAdded) return false;
+
+    final matchesArchive = _archiveTabOnly
+        ? _archivedPropertyIds.contains(p.id)
+        : !_archivedPropertyIds.contains(p.id);
+    if (!matchesArchive) return false;
+
+    final matchesStatus = _selectedStatusFilter == null ||
+        p.propertyStatusName.toLowerCase() == _selectedStatusFilter!.toLowerCase();
+    if (!matchesStatus) return false;
+
+    bool matchesBhk = true;
+    if (_activeBhkFilter != null && _activeBhkFilter != 'All BHK') {
+      if (_activeBhkFilter == '1 BHK') {
+        matchesBhk = p.bedrooms == 1 || (p.configurationName?.contains('1') ?? false);
+      } else if (_activeBhkFilter == '2 BHK') {
+        matchesBhk = p.bedrooms == 2 || (p.configurationName?.contains('2') ?? false);
+      } else if (_activeBhkFilter == '3 BHK') {
+        matchesBhk = p.bedrooms == 3 || (p.configurationName?.contains('3') ?? false);
+      } else if (_activeBhkFilter == '4 BHK') {
+        matchesBhk = p.bedrooms == 4 || (p.configurationName?.contains('4') ?? false);
+      } else if (_activeBhkFilter == '5+ BHK') {
+        matchesBhk = p.bedrooms >= 5 || (p.configurationName?.contains('5') ?? false);
+      }
+      if (!matchesBhk) return false;
+    }
+
+    bool matchesNoImages = true;
+    if (_imageFilter == 'with_images') {
+      matchesNoImages = p.images.isNotEmpty;
+    } else if (_imageFilter == 'no_images' || _noImagesOnly) {
+      matchesNoImages = p.images.isEmpty;
+    }
+    if (!matchesNoImages) return false;
+
+    final datePreset = datePresetOverride ?? _selectedPropertyDateFilter;
+    final matchesDate = _matchesPropertyDateFilterWithPreset(p, datePreset);
+
+    if (isDirectMatch && matchesSearch) {
+      return matchesBhk && matchesMyAdded && matchesArchive && matchesDate;
+    }
+
+    return matchesDate;
+  }
+
+  int _getPropertyDateFilterCount(
+    List<PropertyModel> baseList,
+    PropertyMetadataModel? metadata,
+    String? currentUserId,
+    PropertyDateFilterPreset preset,
+  ) {
+    return baseList
+        .where((p) => _matchesPropertyFilters(
+              p,
+              metadata,
+              currentUserId,
+              datePresetOverride: preset,
+            ))
+        .length;
+  }
+
+  Future<void> _pickPropertyCustomDateRange(BuildContext context) async {
+    final initialRange = DateTimeRange(
+      start: _propertyCustomStartDate ?? DateTime.now().subtract(const Duration(days: 7)),
+      end: _propertyCustomEndDate ?? DateTime.now(),
+    );
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: initialRange,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      builder: (ctx, child) {
+        final isDark = ThemeManager().isDarkMode;
+        return Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: isDark
+                ? ColorScheme.dark(
+                    primary: CRMColors.primaryOf(ctx),
+                    onPrimary: Colors.white,
+                    surface: const Color(0xFF1E293B),
+                    onSurface: Colors.white,
+                  )
+                : ColorScheme.light(
+                    primary: CRMColors.primaryOf(ctx),
+                    onPrimary: Colors.white,
+                    surface: Colors.white,
+                    onSurface: Colors.black87,
+                  ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _propertyCustomStartDate = picked.start;
+        _propertyCustomEndDate = picked.end;
+        _selectedPropertyDateFilter = PropertyDateFilterPreset.customRange;
+        _currentPage = 0;
+      });
+    }
+  }
+
+  Widget _buildPropertyDateFilterBar(
+    BuildContext context,
+    List<PropertyModel> baseList,
+    PropertyMetadataModel? metadata,
+    String? currentUserId,
+  ) {
+    final isDark = ThemeManager().isDarkMode;
+    final primaryColor = CRMColors.primaryOf(context);
+
+    final todayCount = _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.today);
+    final yesterdayCount = _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.yesterday);
+    final last7Count = _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.last7Days);
+    final thisMonthCount = _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.thisMonth);
+    final allTimeCount = _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.allTime);
+
+    final isCustomActive = _selectedPropertyDateFilter == PropertyDateFilterPreset.customRange &&
+        _propertyCustomStartDate != null &&
+        _propertyCustomEndDate != null;
+    final customLabel = isCustomActive
+        ? 'Custom Range (${DateFormat('d MMM').format(_propertyCustomStartDate!)} - ${DateFormat('d MMM').format(_propertyCustomEndDate!)})'
+        : 'Custom Range';
+    final customCount = isCustomActive
+        ? _getPropertyDateFilterCount(baseList, metadata, currentUserId, PropertyDateFilterPreset.customRange)
+        : null;
+
+    final items = [
+      (PropertyDateFilterPreset.today, 'Today', todayCount, Icons.calendar_today_rounded),
+      (PropertyDateFilterPreset.yesterday, 'Yesterday', yesterdayCount, Icons.history_rounded),
+      (PropertyDateFilterPreset.last7Days, 'Last 7 Days', last7Count, Icons.date_range_rounded),
+      (PropertyDateFilterPreset.thisMonth, 'This Month', thisMonthCount, Icons.calendar_month_rounded),
+      (PropertyDateFilterPreset.customRange, customLabel, customCount, Icons.event_repeat_rounded),
+      (PropertyDateFilterPreset.allTime, 'All Time', allTimeCount, Icons.all_inclusive_rounded),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.calendar_month_rounded, size: 16, color: primaryColor),
+            const SizedBox(width: 8),
+            Text(
+              'DATE FILTER:',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: items.map((item) {
+              final filter = item.$1;
+              final label = item.$2;
+              final count = item.$3;
+              final icon = item.$4;
+              final isSelected = _selectedPropertyDateFilter == filter;
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    if (filter == PropertyDateFilterPreset.customRange) {
+                      _pickPropertyCustomDateRange(context);
+                    } else {
+                      setState(() {
+                        _selectedPropertyDateFilter = filter;
+                        _currentPage = 0;
+                      });
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? primaryColor
+                          : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected
+                            ? primaryColor
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          icon,
+                          size: 14,
+                          color: isSelected
+                              ? Colors.white
+                              : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                            color: isSelected
+                                ? Colors.white
+                                : (isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155)),
+                          ),
+                        ),
+                        if (count != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.white.withValues(alpha: 0.25)
+                                  : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$count',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isSelected
+                                    ? Colors.white
+                                    : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
   }
 
   String _getPropertyBhkOrAreaValue(PropertyModel p) {

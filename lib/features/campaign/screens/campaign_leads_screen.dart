@@ -27,6 +27,8 @@ import '../../integration/services/lead_understanding_engine.dart';
 import '../models/campaign_followup_model.dart';
 import '../bloc/campaign_leads_bloc.dart';
 import 'campaign_subshell_header.dart';
+import 'telecaller_assigned_leads_page.dart';
+import 'source_total_leads_page.dart';
 import '../../users/repository/users_repository.dart';
 import '../../users/bloc/users_bloc.dart';
 import '../../users/models/user_model.dart' as users_model;
@@ -705,9 +707,23 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       final isArchivedReq = isReq && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed');
 
       final isOpenPipeline = _isOpenCallingLead(l);
+      final matchesDateFilter = CampaignLeadsState.matchesDateFilter(
+        _queueTime(l),
+        _selectedDateFilter,
+        customStart: _customStartDate,
+        customEnd: _customEndDate,
+      );
+
       if (isNotInterested) {
-        notInterestedCount++;
-        if (CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.today)) {
+        final niDate = l.notInterestedAt ?? _queueTime(l);
+        final matchesNiDate = CampaignLeadsState.matchesDateFilter(
+          niDate,
+          _selectedDateFilter,
+          customStart: _customStartDate,
+          customEnd: _customEndDate,
+        );
+        if (matchesNiDate) notInterestedCount++;
+        if (CampaignLeadsState.matchesDateFilter(niDate, CampaignDateFilter.today)) {
           notInterestedTodayCount++;
         }
       } else if (isListed) {
@@ -715,7 +731,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       } else if (isArchivedReq) {
         archivedReqCount++;
       } else if (isOpenPipeline) {
-        totalActiveCount++;
+        if (matchesDateFilter) totalActiveCount++;
       }
 
       final isFollowupStatus = l.campaignStatus == 'Follow up' || l.campaignStatus == 'Follow-up';
@@ -733,16 +749,54 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.thisMonth)) countThisMonth++;
       }
 
-      if (isProp && isOpenPipeline &&
-          CampaignLeadsState.matchesDateFilter(_queueTime(l), _selectedDateFilter,
-              customStart: _customStartDate, customEnd: _customEndDate)) {
+      if (isProp && isOpenPipeline && matchesDateFilter) {
         propListingCount++;
       }
-      if (isReq && isOpenPipeline &&
-          CampaignLeadsState.matchesDateFilter(_queueTime(l), _selectedDateFilter,
-              customStart: _customStartDate, customEnd: _customEndDate)) {
+      if (isReq && isOpenPipeline && matchesDateFilter) {
         reqCount++;
       }
+    }
+
+    if (_viewMode == 'not_interested') {
+      int niToday = 0;
+      int niYesterday = 0;
+      int niLast7Days = 0;
+      int niThisMonth = 0;
+      int niAllTime = 0;
+      for (final l in scopedLeads) {
+        if (isNotInterestedStatus(l.campaignStatus)) {
+          niAllTime++;
+          final d = l.notInterestedAt ?? _queueTime(l);
+          if (CampaignLeadsState.matchesDateFilter(d, CampaignDateFilter.today)) niToday++;
+          if (CampaignLeadsState.matchesDateFilter(d, CampaignDateFilter.yesterday)) niYesterday++;
+          if (CampaignLeadsState.matchesDateFilter(d, CampaignDateFilter.last7Days)) niLast7Days++;
+          if (CampaignLeadsState.matchesDateFilter(d, CampaignDateFilter.thisMonth)) niThisMonth++;
+        }
+      }
+      countToday = niToday;
+      countYesterday = niYesterday;
+      countLast7Days = niLast7Days;
+      countThisMonth = niThisMonth;
+      allTimeSectionCount = niAllTime;
+    } else if (_viewMode == 'followups') {
+      int fuToday = 0;
+      int fuYesterday = 0;
+      int fuLast7Days = 0;
+      int fuThisMonth = 0;
+      int fuAllTime = 0;
+      final fuItems = _getScopedFollowupItems();
+      for (final f in fuItems) {
+        fuAllTime++;
+        if (CampaignLeadsState.matchesDateFilter(f.scheduledAt, CampaignDateFilter.today)) fuToday++;
+        if (CampaignLeadsState.matchesDateFilter(f.scheduledAt, CampaignDateFilter.yesterday)) fuYesterday++;
+        if (CampaignLeadsState.matchesDateFilter(f.scheduledAt, CampaignDateFilter.last7Days)) fuLast7Days++;
+        if (CampaignLeadsState.matchesDateFilter(f.scheduledAt, CampaignDateFilter.thisMonth)) fuThisMonth++;
+      }
+      countToday = fuToday;
+      countYesterday = fuYesterday;
+      countLast7Days = fuLast7Days;
+      countThisMonth = fuThisMonth;
+      allTimeSectionCount = fuAllTime;
     }
 
     _cachedAllTimeSectionCount = allTimeSectionCount;
@@ -753,7 +807,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _cachedCountLast7Days = countLast7Days;
     _cachedCountThisMonth = countThisMonth;
     _cachedCountAllTime = allTimeSectionCount;
-    _cachedFollowupCount = _getScopedFollowupItems().length;
+    _cachedFollowupCount = _pendingDueFollowupLeadCount();
     _cachedNotInterestedCount = notInterestedCount;
     _cachedNotInterestedTodayCount = notInterestedTodayCount;
     _cachedTotalActiveCount = totalActiveCount;
@@ -811,6 +865,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final startIndex = (currentPage - 1) * _pageSize;
     final endIndex = (startIndex + _pageSize).clamp(0, leads.length);
     final pageLeads = leads.isEmpty ? const <IntegrationLeadModel>[] : leads.sublist(startIndex, endIndex);
+
+    final curSrc = (widget.lockSource ?? _selectedSourceFilter).toUpperCase().trim();
+    final isMetaPage = curSrc == 'META' || curSrc == 'META ADS' || curSrc == 'FACEBOOK';
+    final isHousingPage = curSrc == 'HOUSING' || curSrc == 'HOUSING.COM';
+    final isMetaOrHousingPage = isMetaPage || isHousingPage;
 
     return BlocListener<UsersBloc, UsersState>(
       listener: (context, state) {
@@ -909,6 +968,17 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
               SizedBox(height: MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.s : CRMSpacing.m),
 
+              // Source KPI Section for Meta & Housing directly above the existing Date Filter
+              if (isMetaOrHousingPage) ...[
+                _buildSourceKpiSection(context, isMeta: isMetaPage, isHousing: isHousingPage),
+                const SizedBox(height: CRMSpacing.m),
+              ],
+
+              // Date Range Filter Bar (Today default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
+              _buildDateFilterBar(context),
+
+              const SizedBox(height: CRMSpacing.m),
+
               // Main View Mode Selector (Active Leads, Follow-ups, Not Interested)
               _buildViewSelector(context),
 
@@ -926,9 +996,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 _buildLeadTypeSegmentedControl(context, propertyListingCount, requirementCount),
 
                 const SizedBox(height: CRMSpacing.m),
-
-                // Date Range Filter Bar (Today default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
-                _buildDateFilterBar(context),
 
                 // Notice Banner when viewing Today
                 _buildTodayNoticeBanner(context, totalLeads, _cachedAllTimeSectionCount),
@@ -1278,7 +1345,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           if (_viewMode != 'not_interested') {
             setState(() {
               _viewMode = 'not_interested';
-              _selectedDateFilter = CampaignDateFilter.allTime;
               _notInterestedSubFilter = 'all';
               _cachedFilteredLeads = null;
               _currentPage = 1;
@@ -5283,7 +5349,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   int _pendingDueFollowupLeadCount() {
-    return _getScopedFollowupItems().length;
+    final scoped = _getScopedFollowupItems();
+    if (_selectedDateFilter == CampaignDateFilter.allTime) {
+      return scoped.length;
+    }
+    return scoped.where((f) => CampaignLeadsState.matchesDateFilter(
+      f.scheduledAt,
+      _selectedDateFilter,
+      customStart: _customStartDate,
+      customEnd: _customEndDate,
+    )).length;
   }
 
   String _followupDisplayName(CampaignFollowupModel item) {
@@ -5346,7 +5421,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
     // Filter by telecaller only if Admin and a specific telecaller is selected
-    final telecallerScopedItems = _getScopedFollowupItems();
+    var telecallerScopedItems = _getScopedFollowupItems();
+    if (_selectedDateFilter != CampaignDateFilter.allTime) {
+      telecallerScopedItems = telecallerScopedItems.where((f) => CampaignLeadsState.matchesDateFilter(
+        f.scheduledAt,
+        _selectedDateFilter,
+        customStart: _customStartDate,
+        customEnd: _customEndDate,
+      )).toList();
+    }
 
     final totalCount = telecallerScopedItems.length;
     final todayCount = telecallerScopedItems.where((f) => f.isToday).length;
@@ -6428,20 +6511,29 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   Widget _buildNotInterestedView(BuildContext context) {
-    final notInterestedLeads = _scopedLeads
+    var notInterestedLeads = _scopedLeads
         .where((l) => isNotInterestedStatus(l.campaignStatus))
         .toList();
+
+    if (_selectedDateFilter != CampaignDateFilter.allTime) {
+      notInterestedLeads = notInterestedLeads.where((l) => CampaignLeadsState.matchesDateFilter(
+        l.notInterestedAt ?? _queueTime(l),
+        _selectedDateFilter,
+        customStart: _customStartDate,
+        customEnd: _customEndDate,
+      )).toList();
+    }
 
     final propListingCount = notInterestedLeads.where((l) => l.leadType == 'Property Listing').length;
     final reqCount = notInterestedLeads.where((l) => l.leadType == 'Requirement').length;
     final totalCount = notInterestedLeads.length;
     final todayCount = notInterestedLeads
-        .where((l) => CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.today))
+        .where((l) => CampaignLeadsState.matchesDateFilter(l.notInterestedAt ?? l.receivedAt, CampaignDateFilter.today))
         .length;
 
     List<IntegrationLeadModel> filteredBySub = notInterestedLeads;
     if (_notInterestedSubFilter == 'today') {
-      filteredBySub = notInterestedLeads.where((l) => CampaignLeadsState.matchesDateFilter(l.receivedAt, CampaignDateFilter.today)).toList();
+      filteredBySub = notInterestedLeads.where((l) => CampaignLeadsState.matchesDateFilter(l.notInterestedAt ?? l.receivedAt, CampaignDateFilter.today)).toList();
     } else if (_notInterestedSubFilter == 'property_listing') {
       filteredBySub = notInterestedLeads.where((l) => l.leadType == 'Property Listing').toList();
     } else if (_notInterestedSubFilter == 'requirement') {
@@ -7106,6 +7198,351 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         ],
       ),
     );
+  }
+
+  // --- META & HOUSING SOURCE KPI SECTION ---
+
+  Widget _buildSourceKpiSection(BuildContext context, {required bool isMeta, required bool isHousing}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MediaQuery.of(context).size.width < 800;
+    final sourceTitle = isMeta ? 'Meta' : 'Housing';
+    final allSourceLeads = _scopedLeads;
+
+    // Resolve human-readable date filter label
+    String dateRangeLabel;
+    switch (_selectedDateFilter) {
+      case CampaignDateFilter.today:
+        dateRangeLabel = 'Today';
+        break;
+      case CampaignDateFilter.yesterday:
+        dateRangeLabel = 'Yesterday';
+        break;
+      case CampaignDateFilter.last7Days:
+        dateRangeLabel = 'Last 7 Days';
+        break;
+      case CampaignDateFilter.thisMonth:
+        dateRangeLabel = 'This Month';
+        break;
+      case CampaignDateFilter.customRange:
+        if (_customStartDate != null && _customEndDate != null) {
+          final f = DateFormat('d MMM');
+          dateRangeLabel = '${f.format(_customStartDate!)} - ${f.format(_customEndDate!)}';
+        } else {
+          dateRangeLabel = 'Custom Range';
+        }
+        break;
+      case CampaignDateFilter.allTime:
+        dateRangeLabel = 'All Time';
+        break;
+    }
+
+    // Filter leads by currently selected date range (100% database data synchronized)
+    final dateFilteredSourceLeads = _selectedDateFilter == CampaignDateFilter.allTime
+        ? allSourceLeads
+        : allSourceLeads.where((l) => CampaignLeadsState.matchesDateFilter(
+            _queueTime(l),
+            _selectedDateFilter,
+            customStart: _customStartDate,
+            customEnd: _customEndDate,
+          )).toList();
+
+    // 1. Total Leads KPI (date filtered)
+    final totalLeadsCount = dateFilteredSourceLeads.length;
+    final propListingTotalCount = dateFilteredSourceLeads.where((l) => l.leadType == 'Property Listing').length;
+    final requirementTotalCount = dateFilteredSourceLeads.where((l) => l.leadType == 'Requirement').length;
+
+    // 2. Leads Assigned to Telecallers KPI (date filtered)
+    final assignedLeads = dateFilteredSourceLeads.where(TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller).toList();
+    final totalAssignedCount = assignedLeads.length;
+    final assignedPropCount = assignedLeads.where((l) => l.leadType == 'Property Listing').length;
+    final assignedReqCount = assignedLeads.where((l) => l.leadType == 'Requirement').length;
+
+    final primaryColor = isMeta ? const Color(0xFF1877F2) : const Color(0xFFE11D48);
+
+    final totalLeadsCard = _buildSourceKpiCard(
+      context,
+      title: 'Total Leads ($sourceTitle)',
+      subtitle: '$dateRangeLabel leads received from $sourceTitle (incl. Not Interested)',
+      totalCount: totalLeadsCount,
+      propCount: propListingTotalCount,
+      reqCount: requirementTotalCount,
+      icon: Icons.pie_chart_rounded,
+      accentColor: primaryColor,
+      isClickable: true,
+      badgeText: '$dateRangeLabel · View Leads →',
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (ctx) => SourceTotalLeadsPage(
+              sourceTitle: sourceTitle,
+              sourceName: isMeta ? 'Meta Ads' : 'Housing.com',
+              dateRangeLabel: dateRangeLabel,
+              leads: dateFilteredSourceLeads,
+            ),
+          ),
+        );
+      },
+    );
+
+    final assignedCard = _buildSourceKpiCard(
+      context,
+      title: 'Leads Assigned to Telecallers',
+      subtitle: '$dateRangeLabel leads allocated to telecallers from $sourceTitle · Click to view',
+      totalCount: totalAssignedCount,
+      propCount: assignedPropCount,
+      reqCount: assignedReqCount,
+      icon: Icons.support_agent_rounded,
+      accentColor: const Color(0xFF6366F1),
+      isClickable: true,
+      badgeText: '$dateRangeLabel · View Telecallers →',
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (ctx) => TelecallerAssignedLeadsPage(
+              sourceTitle: sourceTitle,
+              sourceName: isMeta ? 'Meta Ads' : 'Housing.com',
+              dateRangeLabel: dateRangeLabel,
+              allSourceLeads: dateFilteredSourceLeads,
+            ),
+          ),
+        );
+      },
+    );
+
+    if (isMobile) {
+      return Column(
+        children: [
+          totalLeadsCard,
+          const SizedBox(height: 10),
+          assignedCard,
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(child: totalLeadsCard),
+        const SizedBox(width: 12),
+        Expanded(child: assignedCard),
+      ],
+    );
+  }
+
+  Widget _buildSourceKpiCard(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required int totalCount,
+    required int propCount,
+    required int reqCount,
+    required IconData icon,
+    required Color accentColor,
+    required bool isClickable,
+    String? badgeText,
+    VoidCallback? onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardContent = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2430) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isClickable ? accentColor.withOpacity(0.35) : CRMColors.borderOf(context),
+          width: isClickable ? 1.5 : 1.0,
+        ),
+        boxShadow: CRMShadows.soft,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row 1: Icon, Title, and optional action badge
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: accentColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: accentColor, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: CRMColors.textOf(context),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (badgeText != null) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isClickable
+                        ? accentColor.withOpacity(0.15)
+                        : (isDark ? Colors.white10 : Colors.black.withOpacity(0.05)),
+                    borderRadius: BorderRadius.circular(12),
+                    border: isClickable ? Border.all(color: accentColor.withOpacity(0.4)) : null,
+                  ),
+                  child: Text(
+                    badgeText,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: isClickable ? accentColor : CRMColors.textSecondaryOf(context),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Total Count Big Number
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '$totalCount',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  color: CRMColors.textOf(context),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Total Leads',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: CRMColors.textSecondaryOf(context),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+          const Divider(height: 1),
+          const SizedBox(height: 10),
+
+          // Separate counts: Property Listing Leads & Requirement Leads
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0284C7).withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF0284C7).withOpacity(0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.home_work_rounded, size: 14, color: Color(0xFF0284C7)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Property Listing',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        '$propCount',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0284C7),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF10B981).withOpacity(0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.people_alt_rounded, size: 14, color: Color(0xFF10B981)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Requirement',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: CRMColors.textSecondaryOf(context),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        '$reqCount',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (isClickable && onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: cardContent,
+      );
+    }
+
+    return cardContent;
   }
 
   // --- DATE RANGE FILTERS & LIVE 1-MINUTE HEARTBEAT ---
