@@ -398,7 +398,35 @@ class LeadListItem {
 
     return LeadListItem(
       id: json['id']?.toString() ?? '',
-      customerName: json['customer_name']?.toString() ?? 'N/A',
+      customerName: () {
+        final rawName = json['customer_name']?.toString().trim() ?? '';
+        final isPlaceholder = rawName.isEmpty ||
+            rawName.toLowerCase() == 'n/a' ||
+            RegExp(r'^(meta|housing|webhook|direct|manual)\s*leads?$', caseSensitive: false).hasMatch(rawName);
+        if (!isPlaceholder) return rawName;
+        if (parsedRaw != null) {
+          for (final key in [
+            'lead_name',
+            'Full Name',
+            'full_name',
+            'Client Name',
+            'Customer Name',
+            'Name',
+            'name',
+            'Owner Name'
+          ]) {
+            final val = parsedRaw[key]?.toString().trim();
+            if (val != null &&
+                val.isNotEmpty &&
+                !RegExp(r'^(meta|housing|webhook|direct|manual)\s*leads?$', caseSensitive: false).hasMatch(val)) {
+              return val;
+            }
+          }
+        }
+        return rawName.isNotEmpty && rawName != 'N/A'
+            ? rawName
+            : (sp.isNotEmpty ? sp : (p.isNotEmpty ? p : 'Client'));
+      }(),
       phone: p,
       sanitizedPhone: sp,
       email: json['email']?.toString() ?? json['sanitized_email']?.toString(),
