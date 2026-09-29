@@ -1614,60 +1614,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ),
             );
           }
-        } else if (newStatus == 'Property Listed') {
-          await _service.updateLeadCampaignStatus(lead.id, 'Property Listed');
-          unawaited(_service.fetchServerLeads(resetWithServer: true));
-          if (mounted) {
-            setState(() {
-              _cachedFilteredLeads = null;
-            });
-            unawaited(_loadFollowups());
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Property listing marked as Listed and saved in Archive.'),
-                backgroundColor: const Color(0xFF10B981),
-                action: SnackBarAction(
-                  label: 'View Archive',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      _viewMode = 'archive_listed';
-                      _selectedSection = 'Property Listing';
-                      _cachedFilteredLeads = null;
-                      _currentPage = 1;
-                    });
-                  },
-                ),
-              ),
-            );
-          }
-        } else if (newStatus == 'Archive Requirement') {
-          await _service.updateLeadCampaignStatus(lead.id, 'Archived');
-          unawaited(_service.fetchServerLeads(resetWithServer: true));
-          if (mounted) {
-            setState(() {
-              _cachedFilteredLeads = null;
-            });
-            unawaited(_loadFollowups());
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Requirement lead archived and saved in Archive.'),
-                backgroundColor: const Color(0xFF6366F1),
-                action: SnackBarAction(
-                  label: 'View Archive',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      _viewMode = 'archive_requirements';
-                      _selectedSection = 'Requirement';
-                      _cachedFilteredLeads = null;
-                      _currentPage = 1;
-                    });
-                  },
-                ),
-              ),
-            );
-          }
+        } else if (newStatus == 'Property Listed' || newStatus == 'Archive Requirement') {
+          await _archiveLead(lead);
         } else if (newStatus == 'Wrong Lead Property Listing') {
           final targetType = 'Property Listing';
           final isArchive = _viewMode == 'archive_requirements' || _viewMode == 'archive_listed' || _viewMode == 'listed';
@@ -7607,12 +7555,136 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
 
   Future<void> _archiveLead(IntegrationLeadModel lead) async {
-    final currentStatus = lead.campaignStatus.trim().isEmpty ? 'New' : lead.campaignStatus;
-    lead.rawJson['pre_archive_status'] = currentStatus;
-
+    final clientName = lead.customerName.trim().isEmpty ? 'Lead' : lead.customerName.trim();
     final isProp = lead.leadType == 'Property Listing' || _selectedSection == 'Property Listing';
     final archiveStatus = isProp ? 'Property Listed' : 'Archived';
-    await _service.updateLeadCampaignStatus(lead.id, archiveStatus);
+
+    final remarksController = TextEditingController();
+    String? validationError;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+          final accentColor = isProp ? const Color(0xFF10B981) : const Color(0xFF6366F1);
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+            actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: accentColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    isProp ? Icons.home_work_rounded : Icons.archive_rounded,
+                    color: accentColor,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isProp ? 'Archive Property Listing' : 'Archive Requirement Lead',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        clientName,
+                        style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(ctx)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Archive Reason / Remarks (Mandatory)*',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: CRMColors.textOf(ctx),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: remarksController,
+                    maxLines: 3,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Enter reason for archiving this lead (required)...',
+                      hintStyle: TextStyle(fontSize: 13, color: CRMColors.textSecondaryOf(ctx)),
+                      errorText: validationError,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: accentColor, width: 1.5),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      if (validationError != null && val.trim().isNotEmpty) {
+                        setDialogState(() => validationError = null);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(false),
+                child: Text('Cancel', style: TextStyle(color: CRMColors.textSecondaryOf(ctx))),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: accentColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () {
+                  final text = remarksController.text.trim();
+                  if (text.isEmpty) {
+                    setDialogState(() {
+                      validationError = 'Archive reason is mandatory.';
+                    });
+                    return;
+                  }
+                  Navigator.of(dialogCtx).pop(true);
+                },
+                child: const Text('Confirm Archive'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final remarks = remarksController.text.trim();
+    final currentStatus = lead.campaignStatus.trim().isEmpty ? 'New' : lead.campaignStatus;
+    lead.rawJson['pre_archive_status'] = currentStatus;
+    lead.rawJson['archive_reason'] = remarks;
+
+    await _service.updateLeadCampaignStatus(lead.id, archiveStatus, reason: remarks);
     unawaited(_service.fetchServerLeads(resetWithServer: true));
 
     if (mounted) {

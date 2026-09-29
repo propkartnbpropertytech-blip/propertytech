@@ -1309,9 +1309,14 @@ class IntegrationService extends ChangeNotifier {
         final currentUserId = RoleGuard.currentUser?.id;
         final currentRaw = Map<String, dynamic>.from(_leads[idx].rawJson);
         final cleanReason = reason?.trim();
-        if (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty) {
-          currentRaw['not_interested_reason'] = cleanReason;
-          currentRaw['not_interested_notes'] = cleanReason;
+        if (cleanReason != null && cleanReason.isNotEmpty) {
+          if (status == 'Not interested') {
+            currentRaw['not_interested_reason'] = cleanReason;
+            currentRaw['not_interested_notes'] = cleanReason;
+          } else if (status == 'Archived' || status == 'Property Listed' || status == 'Listed') {
+            currentRaw['archive_reason'] = cleanReason;
+            currentRaw['archive_remarks'] = cleanReason;
+          }
         }
         _leads[idx] = _leads[idx].copyWith(
           campaignStatus: status,
@@ -1342,6 +1347,7 @@ class IntegrationService extends ChangeNotifier {
       if (reason != null && reason.trim().isNotEmpty) {
         payload['reason'] = reason.trim();
         payload['notes'] = reason.trim();
+        payload['archive_reason'] = reason.trim();
       }
       final res = await _apiClient.patch('/integrations/leads/$leadId/campaign-status', payload);
 

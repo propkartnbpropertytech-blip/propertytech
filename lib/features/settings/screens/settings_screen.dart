@@ -14,6 +14,7 @@ import '../../../core/theme/theme_manager.dart';
 import '../../../core/theme/theme_presets.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import 'sync_debug_screen.dart';
+import 'kpi_config_screen.dart';
 import '../widgets/permission_matrix_card.dart';
 import '../widgets/backup_management_card.dart';
 import '../../requirements/services/match_criteria_manager.dart';
@@ -1653,6 +1654,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const _SettingsNavItem(id: 'match_criteria', label: 'Run Match Criteria', icon: Icons.bolt_rounded),
       if (isAdminOrSuperAdmin)
         const _SettingsNavItem(id: 'upload_limits', label: 'Upload Limits', icon: Icons.photo_library_outlined),
+      if (isAdminOrSuperAdmin)
+        const _SettingsNavItem(id: 'kpi_config', label: 'KPI Configuration', icon: Icons.dashboard_customize_outlined),
       if (isSuperAdmin)
         const _SettingsNavItem(id: 'permissions', label: 'Permission Matrix', icon: Icons.admin_panel_settings_rounded),
       if (isSuperAdmin)
@@ -1680,6 +1683,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return _buildRunMatchCriteriaSection();
         case 'upload_limits':
           return _buildUploadLimitsSection();
+        case 'kpi_config':
+          return const KpiConfigScreen();
         case 'permissions':
           if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
           return const PermissionMatrixCard();

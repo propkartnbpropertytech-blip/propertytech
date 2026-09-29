@@ -6123,12 +6123,62 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
   }
 
   Widget _buildVideoThumbnail(String url) {
+    // Generate video poster image (Cloudinary supports replacing video extension with .jpg)
+    String posterUrl = url;
+    if (url.contains('/video/upload/')) {
+      posterUrl = url.replaceAll(RegExp(r'\.(mp4|mov|webm|avi|mkv)$', caseSensitive: false), '.jpg');
+    }
+
     return Container(
-      color: Colors.black,
+      color: Colors.black87,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          CRMEmbeddedVideoPlayer(videoUrl: url),
+          CrmNetworkImage(
+            url: posterUrl,
+            fit: BoxFit.contain,
+            cacheLogicalWidth: 600,
+            cacheLogicalHeight: 450,
+            placeholder: (context) => Container(
+              color: Colors.black,
+              child: const Center(
+                child: Icon(Icons.videocam_rounded, size: 40, color: Colors.white24),
+              ),
+            ),
+            error: (context) => Container(
+              color: Colors.black,
+              child: const Center(
+                child: Icon(Icons.videocam_rounded, size: 40, color: Colors.white24),
+              ),
+            ),
+          ),
+          // Subtle dark tint to enhance play button contrast
+          Container(
+            color: Colors.black.withValues(alpha: 0.25),
+          ),
+          // Prominent play button indicator
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.65),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white70, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 32,
+              ),
+            ),
+          ),
           Positioned(
             top: 8,
             right: 8,

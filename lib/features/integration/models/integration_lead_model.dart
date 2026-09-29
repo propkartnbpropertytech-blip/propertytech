@@ -51,6 +51,16 @@ class IntegrationLeadModel {
       campaignStatus == 'Assigned' ||
       interactedAt != null;
 
+  String get customerName {
+    final name = getStringValue('full_name');
+    if (name.isNotEmpty) return name;
+    final fallback = getStringValue('name');
+    if (fallback.isNotEmpty) return fallback;
+    final client = getStringValue('Client Name');
+    if (client.isNotEmpty) return client;
+    return getStringValue('Customer Name');
+  }
+
   IntegrationLeadModel({
     required this.id,
     required this.source,
