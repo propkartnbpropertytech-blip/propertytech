@@ -79,7 +79,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   // Persisted view settings across tab navigation
   static String _persistedSection = 'Property Listing';
-  static CampaignDateFilter _persistedDateFilter = CampaignDateFilter.allTime;
+  static CampaignDateFilter _persistedDateFilter = CampaignDateFilter.today;
   bool _telecallerQueueAligned = false;
   static String _persistedSourceFilter = 'All';
   static String _persistedDuplicateFilter = 'All';
@@ -141,7 +141,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _leadEventsSub = IntegrationService.leadEvents.stream.listen((event) {
       if (!mounted) return;
       final type = event['type']?.toString();
-      if (type == 'PEER_TRANSFER' || type == 'TRANSFER_COMPLETED' || type == 'OUTCOME_RECORDED') {
+      if (type == 'PEER_TRANSFER' || type == 'TRANSFER_COMPLETED' || type == 'OUTCOME_RECORDED' || type == 'FOLLOWUP_UPDATED' || type == 'STATUS_UPDATED') {
         unawaited(_loadFollowups());
       }
     });
@@ -415,9 +415,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   DateTime _queueTime(IntegrationLeadModel lead) {
-    if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) {
-      return lead.telecallerAssignedAt ?? lead.receivedAt;
-    }
     return lead.receivedAt;
   }
 
@@ -454,7 +451,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (!RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) return;
     if (!_telecallerQueueAligned) {
       _telecallerQueueAligned = true;
-      _selectedDateFilter = CampaignDateFilter.allTime;
     }
     final open = _service.leads.where(_isOpenCallingLead).toList();
     if (open.isEmpty) return;
@@ -540,12 +536,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     // Filter by Date (Today is default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
     if (_selectedDateFilter != CampaignDateFilter.allTime) {
-      list = list.where((l) => CampaignLeadsState.matchesDateFilter(
-        _queueTime(l),
-        _selectedDateFilter,
-        customStart: _customStartDate,
-        customEnd: _customEndDate,
-      )).toList();
+      list = list.where((l) {
+        final d = _viewMode == 'not_interested' ? (l.notInterestedAt ?? _queueTime(l)) : _queueTime(l);
+        return CampaignLeadsState.matchesDateFilter(
+          d,
+          _selectedDateFilter,
+          customStart: _customStartDate,
+          customEnd: _customEndDate,
+        );
+      }).toList();
     }
 
     var u = 0;
@@ -739,9 +738,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         followupCount++;
       }
 
-      // Section badges and date chips must match the spreadsheet. Transferred,
-      // imported, and sales-assigned leads stay out of this pipeline.
-      if (isSelectedSec && isOpenPipeline) {
+      final shouldCountForDateFilter = isSelectedSec && isOpenPipeline;
+      if (shouldCountForDateFilter) {
         allTimeSectionCount++;
         if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.today)) countToday++;
         if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.yesterday)) countYesterday++;
@@ -5200,25 +5198,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (_isLoadingFollowups) return;
     setState(() => _isLoadingFollowups = true);
     try {
-      final list = await _service.fetchFollowups(filter: 'all');
+      final list = await _service.getUnifiedFollowups(forceRefresh: true);
       if (mounted) {
         setState(() {
-          _followupsList = list.where((f) {
-            if (f.status == 'Completed' || f.status == 'Cancelled' || f.status == 'Callback' || f.status == 'CALLBACK') return false;
-            final local = _service.getLeadById(f.leadId);
-            final leadStatus = (local?.campaignStatus ?? f.lead?.campaignStatus ?? '').trim().toLowerCase();
-            final allocStatus = (local?.allocationStatus ?? f.lead?.allocationStatus ?? '').trim().toUpperCase();
-            if (leadStatus == 'callback' || leadStatus == 'call back' || allocStatus == 'CALLBACK') {
-              return false;
-            }
-            if (leadStatus == 'cnr' || allocStatus == 'CNR') {
-              return false;
-            }
-            if (leadStatus == 'not interested' || allocStatus == 'RELEASED') {
-              return false;
-            }
-            return _followupBelongsToCurrentTelecaller(f);
-          }).toList();
+          _followupsList = list;
           _isLoadingFollowups = false;
           _cachedFilteredLeads = null;
         });
@@ -5285,40 +5268,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   List<CampaignFollowupModel> _getAllFollowupItems() {
-    final allItems = List<CampaignFollowupModel>.from(_followupsList);
-
-    // If items empty or incomplete, incorporate leads in memory that have scheduled followups
-    final leadFollowupIds = allItems.map((f) => f.leadId).toSet();
-    for (final lead in _scopedLeads) {
-      if ((lead.campaignStatus == 'Follow up' || lead.campaignStatus == 'Follow-up') &&
-          !leadFollowupIds.contains(lead.id)) {
-        final name = lead.getStringValue('full_name').isNotEmpty
-            ? lead.getStringValue('full_name')
-            : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Campaign Lead');
-        final phone = lead.getStringValue('phone_number').isNotEmpty
-            ? lead.getStringValue('phone_number')
-            : lead.getStringValue('phone');
-        final tcName = lead.assignedTelecallerName ??
-            (lead.rawJson['assigned_telecaller_name'] ??
-                    lead.rawJson['status_updated_by_name'])
-                ?.toString();
-
-        allItems.add(CampaignFollowupModel(
-          id: 'local_${lead.id}',
-          leadId: lead.id,
-          leadType: lead.leadType,
-          clientName: name,
-          mobile: phone,
-          scheduledAt: lead.followupScheduledAt ?? DateTime.now().add(const Duration(hours: 1)),
-          remarks: lead.followupRemarks ?? '',
-          status: lead.followupStatus ?? 'Pending',
-          createdAt: lead.receivedAt,
-          lead: lead,
-          telecallerName: tcName,
-        ));
-      }
-    }
-    return allItems;
+    if (_followupsList.isNotEmpty) return _followupsList;
+    if (_service.unifiedFollowups.isNotEmpty) return _service.unifiedFollowups;
+    return _followupsList;
   }
 
   List<CampaignFollowupModel> _getScopedFollowupItems() {
@@ -6528,12 +6480,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final reqCount = notInterestedLeads.where((l) => l.leadType == 'Requirement').length;
     final totalCount = notInterestedLeads.length;
     final todayCount = notInterestedLeads
-        .where((l) => CampaignLeadsState.matchesDateFilter(l.notInterestedAt ?? l.receivedAt, CampaignDateFilter.today))
+        .where((l) => CampaignLeadsState.matchesDateFilter(l.notInterestedAt ?? _queueTime(l), CampaignDateFilter.today))
         .length;
 
     List<IntegrationLeadModel> filteredBySub = notInterestedLeads;
     if (_notInterestedSubFilter == 'today') {
-      filteredBySub = notInterestedLeads.where((l) => CampaignLeadsState.matchesDateFilter(l.notInterestedAt ?? l.receivedAt, CampaignDateFilter.today)).toList();
+      filteredBySub = notInterestedLeads.where((l) => CampaignLeadsState.matchesDateFilter(l.notInterestedAt ?? _queueTime(l), CampaignDateFilter.today)).toList();
     } else if (_notInterestedSubFilter == 'property_listing') {
       filteredBySub = notInterestedLeads.where((l) => l.leadType == 'Property Listing').toList();
     } else if (_notInterestedSubFilter == 'requirement') {
@@ -7646,6 +7598,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       } else {
                         setState(() {
                           _selectedDateFilter = filter;
+                          _customStartDate = null;
+                          _customEndDate = null;
                           _persistedDateFilter = filter;
                           _cachedFilteredLeads = null;
                           _currentPage = 1;
@@ -7874,6 +7828,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     onPressed: () {
                       setState(() {
                         _selectedDateFilter = CampaignDateFilter.allTime;
+                        _customStartDate = null;
+                        _customEndDate = null;
                         _persistedDateFilter = CampaignDateFilter.allTime;
                         _cachedFilteredLeads = null;
                         _currentPage = 1;
@@ -7928,6 +7884,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             onTap: () {
               setState(() {
                 _selectedDateFilter = CampaignDateFilter.allTime;
+                _customStartDate = null;
+                _customEndDate = null;
                 _persistedDateFilter = CampaignDateFilter.allTime;
                 _cachedFilteredLeads = null;
                 _currentPage = 1;

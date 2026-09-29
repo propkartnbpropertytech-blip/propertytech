@@ -71,18 +71,25 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     _loadPersonalNotes();
     _loadTransferredLeads();
     _loadFollowups();
+    IntegrationService().addListener(_onIntegrationChanged);
     _leadEventsSub = IntegrationService.leadEvents.stream.listen((event) {
       if (!mounted) return;
       final type = event['type']?.toString();
-      if (type == 'PEER_TRANSFER' || type == 'TRANSFER_COMPLETED' || type == 'OUTCOME_RECORDED') {
-        _loadFollowups();
+      if (type == 'PEER_TRANSFER' || type == 'TRANSFER_COMPLETED' || type == 'OUTCOME_RECORDED' || type == 'FOLLOWUP_UPDATED' || type == 'STATUS_UPDATED') {
+        _loadFollowups(forceRefresh: true);
         _loadTransferredLeads(_transferredPage);
       }
     });
   }
 
+  void _onIntegrationChanged() {
+    if (!mounted) return;
+    _loadFollowups();
+  }
+
   @override
   void dispose() {
+    IntegrationService().removeListener(_onIntegrationChanged);
     _leadEventsSub?.cancel();
     _noteController.dispose();
     super.dispose();
@@ -180,83 +187,13 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   }
 
   // --- FOLLOWUPS API ---
-  bool _followupBelongsToMe(CampaignFollowupModel followup) {
-    final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
-    if (myId == null || myId.isEmpty) return true;
-    if (followup.telecallerId != null && followup.telecallerId!.trim().toLowerCase() == myId) {
-      return true;
-    }
-    final local = IntegrationService().getLeadById(followup.leadId);
-    final assigned = (local?.assignedTelecallerId ?? followup.lead?.assignedTelecallerId)
-        ?.trim()
-        .toLowerCase();
-    if (assigned == null || assigned.isEmpty) return true;
-    return assigned == myId;
-  }
-
-  Future<void> _loadFollowups() async {
+  Future<void> _loadFollowups({bool forceRefresh = false}) async {
     setState(() => _loadingFollowups = true);
     try {
-      final service = IntegrationService();
-      if (service.leads.isEmpty) {
-        try {
-          await service.fetchServerLeads(silent: true);
-        } catch (_) {}
-      }
-      final list = await service.fetchFollowups(filter: 'all');
+      final list = await IntegrationService().getUnifiedFollowups(forceRefresh: forceRefresh);
       if (mounted) {
-        final activeFollowups = list.where((f) {
-          if (f.status == 'Completed' || f.status == 'Cancelled') return false;
-          final local = service.getLeadById(f.leadId);
-          final cs = (local?.campaignStatus ?? f.lead?.campaignStatus ?? '').trim().toLowerCase();
-          final alloc = (local?.allocationStatus ?? f.lead?.allocationStatus ?? '').trim().toUpperCase();
-          if (cs == 'callback' || cs == 'call back' || alloc == 'CALLBACK') return false;
-          if (cs == 'cnr' || alloc == 'CNR') return false;
-          if (cs == 'not interested' || alloc == 'RELEASED') return false;
-          return _followupBelongsToMe(f);
-        }).toList();
-        final seenLeadIds = activeFollowups.map((f) => f.leadId).toSet();
-        final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
-        for (final lead in service.leads) {
-          if (seenLeadIds.contains(lead.id)) continue;
-          final cs = lead.campaignStatus.trim().toLowerCase();
-          final alloc = (lead.allocationStatus ?? '').trim().toUpperCase();
-          final normalized = cs.replaceAll(RegExp(r'[\s_-]'), '');
-          final markedFollowup = normalized == 'followup' || normalized == 'refollowup' || alloc == 'FOLLOWUP';
-          if (!markedFollowup) continue;
-          if (cs == 'callback' || cs == 'call back' || alloc == 'CALLBACK') continue;
-          if (cs == 'cnr' || alloc == 'CNR') continue;
-          final fuStatus = (lead.followupStatus ?? 'Pending').trim().toLowerCase();
-          if (fuStatus == 'completed' || fuStatus == 'cancelled') continue;
-          final assigned = lead.assignedTelecallerId?.trim().toLowerCase();
-          if (myId != null && myId.isNotEmpty && assigned != null && assigned.isNotEmpty && assigned != myId) {
-            continue;
-          }
-          final name = lead.getStringValue('full_name').trim().isNotEmpty
-              ? lead.getStringValue('full_name').trim()
-              : (lead.getStringValue('name').trim().isNotEmpty ? lead.getStringValue('name').trim() : 'Campaign Lead');
-          final phone = lead.getStringValue('phone_number').trim().isNotEmpty
-              ? lead.getStringValue('phone_number').trim()
-              : lead.getStringValue('phone').trim();
-          activeFollowups.add(CampaignFollowupModel(
-            id: 'local_${lead.id}',
-            leadId: lead.id,
-            leadType: lead.leadType,
-            clientName: name,
-            mobile: phone,
-            scheduledAt: lead.followupScheduledAt ?? DateTime.now(),
-            remarks: lead.followupRemarks ?? '',
-            status: lead.followupStatus ?? 'Pending',
-            createdAt: lead.receivedAt,
-            lead: lead,
-            telecallerId: lead.assignedTelecallerId,
-          ));
-          seenLeadIds.add(lead.id);
-        }
-        activeFollowups.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
-
         setState(() {
-          _followups = activeFollowups;
+          _followups = list;
           _followupsPage = 1;
           _loadingFollowups = false;
         });
@@ -506,6 +443,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   }
 
   List<CampaignFollowupModel> _visibleFollowups(Map<String, dynamic> data) {
+    if (_followups.isNotEmpty) return _followups;
     final raw = data['scheduledFollowups'];
     if (raw is! List || raw.isEmpty) return _followups;
     final parsed = <CampaignFollowupModel>[];

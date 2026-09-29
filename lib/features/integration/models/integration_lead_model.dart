@@ -525,7 +525,7 @@ class IntegrationLeadModel {
     if (local.year == now.year && local.month == now.month && local.day == now.day) {
       return 'Today, $hour:$minuteStr $period';
     }
-    final yesterday = now.subtract(const Duration(days: 1));
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
     if (local.year == yesterday.year && local.month == yesterday.month && local.day == yesterday.day) {
       return 'Yesterday, $hour:$minuteStr $period';
     }
@@ -868,7 +868,11 @@ class IntegrationLeadModel {
       source: json['source']?.toString() ?? 'Meta Ads',
       receivedAt: json['received_at'] != null
           ? DateTime.tryParse(json['received_at'].toString()) ?? DateTime.now()
-          : DateTime.now(),
+          : (json['created_at'] != null
+              ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
+              : (raw['created_time'] != null
+                  ? DateTime.tryParse(raw['created_time'].toString()) ?? DateTime.now()
+                  : DateTime.now())),
       rawJson: raw,
       externalLeadId: json['external_lead_id']?.toString(),
       isDuplicate: json['is_duplicate'] == true,

@@ -4791,6 +4791,23 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 }
               }
             }
+            if (currentUser != null && RoleGuard.isTelecaller(currentUser.role)) {
+              final uName = currentUser.fullName.trim().toLowerCase();
+              final isCreator = r.createdBy == currentUser.id ||
+                  (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+                  (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+              final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+                  (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
+              final isTaggedTelecaller = (r.assignedTelecallerId != null && r.assignedTelecallerId == currentUser.id) ||
+                  (r.metaCustomFields != null &&
+                    (r.metaCustomFields!['telecaller_id'] == currentUser.id ||
+                     r.metaCustomFields!['assigned_telecaller_id'] == currentUser.id ||
+                     r.metaCustomFields!['telecaller_by'] == currentUser.id ||
+                     (r.metaCustomFields!['telecaller_by'] != null && uName.isNotEmpty && r.metaCustomFields!['telecaller_by'].toString().trim().toLowerCase() == uName)));
+              if (!isCreator && !isAssignee && !isTaggedTelecaller) {
+                return false;
+              }
+            }
 
             final matchesListingType = getListingTypeLabel(r) == _activeListingTab;
             final matchesCategory = _selectedCategoryId == null || r.categoryId == _selectedCategoryId;

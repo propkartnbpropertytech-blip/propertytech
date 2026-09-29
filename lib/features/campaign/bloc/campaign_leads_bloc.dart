@@ -182,14 +182,14 @@ class CampaignLeadsState extends Equatable {
             local.month == now.month &&
             local.day == now.day;
       case CampaignDateFilter.yesterday:
-        final yest = now.subtract(const Duration(days: 1));
+        final yest = DateTime(now.year, now.month, now.day - 1);
         return local.year == yest.year &&
             local.month == yest.month &&
             local.day == yest.day;
       case CampaignDateFilter.last7Days:
-        final cutoff = DateTime(now.year, now.month, now.day)
-            .subtract(const Duration(days: 6));
-        return local.isAfter(cutoff.subtract(const Duration(milliseconds: 1)));
+        final startOf7Days = DateTime(now.year, now.month, now.day - 6);
+        final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+        return !local.isBefore(startOf7Days) && !local.isAfter(endOfToday);
       case CampaignDateFilter.thisMonth:
         return local.year == now.year && local.month == now.month;
       case CampaignDateFilter.customRange:
@@ -200,8 +200,7 @@ class CampaignLeadsState extends Equatable {
         final end = customEnd != null
             ? DateTime(customEnd.year, customEnd.month, customEnd.day, 23, 59, 59, 999)
             : DateTime(2100);
-        return local.isAfter(start.subtract(const Duration(milliseconds: 1))) &&
-            local.isBefore(end.add(const Duration(milliseconds: 1)));
+        return !local.isBefore(start) && !local.isAfter(end);
       case CampaignDateFilter.allTime:
         return true;
     }

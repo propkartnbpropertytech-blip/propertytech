@@ -62,22 +62,20 @@ class RequirementsRepository {
           return isCreator || r.adminId == currentUser.id || sameOrg;
         }).toList();
       } else if (role == 'Telecaller') {
-        // Telecaller: same team leads as their supervisor Admin, including assigned leads.
-        final supervisorId = currentUser.adminId;
+        // Telecaller: only personal leads (created by them, assigned to them, or tagged to them)
         requirements = requirements.where((r) {
           final isCreator = r.createdBy == currentUser.id ||
               (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
               (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
-          final sameAdminTeam = supervisorId != null &&
-              supervisorId.isNotEmpty &&
-              (r.adminId == supervisorId || r.createdBy == supervisorId);
+          final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+              (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
           final isTaggedTelecaller = (r.assignedTelecallerId != null && r.assignedTelecallerId == currentUser.id) ||
               (r.metaCustomFields != null &&
                 (r.metaCustomFields!['telecaller_id'] == currentUser.id ||
                  r.metaCustomFields!['assigned_telecaller_id'] == currentUser.id ||
                  r.metaCustomFields!['telecaller_by'] == currentUser.id ||
                  (r.metaCustomFields!['telecaller_by'] != null && uName.isNotEmpty && r.metaCustomFields!['telecaller_by'].toString().trim().toLowerCase() == uName)));
-          return isCreator || sameAdminTeam || isTaggedTelecaller;
+          return isCreator || isAssignee || isTaggedTelecaller;
         }).toList();
       } else if (role != 'Super Admin') {
         // Sales: own leads (including ones transferred away) plus leads assigned to them.

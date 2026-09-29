@@ -1386,6 +1386,7 @@ class IntegrationService extends ChangeNotifier {
             }
           } catch (_) {}
         }
+        _unifiedFollowups.clear();
         leadEvents.add({'leadId': leadId, 'status': status, 'type': 'STATUS_UPDATED'});
         unawaited(fetchServerLeads(resetWithServer: true));
         return true;
@@ -1995,6 +1996,8 @@ class IntegrationService extends ChangeNotifier {
       unawaited(_persistLeads());
     }
 
+    _unifiedFollowups.clear();
+
     // Broadcast event across all blocs and screens
     leadEvents.add({
       'leadId': leadId,
@@ -2138,6 +2141,93 @@ class IntegrationService extends ChangeNotifier {
       debugPrint('[IntegrationService] Error fetching followups: $e');
       return [];
     }
+  }
+
+  List<CampaignFollowupModel> _unifiedFollowups = [];
+  List<CampaignFollowupModel> get unifiedFollowups => _unifiedFollowups;
+
+  bool followupBelongsToCurrentTelecaller(CampaignFollowupModel followup) {
+    final role = (RoleGuard.currentUser?.role ?? '').toLowerCase().trim();
+    if (role != 'telecaller') return true;
+    final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
+    if (myId == null || myId.isEmpty) return true;
+    if (followup.telecallerId != null && followup.telecallerId!.trim().toLowerCase() == myId) {
+      return true;
+    }
+    final local = getLeadById(followup.leadId);
+    final assigned = (local?.assignedTelecallerId ?? followup.lead?.assignedTelecallerId)
+        ?.trim()
+        .toLowerCase();
+    if (assigned == null || assigned.isEmpty) return true;
+    return assigned == myId;
+  }
+
+  Future<List<CampaignFollowupModel>> getUnifiedFollowups({bool forceRefresh = false, String? leadType}) async {
+    if (_unifiedFollowups.isNotEmpty && !forceRefresh) {
+      return _unifiedFollowups;
+    }
+    final rawList = await fetchFollowups(filter: 'all', leadType: leadType);
+    final activeFollowups = rawList.where((f) {
+      if (f.status == 'Completed' || f.status == 'Cancelled' || f.status == 'Callback' || f.status == 'CALLBACK') return false;
+      final local = getLeadById(f.leadId);
+      final leadStatus = (local?.campaignStatus ?? f.lead?.campaignStatus ?? '').trim().toLowerCase();
+      final allocStatus = (local?.allocationStatus ?? f.lead?.allocationStatus ?? '').trim().toUpperCase();
+      if (leadStatus == 'callback' || leadStatus == 'call back' || allocStatus == 'CALLBACK') {
+        return false;
+      }
+      if (leadStatus == 'cnr' || allocStatus == 'CNR') {
+        return false;
+      }
+      if (leadStatus == 'not interested' || allocStatus == 'RELEASED') {
+        return false;
+      }
+      return followupBelongsToCurrentTelecaller(f);
+    }).toList();
+
+    final allItems = List<CampaignFollowupModel>.from(activeFollowups);
+    final leadFollowupIds = allItems.map((f) => f.leadId).toSet();
+    final currentUser = RoleGuard.currentUser;
+    for (final lead in _leads) {
+      if ((lead.campaignStatus == 'Follow up' || lead.campaignStatus == 'Follow-up') &&
+          !leadFollowupIds.contains(lead.id)) {
+        if (currentUser != null && currentUser.role == 'Telecaller') {
+          final myId = currentUser.id.trim().toLowerCase();
+          final assigned = lead.assignedTelecallerId?.trim().toLowerCase();
+          if (assigned != null && assigned.isNotEmpty && assigned != myId) {
+            continue;
+          }
+        }
+        final name = lead.getStringValue('full_name').isNotEmpty
+            ? lead.getStringValue('full_name')
+            : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Campaign Lead');
+        final phone = lead.getStringValue('phone_number').isNotEmpty
+            ? lead.getStringValue('phone_number')
+            : lead.getStringValue('phone');
+        final tcName = lead.assignedTelecallerName ??
+            (lead.rawJson['assigned_telecaller_name'] ??
+                    lead.rawJson['status_updated_by_name'])
+                ?.toString();
+
+        allItems.add(CampaignFollowupModel(
+          id: 'local_${lead.id}',
+          leadId: lead.id,
+          leadType: lead.leadType,
+          clientName: name,
+          mobile: phone,
+          scheduledAt: lead.followupScheduledAt ?? DateTime.now().add(const Duration(hours: 1)),
+          remarks: lead.followupRemarks ?? '',
+          status: lead.followupStatus ?? 'Pending',
+          createdAt: lead.receivedAt,
+          lead: lead,
+          telecallerName: tcName,
+        ));
+      }
+    }
+
+    allItems.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+    _unifiedFollowups = allItems;
+    notifyListeners();
+    return _unifiedFollowups;
   }
 
 
