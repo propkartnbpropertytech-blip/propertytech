@@ -905,94 +905,54 @@ class _DashboardScreenState extends State<DashboardScreen>
       return const SizedBox.shrink();
     }
 
-    if (isDesktop) {
-      // 4 columns when 8 or more cards, otherwise 3 columns
-      final int desktopCols = cards.length >= 8 ? 4 : 3;
-      final List<Widget> rows = [];
-      for (int i = 0; i < cards.length; i += desktopCols) {
-        final rowCards = cards.sublist(i, (i + desktopCols).clamp(0, cards.length));
-        final rowChildren = <Widget>[];
-        for (final c in rowCards) {
-          rowChildren.add(
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: c,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final int cols;
+        if (availableWidth >= 1050) {
+          cols = cards.length >= 8 ? 4 : 3;
+        } else if (availableWidth >= 700) {
+          cols = 3;
+        } else if (availableWidth >= 360) {
+          cols = 2;
+        } else {
+          cols = 1;
+        }
+
+        final List<Widget> rows = [];
+        for (int i = 0; i < cards.length; i += cols) {
+          final rowCards = cards.sublist(i, (i + cols).clamp(0, cards.length));
+          final rowChildren = <Widget>[];
+          for (final c in rowCards) {
+            rowChildren.add(
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  child: c,
+                ),
               ),
+            );
+          }
+          while (rowChildren.length < cols) {
+            rowChildren.add(
+              const Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 5),
+                  child: SizedBox.shrink(),
+                ),
+              ),
+            );
+          }
+          rows.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: rowChildren),
             ),
           );
         }
-        while (rowChildren.length < desktopCols) {
-          rowChildren.add(
-            const Expanded(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6),
-                child: SizedBox.shrink(),
-              ),
-            ),
-          );
-        }
-        rows.add(
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(children: rowChildren),
-          ),
-        );
-      }
-      return Column(children: rows);
-    } else if (isTablet) {
-      // 2 columns on tablet
-      final List<Widget> rows = [];
-      for (int i = 0; i < cards.length; i += 2) {
-        final rowCards = cards.sublist(i, (i + 2).clamp(0, cards.length));
-        final rowChildren = <Widget>[];
-        for (final c in rowCards) {
-          rowChildren.add(
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: c,
-              ),
-            ),
-          );
-        }
-        while (rowChildren.length < 2) {
-          rowChildren.add(
-            const Expanded(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6),
-                child: SizedBox.shrink(),
-              ),
-            ),
-          );
-        }
-        rows.add(
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(children: rowChildren),
-          ),
-        );
-      }
-      return Column(children: rows);
-    } else {
-      // Mobile 2 columns
-      final List<Widget> rows = [];
-      for (int i = 0; i < cards.length; i += 2) {
-        final rowCards = cards.sublist(i, (i + 2).clamp(0, cards.length));
-        rows.add(
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              children: rowCards.map((c) => Expanded(child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: c,
-              ))).toList(),
-            ),
-          ),
-        );
-      }
-      return Column(children: rows);
-    }
+        return Column(children: rows);
+      },
+    );
   }
 
 

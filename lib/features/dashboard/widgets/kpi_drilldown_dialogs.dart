@@ -194,6 +194,55 @@ Widget _buildKpiMiniBadge({
   );
 }
 
+/// Dynamic responsive dialog wrapper that adapts perfectly to any screen size
+/// without horizontal or vertical pixel overflow.
+Widget _buildResponsiveDialog({
+  required BuildContext context,
+  required Widget child,
+  double targetMaxWidth = 880,
+  double targetMaxHeight = 720,
+  EdgeInsetsGeometry? contentPadding,
+}) {
+  final media = MediaQuery.sizeOf(context);
+  final isDark = ThemeManager().isDarkMode;
+  final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
+
+  final isSmallScreen = media.width < 600;
+  final isShortScreen = media.height < 680;
+
+  final horizontalInset = isSmallScreen ? 10.0 : 20.0;
+  final verticalInset = isShortScreen ? 10.0 : 20.0;
+
+  final maxWidth = media.width < (targetMaxWidth + horizontalInset * 2)
+      ? (media.width - horizontalInset * 2)
+      : targetMaxWidth;
+
+  final maxHeight = media.height < (targetMaxHeight + verticalInset * 2)
+      ? (media.height - verticalInset * 2)
+      : targetMaxHeight;
+
+  final padding = contentPadding ?? EdgeInsets.all(isSmallScreen ? 14.0 : 20.0);
+
+  return Dialog(
+    backgroundColor: cardBg,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    insetPadding: EdgeInsets.symmetric(
+      horizontal: horizontalInset,
+      vertical: verticalInset,
+    ),
+    child: ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+      ),
+      child: Padding(
+        padding: padding,
+        child: child,
+      ),
+    ),
+  );
+}
+
 // ============================================================================
 // 1. INVENTORY DRILLDOWN DIALOG (Two-Level)
 // ============================================================================
@@ -259,77 +308,71 @@ class _InventoryDrilldownDialogState extends State<_InventoryDrilldownDialog> {
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820, maxHeight: 680),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 860,
+      targetMaxHeight: 680,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Row(
             children: [
-              // Header
-              Row(
-                children: [
-                  if (_selectedStatus != null) ...[
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      onPressed: () => setState(() => _selectedStatus = null),
-                      tooltip: 'Back to Statuses',
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Icon(
-                    Icons.home_work_rounded,
-                    color: ThemeManager().primaryColor,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _selectedStatus != null
-                              ? '$_selectedStatus Properties'
-                              : 'Available Inventory Breakdown',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
-                          ),
-                        ),
-                        Text(
-                          'Business: ${widget.params.businessType} | Range: ${widget.params.dateFilter}',
-                          style: TextStyle(fontSize: 12, color: subColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+              if (_selectedStatus != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () => setState(() => _selectedStatus = null),
+                  tooltip: 'Back to Statuses',
+                ),
+                const SizedBox(width: 8),
+              ],
+              Icon(
+                Icons.home_work_rounded,
+                color: ThemeManager().primaryColor,
+                size: 24,
               ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
-
-              // Content Area
+              const SizedBox(width: 12),
               Expanded(
-                child: _selectedStatus == null
-                    ? _buildStatusCards(textColor, subColor, borderColor, isDark)
-                    : _buildPropertyList(textColor, subColor, borderColor, isDark),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _selectedStatus != null
+                          ? '$_selectedStatus Properties'
+                          : 'Available Inventory Breakdown',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      ),
+                    ),
+                    Text(
+                      'Business: ${widget.params.businessType} | Range: ${widget.params.dateFilter}',
+                      style: TextStyle(fontSize: 12, color: subColor),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Content Area
+          Expanded(
+            child: _selectedStatus == null
+                ? _buildStatusCards(textColor, subColor, borderColor, isDark)
+                : _buildPropertyList(textColor, subColor, borderColor, isDark),
+          ),
+        ],
       ),
     );
   }
@@ -386,71 +429,80 @@ class _InventoryDrilldownDialogState extends State<_InventoryDrilldownDialog> {
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: GridView.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 2.2,
-            ),
-            itemCount: statuses.length,
-            itemBuilder: (context, index) {
-              final item = statuses[index];
-              final statusName = item['status'] as String;
-              final count = item['count'] as int;
-              final color = item['color'] as Color;
-              final icon = item['icon'] as IconData;
-
-              return InkWell(
-                onTap: () => _loadProperties(statusName),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: color.withValues(alpha: 0.4), width: 1.5),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.12),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(icon, color: color, size: 22),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              statusName,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: textColor,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '$count Properties',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: color,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.chevron_right_rounded, color: subColor),
-                    ],
-                  ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth >= 600;
+              final cols = isWide ? 4 : 2;
+              final ratio = isWide ? 2.1 : 2.1;
+              return GridView.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: ratio,
                 ),
+                itemCount: statuses.length,
+                itemBuilder: (context, index) {
+                  final item = statuses[index];
+                  final statusName = item['status'] as String;
+                  final count = item['count'] as int;
+                  final color = item['color'] as Color;
+                  final icon = item['icon'] as IconData;
+
+                  return InkWell(
+                    onTap: () => _loadProperties(statusName),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: color.withValues(alpha: 0.3), width: 1.2),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(icon, color: color, size: 18),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  statusName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: textColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '$count Properties',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: color,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.chevron_right_rounded, size: 16, color: color.withValues(alpha: 0.7)),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -669,80 +721,74 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820, maxHeight: 680),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 860,
+      targetMaxHeight: 680,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Row(
             children: [
-              // Header
-              Row(
-                children: [
-                  if (_selectedSource != null) ...[
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      onPressed: () => setState(() => _selectedSource = null),
-                      tooltip: 'Back to Sources',
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Icon(
-                    Icons.assignment_outlined,
-                    color: ThemeManager().primaryColor,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _selectedSource != null
-                              ? '$_selectedSource Leads'
-                              : 'Total Leads by Source',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
-                          ),
-                        ),
-                        Text(
-                          'Type: $_selectedLeadType | Range: ${widget.params.dateFilter}',
-                          style: TextStyle(fontSize: 12, color: subColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Lead Type Toggle
-                  if (_selectedSource == null) _buildLeadTypeToggle(isDark),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+              if (_selectedSource != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () => setState(() => _selectedSource = null),
+                  tooltip: 'Back to Sources',
+                ),
+                const SizedBox(width: 8),
+              ],
+              Icon(
+                Icons.assignment_outlined,
+                color: ThemeManager().primaryColor,
+                size: 24,
               ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
-
-              // Content Area
+              const SizedBox(width: 12),
               Expanded(
-                child: _selectedSource == null
-                    ? _buildSourcesList(textColor, subColor, borderColor, isDark)
-                    : _buildLeadsList(textColor, subColor, borderColor, isDark),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _selectedSource != null
+                          ? '$_selectedSource Leads'
+                          : 'Total Leads by Source',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      ),
+                    ),
+                    Text(
+                      'Type: $_selectedLeadType | Range: ${widget.params.dateFilter}',
+                      style: TextStyle(fontSize: 12, color: subColor),
+                    ),
+                  ],
+                ),
+              ),
+              // Lead Type Toggle
+              if (_selectedSource == null) _buildLeadTypeToggle(isDark),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Content Area
+          Expanded(
+            child: _selectedSource == null
+                ? _buildSourcesList(textColor, subColor, borderColor, isDark)
+                : _buildLeadsList(textColor, subColor, borderColor, isDark),
+          ),
+        ],
       ),
     );
   }
@@ -1170,13 +1216,13 @@ class _LeadDetailsDialog extends StatelessWidget {
       }
     }
 
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 680),
-        child: Column(
-          children: [
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 760,
+      targetMaxHeight: 700,
+      contentPadding: EdgeInsets.zero,
+      child: Column(
+        children: [
             // Header
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
@@ -1786,7 +1832,6 @@ class _LeadDetailsDialog extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -1899,126 +1944,120 @@ class _TelecallersDrilldownDialogState extends State<_TelecallersDrilldownDialog
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 620),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 760,
+      targetMaxHeight: 640,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.support_agent_rounded,
-                    color: ThemeManager().primaryColor,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Active Telecallers (${_summary.totalTelecallers})',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
-                          ),
-                        ),
-                        Text(
-                          'Allocation and performance overview | Range: ${widget.params.dateFilter}',
-                          style: TextStyle(fontSize: 12, color: subColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+              Icon(
+                Icons.support_agent_rounded,
+                color: ThemeManager().primaryColor,
+                size: 24,
               ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
+              const SizedBox(width: 12),
               Expanded(
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _summary.telecallers.isEmpty
-                        ? Center(child: Text('No active telecallers found.', style: TextStyle(color: subColor)))
-                        : ListView.separated(
-                            itemCount: _summary.telecallers.length,
-                            separatorBuilder: (context, _) => const Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              final tc = _summary.telecallers[index];
-                              return ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: ThemeManager().primaryColor.withValues(alpha: 0.15),
-                                  child: Text(
-                                    tc.name.isNotEmpty ? tc.name[0].toUpperCase() : 'T',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: ThemeManager().primaryColor,
-                                    ),
-                                  ),
-                                ),
-                                title: Text(
-                                  tc.name,
-                                  style: TextStyle(fontWeight: FontWeight.w600, color: textColor),
-                                ),
-                                subtitle: Text(
-                                  tc.email,
-                                  style: TextStyle(fontSize: 12, color: subColor),
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          '${tc.leadsAllocated} Allocated',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13,
-                                            color: ThemeManager().primaryColor,
-                                          ),
-                                        ),
-                                        Text(
-                                          'List: ${tc.listingLeads} | Req: ${tc.requirementLeads}',
-                                          style: TextStyle(fontSize: 11, color: subColor),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Icon(Icons.chevron_right_rounded, color: subColor),
-                                  ],
-                                ),
-                                onTap: () {
-                                  Navigator.of(context).pop();
-                                  KpiDrilldownDialogs.showTelecallerPerformance(
-                                    context,
-                                    telecallerId: tc.id,
-                                    telecallerName: tc.name,
-                                    initialLeadType: widget.params.leadType,
-                                    params: widget.params,
-                                  );
-                                },
-                              );
-                            },
-                          ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Active Telecallers (${_summary.totalTelecallers})',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      ),
+                    ),
+                    Text(
+                      'Allocation and performance overview | Range: ${widget.params.dateFilter}',
+                      style: TextStyle(fontSize: 12, color: subColor),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _summary.telecallers.isEmpty
+                    ? Center(child: Text('No active telecallers found.', style: TextStyle(color: subColor)))
+                    : ListView.separated(
+                        itemCount: _summary.telecallers.length,
+                        separatorBuilder: (context, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final tc = _summary.telecallers[index];
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: ThemeManager().primaryColor.withValues(alpha: 0.15),
+                              child: Text(
+                                tc.name.isNotEmpty ? tc.name[0].toUpperCase() : 'T',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: ThemeManager().primaryColor,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              tc.name,
+                              style: TextStyle(fontWeight: FontWeight.w600, color: textColor),
+                            ),
+                            subtitle: Text(
+                              tc.email,
+                              style: TextStyle(fontSize: 12, color: subColor),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '${tc.leadsAllocated} Allocated',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: ThemeManager().primaryColor,
+                                      ),
+                                    ),
+                                    Text(
+                                      'List: ${tc.listingLeads} | Req: ${tc.requirementLeads}',
+                                      style: TextStyle(fontSize: 11, color: subColor),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(Icons.chevron_right_rounded, color: subColor),
+                              ],
+                            ),
+                            onTap: () {
+                              Navigator.of(context).pop();
+                              KpiDrilldownDialogs.showTelecallerPerformance(
+                                context,
+                                telecallerId: tc.id,
+                                telecallerName: tc.name,
+                                initialLeadType: widget.params.leadType,
+                                params: widget.params,
+                              );
+                            },
+                          );
+                        },
+                      ),
+          ),
+        ],
       ),
     );
   }
@@ -2160,127 +2199,121 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
 
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 880, maxHeight: 720),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 920,
+      targetMaxHeight: 740,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Row(
             children: [
-              // Header
-              Row(
-                children: [
-                  if (_selectedCategory != null) ...[
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      onPressed: () => setState(() => _selectedCategory = null),
-                      tooltip: 'Back to Performance Overview',
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Icon(
-                    _selectedCategory != null ? Icons.assignment_outlined : Icons.speed_rounded,
-                    color: ThemeManager().primaryColor,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _selectedCategory != null
-                              ? '${widget.telecallerName} — $_selectedCategoryTitle'
-                              : '${widget.telecallerName} — Performance Overview',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          _selectedCategory != null
-                              ? 'Showing ${_categoryLeads.length} of $_categoryTotal leads | Type: $_leadType | Range: ${widget.params?.dateFilter ?? "Weekly"}'
-                              : 'Click any metric or category card below to view matching leads | Range: ${widget.params?.dateFilter ?? "Weekly"}',
-                          style: TextStyle(fontSize: 12, color: subColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Lead Type Toggle
-                  Container(
-                    height: 32,
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: ['Both', 'Listing', 'Requirement'].map((type) {
-                        final isSel = _leadType == type;
-                        return GestureDetector(
-                          onTap: () {
-                            if (_leadType != type) {
-                              setState(() => _leadType = type);
-                              _fetch();
-                              if (_selectedCategory != null) {
-                                _fetchCategoryLeads();
-                              }
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isSel ? ThemeManager().primaryColor : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              type,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-                                color: isSel ? Colors.white : subColor,
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+              if (_selectedCategory != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () => setState(() => _selectedCategory = null),
+                  tooltip: 'Back to Performance Overview',
+                ),
+                const SizedBox(width: 8),
+              ],
+              Icon(
+                _selectedCategory != null ? Icons.assignment_outlined : Icons.speed_rounded,
+                color: ThemeManager().primaryColor,
+                size: 24,
               ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
-
-              // Body: Overview vs Category Leads
+              const SizedBox(width: 12),
               Expanded(
-                child: _selectedCategory == null
-                    ? (_isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _data == null
-                            ? Center(child: Text('Failed to load telecaller performance.', style: TextStyle(color: subColor)))
-                            : _buildOverviewView(textColor, subColor, borderColor, isDark))
-                    : _buildCategoryLeadsView(textColor, subColor, borderColor, isDark),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _selectedCategory != null
+                          ? '${widget.telecallerName} — $_selectedCategoryTitle'
+                          : '${widget.telecallerName} — Performance Overview',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      _selectedCategory != null
+                          ? 'Showing ${_categoryLeads.length} of $_categoryTotal leads | Type: $_leadType | Range: ${widget.params?.dateFilter ?? "Weekly"}'
+                          : 'Click any metric or category card below to view matching leads | Range: ${widget.params?.dateFilter ?? "Weekly"}',
+                      style: TextStyle(fontSize: 12, color: subColor),
+                    ),
+                  ],
+                ),
+              ),
+              // Lead Type Toggle
+              Container(
+                height: 32,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: ['Both', 'Listing', 'Requirement'].map((type) {
+                    final isSel = _leadType == type;
+                    return GestureDetector(
+                      onTap: () {
+                        if (_leadType != type) {
+                          setState(() => _leadType = type);
+                          _fetch();
+                          if (_selectedCategory != null) {
+                            _fetchCategoryLeads();
+                          }
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isSel ? ThemeManager().primaryColor : Colors.transparent,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          type,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
+                            color: isSel ? Colors.white : subColor,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Body: Overview vs Category Leads
+          Expanded(
+            child: _selectedCategory == null
+                ? (_isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _data == null
+                        ? Center(child: Text('Failed to load telecaller performance.', style: TextStyle(color: subColor)))
+                        : _buildOverviewView(textColor, subColor, borderColor, isDark))
+                : _buildCategoryLeadsView(textColor, subColor, borderColor, isDark),
+          ),
+        ],
       ),
     );
   }
@@ -2309,10 +2342,11 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 1. Top Allocation Summary: 3 Clickable Cards
-          Row(
-            children: [
-              Expanded(
-                child: _buildTopStatCard(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth >= 580;
+              final topCards = [
+                _buildTopStatCard(
                   title: 'Total Allocated',
                   count: d.totalAllocated,
                   subtitle: 'All allocated leads',
@@ -2324,10 +2358,7 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
                   subColor: subColor,
                   onTap: () => _selectCategory('all', 'Total Allocated Leads'),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildTopStatCard(
+                _buildTopStatCard(
                   title: 'Listing Allocated',
                   count: d.listingAllocated,
                   subtitle: 'Property listings',
@@ -2339,10 +2370,7 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
                   subColor: subColor,
                   onTap: () => _selectCategory('listing', 'Listing Allocated Leads'),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildTopStatCard(
+                _buildTopStatCard(
                   title: 'Requirement Allocated',
                   count: d.requirementAllocated,
                   subtitle: 'Client requirements',
@@ -2354,8 +2382,33 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
                   subColor: subColor,
                   onTap: () => _selectCategory('requirement', 'Requirement Allocated Leads'),
                 ),
-              ),
-            ],
+              ];
+
+              if (isWide) {
+                return Row(
+                  children: [
+                    Expanded(child: topCards[0]),
+                    const SizedBox(width: 10),
+                    Expanded(child: topCards[1]),
+                    const SizedBox(width: 10),
+                    Expanded(child: topCards[2]),
+                  ],
+                );
+              }
+              return Column(
+                children: [
+                  topCards[0],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(child: topCards[1]),
+                      const SizedBox(width: 8),
+                      Expanded(child: topCards[2]),
+                    ],
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 20),
 
@@ -2376,83 +2429,94 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
           const SizedBox(height: 12),
 
           // 2. 7 Category KPI Cards Grid (Clickable)
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.8,
-            ),
-            itemCount: categories.length,
-            itemBuilder: (context, index) {
-              final cat = categories[index];
-              final key = cat['key'] as String;
-              final title = cat['title'] as String;
-              final count = cat['count'] as int;
-              final color = cat['color'] as Color;
-              final icon = cat['icon'] as IconData;
-              final desc = cat['desc'] as String;
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cols = constraints.maxWidth >= 720
+                  ? 4
+                  : (constraints.maxWidth >= 480 ? 3 : 2);
+              final ratio = constraints.maxWidth >= 720
+                  ? 2.2
+                  : (constraints.maxWidth >= 480 ? 2.0 : 2.0);
 
-              return InkWell(
-                onTap: () => _selectCategory(key, '$title Leads'),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: color.withValues(alpha: 0.3), width: 1.2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: color.withValues(alpha: 0.05),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(icon, color: color, size: 22),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textColor),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              desc,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 10.5, color: subColor),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '$count',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.chevron_right_rounded, size: 18, color: color.withValues(alpha: 0.7)),
-                    ],
-                  ),
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: ratio,
                 ),
+                itemCount: categories.length,
+                itemBuilder: (context, index) {
+                  final cat = categories[index];
+                  final key = cat['key'] as String;
+                  final title = cat['title'] as String;
+                  final count = cat['count'] as int;
+                  final color = cat['color'] as Color;
+                  final icon = cat['icon'] as IconData;
+                  final desc = cat['desc'] as String;
+
+                  return InkWell(
+                    onTap: () => _selectCategory(key, '$title Leads'),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: color.withValues(alpha: 0.3), width: 1.2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.05),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1.5),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(icon, color: color, size: 18),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textColor),
+                                ),
+                                const SizedBox(height: 1),
+                                Text(
+                                  desc,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 10, color: subColor),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '$count',
+                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.chevron_right_rounded, size: 16, color: color.withValues(alpha: 0.7)),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -2546,38 +2610,38 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(10),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.4), width: 1.5),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.4), width: 1.2),
         ),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(icon, color: color, size: 24),
+              child: Icon(icon, color: color, size: 20),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(fontSize: 12, color: subColor, fontWeight: FontWeight.w500)),
+                  Text(title, style: TextStyle(fontSize: 11.5, color: subColor, fontWeight: FontWeight.w500)),
                   const SizedBox(height: 2),
-                  Text('$count', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textColor)),
-                  const SizedBox(height: 2),
+                  Text('$count', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+                  const SizedBox(height: 1),
                   Text(subtitle, style: TextStyle(fontSize: 10, color: subColor)),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: color, size: 20),
+            Icon(Icons.chevron_right_rounded, color: color, size: 18),
           ],
         ),
       ),
@@ -2977,154 +3041,150 @@ class _LeadsAllocatedDrilldownDialogState extends State<_LeadsAllocatedDrilldown
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 780, maxHeight: 650),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 820,
+      targetMaxHeight: 680,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.assignment_ind_rounded,
-                    color: ThemeManager().primaryColor,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Leads Allocated Breakdown',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
-                          ),
-                        ),
-                        Text(
-                          'Allocation by telecaller | ${widget.params.dateFilter}',
-                          style: TextStyle(fontSize: 12, color: subColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+              Icon(
+                Icons.assignment_ind_rounded,
+                color: ThemeManager().primaryColor,
+                size: 24,
               ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
-              if (_isLoading)
-                const Expanded(child: Center(child: CircularProgressIndicator()))
-              else ...[
-                // Summary Cards
-                Row(
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: _buildSummaryPill(
-                        'Total Allocated',
-                        '${_data.totalAllocated}',
-                        ThemeManager().primaryColor,
-                        isDark,
-                        borderColor,
+                    Text(
+                      'Leads Allocated Breakdown',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildSummaryPill(
-                        'Listing Leads',
-                        '${_data.listingAllocated}',
-                        const Color(0xFF10B981),
-                        isDark,
-                        borderColor,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildSummaryPill(
-                        'Requirement Leads',
-                        '${_data.requirementAllocated}',
-                        const Color(0xFF3B82F6),
-                        isDark,
-                        borderColor,
-                      ),
+                    Text(
+                      'Allocation by telecaller | ${widget.params.dateFilter}',
+                      style: TextStyle(fontSize: 12, color: subColor),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Telecaller Allocation Table (Tap to view telecaller performance):',
-                  style: TextStyle(fontSize: 13, color: subColor),
-                ),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: ListView.separated(
-                    itemCount: _data.telecallers.length,
-                    separatorBuilder: (context, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final item = _data.telecallers[index];
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: ThemeManager().primaryColor.withValues(alpha: 0.12),
-                          child: Text(
-                            item.telecallerName.isNotEmpty ? item.telecallerName[0].toUpperCase() : 'T',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: ThemeManager().primaryColor,
-                            ),
-                          ),
-                        ),
-                        title: Text(item.telecallerName, style: TextStyle(fontWeight: FontWeight.w600, color: textColor)),
-                        subtitle: Text(
-                          'Listing: ${item.listingCount} | Requirement: ${item.requirementCount}',
-                          style: TextStyle(fontSize: 12, color: subColor),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${item.totalCount} Leads',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: ThemeManager().primaryColor,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Icon(Icons.chevron_right_rounded, color: subColor),
-                          ],
-                        ),
-                        onTap: () {
-                          Navigator.of(context).pop();
-                          KpiDrilldownDialogs.showTelecallerPerformance(
-                            context,
-                            telecallerId: item.telecallerId,
-                            telecallerName: item.telecallerName,
-                            initialLeadType: widget.params.leadType,
-                            params: widget.params,
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
             ],
           ),
-        ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+          if (_isLoading)
+            const Expanded(child: Center(child: CircularProgressIndicator()))
+          else ...[
+            // Summary Cards
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth >= 500;
+                final pills = [
+                  _buildSummaryPill('Total Allocated', '${_data.totalAllocated}', ThemeManager().primaryColor, isDark, borderColor),
+                  _buildSummaryPill('Listing Leads', '${_data.listingAllocated}', const Color(0xFF10B981), isDark, borderColor),
+                  _buildSummaryPill('Requirement Leads', '${_data.requirementAllocated}', const Color(0xFF3B82F6), isDark, borderColor),
+                ];
+
+                if (isWide) {
+                  return Row(
+                    children: [
+                      Expanded(child: pills[0]),
+                      const SizedBox(width: 10),
+                      Expanded(child: pills[1]),
+                      const SizedBox(width: 10),
+                      Expanded(child: pills[2]),
+                    ],
+                  );
+                }
+                return Column(
+                  children: [
+                    pills[0],
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: pills[1]),
+                        const SizedBox(width: 8),
+                        Expanded(child: pills[2]),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Telecaller Allocation Table (Tap to view telecaller performance):',
+              style: TextStyle(fontSize: 13, color: subColor),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: ListView.separated(
+                itemCount: _data.telecallers.length,
+                separatorBuilder: (context, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = _data.telecallers[index];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: ThemeManager().primaryColor.withValues(alpha: 0.12),
+                      child: Text(
+                        item.telecallerName.isNotEmpty ? item.telecallerName[0].toUpperCase() : 'T',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: ThemeManager().primaryColor,
+                        ),
+                      ),
+                    ),
+                    title: Text(item.telecallerName, style: TextStyle(fontWeight: FontWeight.w600, color: textColor)),
+                    subtitle: Text(
+                      'Listing: ${item.listingCount} | Requirement: ${item.requirementCount}',
+                      style: TextStyle(fontSize: 12, color: subColor),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${item.totalCount} Leads',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: ThemeManager().primaryColor,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(Icons.chevron_right_rounded, color: subColor),
+                      ],
+                    ),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      KpiDrilldownDialogs.showTelecallerPerformance(
+                        context,
+                        telecallerId: item.telecallerId,
+                        telecallerName: item.telecallerName,
+                        initialLeadType: widget.params.leadType,
+                        params: widget.params,
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -3191,181 +3251,164 @@ class _AssignedToSalesDrilldownDialogState extends State<_AssignedToSalesDrilldo
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820, maxHeight: 680),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 820,
+      targetMaxHeight: 680,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.badge_rounded,
-                    color: ThemeManager().primaryColor,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                         Text(
-                          'Assigned to Sales Breakdown',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
-                          ),
-                        ),
-                        Text(
-                          'Total assigned across telecallers & sales users | Range: ${widget.params.dateFilter}',
-                          style: TextStyle(fontSize: 12, color: subColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+              Icon(
+                Icons.badge_rounded,
+                color: ThemeManager().primaryColor,
+                size: 24,
               ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
-              if (_isLoading)
-                const Expanded(child: Center(child: CircularProgressIndicator()))
-              else ...[
-                // Metrics bar
-                Row(
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: borderColor),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Total Assigned', style: TextStyle(fontSize: 11, color: subColor)),
-                            const SizedBox(height: 2),
-                            Text('${_data.totalAssigned}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ThemeManager().primaryColor)),
-                          ],
-                        ),
+                     Text(
+                      'Assigned to Sales Breakdown',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: borderColor),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Listing Assigned', style: TextStyle(fontSize: 11, color: subColor)),
-                            const SizedBox(height: 2),
-                            Text('${_data.listingAssigned}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: borderColor),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Requirement Assigned', style: TextStyle(fontSize: 11, color: subColor)),
-                            const SizedBox(height: 2),
-                            Text('${_data.requirementAssigned}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF3B82F6))),
-                          ],
-                        ),
-                      ),
+                    Text(
+                      'Total assigned across telecallers & sales users | Range: ${widget.params.dateFilter}',
+                      style: TextStyle(fontSize: 12, color: subColor),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Text('Sales Assignments (Transferred by Telecaller to Sales User):', style: TextStyle(fontSize: 13, color: subColor)),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: _data.breakdown.isEmpty
-                      ? Center(child: Text('No assigned leads found.', style: TextStyle(color: subColor)))
-                      : ListView.separated(
-                          itemCount: _data.breakdown.length,
-                          separatorBuilder: (context, _) => const Divider(height: 1),
-                          itemBuilder: (context, idx) {
-                            final b = _data.breakdown[idx];
-                            return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              leading: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF10B981), size: 18),
-                              ),
-                              title: Text(
-                                '${b.telecallerName} ➔ ${b.salesUserName}',
-                                style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14),
-                              ),
-                              subtitle: Text(
-                                'Listing: ${b.listingCount} | Requirement: ${b.requirementCount}',
-                                style: TextStyle(fontSize: 12, color: subColor),
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '${b.totalCount} Leads',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                      color: ThemeManager().primaryColor,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Icon(Icons.chevron_right_rounded, color: subColor),
-                                ],
-                              ),
-                              onTap: () {
-                                Navigator.of(context).pop();
-                                KpiDrilldownDialogs.showSalesUserLifecycle(
-                                  context,
-                                  salesUserId: b.salesUserId,
-                                  salesUserName: b.salesUserName,
-                                  params: widget.params,
-                                );
-                              },
-                            );
-                          },
-                        ),
-                ),
-              ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
             ],
           ),
-        ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+          if (_isLoading)
+            const Expanded(child: Center(child: CircularProgressIndicator()))
+          else ...[
+            // Metrics bar (responsive layout)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 500;
+                Widget buildMetricCard(String label, String value, Color color) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(label, style: TextStyle(fontSize: 11, color: subColor)),
+                        const SizedBox(height: 2),
+                        Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+                      ],
+                    ),
+                  );
+                }
+
+                if (isNarrow) {
+                  return Column(
+                    children: [
+                      buildMetricCard('Total Assigned', '${_data.totalAssigned}', ThemeManager().primaryColor),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(child: buildMetricCard('Listing Assigned', '${_data.listingAssigned}', const Color(0xFF10B981))),
+                          const SizedBox(width: 8),
+                          Expanded(child: buildMetricCard('Requirement Assigned', '${_data.requirementAssigned}', const Color(0xFF3B82F6))),
+                        ],
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: buildMetricCard('Total Assigned', '${_data.totalAssigned}', ThemeManager().primaryColor)),
+                    const SizedBox(width: 12),
+                    Expanded(child: buildMetricCard('Listing Assigned', '${_data.listingAssigned}', const Color(0xFF10B981))),
+                    const SizedBox(width: 12),
+                    Expanded(child: buildMetricCard('Requirement Assigned', '${_data.requirementAssigned}', const Color(0xFF3B82F6))),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            Text('Sales Assignments (Transferred by Telecaller to Sales User):', style: TextStyle(fontSize: 13, color: subColor)),
+            const SizedBox(height: 10),
+            Expanded(
+              child: _data.breakdown.isEmpty
+                  ? Center(child: Text('No assigned leads found.', style: TextStyle(color: subColor)))
+                  : ListView.separated(
+                      itemCount: _data.breakdown.length,
+                      separatorBuilder: (context, _) => const Divider(height: 1),
+                      itemBuilder: (context, idx) {
+                        final b = _data.breakdown[idx];
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF10B981), size: 18),
+                          ),
+                          title: Text(
+                            '${b.telecallerName} ➔ ${b.salesUserName}',
+                            style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14),
+                          ),
+                          subtitle: Text(
+                            'Listing: ${b.listingCount} | Requirement: ${b.requirementCount}',
+                            style: TextStyle(fontSize: 12, color: subColor),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${b.totalCount} Leads',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: ThemeManager().primaryColor,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Icon(Icons.chevron_right_rounded, color: subColor),
+                            ],
+                          ),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            KpiDrilldownDialogs.showSalesUserLifecycle(
+                              context,
+                              salesUserId: b.salesUserId,
+                              salesUserName: b.salesUserName,
+                              params: widget.params,
+                            );
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -3407,109 +3450,103 @@ class _SalesUsersDrilldownDialogState extends State<_SalesUsersDrilldownDialog> 
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 620),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 720,
+      targetMaxHeight: 620,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.groups_rounded,
-                    color: ThemeManager().primaryColor,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Active Sales Users (${_summary.totalSalesUsers})',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
-                          ),
-                        ),
-                        Text(
-                          'Lifecycle overview by sales rep | Range: ${widget.params.dateFilter}',
-                          style: TextStyle(fontSize: 12, color: subColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+              Icon(
+                Icons.groups_rounded,
+                color: ThemeManager().primaryColor,
+                size: 24,
               ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
+              const SizedBox(width: 12),
               Expanded(
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _summary.salesUsers.isEmpty
-                        ? Center(child: Text('No sales users found.', style: TextStyle(color: subColor)))
-                        : ListView.separated(
-                            itemCount: _summary.salesUsers.length,
-                            separatorBuilder: (context, _) => const Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              final su = _summary.salesUsers[index];
-                              return ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: ThemeManager().primaryColor.withValues(alpha: 0.12),
-                                  child: Text(
-                                    su.name.isNotEmpty ? su.name[0].toUpperCase() : 'S',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: ThemeManager().primaryColor,
-                                    ),
-                                  ),
-                                ),
-                                title: Text(su.name, style: TextStyle(fontWeight: FontWeight.w600, color: textColor)),
-                                subtitle: Text(su.email, style: TextStyle(fontSize: 12, color: subColor)),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      '${su.leadsCount} Leads',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                        color: ThemeManager().primaryColor,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Icon(Icons.chevron_right_rounded, color: subColor),
-                                  ],
-                                ),
-                                onTap: () {
-                                  Navigator.of(context).pop();
-                                  KpiDrilldownDialogs.showSalesUserLifecycle(
-                                    context,
-                                    salesUserId: su.id,
-                                    salesUserName: su.name,
-                                    params: widget.params,
-                                  );
-                                },
-                              );
-                            },
-                          ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Active Sales Users (${_summary.totalSalesUsers})',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      ),
+                    ),
+                    Text(
+                      'Lifecycle overview by sales rep | Range: ${widget.params.dateFilter}',
+                      style: TextStyle(fontSize: 12, color: subColor),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _summary.salesUsers.isEmpty
+                    ? Center(child: Text('No sales users found.', style: TextStyle(color: subColor)))
+                    : ListView.separated(
+                        itemCount: _summary.salesUsers.length,
+                        separatorBuilder: (context, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final su = _summary.salesUsers[index];
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: ThemeManager().primaryColor.withValues(alpha: 0.12),
+                              child: Text(
+                                su.name.isNotEmpty ? su.name[0].toUpperCase() : 'S',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: ThemeManager().primaryColor,
+                                ),
+                              ),
+                            ),
+                            title: Text(su.name, style: TextStyle(fontWeight: FontWeight.w600, color: textColor)),
+                            subtitle: Text(su.email, style: TextStyle(fontSize: 12, color: subColor)),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${su.leadsCount} Leads',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: ThemeManager().primaryColor,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(Icons.chevron_right_rounded, color: subColor),
+                              ],
+                            ),
+                            onTap: () {
+                              Navigator.of(context).pop();
+                              KpiDrilldownDialogs.showSalesUserLifecycle(
+                                context,
+                                salesUserId: su.id,
+                                salesUserName: su.name,
+                                params: widget.params,
+                              );
+                            },
+                          );
+                        },
+                      ),
+          ),
+        ],
       ),
     );
   }
@@ -3646,23 +3683,17 @@ class _SalesUserLifecycleDialogState extends State<_SalesUserLifecycleDialog> {
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
 
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 880, maxHeight: 730),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: _selectedStatusKey != null
-              ? _buildRequirementsView(textColor, subColor, borderColor, isDark)
-              : _buildLifecycleOverview(textColor, subColor, borderColor, isDark),
-        ),
-      ),
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 920,
+      targetMaxHeight: 740,
+      child: _selectedStatusKey != null
+          ? _buildRequirementsView(textColor, subColor, borderColor, isDark)
+          : _buildLifecycleOverview(textColor, subColor, borderColor, isDark),
     );
   }
 
@@ -3764,70 +3795,94 @@ class _SalesUserLifecycleDialogState extends State<_SalesUserLifecycleDialog> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 2.5,
-            ),
-            itemCount: lifecycleCards.length,
-            itemBuilder: (context, index) {
-              final c = lifecycleCards[index];
-              final key = c['key'] as String;
-              final title = c['title'] as String;
-              final count = c['count'] as int;
-              final color = c['color'] as Color;
-              final icon = c['icon'] as IconData;
-              final isRejected = c['isRejected'] == true;
+          const SizedBox(height: 14),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final int crossAxisCount;
+              final double childAspectRatio;
 
-              return InkWell(
-                onTap: () => _selectStatus(key, title, color),
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+              if (width >= 720) {
+                crossAxisCount = 5;
+                childAspectRatio = 2.3;
+              } else if (width >= 540) {
+                crossAxisCount = 4;
+                childAspectRatio = 2.2;
+              } else if (width >= 380) {
+                crossAxisCount = 3;
+                childAspectRatio = 2.0;
+              } else {
+                crossAxisCount = 2;
+                childAspectRatio = 1.8;
+              }
+
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: childAspectRatio,
+                ),
+                itemCount: lifecycleCards.length,
+                itemBuilder: (context, index) {
+                  final c = lifecycleCards[index];
+                  final key = c['key'] as String;
+                  final title = c['title'] as String;
+                  final count = c['count'] as int;
+                  final color = c['color'] as Color;
+                  final icon = c['icon'] as IconData;
+                  final isRejected = c['isRejected'] == true;
+
+                  return InkWell(
+                    onTap: () => _selectStatus(key, title, color),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isRejected ? color : borderColor,
-                      width: isRejected ? 1.5 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(icon, color: color, size: 22),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 12, color: subColor),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '$count',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
-                            ),
-                          ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isRejected ? color : borderColor,
+                          width: isRejected ? 1.5 : 1,
                         ),
                       ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+                      child: Row(
                         children: [
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(icon, color: color, size: 16),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 11, color: subColor),
+                                ),
+                                const SizedBox(height: 1),
+                                Text(
+                                  '$count',
+                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textColor),
+                                ),
+                              ],
+                            ),
+                          ),
                           if (isRejected)
                             IconButton(
                               icon: Icon(
                                 _showRejectionBreakdown ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                size: 18,
+                                size: 16,
                                 color: color,
                               ),
                               padding: EdgeInsets.zero,
@@ -3835,14 +3890,14 @@ class _SalesUserLifecycleDialogState extends State<_SalesUserLifecycleDialog> {
                               onPressed: () {
                                 setState(() => _showRejectionBreakdown = !_showRejectionBreakdown);
                               },
-                            ),
-                          const SizedBox(width: 4),
-                          Icon(Icons.chevron_right_rounded, size: 18, color: color.withValues(alpha: 0.7)),
+                            )
+                          else
+                            Icon(Icons.chevron_right_rounded, size: 14, color: color.withValues(alpha: 0.7)),
                         ],
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -4186,35 +4241,56 @@ class _SalesUserLifecycleDialogState extends State<_SalesUserLifecycleDialog> {
                                   ),
                                   const SizedBox(height: 8),
 
-                                  // Row 2: Phone, Budget, Area, Timestamp
-                                  Row(
+                                  // Row 2: Phone, Budget, Area, Timestamp (Wrap for zero overflow)
+                                  Wrap(
+                                    spacing: 12,
+                                    runSpacing: 4,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
                                     children: [
-                                      Icon(Icons.phone_rounded, size: 12, color: subColor),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        req.mobile.isNotEmpty ? req.mobile : 'N/A',
-                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.phone_rounded, size: 12, color: subColor),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            req.mobile.isNotEmpty ? req.mobile : 'N/A',
+                                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor),
+                                          ),
+                                        ],
                                       ),
-                                      const SizedBox(width: 14),
-                                      Icon(Icons.payments_outlined, size: 12, color: subColor),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Budget: ${_formatBudget(req)}',
-                                        style: TextStyle(fontSize: 12, color: textColor),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.payments_outlined, size: 12, color: subColor),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Budget: ${_formatBudget(req)}',
+                                            style: TextStyle(fontSize: 12, color: textColor),
+                                          ),
+                                        ],
                                       ),
-                                      if (req.areaName != null && req.areaName!.isNotEmpty) ...[
-                                        const SizedBox(width: 14),
-                                        Icon(Icons.location_on_outlined, size: 12, color: subColor),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          req.areaName!,
-                                          style: TextStyle(fontSize: 12, color: subColor),
+                                      if (req.areaName != null && req.areaName!.isNotEmpty)
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.location_on_outlined, size: 12, color: subColor),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              req.areaName!,
+                                              style: TextStyle(fontSize: 12, color: subColor),
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                      const Spacer(),
-                                      Text(
-                                        _formatDateTime(req.updatedAt ?? req.createdAt),
-                                        style: TextStyle(fontSize: 10.5, color: subColor),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.access_time_rounded, size: 11, color: subColor),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _formatDateTime(req.updatedAt ?? req.createdAt),
+                                            style: TextStyle(fontSize: 10.5, color: subColor),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -4371,86 +4447,102 @@ class _RequirementDetailsDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final innerBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
     final statusColor = _getStatusColor(requirement.status);
 
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 680, maxHeight: 650),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 680,
+      targetMaxHeight: 650,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Row(
             children: [
-              // Header
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: statusColor.withValues(alpha: 0.15),
-                    child: Icon(Icons.person_rounded, color: statusColor, size: 22),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          requirement.customerName,
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'ID: ${requirement.id}',
-                          style: TextStyle(fontSize: 11, color: subColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: statusColor.withValues(alpha: 0.3)),
-                    ),
-                    child: Text(
-                      requirement.status,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: statusColor),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: statusColor.withValues(alpha: 0.15),
+                child: Icon(Icons.person_rounded, color: statusColor, size: 22),
               ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
-
+              const SizedBox(width: 14),
               Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Overview Grid
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: innerBg,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: borderColor),
-                        ),
-                        child: Column(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      requirement.customerName,
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'ID: ${requirement.id}',
+                      style: TextStyle(fontSize: 11, color: subColor),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  requirement.status,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: statusColor),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Overview Grid (responsive layout)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: innerBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isNarrow = constraints.maxWidth < 420;
+                        if (isNarrow) {
+                          return Column(
+                            children: [
+                              _buildInfoItem('Mobile / Phone', requirement.mobile.isNotEmpty ? requirement.mobile : 'N/A', Icons.phone_rounded, textColor, subColor),
+                              const SizedBox(height: 12),
+                              _buildInfoItem('Budget', _formatBudget(), Icons.payments_outlined, textColor, subColor),
+                              const SizedBox(height: 12),
+                              _buildInfoItem('Listing Type', requirement.listingType ?? 'N/A', Icons.sell_outlined, textColor, subColor),
+                              const SizedBox(height: 12),
+                              _buildInfoItem('Property Type', requirement.propertyType ?? 'N/A', Icons.apartment_rounded, textColor, subColor),
+                              const SizedBox(height: 12),
+                              _buildInfoItem('Preferred Area', requirement.areaName ?? 'N/A', Icons.location_on_outlined, textColor, subColor),
+                              const SizedBox(height: 12),
+                              _buildInfoItem('Created Date', _formatDateTime(requirement.createdAt), Icons.calendar_today_rounded, textColor, subColor),
+                            ],
+                          );
+                        }
+                        return Column(
                           children: [
                             Row(
                               children: [
@@ -4485,55 +4577,55 @@ class _RequirementDetailsDialog extends StatelessWidget {
                               ],
                             ),
                           ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Notes section
-                      if (requirement.notes != null && requirement.notes!.trim().isNotEmpty) ...[
-                        Text('Requirement Notes / Activity Log', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textColor)),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: borderColor),
-                          ),
-                          child: Text(
-                            requirement.notes!,
-                            style: TextStyle(fontSize: 13, color: textColor, height: 1.4),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Remarks section
-                      if (requirement.remarks != null && requirement.remarks!.trim().isNotEmpty) ...[
-                        Text('Remarks', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textColor)),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: borderColor),
-                          ),
-                          child: Text(
-                            requirement.remarks!,
-                            style: TextStyle(fontSize: 13, color: textColor, fontStyle: FontStyle.italic, height: 1.4),
-                          ),
-                        ),
-                      ],
-                    ],
+                        );
+                      },
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+
+                  // Notes section
+                  if (requirement.notes != null && requirement.notes!.trim().isNotEmpty) ...[
+                    Text('Requirement Notes / Activity Log', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textColor)),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: Text(
+                        requirement.notes!,
+                        style: TextStyle(fontSize: 13, color: textColor, height: 1.4),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Remarks section
+                  if (requirement.remarks != null && requirement.remarks!.trim().isNotEmpty) ...[
+                    Text('Remarks', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textColor)),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: Text(
+                        requirement.remarks!,
+                        style: TextStyle(fontSize: 13, color: textColor, fontStyle: FontStyle.italic, height: 1.4),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -4638,23 +4730,19 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final innerBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
     const accentColor = Color(0xFFEC4899); // Pink
 
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 880, maxHeight: 720),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 880,
+      targetMaxHeight: 720,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
               // Header
               Row(
                 children: [
@@ -4883,58 +4971,77 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
                                     ),
                                     const SizedBox(height: 10),
 
-                                    // Row 2: Mobile, Budget, Area, Date
-                                    Row(
+                                    // Row 2: Mobile, Budget, Area, Date (Wrap for zero overflow)
+                                    Wrap(
+                                      spacing: 12,
+                                      runSpacing: 4,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
                                       children: [
-                                        Icon(Icons.phone_rounded, size: 13, color: subColor),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          item.mobile.isNotEmpty ? item.mobile : 'N/A',
-                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor),
-                                        ),
-                                        if (item.mobile.isNotEmpty) ...[
-                                          const SizedBox(width: 4),
-                                          InkWell(
-                                            onTap: () {
-                                              Clipboard.setData(ClipboardData(text: item.mobile));
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('Phone number copied!'), duration: Duration(seconds: 1)),
-                                              );
-                                            },
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(2),
-                                              child: Icon(Icons.copy_rounded, size: 12, color: subColor),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.phone_rounded, size: 13, color: subColor),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              item.mobile.isNotEmpty ? item.mobile : 'N/A',
+                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor),
                                             ),
-                                          ),
-                                        ],
-                                        const SizedBox(width: 14),
-                                        Icon(Icons.payments_outlined, size: 13, color: subColor),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Budget: ${_formatBudget(item)}',
-                                          style: TextStyle(fontSize: 12, color: subColor),
+                                            if (item.mobile.isNotEmpty) ...[
+                                              const SizedBox(width: 4),
+                                              InkWell(
+                                                onTap: () {
+                                                  Clipboard.setData(ClipboardData(text: item.mobile));
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(content: Text('Phone number copied!'), duration: Duration(seconds: 1)),
+                                                  );
+                                                },
+                                                child: Padding(
+                                                  padding: const EdgeInsets.all(2),
+                                                  child: Icon(Icons.copy_rounded, size: 12, color: subColor),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
                                         ),
-                                        if (item.areaName != null && item.areaName!.isNotEmpty) ...[
-                                          const SizedBox(width: 14),
-                                          Icon(Icons.location_on_outlined, size: 13, color: subColor),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            item.areaName!,
-                                            style: TextStyle(fontSize: 12, color: textColor, fontWeight: FontWeight.w500),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.payments_outlined, size: 13, color: subColor),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Budget: ${_formatBudget(item)}',
+                                              style: TextStyle(fontSize: 12, color: subColor),
+                                            ),
+                                          ],
+                                        ),
+                                        if (item.areaName != null && item.areaName!.isNotEmpty)
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.location_on_outlined, size: 13, color: subColor),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                item.areaName!,
+                                                style: TextStyle(fontSize: 12, color: textColor, fontWeight: FontWeight.w500),
+                                              ),
+                                            ],
                                           ),
-                                        ],
-                                        const Spacer(),
-                                        Icon(Icons.access_time_rounded, size: 12, color: subColor),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          _formatDateTime(item.createdAt),
-                                          style: TextStyle(fontSize: 11, color: subColor),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.access_time_rounded, size: 12, color: subColor),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              _formatDateTime(item.createdAt),
+                                              style: TextStyle(fontSize: 11, color: subColor),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 10),
 
-                                    // Row 3: Sales User
+                                    // Row 3: Sales User (Wrap for zero overflow)
                                     Container(
                                       width: double.infinity,
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -4943,39 +5050,40 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
                                         borderRadius: BorderRadius.circular(8),
                                         border: Border.all(color: borderColor),
                                       ),
-                                      child: Row(
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 4,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
                                         children: [
-                                          const Icon(Icons.badge_outlined, size: 16, color: Color(0xFF3B82F6)),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            'Assigned Sales Executive: ',
-                                            style: TextStyle(fontSize: 12, color: subColor),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.badge_outlined, size: 16, color: Color(0xFF3B82F6)),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                'Assigned Sales Executive: ',
+                                                style: TextStyle(fontSize: 12, color: subColor),
+                                              ),
+                                              Text(
+                                                item.salesUserName ?? 'Unassigned',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: item.salesUserName != null ? textColor : subColor,
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                          Text(
-                                            item.salesUserName ?? 'Unassigned',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: item.salesUserName != null ? textColor : subColor,
-                                            ),
-                                          ),
-                                          if (item.salesUserPhone != null && item.salesUserPhone!.isNotEmpty) ...[
-                                            const SizedBox(width: 12),
+                                          if (item.salesUserPhone != null && item.salesUserPhone!.isNotEmpty)
                                             Text(
                                               '• ${item.salesUserPhone}',
                                               style: TextStyle(fontSize: 11, color: subColor),
                                             ),
-                                          ],
-                                          if (item.salesUserEmail != null && item.salesUserEmail!.isNotEmpty) ...[
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Text(
-                                                '• ${item.salesUserEmail}',
-                                                style: TextStyle(fontSize: 11, color: subColor),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
+                                          if (item.salesUserEmail != null && item.salesUserEmail!.isNotEmpty)
+                                            Text(
+                                              '• ${item.salesUserEmail}',
+                                              style: TextStyle(fontSize: 11, color: subColor),
                                             ),
-                                          ],
                                         ],
                                       ),
                                     ),
@@ -5093,8 +5201,6 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
               ],
             ],
           ),
-        ),
-      ),
     );
   }
 }
@@ -5178,7 +5284,6 @@ class _DealWonDrilldownDialogState extends State<_DealWonDrilldownDialog> {
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final innerBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
@@ -5186,16 +5291,13 @@ class _DealWonDrilldownDialogState extends State<_DealWonDrilldownDialog> {
     const accentColor = Color(0xFFF59E0B); // Amber / Gold Trophy
     const wonColor = Color(0xFF059669); // Emerald Won
 
-    return Dialog(
-      backgroundColor: cardBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 880, maxHeight: 720),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 880,
+      targetMaxHeight: 720,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
               // Header
               Row(
                 children: [
@@ -5424,58 +5526,77 @@ class _DealWonDrilldownDialogState extends State<_DealWonDrilldownDialog> {
                                     ),
                                     const SizedBox(height: 10),
 
-                                    // Row 2: Mobile, Budget, Area, Date
-                                    Row(
+                                    // Row 2: Mobile, Budget, Area, Date (Wrap for zero overflow)
+                                    Wrap(
+                                      spacing: 12,
+                                      runSpacing: 4,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
                                       children: [
-                                        Icon(Icons.phone_rounded, size: 13, color: subColor),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          item.mobile.isNotEmpty ? item.mobile : 'N/A',
-                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor),
-                                        ),
-                                        if (item.mobile.isNotEmpty) ...[
-                                          const SizedBox(width: 4),
-                                          InkWell(
-                                            onTap: () {
-                                              Clipboard.setData(ClipboardData(text: item.mobile));
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('Phone number copied!'), duration: Duration(seconds: 1)),
-                                              );
-                                            },
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(2),
-                                              child: Icon(Icons.copy_rounded, size: 12, color: subColor),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.phone_rounded, size: 13, color: subColor),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              item.mobile.isNotEmpty ? item.mobile : 'N/A',
+                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor),
                                             ),
-                                          ),
-                                        ],
-                                        const SizedBox(width: 14),
-                                        Icon(Icons.payments_outlined, size: 13, color: subColor),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Budget: ${_formatBudget(item)}',
-                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor),
+                                            if (item.mobile.isNotEmpty) ...[
+                                              const SizedBox(width: 4),
+                                              InkWell(
+                                                onTap: () {
+                                                  Clipboard.setData(ClipboardData(text: item.mobile));
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(content: Text('Phone number copied!'), duration: Duration(seconds: 1)),
+                                                  );
+                                                },
+                                                child: Padding(
+                                                  padding: const EdgeInsets.all(2),
+                                                  child: Icon(Icons.copy_rounded, size: 12, color: subColor),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
                                         ),
-                                        if (item.areaName != null && item.areaName!.isNotEmpty) ...[
-                                          const SizedBox(width: 14),
-                                          Icon(Icons.location_on_outlined, size: 13, color: subColor),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            item.areaName!,
-                                            style: TextStyle(fontSize: 12, color: subColor),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.payments_outlined, size: 13, color: subColor),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Budget: ${_formatBudget(item)}',
+                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor),
+                                            ),
+                                          ],
+                                        ),
+                                        if (item.areaName != null && item.areaName!.isNotEmpty)
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.location_on_outlined, size: 13, color: subColor),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                item.areaName!,
+                                                style: TextStyle(fontSize: 12, color: subColor),
+                                              ),
+                                            ],
                                           ),
-                                        ],
-                                        const Spacer(),
-                                        Icon(Icons.event_available_rounded, size: 13, color: subColor),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          _formatDateTime(item.updatedAt ?? item.createdAt),
-                                          style: TextStyle(fontSize: 11, color: subColor),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.event_available_rounded, size: 13, color: subColor),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              _formatDateTime(item.updatedAt ?? item.createdAt),
+                                              style: TextStyle(fontSize: 11, color: subColor),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 8),
 
-                                    // Row 3: Sales User
+                                    // Row 3: Sales User (Wrap for zero overflow)
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                       decoration: BoxDecoration(
@@ -5483,39 +5604,40 @@ class _DealWonDrilldownDialogState extends State<_DealWonDrilldownDialog> {
                                         borderRadius: BorderRadius.circular(8),
                                         border: Border.all(color: borderColor),
                                       ),
-                                      child: Row(
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 4,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
                                         children: [
-                                          const Icon(Icons.badge_outlined, size: 16, color: Color(0xFF3B82F6)),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            'Closed By: ',
-                                            style: TextStyle(fontSize: 12, color: subColor),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.badge_outlined, size: 16, color: Color(0xFF3B82F6)),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                'Closed By: ',
+                                                style: TextStyle(fontSize: 12, color: subColor),
+                                              ),
+                                              Text(
+                                                item.salesUserName ?? 'Unassigned',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: item.salesUserName != null ? textColor : subColor,
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                          Text(
-                                            item.salesUserName ?? 'Unassigned',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: item.salesUserName != null ? textColor : subColor,
-                                            ),
-                                          ),
-                                          if (item.salesUserPhone != null && item.salesUserPhone!.isNotEmpty) ...[
-                                            const SizedBox(width: 12),
+                                          if (item.salesUserPhone != null && item.salesUserPhone!.isNotEmpty)
                                             Text(
                                               '• ${item.salesUserPhone}',
                                               style: TextStyle(fontSize: 11, color: subColor),
                                             ),
-                                          ],
-                                          if (item.salesUserEmail != null && item.salesUserEmail!.isNotEmpty) ...[
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Text(
-                                                '• ${item.salesUserEmail}',
-                                                style: TextStyle(fontSize: 11, color: subColor),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
+                                          if (item.salesUserEmail != null && item.salesUserEmail!.isNotEmpty)
+                                            Text(
+                                              '• ${item.salesUserEmail}',
+                                              style: TextStyle(fontSize: 11, color: subColor),
                                             ),
-                                          ],
                                         ],
                                       ),
                                     ),
@@ -5633,8 +5755,6 @@ class _DealWonDrilldownDialogState extends State<_DealWonDrilldownDialog> {
               ],
             ],
           ),
-        ),
-      ),
     );
   }
 }
