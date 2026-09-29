@@ -131,6 +131,8 @@ class KpiExpandDialog extends StatelessWidget {
   Widget _buildKpiSpecificContent(BuildContext context) {
     switch (kpiType) {
       case ReportKpiType.totalLeads:
+      case ReportKpiType.propertyListingLeads:
+      case ReportKpiType.requirementLeads:
       case ReportKpiType.leadsContacted:
       case ReportKpiType.leadsAssignedToSales:
       case ReportKpiType.leadQualificationRate:
@@ -156,6 +158,8 @@ class KpiExpandDialog extends StatelessWidget {
 
       case ReportKpiType.lostUnsuccessful:
         return _buildLostLeadsView(context);
+      default:
+        return _buildLeadsBreakdownView(context);
     }
   }
 

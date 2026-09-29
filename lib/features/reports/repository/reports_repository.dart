@@ -13,7 +13,9 @@ import '../models/report_configuration.dart';
 import '../models/report_date_range.dart';
 import '../models/report_filter_state.dart';
 import '../models/report_data.dart';
+import '../models/business_insight_summary.dart';
 import '../services/report_data_engine.dart';
+import '../services/business_insight_service.dart';
 
 class ReportsRepository {
   final RequirementsRepository _requirementsRepository = RequirementsRepository();
@@ -21,7 +23,7 @@ class ReportsRepository {
   final PropertiesRepository _propertiesRepository = PropertiesRepository();
   final RepositoryCoordinator _coordinator = RepositoryCoordinator();
 
-  static const String _kpiPrefsKey = 'reports_kpi_configuration_v1';
+  static const String _kpiPrefsKey = 'reports_kpi_configuration_v2';
   static const String _sectionsPrefsKey = 'reports_sections_configuration_v1';
   static const String _dateRangePrefsKey = 'reports_date_range_preference_v1';
   static const String _filtersPrefsKey = 'reports_filters_preference_v1';
@@ -197,6 +199,20 @@ class ReportsRepository {
       }
     }
 
+    // 6. Fetch authoritative Business Insight Summary directly from PostgreSQL
+    BusinessInsightSummary? summary;
+    try {
+      summary = await BusinessInsightService.instance.fetchSummary(
+        from: config.dateRange.startDate,
+        to: config.dateRange.endDate,
+        source: config.filters.leadSource,
+        leadType: config.filters.leadType,
+        leadStatus: config.filters.leadStatus,
+        telecallerId: config.filters.telecallerId,
+        salesUserId: config.filters.salesUserId,
+      );
+    } catch (_) {}
+
     return ReportDataEngine.computeReport(
       allLeads: leads,
       allUsers: users,
@@ -204,6 +220,7 @@ class ReportsRepository {
       allFollowups: followups,
       systemStatuses: dynamicStatuses,
       config: config,
+      insightSummary: summary,
     );
   }
 }

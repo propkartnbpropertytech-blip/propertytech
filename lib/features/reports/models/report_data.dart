@@ -5,6 +5,7 @@ import '../../properties/models/property_model.dart';
 import '../../../core/storage/isar_collections.dart';
 import 'report_kpi_type.dart';
 import 'business_insight.dart';
+import 'business_insight_summary.dart';
 
 class KpiValue {
   final int count;
@@ -244,6 +245,7 @@ class ReportOverallData {
   final List<PropertyModel> availableProperties;
   final List<RequirementModel> allLeads;
   final List<FollowupLocal> allFollowups;
+  final BusinessInsightSummary? insightSummary;
 
   const ReportOverallData({
     required this.kpiValues,
@@ -264,6 +266,7 @@ class ReportOverallData {
     required this.availableProperties,
     this.allLeads = const [],
     this.allFollowups = const [],
+    this.insightSummary,
   });
 
   bool get isEmpty => filteredLeads.isEmpty;
