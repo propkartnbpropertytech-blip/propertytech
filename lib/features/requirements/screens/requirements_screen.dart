@@ -1506,18 +1506,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           initialStep: 1,
           updateStatusOnSave: true,
           onSavedWithDate: (scheduledDate) {
-            final now = DateTime.now();
-            final todayDate = DateTime(now.year, now.month, now.day);
-            final targetDay = DateTime(scheduledDate.year, scheduledDate.month, scheduledDate.day);
-            if (targetDay.isBefore(todayDate)) {
-              _selectedFollowupSubTab = 'Due';
-            } else if (targetDay.isAfter(todayDate)) {
-              _selectedFollowupSubTab = 'Future';
-            } else {
-              _selectedFollowupSubTab = 'Today';
+            if (_activeMainTab != 'Follow-ups' && !isReFollowup) {
+              final now = DateTime.now();
+              final todayDate = DateTime(now.year, now.month, now.day);
+              final targetDay = DateTime(scheduledDate.year, scheduledDate.month, scheduledDate.day);
+              if (targetDay.isBefore(todayDate)) {
+                _selectedFollowupSubTab = 'Due';
+              } else if (targetDay.isAfter(todayDate)) {
+                _selectedFollowupSubTab = 'Future';
+              } else {
+                _selectedFollowupSubTab = 'Today';
+              }
+              _reqFollowupDateFilter = scheduledDate;
+              _currentFollowupPage = 1;
             }
-            _reqFollowupDateFilter = scheduledDate;
-            _currentFollowupPage = 1;
           },
           onSaved: () {
             if (isReFollowup) {
@@ -7555,19 +7557,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           initialStep: initialStep,
           isSiteVisit: isSiteVisitMode,
           updateStatusOnSave: true,
-          onSavedWithDate: (scheduledDate) {
-            final now = DateTime.now();
-            final todayDate = DateTime(now.year, now.month, now.day);
-            final targetDay = DateTime(scheduledDate.year, scheduledDate.month, scheduledDate.day);
-            if (targetDay.isBefore(todayDate)) {
-              _selectedFollowupSubTab = 'Due';
-            } else if (targetDay.isAfter(todayDate)) {
-              _selectedFollowupSubTab = 'Future';
-            } else {
-              _selectedFollowupSubTab = 'Today';
-            }
-            _currentFollowupPage = 1;
-          },
           onSaved: () {
             if (isReFollowup) {
               NotificationCenter.addNotification(
