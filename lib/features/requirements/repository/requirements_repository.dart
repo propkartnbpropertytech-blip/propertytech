@@ -73,6 +73,7 @@ class RequirementsRepository {
               (r.metaCustomFields != null &&
                 (r.metaCustomFields!['telecaller_id'] == currentUser.id ||
                  r.metaCustomFields!['assigned_telecaller_id'] == currentUser.id ||
+                 r.metaCustomFields!['telecaller_by_id'] == currentUser.id ||
                  r.metaCustomFields!['telecaller_by'] == currentUser.id ||
                  (r.metaCustomFields!['telecaller_by'] != null && uName.isNotEmpty && r.metaCustomFields!['telecaller_by'].toString().trim().toLowerCase() == uName)));
           return isCreator || isAssignee || isTaggedTelecaller;
