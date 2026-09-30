@@ -52,13 +52,28 @@ class IntegrationLeadModel {
       interactedAt != null;
 
   String get customerName {
-    final name = getStringValue('full_name');
-    if (name.isNotEmpty) return name;
-    final fallback = getStringValue('name');
-    if (fallback.isNotEmpty) return fallback;
-    final client = getStringValue('Client Name');
-    if (client.isNotEmpty) return client;
-    return getStringValue('Customer Name');
+    for (final key in [
+      'full_name',
+      'Full Name',
+      'name',
+      'Name',
+      'Client Name',
+      'client_name',
+      'Customer Name',
+      'customer_name',
+      'Owner Name',
+      'owner_name',
+      'Client / Owner Name',
+    ]) {
+      final val = getStringValue(key);
+      if (val.isNotEmpty && !_isPlaceholderLeadName(val)) return val;
+    }
+    if (crmMatch?.name != null &&
+        crmMatch!.name!.trim().isNotEmpty &&
+        !_isPlaceholderLeadName(crmMatch!.name!)) {
+      return crmMatch!.name!.trim();
+    }
+    return '';
   }
 
   IntegrationLeadModel({
@@ -193,29 +208,31 @@ class IntegrationLeadModel {
 
   /// Extract cell value by dynamic key with intelligent alias resolution
   static bool _isPlaceholderLeadName(String value) {
-    final lower = value.trim().toLowerCase();
-    if (lower.isEmpty || lower == 'lead' || lower == 'client' || lower == 'cnr client' || lower == 'callback client' || lower == 'campaign lead' || lower == 'meta lead') {
+    final trimmed = value.trim();
+    final lower = trimmed.toLowerCase();
+    if (lower.isEmpty ||
+        lower == 'lead' ||
+        lower == 'client' ||
+        lower == 'cnr client' ||
+        lower == 'callback client' ||
+        lower == 'campaign lead' ||
+        lower == 'meta lead' ||
+        lower == 'null' ||
+        lower == '-' ||
+        lower == 'n/a' ||
+        lower == 'unknown') {
       return true;
     }
-    return RegExp(r'^lead\s*\d{6,}$').hasMatch(lower);
+    if (RegExp(r'^lead\s*\d*$', caseSensitive: false).hasMatch(lower)) return true;
+    // Disallow purely numeric, phone-number-like strings (e.g. +91 9909722328, 9898394813)
+    if (RegExp(r'^[0-9+\s\-()]{6,}$').hasMatch(trimmed)) return true;
+    return false;
   }
 
   dynamic getValue(String key) {
-    if (rawJson.containsKey(key)) {
-      final val = rawJson[key];
-      if (val != null && val.toString().trim().isNotEmpty) return val;
-    }
-    // Case-insensitive fallback
-    for (final entry in rawJson.entries) {
-      if (entry.key.toLowerCase().trim() == key.toLowerCase().trim()) {
-        final val = entry.value;
-        if (val != null && val.toString().trim().isNotEmpty) return val;
-      }
-    }
-
     final normKey = key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
-    // 1. Client / Owner Name
+    // 1. Client / Owner Name (Handle first to validate candidates and prevent phone number leaking)
     if (normKey == 'clientownername' ||
         normKey == 'fullname' ||
         normKey == 'name' ||
@@ -231,10 +248,14 @@ class IntegrationLeadModel {
         'name',
         'Name',
         'Client Name',
+        'client_name',
         'Customer Name',
+        'customer_name',
         'Owner Name',
+        'owner_name',
         'buyer_name',
         'Name of client',
+        'Client / Owner Name',
       ];
       for (final c in candidates) {
         if (rawJson.containsKey(c) && rawJson[c] != null && rawJson[c].toString().trim().isNotEmpty) {
@@ -251,6 +272,24 @@ class IntegrationLeadModel {
         if (val == null || val is Map || val is List) continue;
         final text = val.toString().trim();
         if (text.isNotEmpty && !_isPlaceholderLeadName(text)) return val;
+      }
+      if (crmMatch?.name != null &&
+          crmMatch!.name!.trim().isNotEmpty &&
+          !_isPlaceholderLeadName(crmMatch!.name!)) {
+        return crmMatch!.name!.trim();
+      }
+      return '';
+    }
+
+    if (rawJson.containsKey(key)) {
+      final val = rawJson[key];
+      if (val != null && val.toString().trim().isNotEmpty) return val;
+    }
+    // Case-insensitive fallback
+    for (final entry in rawJson.entries) {
+      if (entry.key.toLowerCase().trim() == key.toLowerCase().trim()) {
+        final val = entry.value;
+        if (val != null && val.toString().trim().isNotEmpty) return val;
       }
     }
 

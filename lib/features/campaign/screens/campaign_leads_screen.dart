@@ -8814,15 +8814,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ? lead.getStringValue('phone')
             : lead.getStringValue('Phone Number'));
 
-    final name = lead.getStringValue('full_name').isNotEmpty
-        ? lead.getStringValue('full_name')
-        : (lead.getStringValue('name').isNotEmpty
-            ? lead.getStringValue('name')
-            : (lead.getStringValue('Client Name').isNotEmpty
-                ? lead.getStringValue('Client Name')
-                : (lead.getStringValue('Client / Owner Name').isNotEmpty
-                    ? lead.getStringValue('Client / Owner Name')
-                    : 'Lead #${startIndex + index + 1}')));
+    final name = lead.customerName.isNotEmpty
+        ? lead.customerName
+        : (lead.getStringValue('Client / Owner Name').isNotEmpty
+            ? lead.getStringValue('Client / Owner Name')
+            : 'Lead #${startIndex + index + 1}');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
