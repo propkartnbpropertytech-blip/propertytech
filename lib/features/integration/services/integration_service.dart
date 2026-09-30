@@ -27,16 +27,19 @@ class IntegrationService extends ChangeNotifier {
     if (filter == null || filter.isEmpty || filter == 'All') return true;
     final src = leadSource.toUpperCase().trim();
     final sel = filter.toUpperCase().trim();
-    if (sel == 'HOUSING' || sel == 'HOUSING.COM') {
-      return src == 'HOUSING' || src == 'HOUSING.COM';
+    if (sel.contains('HOUSING')) {
+      return src.contains('HOUSING');
     }
-    if (sel == 'META' || sel == 'META ADS' || sel == 'FACEBOOK') {
-      return src == 'META' || src == 'META ADS' || src == 'FACEBOOK' || src == 'INSTAGRAM';
+    if (sel.contains('META') || sel.contains('FACEBOOK') || sel.contains('INSTAGRAM')) {
+      return src.contains('META') || src.contains('FACEBOOK') || src.contains('INSTAGRAM');
     }
-    if (sel == 'GOOGLE' || sel == 'GOOGLE SHEETS' || sel == 'GOOGLE SHEET') {
-      return src == 'GOOGLE' || src == 'GOOGLE SHEETS' || src == 'GOOGLE SHEET';
+    if (sel.contains('GOOGLE')) {
+      return src.contains('GOOGLE');
     }
-    return src == sel;
+    if (sel.contains('WEBHOOK') || sel.contains('API')) {
+      return src.contains('WEBHOOK') || src.contains('API');
+    }
+    return src == sel || src.contains(sel) || sel.contains(src);
   }
 
   String get _orgScope => RoleGuard.currentUser?.organizationId ?? 'global';
@@ -951,6 +954,7 @@ class IntegrationService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<int>? _activeFetchServerLeadsFuture;
   bool _isFetchingServerLeads = false;
   bool get isFetchingServerLeads => _isFetchingServerLeads;
 
@@ -959,10 +963,31 @@ class IntegrationService extends ChangeNotifier {
     bool resetWithServer = false,
     String? source,
   }) async {
-    if (_isFetchingServerLeads) return 0;
+    if (_isFetchingServerLeads && !resetWithServer && _activeFetchServerLeadsFuture != null) {
+      return _activeFetchServerLeadsFuture!;
+    }
     _isFetchingServerLeads = true;
+    final future = _executeFetchServerLeads(
+      silent: silent,
+      resetWithServer: resetWithServer,
+      source: source,
+    );
+    _activeFetchServerLeadsFuture = future;
     try {
-      final queryParameters = <String, dynamic>{'limit': 1000};
+      return await future;
+    } finally {
+      _isFetchingServerLeads = false;
+      _activeFetchServerLeadsFuture = null;
+    }
+  }
+
+  Future<int> _executeFetchServerLeads({
+    bool silent = false,
+    bool resetWithServer = false,
+    String? source,
+  }) async {
+    try {
+      final queryParameters = <String, dynamic>{'limit': 5000};
       if (source != null && source.isNotEmpty && source != 'All') {
         queryParameters['source'] = source;
       }
@@ -1133,8 +1158,6 @@ class IntegrationService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Failed to fetch campaign leads from server: $e');
       return 0;
-    } finally {
-      _isFetchingServerLeads = false;
     }
   }
 
@@ -1166,6 +1189,7 @@ class IntegrationService extends ChangeNotifier {
       return data;
     } catch (e) {
       debugPrint('Error syncing Meta leads: $e');
+      await fetchServerLeads(resetWithServer: true, source: 'Meta Ads');
       await fetchHealthAlerts();
       return {'success': false, 'message': e.toString()};
     }
@@ -1179,6 +1203,7 @@ class IntegrationService extends ChangeNotifier {
       return response.data is Map<String, dynamic> ? response.data as Map<String, dynamic> : {'success': true};
     } catch (e) {
       debugPrint('Error syncing Housing leads: $e');
+      await fetchServerLeads(resetWithServer: true, source: 'Housing.com');
       await fetchHealthAlerts();
       return {'success': false, 'message': e.toString()};
     }
