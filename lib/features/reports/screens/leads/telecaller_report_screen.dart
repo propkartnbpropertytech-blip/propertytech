@@ -5,8 +5,6 @@ import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../../core/theme/theme_manager.dart';
-import '../../../requirements/models/requirement_model.dart';
-import '../../../requirements/screens/add_edit_requirement_screen.dart';
 import '../../../users/models/user_model.dart';
 import '../../bloc/reports_bloc.dart';
 import '../../bloc/reports_event.dart';
@@ -16,22 +14,10 @@ import '../../models/report_data.dart';
 import '../../models/report_date_range.dart';
 import '../../models/report_kpi_type.dart';
 import '../../services/report_data_engine.dart';
-import '../../widgets/business_insights_section.dart';
-import '../../widgets/call_performance_section.dart';
-import '../../widgets/conversion_analysis_section.dart';
-import '../../widgets/conversion_funnel_section.dart';
-import '../../widgets/followup_analysis_section.dart';
-import '../../widgets/growth_comparison_section.dart';
-import '../../widgets/kpi_card_widget.dart';
-import '../../widgets/lead_drilldown_dialog.dart';
-import '../../widgets/lead_source_analysis_section.dart';
-import '../../widgets/lead_status_pipeline_section.dart';
 import '../../widgets/report_date_filter_bar.dart';
 import '../../widgets/report_export_menu.dart';
 import '../../widgets/report_global_filters_bar.dart';
-import '../../widgets/telecaller_leads_table.dart';
 import '../../widgets/telecaller_selector.dart';
-import '../../widgets/trend_analysis_section.dart';
 
 class TelecallerReportScreen extends StatelessWidget {
   final String? initialTelecallerId;
@@ -63,26 +49,6 @@ class TelecallerReportScreen extends StatelessWidget {
   }
 }
 
-class _TelecallerKpiSpec {
-  final ReportKpiType type;
-  final String title;
-
-  const _TelecallerKpiSpec(this.type, this.title);
-}
-
-const _telecallerKpis = [
-  _TelecallerKpiSpec(ReportKpiType.totalLeads, 'Leads Assigned'),
-  _TelecallerKpiSpec(ReportKpiType.leadsContacted, 'Leads Contacted'),
-  _TelecallerKpiSpec(ReportKpiType.callAttempted, 'Call Attempted'),
-  _TelecallerKpiSpec(ReportKpiType.callPickedUp, 'Call Picked Up'),
-  _TelecallerKpiSpec(ReportKpiType.callOpen, 'Call Open'),
-  _TelecallerKpiSpec(ReportKpiType.leadQualificationRate, 'Qualified Leads'),
-  _TelecallerKpiSpec(ReportKpiType.siteVisitsScheduled, 'Site Visits Scheduled'),
-  _TelecallerKpiSpec(ReportKpiType.siteVisitsDone, 'Site Visits Done'),
-  _TelecallerKpiSpec(ReportKpiType.convertedToWon, 'Converted to Won'),
-  _TelecallerKpiSpec(ReportKpiType.lostUnsuccessful, 'Lost / Unsuccessful Leads'),
-];
-
 class _TelecallerReportContent extends StatefulWidget {
   final String? initialTelecallerId;
   final String? initialTelecallerName;
@@ -104,12 +70,6 @@ class _TelecallerReportContentState extends State<_TelecallerReportContent> {
   late GrowthComparisonPeriod _comparisonPeriod;
   DateTime? _customStart;
   DateTime? _customEnd;
-  final Map<ReportKpiType, ReportKpiConfig> _kpiToggles = {
-    for (final spec in _telecallerKpis)
-      spec.type: ReportKpiConfig(type: spec.type, order: 0, showCount: true, showPercentage: false),
-  };
-  bool _pendingShowCount = true;
-  bool _pendingShowPercentage = false;
 
   @override
   void initState() {
@@ -361,108 +321,13 @@ class _TelecallerReportContentState extends State<_TelecallerReportContent> {
                           title: 'Preparing report',
                           message: 'Calculating performance for ${_selectedName ?? 'this telecaller'}.',
                         )
-                      else ...[
+                      else
                         _buildTelecallerHeader(
                           isDark: isDark,
                           primaryColor: primaryColor,
                           user: selectedUser,
                           dateLabel: config.dateRange.formattedRange,
                         ),
-                        const SizedBox(height: CRMSpacing.m),
-                        if (scoped.isEmpty)
-                          _emptyCard(
-                            isDark: isDark,
-                            icon: Icons.inbox_outlined,
-                            title: 'No performance data available for this Telecaller',
-                            message: 'No performance data available for this Telecaller for the selected period.',
-                          )
-                        else ...[
-                          _buildKpiGrid(context, scoped, isDark),
-                          const SizedBox(height: CRMSpacing.l),
-                          CallPerformanceSection(data: scoped),
-                          const SizedBox(height: CRMSpacing.l),
-                          ConversionFunnelSection(
-                            stages: scoped.funnelStages,
-                            title: 'Telecaller Conversion Funnel',
-                          ),
-                          const SizedBox(height: CRMSpacing.l),
-                          LeadStatusPipelineSection(
-                            stages: scoped.pipelineStages,
-                            title: 'Lead Status',
-                          ),
-                          const SizedBox(height: CRMSpacing.l),
-                          FollowupAnalysisSection(
-                            categories: scoped.followupCategories,
-                            title: 'Follow-up Performance',
-                            onLeadTap: (item) => _openFollowupLead(scoped, item),
-                          ),
-                          const SizedBox(height: CRMSpacing.l),
-                          LeadSourceAnalysisSection(
-                            isVisible: true,
-                            leadSources: scoped.leadSources,
-                            onToggleVisibility: (_) {},
-                            title: 'Lead Source Performance',
-                            showVisibilityToggle: false,
-                            showOutcomeBreakdown: true,
-                          ),
-                          const SizedBox(height: CRMSpacing.l),
-                          ConversionAnalysisSection(data: scoped),
-                          const SizedBox(height: CRMSpacing.l),
-                          TrendAnalysisSection(
-                            isVisible: true,
-                            selectedMetric: _trendMetric,
-                            selectedGranularity: _trendGranularity,
-                            trendPoints: scoped.trendPoints,
-                            onToggleVisibility: (_) {},
-                            onMetricChanged: (metric) => setState(() => _trendMetric = metric),
-                            onGranularityChanged: (gran) => setState(() => _trendGranularity = gran),
-                            title: 'Performance Trend',
-                            showVisibilityToggle: false,
-                            metricLabels: const {
-                              ReportKpiType.totalLeads: 'Leads Assigned',
-                              ReportKpiType.leadsContacted: 'Contacted',
-                              ReportKpiType.callAttempted: 'Call Attempted',
-                              ReportKpiType.callPickedUp: 'Call Picked Up',
-                              ReportKpiType.leadQualificationRate: 'Qualified',
-                              ReportKpiType.siteVisitsScheduled: 'Site Visits Scheduled',
-                              ReportKpiType.siteVisitsDone: 'Site Visits Done',
-                              ReportKpiType.convertedToWon: 'Won',
-                              ReportKpiType.lostUnsuccessful: 'Lost',
-                            },
-                          ),
-                          const SizedBox(height: CRMSpacing.l),
-                          GrowthComparisonSection(
-                            isVisible: true,
-                            activePeriod: _comparisonPeriod,
-                            customStart: _customStart,
-                            customEnd: _customEnd,
-                            comparisonItems: scoped.growthComparisonItems,
-                            showVisibilityToggle: false,
-                            onToggleVisibility: (_) {},
-                            onPeriodChanged: (period) => setState(() => _comparisonPeriod = period),
-                            onCustomDatesChanged: (start, end) {
-                              setState(() {
-                                _customStart = start;
-                                _customEnd = end;
-                                _comparisonPeriod = GrowthComparisonPeriod.customPeriod;
-                              });
-                            },
-                          ),
-                          const SizedBox(height: CRMSpacing.l),
-                          BusinessInsightsSection(
-                            insights: scoped.insights,
-                            title: 'Telecaller Insights',
-                          ),
-                          const SizedBox(height: CRMSpacing.l),
-                          TelecallerLeadsTable(
-                            leads: scoped.filteredLeads,
-                            availableStatuses: scoped.availableStatuses,
-                            availableSources: scoped.availableSources,
-                            telecallerName: _selectedName ?? '',
-                          ),
-                          const SizedBox(height: CRMSpacing.xl),
-                        ],
-                      ],
                     ],
                   ),
                 ),
@@ -634,188 +499,7 @@ class _TelecallerReportContentState extends State<_TelecallerReportContent> {
     );
   }
 
-  Widget _buildKpiGrid(BuildContext context, ReportOverallData scoped, bool isDark) {
-    final pending = scoped.followupCategories.isEmpty ? 0 : scoped.followupCategories.first.count;
-    final assigned = scoped.kpiValues[ReportKpiType.totalLeads]?.count ?? 0;
-    final pendingPct = assigned == 0 ? 0.0 : pending / assigned * 100;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        int columns = 4;
-        if (width < 520) {
-          columns = 1;
-        } else if (width < 820) {
-          columns = 2;
-        } else if (width < 1100) {
-          columns = 3;
-        }
-        return GridView.count(
-          crossAxisCount: columns,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: width < 520 ? 2.4 : 1.55,
-          children: [
-            ..._telecallerKpis.map((spec) {
-              final toggle = _kpiToggles[spec.type]!;
-              return KpiCardWidget(
-                config: toggle,
-                value: scoped.kpiValues[spec.type],
-                titleOverride: spec.title,
-                showToggles: true,
-                onTogglesChanged: (showCount, showPercentage) {
-                  setState(() {
-                    _kpiToggles[spec.type] = toggle.copyWith(
-                      showCount: showCount,
-                      showPercentage: showPercentage,
-                    );
-                  });
-                },
-                onExpand: () => _expandKpi(context, spec, scoped),
-              );
-            }),
-            KpiCardWidget(
-              config: ReportKpiConfig(
-                type: ReportKpiType.lostUnsuccessful,
-                order: 10,
-                showCount: _pendingShowCount,
-                showPercentage: _pendingShowPercentage,
-              ),
-              value: KpiValue.create(
-                count: pending,
-                percentage: pendingPct,
-                denominatorLabel: '% of Assigned Leads ($assigned)',
-              ),
-              titleOverride: 'Pending Follow-ups',
-              iconOverride: Icons.pending_actions_rounded,
-              colorOverride: const Color(0xFFD97706),
-              showToggles: true,
-              onTogglesChanged: (showCount, showPercentage) {
-                setState(() {
-                  _pendingShowCount = showCount;
-                  _pendingShowPercentage = showPercentage;
-                });
-              },
-              onExpand: () {
-                final items = scoped.followupCategories.isEmpty
-                    ? const <FollowupItemData>[]
-                    : scoped.followupCategories.first.items;
-                _openFollowupItems(context, 'Pending Follow-ups', items, scoped);
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _expandKpi(BuildContext context, _TelecallerKpiSpec spec, ReportOverallData scoped) {
-    List<RequirementModel> leads = scoped.filteredLeads;
-    switch (spec.type) {
-      case ReportKpiType.leadsContacted:
-        leads = _funnelLeads(scoped, 'Contacted');
-        break;
-      case ReportKpiType.leadQualificationRate:
-        leads = _funnelLeads(scoped, 'Qualified');
-        break;
-      case ReportKpiType.siteVisitsScheduled:
-        leads = _funnelLeads(scoped, 'Site Visit Scheduled');
-        break;
-      case ReportKpiType.siteVisitsDone:
-        leads = _funnelLeads(scoped, 'Site Visit Done');
-        break;
-      case ReportKpiType.convertedToWon:
-        leads = _funnelLeads(scoped, 'Won');
-        break;
-      case ReportKpiType.lostUnsuccessful:
-        leads = scoped.filteredLeads.where((l) {
-          final s = l.status.toLowerCase();
-          return s.startsWith('rejected') || s == 'lost' || s == 'dead' || s == 'bin' || s == 'not interested';
-        }).toList();
-        break;
-      default:
-        leads = scoped.filteredLeads;
-    }
-    showDialog(
-      context: context,
-      builder: (_) => LeadDrilldownDialog(
-        title: spec.title,
-        subtitle: '${_selectedName ?? 'Telecaller'} · ${scoped.kpiValues[spec.type]?.denominatorLabel ?? ''}',
-        leads: leads,
-      ),
-    );
-  }
-
-  List<RequirementModel> _funnelLeads(ReportOverallData scoped, String stageName) {
-    final match = scoped.funnelStages.where((s) => s.stageName == stageName);
-    return match.isEmpty ? const [] : match.first.leads;
-  }
-
-  void _openFollowupLead(ReportOverallData scoped, FollowupItemData item) {
-    RequirementModel? lead;
-    if (item.leadId != null) {
-      final match = scoped.filteredLeads.where((l) => l.id == item.leadId);
-      if (match.isNotEmpty) lead = match.first;
-    }
-    lead ??= scoped.filteredLeads.where((l) => l.clientName == item.leadName).firstOrNull;
-    if (lead != null) {
-      final selectedLead = lead;
-      showDialog(
-        context: context,
-        builder: (dialogContext) => AddEditRequirementScreen(
-          requirement: selectedLead,
-          onSaved: () {},
-        ),
-      );
-      return;
-    }
-    context.go('/requirements?search=${Uri.encodeComponent(item.leadName)}');
-  }
-
-  void _openFollowupItems(
-    BuildContext context,
-    String title,
-    List<FollowupItemData> items,
-    ReportOverallData scoped,
-  ) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: Text('$title (${items.length})'),
-          content: SizedBox(
-            width: CRMBreakpoints.adaptiveWidth(context, 520),
-            height: 360,
-            child: items.isEmpty
-                ? const Center(child: Text('No pending follow-ups for this telecaller.'))
-                : ListView.separated(
-                    itemCount: items.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final item = items[i];
-                      return ListTile(
-                        title: Text(item.leadName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        subtitle: Text(
-                          '${item.leadStatus} · ${item.nextAction}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          _openFollowupLead(scoped, item);
-                        },
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
-          ],
-        );
-      },
-    );
-  }
 
   Widget _emptyCard({
     required bool isDark,
