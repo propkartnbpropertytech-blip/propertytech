@@ -7893,13 +7893,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
     try {
       final reqId = reqModel?.id ?? f.requirementId;
-      final endpoint = isSiteVisit ? '/site_visits/delete-client' : '/followups/delete-client';
+      final endpoint = isSiteVisit ? '/site-visits/delete-client' : '/followups/delete-client';
       
       await DioClient.dio.post(endpoint, data: {
+        'id': f.id,
         'requirement_id': reqId,
         'mobile': f.mobile,
         'client_name': f.clientName,
       });
+
+      if (f.id.isNotEmpty) {
+        unawaited(RepositoryCoordinator().followupLocal.deleteFollowup(f.id));
+      }
 
       if (mounted) {
         _selectedFollowupClientKeys.remove(_getFollowupClientKey(f));
@@ -7909,7 +7914,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             backgroundColor: CRMColors.success,
           ),
         );
-        context.read<RequirementsBloc>().add(FetchRequirementsEvent());
+        setState(() {
+          _refreshFollowupsFuture(force: true);
+        });
+        context.read<RequirementsBloc>().add(FetchRequirementsEvent(refreshFromServer: true));
       }
     } catch (e) {
       if (mounted) {
@@ -7972,13 +7980,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             (f.clientName.isNotEmpty && r.clientName.trim().toLowerCase() == f.clientName.trim().toLowerCase()));
 
         final reqId = reqModel?.id ?? f.requirementId;
-        final endpoint = isSiteVisit ? '/site_visits/delete-client' : '/followups/delete-client';
+        final endpoint = isSiteVisit ? '/site-visits/delete-client' : '/followups/delete-client';
 
         await DioClient.dio.post(endpoint, data: {
+          'id': f.id,
           'requirement_id': reqId,
           'mobile': f.mobile,
           'client_name': f.clientName,
         });
+
+        if (f.id.isNotEmpty) {
+          unawaited(RepositoryCoordinator().followupLocal.deleteFollowup(f.id));
+        }
 
         _selectedFollowupClientKeys.remove(_getFollowupClientKey(f));
         successCount++;
@@ -7992,7 +8005,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           backgroundColor: CRMColors.success,
         ),
       );
-      context.read<RequirementsBloc>().add(FetchRequirementsEvent());
+      setState(() {
+        _refreshFollowupsFuture(force: true);
+      });
+      context.read<RequirementsBloc>().add(FetchRequirementsEvent(refreshFromServer: true));
     }
   }
 
