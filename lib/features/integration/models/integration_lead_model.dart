@@ -887,7 +887,22 @@ class IntegrationLeadModel {
       enquiryCount: int.tryParse(json['enquiry_count']?.toString() ?? '1') ?? 1,
       leadType: type,
       campaignStatus: (() {
-        final rawStatus = json['campaign_status']?.toString() ?? 'New';
+        final rawStatus = json['campaign_status']?.toString() ??
+            json['status']?.toString() ??
+            raw['status']?.toString() ??
+            'New';
+        final rej = (json['rejection_reason'] ?? raw['rejection_reason'] ?? json['stage'] ?? raw['stage'] ?? '').toString().toLowerCase();
+        final rawStatusLower = rawStatus.toLowerCase();
+        if (rawStatusLower == 'not interested' ||
+            rawStatusLower == 'not_interested' ||
+            rej.contains('not_interested') ||
+            rej == 'lost' ||
+            json['not_interested_reason'] != null ||
+            json['not_interested_notes'] != null ||
+            raw['not_interested_reason'] != null ||
+            raw['not_interested_notes'] != null) {
+          return 'Not interested';
+        }
         if ((rawStatus == 'New' || rawStatus == 'Assigned' || rawStatus.isEmpty) && latestFu != null && latestFu['status'] == 'Pending') {
           return latestFu['outcome'] == 'CALLBACK' ? 'Callback' : 'Follow up';
         }
