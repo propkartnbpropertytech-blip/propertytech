@@ -958,9 +958,11 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
 
   Widget _buildLeadItemCard(BuildContext context, IntegrationLeadModel lead, int rowNumber) {
     final isDark = ThemeManager().isDarkMode;
-    final name = lead.getStringValue('Full Name').isNotEmpty
-        ? lead.getStringValue('Full Name')
-        : (lead.getStringValue('Name').isNotEmpty ? lead.getStringValue('Name') : 'Lead #${lead.id}');
+    final name = lead.customerName.isNotEmpty
+        ? lead.customerName
+        : (lead.getStringValue('Client / Owner Name').isNotEmpty
+            ? lead.getStringValue('Client / Owner Name')
+            : 'Lead #${lead.id.length > 8 ? lead.id.substring(0, 8) : lead.id}');
     final phone = lead.getStringValue('Phone Number').isNotEmpty
         ? lead.getStringValue('Phone Number')
         : lead.getStringValue('Mobile');
@@ -1163,9 +1165,11 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
   }
 
   void _showLeadCompleteDetailsDialog(BuildContext context, IntegrationLeadModel lead) {
-    final name = lead.getStringValue('Full Name').isNotEmpty
-        ? lead.getStringValue('Full Name')
-        : (lead.getStringValue('Name').isNotEmpty ? lead.getStringValue('Name') : 'Lead #${lead.id}');
+    final name = lead.customerName.isNotEmpty
+        ? lead.customerName
+        : (lead.getStringValue('Client / Owner Name').isNotEmpty
+            ? lead.getStringValue('Client / Owner Name')
+            : 'Lead #${lead.id.length > 8 ? lead.id.substring(0, 8) : lead.id}');
 
     // Extract questionnaire
     final questions = <MapEntry<String, String>>[];
