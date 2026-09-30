@@ -31,6 +31,16 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
   String _searchLeadQuery = '';
   String _selectedStatusFilter = 'All';
 
+  @override
+  void initState() {
+    super.initState();
+    final propCount = widget.leads.where((l) => l.leadType == 'Property Listing').length;
+    final reqCount = widget.leads.where((l) => l.leadType == 'Requirement').length;
+    if (propCount == 0 && reqCount > 0) {
+      _selectedLeadTypeTab = 'Requirement';
+    }
+  }
+
   Color get _sourceColor {
     final s = widget.sourceTitle.toLowerCase();
     if (s.contains('meta')) return const Color(0xFF1877F2);

@@ -228,14 +228,21 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   Future<void> _bootstrapLockedSource() async {
     final locked = widget.lockSource ?? '';
-    if (locked.toUpperCase().contains('HOUSING')) {
-      await _service.syncHousingLeads();
-      return;
-    }
     await _service.fetchServerLeads(
       silent: true,
+      resetWithServer: true,
       source: locked.isEmpty ? null : locked,
     );
+    if (!mounted) return;
+    _alignTelecallerQueue();
+    _cachedFilteredLeads = null;
+    setState(() {});
+
+    if (locked.toUpperCase().contains('HOUSING')) {
+      unawaited(_service.syncHousingLeads());
+    } else if (locked.toUpperCase().contains('META')) {
+      unawaited(_service.syncMetaLeads());
+    }
   }
 
   Future<void> _preloadFilterUsers() async {
@@ -448,18 +455,35 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   /// Telecallers land on an empty Property Listing tab when their queue is requirements.
   /// Open All Time once, then move to whichever section actually has assigned leads.
   void _alignTelecallerQueue() {
-    if (!RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) return;
-    if (!_telecallerQueueAligned) {
-      _telecallerQueueAligned = true;
+    if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) {
+      if (!_telecallerQueueAligned) {
+        _telecallerQueueAligned = true;
+        _selectedDateFilter = CampaignDateFilter.allTime;
+      }
+      final userLeads = _service.leads.where((l) => RoleGuard.currentUser != null && TeamUserVisibility.campaignLeadBelongsToUser(l, RoleGuard.currentUser!)).toList();
+      if (userLeads.isEmpty) return;
+      if (userLeads.any((lead) => lead.leadType == _selectedSection)) return;
+      final requirement = userLeads.where((lead) => lead.leadType == 'Requirement').length;
+      final listing = userLeads.where((lead) => lead.leadType == 'Property Listing').length;
+      if (requirement == 0 && listing == 0) return;
+      _selectedSection = requirement >= listing ? 'Requirement' : 'Property Listing';
+      _persistedSection = _selectedSection;
+    } else if (widget.lockSource != null && widget.lockSource!.isNotEmpty) {
+      final curSource = widget.lockSource!;
+      final scoped = _service.leads
+          .where((l) => IntegrationService.matchesCampaignSource(l.source, curSource))
+          .toList();
+      if (scoped.isEmpty) return;
+      final currentSecCount = scoped.where((l) => l.leadType == _selectedSection).length;
+      if (currentSecCount == 0) {
+        final reqCount = scoped.where((l) => l.leadType == 'Requirement').length;
+        final listCount = scoped.where((l) => l.leadType == 'Property Listing').length;
+        if (reqCount > 0 || listCount > 0) {
+          _selectedSection = reqCount >= listCount ? 'Requirement' : 'Property Listing';
+          _persistedSection = _selectedSection;
+        }
+      }
     }
-    final open = _service.leads.where(_isOpenCallingLead).toList();
-    if (open.isEmpty) return;
-    if (open.any((lead) => lead.leadType == _selectedSection)) return;
-    final requirement = open.where((lead) => lead.leadType == 'Requirement').length;
-    final listing = open.where((lead) => lead.leadType == 'Property Listing').length;
-    if (requirement == 0 && listing == 0) return;
-    _selectedSection = requirement >= listing ? 'Requirement' : 'Property Listing';
-    _persistedSection = _selectedSection;
   }
 
   void _recomputeFilteredLeadsIfNeeded() {
@@ -501,7 +525,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     // In 'not_interested' mode, show leads where campaignStatus == 'Not interested'.
     // In 'archive_listed' (or legacy 'listed') mode, show leads where leadType == 'Property Listing' and campaignStatus is listed/archived.
     // In 'archive_requirements' mode, show leads where leadType == 'Requirement' and campaignStatus is archived/closed/won.
-    // In 'active' mode (default), filter out 'Not interested', 'Property Listed' / 'Listed', and 'Archived' leads.
+    // In 'active' mode (default), show all leads for the selected section.
     final userFilterActive = _selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty;
     users_model.UserModel? selectedFilterUser;
     if (userFilterActive && _cachedUsers != null) {
@@ -520,17 +544,25 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     List<IntegrationLeadModel> list;
     final selectedUser = selectedFilterUser;
-    list = _viewMode == 'not_interested'
-        ? scopedLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList()
-        : (_viewMode == 'archive_listed' || _viewMode == 'listed'
-            ? scopedLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList()
-            : (_viewMode == 'archive_requirements'
-                ? scopedLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed')).toList()
-                : scopedLeads.where((l) {
-                    if (l.leadType != _selectedSection) return false;
-                    return !isNotInterestedStatus(l.campaignStatus) && l.campaignStatus != 'Property Listed' && l.campaignStatus != 'Listed' && l.campaignStatus != 'Archived' && l.campaignStatus != 'Assigned' && l.importStatus != 'Imported' && !(l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned') && !_leftCallingQueue(l);
-                  }).toList()));
-    if (userFilterActive && selectedUser != null) {
+    final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
+
+    if (_viewMode == 'not_interested') {
+      list = scopedLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList();
+    } else if (_viewMode == 'archive_listed' || _viewMode == 'listed') {
+      list = scopedLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList();
+    } else if (_viewMode == 'archive_requirements') {
+      list = scopedLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed')).toList();
+    } else {
+      if (isTelecaller) {
+        list = scopedLeads.where((l) => l.leadType == _selectedSection && _isOpenCallingLead(l)).toList();
+      } else {
+        list = scopedLeads.where((l) => l.leadType == _selectedSection && !isNotInterestedStatus(l.campaignStatus)).toList();
+      }
+    }
+
+    if (isTelecaller && RoleGuard.currentUser != null) {
+      list = list.where((l) => TeamUserVisibility.campaignLeadBelongsToUser(l, RoleGuard.currentUser!)).toList();
+    } else if (userFilterActive && selectedUser != null) {
       list = list.where((l) => TeamUserVisibility.campaignLeadBelongsToUser(l, selectedUser)).toList();
     }
 
@@ -683,6 +715,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _cachedFilteredLeads = list;
 
     // Single-pass computation for section counts, date filter counts, and status metrics
+    final userScopedLeads = (isTelecaller && RoleGuard.currentUser != null)
+        ? scopedLeads.where((l) => TeamUserVisibility.campaignLeadBelongsToUser(l, RoleGuard.currentUser!)).toList()
+        : (userFilterActive && selectedUser != null
+            ? scopedLeads.where((l) => TeamUserVisibility.campaignLeadBelongsToUser(l, selectedUser)).toList()
+            : scopedLeads);
+
     int allTimeSectionCount = 0;
     int propListingCount = 0;
     int reqCount = 0;
@@ -697,7 +735,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     int listedCount = 0;
     int archivedReqCount = 0;
 
-    for (final l in scopedLeads) {
+    for (final l in userScopedLeads) {
       final isProp = l.leadType == 'Property Listing';
       final isReq = l.leadType == 'Requirement';
       final isSelectedSec = l.leadType == _selectedSection;
@@ -705,7 +743,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       final isListed = isProp && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived');
       final isArchivedReq = isReq && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed');
 
-      final isOpenPipeline = _isOpenCallingLead(l);
       final matchesDateFilter = CampaignLeadsState.matchesDateFilter(
         _queueTime(l),
         _selectedDateFilter,
@@ -725,33 +762,38 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         if (CampaignLeadsState.matchesDateFilter(niDate, CampaignDateFilter.today)) {
           notInterestedTodayCount++;
         }
-      } else if (isListed) {
-        listedCount++;
-      } else if (isArchivedReq) {
-        archivedReqCount++;
-      } else if (isOpenPipeline) {
-        if (matchesDateFilter) totalActiveCount++;
-      }
+      } else {
+        if (isListed) {
+          listedCount++;
+        }
+        if (isArchivedReq) {
+          archivedReqCount++;
+        }
+        final isCallingLead = isTelecaller ? _isOpenCallingLead(l) : true;
+        if (matchesDateFilter && isCallingLead) {
+          totalActiveCount++;
+        }
 
-      final isFollowupStatus = l.campaignStatus == 'Follow up' || l.campaignStatus == 'Follow-up';
-      if (isFollowupStatus && isOpenPipeline && isSelectedSec) {
-        followupCount++;
-      }
+        final isFollowupStatus = l.campaignStatus == 'Follow up' || l.campaignStatus == 'Follow-up';
+        if (isFollowupStatus && isSelectedSec) {
+          followupCount++;
+        }
 
-      final shouldCountForDateFilter = isSelectedSec && isOpenPipeline;
-      if (shouldCountForDateFilter) {
-        allTimeSectionCount++;
-        if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.today)) countToday++;
-        if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.yesterday)) countYesterday++;
-        if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.last7Days)) countLast7Days++;
-        if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.thisMonth)) countThisMonth++;
-      }
+        // Section badges and date chips for active pipeline
+        if (isSelectedSec && isCallingLead) {
+          allTimeSectionCount++;
+          if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.today)) countToday++;
+          if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.yesterday)) countYesterday++;
+          if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.last7Days)) countLast7Days++;
+          if (CampaignLeadsState.matchesDateFilter(_queueTime(l), CampaignDateFilter.thisMonth)) countThisMonth++;
+        }
 
-      if (isProp && isOpenPipeline && matchesDateFilter) {
-        propListingCount++;
-      }
-      if (isReq && isOpenPipeline && matchesDateFilter) {
-        reqCount++;
+        if (isProp && matchesDateFilter && isCallingLead) {
+          propListingCount++;
+        }
+        if (isReq && matchesDateFilter && isCallingLead) {
+          reqCount++;
+        }
       }
     }
 
@@ -761,7 +803,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       int niLast7Days = 0;
       int niThisMonth = 0;
       int niAllTime = 0;
-      for (final l in scopedLeads) {
+      for (final l in userScopedLeads) {
         if (isNotInterestedStatus(l.campaignStatus)) {
           niAllTime++;
           final d = l.notInterestedAt ?? _queueTime(l);
@@ -7152,12 +7194,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     );
   }
 
-  // --- META & HOUSING SOURCE KPI SECTION ---
+  // --- SOURCE KPI SECTION (META, HOUSING & WEBHOOK) ---
 
   Widget _buildSourceKpiSection(BuildContext context, {required bool isMeta, required bool isHousing}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isMobile = MediaQuery.of(context).size.width < 800;
-    final sourceTitle = isMeta ? 'Meta' : 'Housing';
+    final sourceTitle = isMeta
+        ? 'Meta'
+        : (isHousing
+            ? 'Housing'
+            : (widget.lockSource ?? (_selectedSourceFilter == 'All' ? 'All Campaigns' : _selectedSourceFilter)));
     final allSourceLeads = _scopedLeads;
 
     // Resolve human-readable date filter label
@@ -7198,26 +7244,36 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             customEnd: _customEndDate,
           )).toList();
 
-    // 1. Total Leads KPI (date filtered)
+    // 1. Total Leads KPI (date filtered - counts all leads including Not Interested)
     final totalLeadsCount = dateFilteredSourceLeads.length;
     final propListingTotalCount = dateFilteredSourceLeads.where((l) => l.leadType == 'Property Listing').length;
     final requirementTotalCount = dateFilteredSourceLeads.where((l) => l.leadType == 'Requirement').length;
+    final notInterestedTotalCount = dateFilteredSourceLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).length;
 
     // 2. Leads Assigned to Telecallers KPI (date filtered)
     final assignedLeads = dateFilteredSourceLeads.where(TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller).toList();
     final totalAssignedCount = assignedLeads.length;
     final assignedPropCount = assignedLeads.where((l) => l.leadType == 'Property Listing').length;
     final assignedReqCount = assignedLeads.where((l) => l.leadType == 'Requirement').length;
+    final unallocatedCount = totalLeadsCount - totalAssignedCount;
+    final assignedPercentage = totalLeadsCount > 0 ? ((totalAssignedCount / totalLeadsCount) * 100).toStringAsFixed(1) : '0.0';
 
-    final primaryColor = isMeta ? const Color(0xFF1877F2) : const Color(0xFFE11D48);
+    final primaryColor = isMeta ? const Color(0xFF1877F2) : (isHousing ? const Color(0xFFE11D48) : const Color(0xFF6366F1));
 
     final totalLeadsCard = _buildSourceKpiCard(
       context,
       title: 'Total Leads ($sourceTitle)',
-      subtitle: '$dateRangeLabel leads received from $sourceTitle (incl. Not Interested)',
+      subtitle: '$dateRangeLabel incoming leads from $sourceTitle',
       totalCount: totalLeadsCount,
+      totalCountLabel: 'Total Incoming Leads',
       propCount: propListingTotalCount,
       reqCount: requirementTotalCount,
+      extraBadgeLabel: 'Not Interested',
+      extraBadgeCount: notInterestedTotalCount,
+      extraBadgeIcon: Icons.do_not_disturb_on_rounded,
+      extraBadgeColor: const Color(0xFFEF4444),
+      bannerText: '$totalAssignedCount of $totalLeadsCount leads allotted to telecallers ($assignedPercentage% coverage)',
+      bannerIcon: Icons.support_agent_rounded,
       icon: Icons.pie_chart_rounded,
       accentColor: primaryColor,
       isClickable: true,
@@ -7227,7 +7283,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           MaterialPageRoute(
             builder: (ctx) => SourceTotalLeadsPage(
               sourceTitle: sourceTitle,
-              sourceName: isMeta ? 'Meta Ads' : 'Housing.com',
+              sourceName: isMeta ? 'Meta Ads' : (isHousing ? 'Housing.com' : sourceTitle),
               dateRangeLabel: dateRangeLabel,
               leads: dateFilteredSourceLeads,
             ),
@@ -7238,11 +7294,20 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     final assignedCard = _buildSourceKpiCard(
       context,
-      title: 'Leads Assigned to Telecallers',
-      subtitle: '$dateRangeLabel leads allocated to telecallers from $sourceTitle · Click to view',
+      title: 'Leads Allotted to Telecallers',
+      subtitle: '$totalAssignedCount out of $totalLeadsCount leads assigned ($assignedPercentage%)',
       totalCount: totalAssignedCount,
+      totalCountLabel: 'Allotted to Telecallers',
       propCount: assignedPropCount,
       reqCount: assignedReqCount,
+      extraBadgeLabel: 'Unallocated',
+      extraBadgeCount: unallocatedCount,
+      extraBadgeIcon: Icons.pending_actions_rounded,
+      extraBadgeColor: const Color(0xFFF59E0B),
+      bannerText: unallocatedCount > 0
+          ? '$unallocatedCount leads unallocated & ready for distribution'
+          : 'All $totalLeadsCount leads have been assigned to telecallers',
+      bannerIcon: unallocatedCount > 0 ? Icons.info_outline_rounded : Icons.check_circle_outline_rounded,
       icon: Icons.support_agent_rounded,
       accentColor: const Color(0xFF6366F1),
       isClickable: true,
@@ -7252,7 +7317,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           MaterialPageRoute(
             builder: (ctx) => TelecallerAssignedLeadsPage(
               sourceTitle: sourceTitle,
-              sourceName: isMeta ? 'Meta Ads' : 'Housing.com',
+              sourceName: isMeta ? 'Meta Ads' : (isHousing ? 'Housing.com' : sourceTitle),
               dateRangeLabel: dateRangeLabel,
               allSourceLeads: dateFilteredSourceLeads,
             ),
@@ -7280,13 +7345,60 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     );
   }
 
+  Widget _buildKpiChip({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required int count,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(
+            '$label: ',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: CRMColors.textSecondaryOf(context),
+            ),
+          ),
+          Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSourceKpiCard(
     BuildContext context, {
     required String title,
     required String subtitle,
     required int totalCount,
+    required String totalCountLabel,
     required int propCount,
     required int reqCount,
+    String? extraBadgeLabel,
+    int? extraBadgeCount,
+    IconData? extraBadgeIcon,
+    Color? extraBadgeColor,
+    String? bannerText,
+    IconData? bannerIcon,
     required IconData icon,
     required Color accentColor,
     required bool isClickable,
@@ -7300,7 +7412,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         color: isDark ? const Color(0xFF1E2430) : Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isClickable ? accentColor.withOpacity(0.35) : CRMColors.borderOf(context),
+          color: isClickable ? accentColor.withValues(alpha: 0.35) : CRMColors.borderOf(context),
           width: isClickable ? 1.5 : 1.0,
         ),
         boxShadow: CRMShadows.soft,
@@ -7315,7 +7427,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: accentColor.withOpacity(0.12),
+                  color: accentColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, color: accentColor, size: 20),
@@ -7354,10 +7466,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: isClickable
-                        ? accentColor.withOpacity(0.15)
+                        ? accentColor.withValues(alpha: 0.15)
                         : (isDark ? Colors.white10 : Colors.black.withOpacity(0.05)),
                     borderRadius: BorderRadius.circular(12),
-                    border: isClickable ? Border.all(color: accentColor.withOpacity(0.4)) : null,
+                    border: isClickable ? Border.all(color: accentColor.withValues(alpha: 0.4)) : null,
                   ),
                   child: Text(
                     badgeText,
@@ -7388,9 +7500,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Text(
-                'Total Leads',
+                totalCountLabel,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -7404,84 +7516,71 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           const Divider(height: 1),
           const SizedBox(height: 10),
 
-          // Separate counts: Property Listing Leads & Requirement Leads
-          Row(
+          // Separate count badges: Property Listing Leads & Requirement Leads + Extra Badge (Not Interested / Unallocated)
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
             children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0284C7).withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF0284C7).withOpacity(0.2)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.home_work_rounded, size: 14, color: Color(0xFF0284C7)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Property Listing',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: CRMColors.textSecondaryOf(context),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Text(
-                        '$propCount',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF0284C7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              _buildKpiChip(
+                context: context,
+                icon: Icons.home_work_rounded,
+                label: 'Listing',
+                count: propCount,
+                color: const Color(0xFF0284C7),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF10B981).withOpacity(0.2)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.people_alt_rounded, size: 14, color: Color(0xFF10B981)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Requirement',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: CRMColors.textSecondaryOf(context),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Text(
-                        '$reqCount',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF10B981),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              _buildKpiChip(
+                context: context,
+                icon: Icons.people_alt_rounded,
+                label: 'Requirement',
+                count: reqCount,
+                color: const Color(0xFF10B981),
               ),
+              if (extraBadgeLabel != null && extraBadgeCount != null)
+                _buildKpiChip(
+                  context: context,
+                  icon: extraBadgeIcon ?? Icons.info_outline_rounded,
+                  label: extraBadgeLabel,
+                  count: extraBadgeCount,
+                  color: extraBadgeColor ?? const Color(0xFFEF4444),
+                ),
             ],
           ),
+
+          if (bannerText != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF262E3D) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    bannerIcon ?? Icons.info_rounded,
+                    size: 13,
+                    color: accentColor,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      bannerText,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -124,11 +124,17 @@ class TeamUserVisibility {
     return false;
   }
 
-  static bool campaignLeadBelongsToUser(IntegrationLeadModel lead, UserModel user) {
+  static bool campaignLeadBelongsToUser(IntegrationLeadModel lead, dynamic user) {
     if (_matchesPerson(lead.assignedTo, user) || _matchesPerson(lead.assignedToName, user)) {
       return true;
     }
+    if (_matchesPerson(lead.assignedTelecallerId, user) || _matchesPerson(lead.assignedTelecallerName, user)) {
+      return true;
+    }
     if (_matchesPerson(lead.interactedBy, user)) {
+      return true;
+    }
+    if (_matchesPerson(lead.statusUpdatedById, user) || _matchesPerson(lead.statusUpdatedByName, user)) {
       return true;
     }
     final transfer = lead.rawJson['_transfer'];
