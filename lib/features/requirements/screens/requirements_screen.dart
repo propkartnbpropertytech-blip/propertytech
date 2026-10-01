@@ -2782,6 +2782,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       const DropdownMenuItem(value: 'Not Started', child: Text('Not Started')),
       const DropdownMenuItem(value: 'Call Attempted', child: Text('Call Attempted')),
       const DropdownMenuItem(value: 'Follow-up', child: Text('Follow-up')),
+      const DropdownMenuItem(value: 'Re-Followup', child: Text('Re-Followup')),
       const DropdownMenuItem(value: 'Interested', child: Text('Interested')),
       const DropdownMenuItem(value: 'Site Visit', child: Text('Site Visit Sche.')),
       const DropdownMenuItem(value: 'Site Visit Done', child: Text('Site Visit Done')),
@@ -3731,21 +3732,21 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildSalesGroupFilterButton(
-              label: 'Leads Assigned to Me',
+              label: 'Assigned to Me',
               icon: Icons.assignment_ind_rounded,
               value: 'assigned',
               count: assignedCount,
             ),
             const SizedBox(width: 6),
             _buildSalesGroupFilterButton(
-              label: 'Leads Added by Me',
+              label: 'Added by Me',
               icon: Icons.person_add_alt_1_rounded,
               value: 'added',
               count: addedCount,
             ),
             const SizedBox(width: 6),
             _buildSalesGroupFilterButton(
-              label: 'All My Leads',
+              label: 'My Active Deals',
               icon: Icons.dashboard_customize_rounded,
               value: 'all',
               count: allCount,
@@ -6990,7 +6991,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               onPressed: () => _exportLeadsToExcel(requirements, currentUser),
               icon: const Icon(Icons.download_rounded, size: 16),
               label: const Text(
-                'Export Leads',
+                'Export Requirements',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
               ),
               style: ElevatedButton.styleFrom(
@@ -7009,15 +7010,37 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  void _exportLeadsToExcel(List<RequirementModel> requirements, UserModel? currentUser) {
+  Future<void> _exportLeadsToExcel(List<RequirementModel> requirements, UserModel? currentUser) async {
     if (requirements.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No leads available to export.'),
+          content: Text('No requirements available to export.'),
           backgroundColor: CRMColors.warning,
         ),
       );
       return;
+    }
+
+    try {
+      final response = await DioClient.dio.get<List<int>>(
+        '/export/requirements',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (response.data != null && response.data!.isNotEmpty) {
+        final filename = 'Requirements_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
+        await FileDownloader.download(response.data!, filename);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('All requirements exported successfully from server!'),
+              backgroundColor: CRMColors.success,
+            ),
+          );
+        }
+        return;
+      }
+    } catch (_) {
+      // Fallback to client-side export
     }
 
     final List<String> headers = [
@@ -7070,12 +7093,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
 
     final bytes = utf8.encode(csvBuffer.toString());
-    final filename = 'Leads_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
+    final filename = 'Requirements_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
     FileDownloader.download(bytes, filename);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('${requirements.length} leads exported to Excel format successfully!'),
+        content: Text('${requirements.length} requirements exported to Excel format successfully!'),
         backgroundColor: CRMColors.success,
       ),
     );

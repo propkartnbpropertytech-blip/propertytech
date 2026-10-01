@@ -244,7 +244,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
       case ReportKpiType.leadsSiteVisitDone:
         return allLeads.where((l) => l.status.trim().toLowerCase() == 'site visit done').length;
       case ReportKpiType.leadsNegotiation:
-        return allLeads.where((l) => l.status.trim().toLowerCase().contains('negotiation')).length;
+        return allLeads.where((l) => l.status.trim().toLowerCase() == 'negotiation').length;
       case ReportKpiType.leadsRejected:
         return allLeads.where((l) => l.status.trim().toLowerCase().startsWith('rejected')).length;
       default:
@@ -257,9 +257,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
         l.status.toLowerCase() == 'call attempted (picked up)' ||
         l.status.toLowerCase() == 'picked up').length;
     final openCount = allLeads.where((l) =>
-        l.status.toLowerCase() == 'call attempted (open)' ||
-        l.status.toLowerCase() == 'open' ||
-        l.status.toLowerCase() == 'assigned').length;
+        l.status.toLowerCase() == 'call attempted (open)').length;
 
     final isDark = ThemeManager().isDarkMode;
 
@@ -449,9 +447,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
               l.status.toLowerCase() == 'picked up').toList();
         } else {
           filtered = allLeads.where((l) =>
-              l.status.toLowerCase() == 'call attempted (open)' ||
-              l.status.toLowerCase() == 'open' ||
-              l.status.toLowerCase() == 'assigned').toList();
+              l.status.toLowerCase() == 'call attempted (open)').toList();
         }
         break;
 
@@ -499,7 +495,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
         break;
 
       case ReportKpiType.leadsNegotiation:
-        filtered = allLeads.where((l) => l.status.trim().toLowerCase().contains('negotiation')).toList();
+        filtered = allLeads.where((l) => l.status.trim().toLowerCase() == 'negotiation').toList();
         break;
 
       case ReportKpiType.leadsRejected:

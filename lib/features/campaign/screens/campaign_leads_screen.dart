@@ -10991,6 +10991,28 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       return;
     }
 
+    try {
+      final response = await DioClient.dio.get<List<int>>(
+        '/export/leads',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (response.data != null && response.data!.isNotEmpty) {
+        final filename = 'Campaign_Leads_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
+        await FileDownloader.download(response.data!, filename);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('All campaign leads exported successfully from server!'),
+              backgroundColor: CRMColors.success,
+            ),
+          );
+        }
+        return;
+      }
+    } catch (_) {
+      // Fallback to client-side spreadsheet generation
+    }
+
     final visibleHeaders = _service.getActiveVisibleHeaders(leadsSubset: leadsToExport, section: _selectedSection);
     final excel = xl.Excel.createExcel();
     final sheet = excel['Campaign Leads'];

@@ -22,9 +22,10 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
     'available_inventory': 'Displays real-time available properties count and 2-level status breakdown.',
     'total_leads': 'Displays all ingested campaign and direct leads across dynamic sources.',
     'telecallers': 'Displays active telecaller team members and individual lead allocations.',
-    'leads_allocated': 'Displays engine-allocated lead metrics and breakdown by telecaller.',
+    'leads_allocated': 'Displays new leads created within the selected date filter allocated to telecallers.',
+    'old_leads_allocated': 'Displays pre-existing leads created before the selected date filter allocated to telecallers.',
     'assigned_to_sales': 'Displays leads handed over to the sales closing team.',
-    'site_visits_done': 'Displays completed site visits and detailed client visits list.',
+    'site_visits_done': "Counts non-deleted requirements currently marked 'Site Visit Done' by last-update date.",
     'deal_won': 'Displays successfully closed and won property deals.',
     'sales_users': 'Displays active sales users and full 10-status lifecycle performance.',
   };
@@ -34,6 +35,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
     'total_leads': Icons.assignment_rounded,
     'telecallers': Icons.support_agent_rounded,
     'leads_allocated': Icons.assignment_ind_rounded,
+    'old_leads_allocated': Icons.history_toggle_off_rounded,
     'assigned_to_sales': Icons.badge_rounded,
     'site_visits_done': Icons.location_on_rounded,
     'deal_won': Icons.emoji_events_rounded,
@@ -219,3 +221,4 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
     );
   }
 }
+

@@ -3093,9 +3093,10 @@ class _LeadsAllocatedDrilldownDialogState extends State<_LeadsAllocatedDrilldown
             // Summary Cards
             LayoutBuilder(
               builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 500;
+                final isWide = constraints.maxWidth >= 600;
                 final pills = [
-                  _buildSummaryPill('Total Allocated', '${_data.totalAllocated}', ThemeManager().primaryColor, isDark, borderColor),
+                  _buildSummaryPill('New Allocated', '${_data.newAllocated}', ThemeManager().primaryColor, isDark, borderColor),
+                  _buildSummaryPill('Old Allocated', '${_data.oldAllocated}', const Color(0xFFF59E0B), isDark, borderColor),
                   _buildSummaryPill('Listing Leads', '${_data.listingAllocated}', const Color(0xFF10B981), isDark, borderColor),
                   _buildSummaryPill('Requirement Leads', '${_data.requirementAllocated}', const Color(0xFF3B82F6), isDark, borderColor),
                 ];
@@ -3104,22 +3105,30 @@ class _LeadsAllocatedDrilldownDialogState extends State<_LeadsAllocatedDrilldown
                   return Row(
                     children: [
                       Expanded(child: pills[0]),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       Expanded(child: pills[1]),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       Expanded(child: pills[2]),
+                      const SizedBox(width: 8),
+                      Expanded(child: pills[3]),
                     ],
                   );
                 }
                 return Column(
                   children: [
-                    pills[0],
+                    Row(
+                      children: [
+                        Expanded(child: pills[0]),
+                        const SizedBox(width: 8),
+                        Expanded(child: pills[1]),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Expanded(child: pills[1]),
-                        const SizedBox(width: 8),
                         Expanded(child: pills[2]),
+                        const SizedBox(width: 8),
+                        Expanded(child: pills[3]),
                       ],
                     ),
                   ],
@@ -3151,7 +3160,7 @@ class _LeadsAllocatedDrilldownDialogState extends State<_LeadsAllocatedDrilldown
                     ),
                     title: Text(item.telecallerName, style: TextStyle(fontWeight: FontWeight.w600, color: textColor)),
                     subtitle: Text(
-                      'Listing: ${item.listingCount} | Requirement: ${item.requirementCount}',
+                      'New: ${item.newCount} | Old: ${item.oldCount} | Listing: ${item.listingCount} | Req: ${item.requirementCount}',
                       style: TextStyle(fontSize: 12, color: subColor),
                     ),
                     trailing: Row(

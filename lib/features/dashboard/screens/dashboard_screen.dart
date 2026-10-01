@@ -228,7 +228,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           const SizedBox(height: 20),
 
                           // Global Filter Bar (Business Type, Date, Lead Type)
-                          _buildGlobalFilterBar(kpiFilters, isKpiLoading),
+                          _buildGlobalFilterBar(kpiFilters, isKpiLoading, kpis),
                           const SizedBox(height: 20),
 
                           // 2. Responsive Main Content Area
@@ -431,8 +431,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildGlobalFilterBar(KpiFilterParams kpiFilters, bool isKpiLoading) {
+  Widget _buildGlobalFilterBar(KpiFilterParams kpiFilters, bool isKpiLoading, DashboardKpisResponse? kpis) {
     final isDark = ThemeManager().isDarkMode;
+    final dateRangeText = _computeDateRangeDisplay(kpiFilters, kpis);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -537,6 +538,40 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ],
                 ),
               ),
+              if (dateRangeText.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  height: 32,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: ThemeManager().primaryColor.withValues(alpha: isDark ? 0.2 : 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: ThemeManager().primaryColor.withValues(alpha: isDark ? 0.35 : 0.2),
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.calendar_today_rounded,
+                        size: 13,
+                        color: ThemeManager().primaryColor,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        dateRangeText,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: ThemeManager().primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
 
@@ -624,6 +659,34 @@ class _DashboardScreenState extends State<DashboardScreen>
         endDate: endStr,
       ));
     }
+  }
+
+  String _computeDateRangeDisplay(KpiFilterParams filters, DashboardKpisResponse? kpis) {
+    if (kpis?.dateRangeDisplay != null && kpis!.dateRangeDisplay!.trim().isNotEmpty) {
+      return kpis.dateRangeDisplay!;
+    }
+    final now = DateTime.now();
+    final formatter = DateFormat('dd MMM yyyy');
+    final filter = filters.dateFilter.trim().toLowerCase();
+    if (filter == 'today') {
+      return 'Today: ${formatter.format(now)}';
+    } else if (filter == 'weekly') {
+      final start = now.subtract(const Duration(days: 7));
+      return '${formatter.format(start)} – ${formatter.format(now)}';
+    } else if (filter == 'monthly') {
+      final start = now.subtract(const Duration(days: 30));
+      return '${formatter.format(start)} – ${formatter.format(now)}';
+    } else if (filter == 'yearly') {
+      final start = now.subtract(const Duration(days: 365));
+      return '${formatter.format(start)} – ${formatter.format(now)}';
+    } else if (filters.startDate != null && filters.endDate != null) {
+      final s = DateTime.tryParse(filters.startDate!);
+      final e = DateTime.tryParse(filters.endDate!);
+      if (s != null && e != null) {
+        return '${formatter.format(s)} – ${formatter.format(e)}';
+      }
+    }
+    return '';
   }
 
   Widget _buildFilterPill(
@@ -752,6 +815,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final bool enableLeads = kpis?.isKpiEnabled('total_leads') ?? true;
     final bool enableTelecallers = kpis?.isKpiEnabled('telecallers') ?? true;
     final bool enableAlloc = kpis?.isKpiEnabled('leads_allocated') ?? true;
+    final bool enableOldAlloc = kpis?.isKpiEnabled('old_leads_allocated') ?? true;
     final bool enableSales = kpis?.isKpiEnabled('assigned_to_sales') ?? true;
     final bool enableVisits = kpis?.isKpiEnabled('site_visits_done') ?? true;
     final bool enableDealWon = kpis?.isKpiEnabled('deal_won') ?? true;
@@ -766,6 +830,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         : (_isRent ? data.summary.rentalRequirements : data.summary.resaleRequirements);
     final telecallersCount = kpis != null ? kpis.counts.telecallers : 0;
     final allocCount = kpis != null ? kpis.counts.leadsAllocated : 0;
+    final oldAllocCount = kpis != null ? kpis.counts.oldLeadsAllocated : 0;
     final assignedSalesCount = kpis != null ? kpis.counts.assignedToSales : 0;
     final visitsCount = kpis != null ? kpis.counts.siteVisitsDone : 0;
     final dealWonCount = kpis != null ? kpis.counts.dealWon : 0;
@@ -821,14 +886,30 @@ class _DashboardScreenState extends State<DashboardScreen>
       );
     }
 
-    // 4. Leads Allocated
+    // 4. New Leads Allocated
     if (enableAlloc) {
       cards.add(
         StatCard(
-          title: 'Leads Allocated',
+          title: 'New Leads Allocated',
           value: '$allocCount',
           icon: Icons.assignment_ind_rounded,
           accentColor: const Color(0xFF8B5CF6),
+          onTap: () => KpiDrilldownDialogs.showLeadsAllocatedDrilldown(
+            context,
+            params: kpiFilters,
+          ),
+        ),
+      );
+    }
+
+    // 5. Old Leads Allocated
+    if (enableOldAlloc) {
+      cards.add(
+        StatCard(
+          title: 'Old Leads Allocated',
+          value: '$oldAllocCount',
+          icon: Icons.history_toggle_off_rounded,
+          accentColor: const Color(0xFFF59E0B),
           onTap: () => KpiDrilldownDialogs.showLeadsAllocatedDrilldown(
             context,
             params: kpiFilters,

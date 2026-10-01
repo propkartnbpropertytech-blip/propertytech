@@ -5,6 +5,7 @@ import '../network/sync_manager.dart';
 import 'isar_service.dart';
 import 'local_repositories.dart';
 import 'secure_storage.dart';
+import '../../features/integration/services/integration_service.dart';
 
 /// Clears all user-scoped local state so the next login cannot see prior data.
 /// Theme preference is intentionally preserved.
@@ -37,6 +38,7 @@ class SessionCleanup {
 
     SyncManager().isSyncCompleted = false;
     SyncManager().isSyncing.value = false;
+    IntegrationService().clearSessionData();
 
     if (clearToken) {
       try {
@@ -64,6 +66,8 @@ class SessionCleanup {
         if (key.startsWith('cached_') ||
             key.startsWith('shortlisted_') ||
             key.startsWith('recycle_') ||
+            key.startsWith('campaign_ingestion_leads_json_') ||
+            key == CampaignLeadLocalRepository.webLeadsStorageKey ||
             key == 'auto_delete_days') {
           await prefs.remove(key);
         }
@@ -82,5 +86,6 @@ class SessionCleanup {
     LookupLocalRepository.inMemory.clear();
     OutboxLocalRepository.inMemory.clear();
     ClientLocalRepository.inMemory.clear();
+    CampaignLeadLocalRepository.inMemory.clear();
   }
 }

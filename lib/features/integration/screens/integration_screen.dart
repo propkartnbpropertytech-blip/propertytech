@@ -444,89 +444,25 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
 
           const SizedBox(height: CRMSpacing.m),
 
-          // Secret & Meta Verify Token Row
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'META WEBHOOK VERIFY TOKEN',
-                      style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
-                    ),
-                    const SizedBox(height: CRMSpacing.xs),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: CRMColors.cardBgOf(context),
-                        borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                        border: Border.all(color: CRMColors.borderOf(context)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: SelectableText(
-                              _service.metaVerifyToken,
-                              style: CRMTypography.caption.copyWith(fontFamily: 'monospace'),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.copy_rounded, size: 16),
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: _service.metaVerifyToken));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Meta Verify Token copied!')),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+          Container(
+            padding: const EdgeInsets.all(CRMSpacing.m),
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+              border: Border.all(color: CRMColors.borderOf(context)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lock_outline_rounded, size: 18),
+                const SizedBox(width: CRMSpacing.s),
+                Expanded(
+                  child: Text(
+                    'Meta verification and signing secrets are kept in the backend environment and are not displayed in the app.',
+                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                  ),
                 ),
-              ),
-              const SizedBox(width: CRMSpacing.m),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'WEBHOOK SECRET (HMAC SHA-256)',
-                      style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
-                    ),
-                    const SizedBox(height: CRMSpacing.xs),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: CRMColors.cardBgOf(context),
-                        borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                        border: Border.all(color: CRMColors.borderOf(context)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: SelectableText(
-                              _service.webhookSecret,
-                              style: CRMTypography.caption.copyWith(fontFamily: 'monospace'),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.copy_rounded, size: 16),
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: _service.webhookSecret));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Webhook Secret copied!')),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
 
           const SizedBox(height: CRMSpacing.m),
@@ -1798,7 +1734,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
                     decoration: BoxDecoration(color: CRMColors.cardBgOf(context), borderRadius: BorderRadius.circular(6)),
                     child: SelectableText(_service.webhookUrl, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
                   ),
-                  _buildGuideStep('4', 'Enter the Verify Token: "${_service.metaVerifyToken}" and click "Verify & Save".'),
+                  _buildGuideStep('4', 'Enter the META_VERIFY_TOKEN configured in the local backend environment, then click "Verify & Save".'),
                   _buildGuideStep('5', 'Subscribe to the "leadgen" field to receive new leads instantly.'),
                 ],
               ),
@@ -1813,23 +1749,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
   }
 
   void _showGoogleSheetsSetupGuide(BuildContext context) {
-    final scriptSnippet = 'function onFormSubmit(e) {\n'
-        '  var url = "${_service.webhookUrl}";\n'
-        '  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n'
-        '  var lastRow = sheet.getLastRow();\n'
-        '  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];\n'
-        '  var rowValues = sheet.getRange(lastRow, 1, 1, sheet.getLastColumn()).getValues()[0];\n'
-        '  var payload = {};\n'
-        '  for (var i = 0; i < headers.length; i++) {\n'
-        '    payload[headers[i]] = rowValues[i];\n'
-        '  }\n'
-        '  var options = {\n'
-        '    "method": "post",\n'
-        '    "contentType": "application/json",\n'
-        '    "payload": JSON.stringify(payload)\n'
-        '  };\n'
-        '  UrlFetchApp.fetch(url, options);\n'
-        '}';
+    final scriptSnippet = IntegrationService.appsScriptSnippet(_service.webhookUrl);
 
     showDialog(
       context: context,
@@ -1842,7 +1762,7 @@ class _IntegrationScreenState extends State<IntegrationScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Paste this script in Google Sheets (Extensions > Apps Script) to push leads in real time:'),
+                  const Text('Set the local backend token as the Apps Script property PROPKART_WEBHOOK_TOKEN, then paste this script in Extensions > Apps Script:'),
                   const SizedBox(height: CRMSpacing.m),
                   Container(
                     padding: const EdgeInsets.all(CRMSpacing.m),

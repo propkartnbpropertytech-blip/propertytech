@@ -74,6 +74,7 @@ class IntegrationService extends ChangeNotifier {
 
   bool _loaded = false;
   String? _loadedOrgScope;
+  String? _loadedUserScope;
   bool? _loadedCampaignOff;
   String _googleSheetUrl = '';
   Timer? _sheetPollTimer;
@@ -85,11 +86,45 @@ class IntegrationService extends ChangeNotifier {
   bool _persistInFlight = false;
   bool _persistDirty = false;
 
+  void clearSessionData() {
+    _sheetPollTimer?.cancel();
+    _sheetPollTimer = null;
+    _campaignUiWatchers = 0;
+    _leads.clear();
+    _unifiedFollowups.clear();
+    _recentlyReclassifiedLeads.clear();
+    _propertyCache = null;
+    _propertyCacheAt = null;
+    _googleSheetUrl = '';
+    lastSyncError = null;
+    _loaded = false;
+    _loadedOrgScope = null;
+    _loadedUserScope = null;
+    _loadedCampaignOff = null;
+    _persistDirty = false;
+    _lastSyncAt = null;
+    _lastSyncCount = 0;
+    _activeHealthAlerts.clear();
+    _metaStatus = null;
+    _leadsPipelineInfo = null;
+    _customHeaders.clear();
+    _propertyListingCustomHeaders.clear();
+    _requirementCustomHeaders.clear();
+    _hiddenHeaders.clear();
+    _propertyListingHiddenHeaders.clear();
+    _requirementHiddenHeaders.clear();
+    _headerOrder.clear();
+    _propertyListingHeaderOrder.clear();
+    _requirementHeaderOrder.clear();
+    _columnToCrmFieldMap
+      ..clear()
+      ..addAll(_defaultColumnToCrmFieldMap);
+    _invalidateHeaderCache();
+  }
+
   // Webhook configuration
   String get webhookUrl => '${AppEnv.apiBaseUrl}/integrations/webhooks/meta-leads';
   String get vpsDirectWebhookUrl => webhookUrl;
-  String webhookSecret = "pk_sec_99a8b7c6d5e4f3a2b1";
-  String metaVerifyToken = "propkart_meta_lead_verify_token_2026";
   bool isWebhookListening = true;
 
   // Ingested Leads (clean start)
@@ -170,7 +205,7 @@ class IntegrationService extends ChangeNotifier {
   Map<String, dynamic>? get leadsPipelineInfo => _leadsPipelineInfo;
 
   // Column header to CRM field mappings
-  final Map<String, String> _columnToCrmFieldMap = {
+  static const Map<String, String> _defaultColumnToCrmFieldMap = {
     'Client / Owner Name': 'name',
     'Owner Name': 'name',
     'Full Name': 'name',
@@ -220,6 +255,10 @@ class IntegrationService extends ChangeNotifier {
     'Project': 'property',
     'Project Name': 'property',
     'Inventory': 'property',
+  };
+
+  final Map<String, String> _columnToCrmFieldMap = {
+    ..._defaultColumnToCrmFieldMap,
   };
 
   Map<String, String> get columnMappings => Map.unmodifiable(_columnToCrmFieldMap);
@@ -870,13 +909,18 @@ class IntegrationService extends ChangeNotifier {
   Future<void> ensureLoaded() async {
     final campaignOff = RoleGuard.currentUser?.campaignEnabled == false &&
         RoleGuard.currentUser?.role.toLowerCase() != 'super admin';
+    if (_loaded && (_loadedOrgScope != _orgScope || _loadedUserScope != _userScope)) {
+      clearSessionData();
+    }
     if (_loaded &&
         _loadedOrgScope == _orgScope &&
+        _loadedUserScope == _userScope &&
         _loadedCampaignOff == campaignOff) {
       return;
     }
     _loaded = true;
     _loadedOrgScope = _orgScope;
+    _loadedUserScope = _userScope;
     _loadedCampaignOff = campaignOff;
     _leads = [];
     try {
@@ -3564,6 +3608,7 @@ class IntegrationService extends ChangeNotifier {
   static String appsScriptSnippet(String webhookUrl) {
     return '''
 var WEBHOOK_URL = "$webhookUrl";
+var WEBHOOK_TOKEN = PropertiesService.getScriptProperties().getProperty("PROPKART_WEBHOOK_TOKEN");
 
 function rowToPayload(headers, values) {
   var payload = { source: "Google Sheets" };
@@ -3581,9 +3626,11 @@ function rowToPayload(headers, values) {
 }
 
 function postLead(payload) {
+  if (!WEBHOOK_TOKEN) throw new Error("Set PROPKART_WEBHOOK_TOKEN in Script Properties first.");
   UrlFetchApp.fetch(WEBHOOK_URL, {
     method: "post",
     contentType: "application/json",
+    headers: { "x-propkart-webhook-token": WEBHOOK_TOKEN },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   });
