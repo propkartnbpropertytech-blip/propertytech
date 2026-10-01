@@ -5068,7 +5068,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     );
   }
 
-  void _exportPropertiesToExcel(List<PropertyModel> properties, UserModel? currentUser) {
+  Future<void> _exportPropertiesToExcel(List<PropertyModel> properties, UserModel? currentUser) async {
     if (properties.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -5077,6 +5077,28 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         ),
       );
       return;
+    }
+
+    try {
+      final response = await DioClient.dio.get<List<int>>(
+        '/export/properties',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (response.data != null && response.data!.isNotEmpty) {
+        final filename = 'Properties_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
+        await FileDownloader.download(response.data!, filename);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('All properties exported successfully from server!'),
+              backgroundColor: CRMColors.success,
+            ),
+          );
+        }
+        return;
+      }
+    } catch (_) {
+      // Fallback to client-side export
     }
 
     final List<String> headers = [

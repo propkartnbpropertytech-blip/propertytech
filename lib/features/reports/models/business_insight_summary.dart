@@ -427,6 +427,7 @@ class LeadsPageKpisSummary {
   final int siteVisitScheduled;
   final int siteVisitDone;
   final int negotiation;
+  final int negotiationFailed;
   final int rejectedLeads;
 
   const LeadsPageKpisSummary({
@@ -440,6 +441,7 @@ class LeadsPageKpisSummary {
     this.siteVisitScheduled = 0,
     this.siteVisitDone = 0,
     this.negotiation = 0,
+    this.negotiationFailed = 0,
     this.rejectedLeads = 0,
   });
 
@@ -455,6 +457,7 @@ class LeadsPageKpisSummary {
       siteVisitScheduled: json['site_visit_scheduled'] as int? ?? 0,
       siteVisitDone: json['site_visit_done'] as int? ?? 0,
       negotiation: json['negotiation'] as int? ?? 0,
+      negotiationFailed: json['negotiation_failed'] as int? ?? 0,
       rejectedLeads: json['rejected_leads'] as int? ?? 0,
     );
   }

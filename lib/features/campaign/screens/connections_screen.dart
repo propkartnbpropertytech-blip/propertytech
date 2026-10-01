@@ -652,103 +652,25 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
 
           const SizedBox(height: CRMSpacing.m),
 
-          // Verify Token & Webhook Secret
-          Builder(
-            builder: (context) {
-              final isNarrow = MediaQuery.of(context).size.width < 700;
-              final tokenField = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'META VERIFY TOKEN',
-                    style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+          Container(
+            padding: const EdgeInsets.all(CRMSpacing.m),
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
+              border: Border.all(color: CRMColors.borderOf(context)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lock_outline_rounded, size: 18),
+                const SizedBox(width: CRMSpacing.s),
+                Expanded(
+                  child: Text(
+                    'Meta verification and signing secrets are kept in the backend environment and are not displayed in the app.',
+                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
                   ),
-                  const SizedBox(height: CRMSpacing.xs),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: CRMColors.cardBgOf(context),
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      border: Border.all(color: CRMColors.borderOf(context)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: SelectableText(
-                            _service.metaVerifyToken,
-                            style: CRMTypography.caption.copyWith(fontFamily: 'monospace', fontSize: 11),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.copy_rounded, size: 14),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _service.metaVerifyToken));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Verify Token copied!')),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-
-              final secretField = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'WEBHOOK SECRET (HMAC SHA-256)',
-                    style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
-                  ),
-                  const SizedBox(height: CRMSpacing.xs),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: CRMColors.cardBgOf(context),
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                      border: Border.all(color: CRMColors.borderOf(context)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: SelectableText(
-                            _service.webhookSecret,
-                            style: CRMTypography.caption.copyWith(fontFamily: 'monospace', fontSize: 11),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.copy_rounded, size: 14),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _service.webhookSecret));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Webhook Secret copied!')),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-
-              if (isNarrow) {
-                return Column(
-                  children: [
-                    tokenField,
-                    const SizedBox(height: CRMSpacing.m),
-                    secretField,
-                  ],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: tokenField),
-                  const SizedBox(width: CRMSpacing.m),
-                  Expanded(child: secretField),
-                ],
-              );
-            },
+                ),
+              ],
+            ),
           ),
 
           const SizedBox(height: CRMSpacing.m),
@@ -1518,7 +1440,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                   _buildGuideStep('1', 'Go to developers.facebook.com > Your App > Webhooks.'),
                   _buildGuideStep('2', 'Select "Page" or "Leadgen" object and click Subscribe.'),
                   _buildGuideStep('3', 'Callback URL:', _service.webhookUrl),
-                  _buildGuideStep('4', 'Verify Token:', _service.metaVerifyToken),
+                  _buildGuideStep('4', 'Enter the META_VERIFY_TOKEN configured in the local backend environment. The app does not display the secret.'),
                   _buildGuideStep('5', 'Subscribe to the "leadgen" field.'),
                   _buildGuideStep('6', 'Test using the Meta Lead Ads Testing Tool to ingest a sample lead.'),
                 ],
@@ -1570,7 +1492,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                     ),
                   ),
                   const SizedBox(height: CRMSpacing.m),
-                  _buildGuideStep('3', 'Click Run on syncAllRows once (authorize Google when asked). Keep your On change / On form submit trigger for new rows.'),
+                  _buildGuideStep('3', 'Add the local backend token to Apps Script Project Settings > Script Properties as PROPKART_WEBHOOK_TOKEN, then run syncAllRows once and keep your On change / On form submit trigger.'),
                   _buildGuideStep('4', 'Keep headers as plain text. Put dropdowns in data rows. Recommended columns: Client Name, Phone, Property Name (dropdown of inventory), City, Budget, Configuration, Campaign Name. If Name is a property dropdown, add a separate Client Name column.'),
                 ],
               ),
