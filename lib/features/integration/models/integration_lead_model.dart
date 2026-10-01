@@ -932,6 +932,14 @@ class IntegrationLeadModel {
             'New';
         final rej = (json['rejection_reason'] ?? raw['rejection_reason'] ?? json['stage'] ?? raw['stage'] ?? '').toString().toLowerCase();
         final rawStatusLower = rawStatus.toLowerCase();
+        if (rawStatusLower == 'archived' ||
+            rawStatusLower == 'property listed' ||
+            rawStatusLower == 'listed') {
+          return (rawStatusLower == 'archived') ? 'Archived' : 'Property Listed';
+        }
+        if (archivedAtVal != null || (raw['archived_at'] != null && raw['archived_at'].toString().isNotEmpty)) {
+          return (type == 'Property Listing') ? 'Property Listed' : 'Archived';
+        }
         if (rawStatusLower == 'not interested' ||
             rawStatusLower == 'not_interested' ||
             rej.contains('not_interested') ||

@@ -119,6 +119,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     } else if (widget.initialSource != null && widget.initialSource!.isNotEmpty) {
       _selectedSourceFilter = widget.initialSource!;
     }
+    final incomingLock = (widget.lockSource ?? widget.initialSource ?? '').toLowerCase();
+    if (incomingLock.contains('meta') || incomingLock.contains('housing')) {
+      _selectedDateFilter = CampaignDateFilter.allTime;
+    }
     final incomingSearch = widget.initialSearch?.trim() ?? '';
     if (incomingSearch.isNotEmpty) {
       _searchQuery = incomingSearch.toLowerCase();
@@ -130,6 +134,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _service.ensureLoaded();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      final curLock = (widget.lockSource ?? widget.initialSource ?? '').toLowerCase();
+      if (curLock.contains('meta') || curLock.contains('housing')) {
+        _selectedDateFilter = CampaignDateFilter.allTime;
+        context.read<CampaignLeadsBloc>().add(
+          const SetCampaignDateFilterEvent(filter: CampaignDateFilter.allTime),
+        );
+      }
       _alignTelecallerQueue();
       _cachedFilteredLeads = null;
       setState(() {});
@@ -214,15 +225,33 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   void didUpdateWidget(CampaignLeadsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.lockSource != oldWidget.lockSource && widget.lockSource != null) {
+      final updatedLock = widget.lockSource!.toLowerCase();
       setState(() {
         _selectedSourceFilter = widget.lockSource!;
+        if (updatedLock.contains('meta') || updatedLock.contains('housing')) {
+          _selectedDateFilter = CampaignDateFilter.allTime;
+        }
         _currentPage = 1;
       });
+      if (updatedLock.contains('meta') || updatedLock.contains('housing')) {
+        context.read<CampaignLeadsBloc>().add(
+          const SetCampaignDateFilterEvent(filter: CampaignDateFilter.allTime),
+        );
+      }
     } else if (widget.initialSource != oldWidget.initialSource && widget.initialSource != null) {
+      final updatedInit = widget.initialSource!.toLowerCase();
       setState(() {
         _selectedSourceFilter = widget.initialSource!;
+        if (updatedInit.contains('meta') || updatedInit.contains('housing')) {
+          _selectedDateFilter = CampaignDateFilter.allTime;
+        }
         _currentPage = 1;
       });
+      if (updatedInit.contains('meta') || updatedInit.contains('housing')) {
+        context.read<CampaignLeadsBloc>().add(
+          const SetCampaignDateFilterEvent(filter: CampaignDateFilter.allTime),
+        );
+      }
     }
   }
 
@@ -278,6 +307,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (status == null) return false;
     final s = status.trim().toLowerCase();
     return s == 'not interested' || s == 'not_interested' || s == 'disqualified';
+  }
+
+  static bool _isLeadArchived(IntegrationLeadModel l) {
+    if (l.archivedAt != null) return true;
+    if (l.rawJson['archived_at'] != null && l.rawJson['archived_at'].toString().trim().isNotEmpty) return true;
+    final s = l.campaignStatus.trim().toLowerCase();
+    if (s == 'archived' || s == 'property listed' || s == 'listed') return true;
+    if (l.importStatus.trim().toLowerCase() == 'archived') return true;
+    return false;
   }
 
   String _notInterestedSubFilter = 'all';
@@ -547,16 +585,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
 
     if (_viewMode == 'not_interested') {
-      list = scopedLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).toList();
+      list = scopedLeads.where((l) => !_isLeadArchived(l) && isNotInterestedStatus(l.campaignStatus)).toList();
     } else if (_viewMode == 'archive_listed' || _viewMode == 'listed') {
-      list = scopedLeads.where((l) => l.leadType == 'Property Listing' && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived')).toList();
+      list = scopedLeads.where((l) => l.leadType == 'Property Listing' && _isLeadArchived(l)).toList();
     } else if (_viewMode == 'archive_requirements') {
-      list = scopedLeads.where((l) => l.leadType == 'Requirement' && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed')).toList();
+      list = scopedLeads.where((l) => l.leadType == 'Requirement' && _isLeadArchived(l)).toList();
     } else {
       if (isTelecaller) {
-        list = scopedLeads.where((l) => l.leadType == _selectedSection && _isOpenCallingLead(l)).toList();
+        list = scopedLeads.where((l) => l.leadType == _selectedSection && !_isLeadArchived(l) && _isOpenCallingLead(l)).toList();
       } else {
-        list = scopedLeads.where((l) => l.leadType == _selectedSection && !isNotInterestedStatus(l.campaignStatus)).toList();
+        list = scopedLeads.where((l) => l.leadType == _selectedSection && !_isLeadArchived(l) && !isNotInterestedStatus(l.campaignStatus)).toList();
       }
     }
 
@@ -568,8 +606,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     // Filter by Date (Today is default, Yesterday, Last 7 Days, This Month, Custom Range, All Time)
     if (_selectedDateFilter != CampaignDateFilter.allTime) {
+      final isArchiveView = _viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed';
       list = list.where((l) {
-        final d = _viewMode == 'not_interested' ? (l.notInterestedAt ?? _queueTime(l)) : _queueTime(l);
+        DateTime d;
+        if (isArchiveView) {
+          d = l.archivedAt ?? (l.rawJson['archived_at'] != null ? DateTime.tryParse(l.rawJson['archived_at'].toString()) : null) ?? _queueTime(l);
+        } else if (_viewMode == 'not_interested') {
+          d = l.notInterestedAt ?? _queueTime(l);
+        } else {
+          d = _queueTime(l);
+        }
         return CampaignLeadsState.matchesDateFilter(
           d,
           _selectedDateFilter,
@@ -739,9 +785,21 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       final isProp = l.leadType == 'Property Listing';
       final isReq = l.leadType == 'Requirement';
       final isSelectedSec = l.leadType == _selectedSection;
-      final isNotInterested = isNotInterestedStatus(l.campaignStatus);
-      final isListed = isProp && (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived');
-      final isArchivedReq = isReq && (l.campaignStatus == 'Archived' || l.campaignStatus == 'Closed' || l.campaignStatus == 'Won' || l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed');
+      final isArchived = _isLeadArchived(l);
+      final isNotInterested = !isArchived && isNotInterestedStatus(l.campaignStatus);
+      final isListed = isProp && isArchived;
+      final isArchivedReq = isReq && isArchived;
+
+      if (isListed) {
+        listedCount++;
+      }
+      if (isArchivedReq) {
+        archivedReqCount++;
+      }
+
+      if (isArchived) {
+        continue;
+      }
 
       final matchesDateFilter = CampaignLeadsState.matchesDateFilter(
         _queueTime(l),
@@ -763,12 +821,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           notInterestedTodayCount++;
         }
       } else {
-        if (isListed) {
-          listedCount++;
-        }
-        if (isArchivedReq) {
-          archivedReqCount++;
-        }
         final isCallingLead = isTelecaller ? _isOpenCallingLead(l) : true;
         if (matchesDateFilter && isCallingLead) {
           totalActiveCount++;
@@ -797,7 +849,29 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       }
     }
 
-    if (_viewMode == 'not_interested') {
+    if (_viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed') {
+      int archToday = 0;
+      int archYesterday = 0;
+      int archLast7Days = 0;
+      int archThisMonth = 0;
+      int archAllTime = 0;
+      final targetType = (_viewMode == 'archive_requirements') ? 'Requirement' : 'Property Listing';
+      for (final l in userScopedLeads) {
+        if (_isLeadArchived(l) && l.leadType == targetType) {
+          archAllTime++;
+          final d = l.archivedAt ?? (l.rawJson['archived_at'] != null ? DateTime.tryParse(l.rawJson['archived_at'].toString()) : null) ?? _queueTime(l);
+          if (CampaignLeadsState.matchesDateFilter(d, CampaignDateFilter.today)) archToday++;
+          if (CampaignLeadsState.matchesDateFilter(d, CampaignDateFilter.yesterday)) archYesterday++;
+          if (CampaignLeadsState.matchesDateFilter(d, CampaignDateFilter.last7Days)) archLast7Days++;
+          if (CampaignLeadsState.matchesDateFilter(d, CampaignDateFilter.thisMonth)) archThisMonth++;
+        }
+      }
+      countToday = archToday;
+      countYesterday = archYesterday;
+      countLast7Days = archLast7Days;
+      countThisMonth = archThisMonth;
+      allTimeSectionCount = archAllTime;
+    } else if (_viewMode == 'not_interested') {
       int niToday = 0;
       int niYesterday = 0;
       int niLast7Days = 0;
@@ -897,8 +971,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final uniqueLeads = _cachedUniqueLeads;
     final dupLeads = _cachedDupLeads;
     final importedCount = _cachedImportedCount;
-    final propertyListingCount = _cachedPropertyListingCount;
-    final requirementCount = _cachedRequirementCount;
+    final isArchiveMode = _viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed';
+    final propertyListingCount = isArchiveMode ? _cachedListedCount : _cachedPropertyListingCount;
+    final requirementCount = isArchiveMode ? _cachedArchivedReqCount : _cachedRequirementCount;
     final totalLeads = leads.length;
     final totalPages = leads.isEmpty ? 1 : (leads.length / _pageSize).ceil();
     final currentPage = _currentPage.clamp(1, totalPages);
@@ -1123,16 +1198,21 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     final isPropertyListing = _selectedSection == 'Property Listing';
     final isArchiveMode = _viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed';
+    final totalArchiveCount = _cachedListedCount + _cachedArchivedReqCount;
     final archiveCount = isPropertyListing ? _cachedListedCount : _cachedArchivedReqCount;
 
     final archiveHeaderButton = CRMButton(
       label: isArchiveMode
           ? 'Exit Archive'
           : (isMobile
-              ? 'Archive ($archiveCount)'
+              ? 'Archive ($totalArchiveCount)'
               : (isPropertyListing
-                  ? 'Property Archive ($archiveCount)'
-                  : 'Requirement Archive ($archiveCount)')),
+                  ? (_cachedListedCount == 0 && _cachedArchivedReqCount > 0
+                      ? 'Requirement Archive ($_cachedArchivedReqCount)'
+                      : 'Property Archive ($_cachedListedCount)')
+                  : (_cachedArchivedReqCount == 0 && _cachedListedCount > 0
+                      ? 'Property Archive ($_cachedListedCount)'
+                      : 'Requirement Archive ($_cachedArchivedReqCount)'))),
       prefixIcon: isArchiveMode ? Icons.arrow_back_rounded : Icons.inventory_2_outlined,
       variant: isArchiveMode ? CRMButtonVariant.primary : CRMButtonVariant.outline,
       height: 36,
@@ -1141,7 +1221,17 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           if (isArchiveMode) {
             _viewMode = 'active';
           } else {
-            _viewMode = isPropertyListing ? 'archive_listed' : 'archive_requirements';
+            if (isPropertyListing && _cachedListedCount == 0 && _cachedArchivedReqCount > 0) {
+              _selectedSection = 'Requirement';
+              _persistedSection = 'Requirement';
+              _viewMode = 'archive_requirements';
+            } else if (!isPropertyListing && _cachedArchivedReqCount == 0 && _cachedListedCount > 0) {
+              _selectedSection = 'Property Listing';
+              _persistedSection = 'Property Listing';
+              _viewMode = 'archive_listed';
+            } else {
+              _viewMode = isPropertyListing ? 'archive_listed' : 'archive_requirements';
+            }
           }
           _cachedFilteredLeads = null;
           _selectedLeadIds.clear();

@@ -51,6 +51,26 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
   int _savedCapacity = 10;
   bool _savingCapacity = false;
 
+  static String _formatDuration(int seconds) {
+    if (seconds <= 0) return '0m';
+    final hours = seconds ~/ 3600;
+    final mins = (seconds % 3600) ~/ 60;
+    if (hours > 0) {
+      return '${hours}h ${mins}m';
+    }
+    return '${mins}m';
+  }
+
+  static String _formatTimestamp(String? iso) {
+    if (iso == null || iso.isEmpty) return '—';
+    final dt = DateTime.tryParse(iso)?.toLocal();
+    if (dt == null) return '—';
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final min = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$min $ampm';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -410,9 +430,18 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
 
     final status = profile['availability']?.toString() ?? 'INACTIVE';
     final isFresh = profile['heartbeatFresh'] == true;
+    final isLoggedOut = status == 'LOGGED_OUT';
+    final isManuallyOff = profile['isManuallyOff'] == true;
     final statusColor = status == 'ACTIVE'
         ? (isFresh ? Colors.green : Colors.orange)
-        : (status == 'BREAK' ? Colors.blue : Colors.grey);
+        : (status == 'BREAK'
+            ? Colors.blue
+            : (isLoggedOut ? const Color(0xFF64748B) : Colors.grey));
+    final manualOffStartedAt = profile['manualOffStartedAt']?.toString();
+    final manualOffDurationSeconds = (profile['manualOffDurationSeconds'] as num?)?.toInt() ?? 0;
+    final remainingOffSeconds = (profile['remainingOffSeconds'] as num?)?.toInt() ?? 21600;
+    final isLimitExpired = profile['limitReached'] == true || remainingOffSeconds <= 0;
+    final isToggleOn = status == 'ACTIVE' || (status == 'BREAK' && !isManuallyOff);
 
     final capacity = workload['capacity'] ?? 10;
     final currentLoad = workload['currentWorkload'] ?? 0;
@@ -457,7 +486,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  status,
+                                  isLoggedOut ? 'LOGGED OUT' : status,
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
@@ -469,10 +498,14 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            isFresh ? 'Online (Heartbeat Active)' : 'Offline / Inactive Heartbeat',
+                            isLoggedOut
+                                ? 'Offline (Logged Out)'
+                                : (isFresh ? 'Online (Heartbeat Active)' : 'Offline / Inactive Heartbeat'),
                             style: TextStyle(
                               fontSize: 12,
-                              color: isFresh ? Colors.green.shade700 : Colors.grey.shade600,
+                              color: isLoggedOut
+                                  ? const Color(0xFF64748B)
+                                  : (isFresh ? Colors.green.shade700 : Colors.grey.shade600),
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -661,6 +694,149 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                             setState(() => _selectedCapacity = preset);
                           },
                         ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Card 1.5: Active Toggle & 24-Hour OFF Allowance
+          Card(
+            elevation: 0,
+            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.timer_outlined, size: 18, color: CRMColors.primary),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Active Toggle & 24-Hour OFF Allowance',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: isToggleOn
+                              ? Colors.green.withValues(alpha: 0.15)
+                              : Colors.red.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isToggleOn
+                                ? Colors.green.withValues(alpha: 0.4)
+                                : Colors.red.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: isToggleOn ? Colors.green : Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              isToggleOn ? (status == 'BREAK' ? 'ON (Auto-Break)' : 'TOGGLE ON') : 'TOGGLE OFF',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: isToggleOn ? Colors.green.shade800 : Colors.red.shade800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('When Turned OFF', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                              const SizedBox(height: 4),
+                              Text(
+                                !isToggleOn ? _formatTimestamp(manualOffStartedAt) : '— (Active Now)',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('How Long Remained OFF', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                              const SizedBox(height: 4),
+                              Text(
+                                !isToggleOn ? _formatDuration(manualOffDurationSeconds) : '0m (Active)',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Remaining 24h Allowance', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                              const SizedBox(height: 4),
+                              Text(
+                                isLimitExpired ? '0m (6h Expired)' : '${_formatDuration(remainingOffSeconds)} / 6h',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: isLimitExpired ? Colors.red : (remainingOffSeconds < 3600 ? Colors.orange : Colors.green.shade700),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -1032,7 +1208,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                     height: 360,
                     child: ListView.separated(
                       itemCount: leads.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (_, index) {
                         final lead = leads[index];
                         final status = (lead['campaignStatus'] ?? 'New').toString();

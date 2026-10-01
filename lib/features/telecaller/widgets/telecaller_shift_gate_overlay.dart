@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/telecaller_shift_manager.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
-class TelecallerShiftGateOverlay extends StatelessWidget {
+class TelecallerShiftGateOverlay extends StatefulWidget {
   final Widget child;
   final bool isTelecaller;
 
@@ -14,8 +14,156 @@ class TelecallerShiftGateOverlay extends StatelessWidget {
   });
 
   @override
+  State<TelecallerShiftGateOverlay> createState() => _TelecallerShiftGateOverlayState();
+}
+
+class _TelecallerShiftGateOverlayState extends State<TelecallerShiftGateOverlay> {
+  bool _hasShownLimitDialog = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isTelecaller) {
+      final sm = TelecallerShiftManager.instance;
+      sm.isOffLimitExpiredNotifier.addListener(_checkLimitExpiredNotification);
+      sm.currentStatusNotifier.addListener(_onStatusChanged);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _checkLimitExpiredNotification();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(TelecallerShiftGateOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isTelecaller != oldWidget.isTelecaller) {
+      final sm = TelecallerShiftManager.instance;
+      if (widget.isTelecaller) {
+        sm.isOffLimitExpiredNotifier.addListener(_checkLimitExpiredNotification);
+        sm.currentStatusNotifier.addListener(_onStatusChanged);
+      } else {
+        sm.isOffLimitExpiredNotifier.removeListener(_checkLimitExpiredNotification);
+        sm.currentStatusNotifier.removeListener(_onStatusChanged);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.isTelecaller) {
+      final sm = TelecallerShiftManager.instance;
+      sm.isOffLimitExpiredNotifier.removeListener(_checkLimitExpiredNotification);
+      sm.currentStatusNotifier.removeListener(_onStatusChanged);
+    }
+    super.dispose();
+  }
+
+  void _onStatusChanged() {
+    if (TelecallerShiftManager.instance.isActive) {
+      _hasShownLimitDialog = false;
+    }
+  }
+
+  void _checkLimitExpiredNotification() {
+    final sm = TelecallerShiftManager.instance;
+    if (!sm.isActive && sm.isOffLimitExpiredNotifier.value && !_hasShownLimitDialog) {
+      _hasShownLimitDialog = true;
+      _showLimitReachedDialog();
+    }
+  }
+
+  void _showLimitReachedDialog() {
+    if (!mounted) return;
+    final sm = TelecallerShiftManager.instance;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFFFEE2E2),
+                ),
+                child: const Icon(
+                  Icons.timer_off_rounded,
+                  size: 26,
+                  color: Color(0xFFDC2626),
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Text(
+                  '6-Hour OFF Limit Reached',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your 6-hour manual OFF allowance for this 24-hour cycle has completed.',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFDC2626),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'You must turn the Active toggle ON to receive new lead assignments again.\n\nYou can continue using the software normally to work on your current leads, but no new incoming leads will be assigned until your toggle is ON.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Continue Using Software'),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF059669),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+              label: const Text('Turn Active ON', style: TextStyle(fontWeight: FontWeight.bold)),
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                await sm.toggleAvailability(true);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (!isTelecaller) return child;
+    if (!widget.isTelecaller) return widget.child;
 
     final shiftManager = TelecallerShiftManager.instance;
 
@@ -25,7 +173,7 @@ class TelecallerShiftGateOverlay extends StatelessWidget {
       onPointerMove: (_) => shiftManager.recordUserActivity(),
       child: Stack(
         children: [
-          child,
+          widget.child,
 
           // 1. Inactivity Break Blur Overlay (5 minutes of idle)
           ValueListenableBuilder<bool>(
@@ -70,34 +218,46 @@ class TelecallerShiftGateOverlay extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 10),
-                            const Text(
-                              'You were automatically put on break after 5 minutes of inactivity so no live leads are missed.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                color: Color(0xFF64748B),
-                                height: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 44,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF059669),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                ),
-                                icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                                label: const Text(
-                                  'Resume Active',
-                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                                ),
-                                onPressed: () async {
-                                  await shiftManager.resumeActive();
-                                },
-                              ),
+                            ValueListenableBuilder<bool>(
+                              valueListenable: shiftManager.isManualOffNotifier,
+                              builder: (context, wasOff, _) {
+                                return Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      wasOff
+                                          ? 'You were automatically put on break after 5 minutes of inactivity. Your 6-hour OFF timer has been paused.'
+                                          : 'You were automatically put on break after 5 minutes of inactivity so no live leads are missed.',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontSize: 13.5,
+                                        color: Color(0xFF64748B),
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      height: 44,
+                                      child: ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF059669),
+                                          foregroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                        icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                                        label: Text(
+                                          wasOff ? 'Resume' : 'Resume Active',
+                                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                        ),
+                                        onPressed: () async {
+                                          await shiftManager.resumeFromBreak();
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           ],
                         ),
@@ -172,137 +332,60 @@ class TelecallerShiftGateOverlay extends StatelessWidget {
             },
           ),
 
-          // 3. Workspace Inactive Blur Gate (Logs in blurred until toggle turned ON)
-          ValueListenableBuilder<String>(
-            valueListenable: shiftManager.currentStatusNotifier,
-            builder: (context, status, _) {
-              if (status != 'INACTIVE') return const SizedBox.shrink();
-              if (shiftManager.isShiftLockedOutNotifier.value) return const SizedBox.shrink();
-              if (shiftManager.isOnInactivityBreakNotifier.value) return const SizedBox.shrink();
+          // 3. Non-blocking Top Banner when 6-hour OFF limit is reached
+          ValueListenableBuilder<bool>(
+            valueListenable: shiftManager.isOffLimitExpiredNotifier,
+            builder: (context, isExpired, _) {
+              return ValueListenableBuilder<String>(
+                valueListenable: shiftManager.currentStatusNotifier,
+                builder: (context, status, _) {
+                  if (!isExpired || status == 'ACTIVE' || status == 'BREAK') {
+                    return const SizedBox.shrink();
+                  }
 
-              final isDark = Theme.of(context).brightness == Brightness.dark;
-
-              return Positioned.fill(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
-                    color: Colors.black.withValues(alpha: 0.65),
-                    alignment: Alignment.center,
-                    child: Card(
-                      elevation: 16,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                  return Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: Material(
+                      elevation: 3,
+                      color: const Color(0xFFDC2626),
                       child: Container(
-                        width: CRMBreakpoints.adaptiveWidth(context, 440),
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 34),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                        child: Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Color(0xFFEEF2FF),
-                              ),
-                              child: const Icon(
-                                Icons.power_settings_new_rounded,
-                                size: 40,
-                                color: Color(0xFF4F46E5),
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            Text(
-                              'Telecaller Shift Inactive',
-                              style: TextStyle(
-                                fontSize: 21,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : const Color(0xFF0F172A),
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'Your workspace is paused. Turn ON your availability status to activate your workspace and start receiving leads.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                color: Color(0xFF64748B),
-                                height: 1.45,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                            const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                '6-Hour OFF limit reached! New lead assignments are paused until you turn the Active toggle ON.',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        width: 10,
-                                        height: 10,
-                                        decoration: const BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: Color(0xFF94A3B8),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Availability Status: OFF',
-                                        style: TextStyle(
-                                          fontSize: 13.5,
-                                          fontWeight: FontWeight.w600,
-                                          color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Switch.adaptive(
-                                    value: false,
-                                    activeColor: const Color(0xFF059669),
-                                    onChanged: (val) async {
-                                      if (val) {
-                                        await shiftManager.toggleAvailability(true);
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
                             ),
-                            const SizedBox(height: 20),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 46,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF059669),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  elevation: 2,
-                                ),
-                                icon: const Icon(Icons.check_circle_outline_rounded, size: 20),
-                                label: const Text(
-                                  'Start Shift (Turn Active)',
-                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                                ),
-                                onPressed: () async {
-                                  await shiftManager.toggleAvailability(true);
-                                },
+                            const SizedBox(width: 8),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: const Color(0xFFDC2626),
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
+                              onPressed: () async {
+                                await shiftManager.toggleAvailability(true);
+                              },
+                              child: const Text('Turn ON', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                             ),
                           ],
                         ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               );
             },
           ),
