@@ -68,38 +68,41 @@ class WelcomeHeader extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              greeting,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                greeting,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                ),
               ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              displayName,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                letterSpacing: -0.6,
+              const SizedBox(height: 3),
+              Text(
+                displayName,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+                  letterSpacing: -0.6,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              "Here's what's happening with your business today.",
-              style: TextStyle(
-                fontSize: 13.5,
-                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+              const SizedBox(height: 4),
+              Text(
+                "Here's what's happening with your business today.",
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+        const SizedBox(width: 12),
         _buildDateCard(dateString, isDark),
       ],
     );
@@ -132,12 +135,16 @@ class WelcomeHeader extends StatelessWidget {
             color: ThemeManager().primaryColor,
           ),
           const SizedBox(width: 8),
-          Text(
-            dateString,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+          Flexible(
+            child: Text(
+              dateString,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+              ),
             ),
           ),
         ],

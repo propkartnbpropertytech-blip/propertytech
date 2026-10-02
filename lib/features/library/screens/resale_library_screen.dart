@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
@@ -972,8 +973,8 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final isDesktop = size.width >= 1024;
-    final isMobile = size.width < 600;
+    final isDesktop = size.width >= CRMBreakpoints.desktop;
+    final isMobile = CRMBreakpoints.isPhone(context);
 
     return Scaffold(
       backgroundColor: CRMColors.background,

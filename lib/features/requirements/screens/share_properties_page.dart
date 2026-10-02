@@ -13,6 +13,7 @@ import '../../../../core/design_system/widgets/crm_network_image.dart';
 
 import '../../../../core/utils/currency.dart';
 import '../../../../core/utils/seo_helper.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color _kWhatsAppGreen = Color(0xFF25D366);
@@ -256,7 +257,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
       );
     }
 
-    final isDesktop = MediaQuery.of(context).size.width >= 900;
+    final isDesktop = MediaQuery.sizeOf(context).width >= CRMBreakpoints.tablet;
     final agentName = _agent?['full_name'] ?? widget.agentName ?? 'Agent';
     final agentMobile = _agent?['mobile'] ?? widget.agentMobile ?? '';
 
@@ -307,6 +308,10 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.button)),
+                      ),
                       icon: const Icon(Icons.phone_rounded, size: 16),
                       label: const Text("Call"),
                       onPressed: () => _launchUrlHelper("tel:$agentMobile", "session", "Call"),
@@ -318,6 +323,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _kWhatsAppGreen,
                         foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 48),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.button)),
                       ),
                       icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
@@ -551,7 +557,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                       label: "View Details",
                       backgroundColor: propPrimary,
                       onPressed: () => context.push('/share/${widget.sessionId}/property/${prop.id}'),
-                      height: 36,
+                      height: MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet ? 48 : 36,
                       padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
                     ),
                     if (agentMobile.isNotEmpty) ...[
@@ -560,7 +566,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                         backgroundColor: propPrimary,
                         prefixIcon: Icons.phone_rounded,
                         onPressed: () => _launchUrlHelper("tel:$agentMobile", prop.id, "Call"),
-                        height: 36,
+                        height: MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet ? 48 : 36,
                         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
                       ),
                       CRMButton(
@@ -571,7 +577,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                           final text = Uri.encodeComponent("Hi, I am interested in property ${prop.propertyCode} from your shortlisted share.");
                           _launchUrlHelper("https://wa.me/$agentMobile?text=$text", prop.id, "Interested");
                         },
-                        height: 36,
+                        height: MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet ? 48 : 36,
                         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
                       ),
                       CRMButton(
@@ -582,7 +588,7 @@ class _SharePropertiesPageState extends State<SharePropertiesPage> {
                           final text = Uri.encodeComponent("Hi, I would like to schedule a visit for property ${prop.propertyCode} from your shortlisted share.");
                           _launchUrlHelper("https://wa.me/$agentMobile?text=$text", prop.id, "Schedule");
                         },
-                        height: 36,
+                        height: MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet ? 48 : 36,
                         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
                       ),
                     ],

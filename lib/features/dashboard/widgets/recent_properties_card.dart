@@ -64,50 +64,55 @@ class RecentPropertiesCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Recent Properties',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: isDark
-                            ? const Color(0xFFF8FAFC)
-                            : const Color(0xFF14213D),
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    if (properties.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Recent Properties',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                           color: isDark
-                              ? const Color(0xFF243044)
-                              : const Color(0xFFF1F4F9),
-                          borderRadius: BorderRadius.circular(10),
+                              ? const Color(0xFFF8FAFC)
+                              : const Color(0xFF14213D),
+                          letterSpacing: -0.2,
                         ),
-                        child: Text(
-                          '${properties.length}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
+                      ),
+                      if (properties.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
                             color: isDark
-                                ? const Color(0xFF94A3B8)
-                                : const Color(0xFF68738A),
+                                ? const Color(0xFF243044)
+                                : const Color(0xFFF1F4F9),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${properties.length}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF68738A),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                     if (onFilterTap != null)
                       InkWell(
                         onTap: onFilterTap,
@@ -191,7 +196,8 @@ class RecentPropertiesCard extends StatelessWidget {
                     ),
                   ],
                 ),
-              ],
+              ),
+            ],
             ),
           ),
 
@@ -583,12 +589,16 @@ class PropertyListItem extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Text(
-                        _formatPrice(property.price, property.listingType),
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.bold,
-                          color: ThemeManager().primaryColor,
+                      Flexible(
+                        child: Text(
+                          _formatPrice(property.price, property.listingType),
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            color: ThemeManager().primaryColor,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (specsText.isNotEmpty) ...[

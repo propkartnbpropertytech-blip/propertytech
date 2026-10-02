@@ -26,7 +26,7 @@ class CampaignSubshellHeader extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final isCompact = screenWidth < 1100;
     final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
-    final title = isTelecaller ? 'My Calling Leads' : 'Campaign & Lead Automation';
+    final title = isTelecaller ? 'My Calling Queue' : 'Campaign & Lead Automation';
     final subtitle = isTelecaller
         ? 'Inbound leads allocated to you · Filter by Property Listing & Requirement'
         : 'Multi-channel marketing automation, webhook integrations & lead pipelines';
@@ -266,6 +266,7 @@ class CampaignSubshellHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(7),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
+          constraints: const BoxConstraints(minHeight: 48),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: isActive

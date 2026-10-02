@@ -69,7 +69,21 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
           source: event.source,
           telecallerId: telecallerId,
         );
-        final items = _keptForCurrentTelecaller(serverItems);
+        var items = _keptForCurrentTelecaller(serverItems);
+
+        // Filter out any archived / property listed leads as safety check
+        items = items.where((raw) {
+          if (raw is! Map) return false;
+          final lead = raw['lead'];
+          final cs = ((lead is Map ? lead['campaign_status'] : null) ?? raw['campaign_status'] ?? '').toString().trim();
+          if (cs == 'Property Listed' || cs == 'Listed' || cs == 'Archived') return false;
+          final leadId = (raw['lead_id'] ?? raw['id'] ?? '').toString();
+          final localLead = IntegrationService().getLeadById(leadId);
+          if (localLead != null && (localLead.campaignStatus == 'Property Listed' || localLead.campaignStatus == 'Listed' || localLead.campaignStatus == 'Archived')) {
+            return false;
+          }
+          return true;
+        }).toList();
 
         // Merge local in-memory leads marked as Callback so they appear immediately
         final existingIds = items.map((raw) {
@@ -78,6 +92,9 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
         }).toSet();
 
         final localCbLeads = IntegrationService().leads.where((l) {
+          if (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived') {
+            return false;
+          }
           final isCb = l.campaignStatus == 'Callback' || l.campaignStatus == 'Call Back' || l.allocationStatus == 'CALLBACK';
           if (!isCb) return false;
           // Strictly exclude follow-ups

@@ -17,6 +17,7 @@ import '../../integration/services/integration_service.dart';
 import '../bloc/telecaller_dashboard_bloc.dart';
 import '../data/telecaller_repository.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
+import '../../../core/design_system/mobile/mobile.dart';
 
 class TelecallerDashboardScreen extends StatelessWidget {
   const TelecallerDashboardScreen({super.key});
@@ -302,12 +303,17 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     return BlocBuilder<TelecallerDashboardBloc, TelecallerDashboardState>(
       builder: (context, state) {
         final data = state.data;
+        final viewport = MediaQuery.sizeOf(context).width;
+        final next = data['nextLead'] as Map<String, dynamic>?;
+        final recentActivities = (data['recentActivity'] as List?) ?? [];
+
+        if (MobileLayout.isMobileShell(viewport)) {
+          return _buildMobileView(context, state, data, next, recentActivities);
+        }
+
         if (state.loading && data.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
-        final next = data['nextLead'] as Map<String, dynamic>?;
-        final recentActivities = (data['recentActivity'] as List?) ?? [];
-        final viewport = MediaQuery.sizeOf(context).width;
         final isWide = viewport >= 1050;
         final isPhone = viewport < 700;
 
@@ -439,6 +445,304 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildMobileView(
+    BuildContext context,
+    TelecallerDashboardState state,
+    Map<String, dynamic> data,
+    Map<String, dynamic>? next,
+    List<dynamic> recentActivities,
+  ) {
+    if (state.loading && data.isEmpty) {
+      return const MobileScreenScaffold(
+        scrollable: false,
+        body: MobileLoadingState(mode: MobileLoadingMode.initial),
+      );
+    }
+
+    if (state.error != null && data.isEmpty) {
+      return MobileScreenScaffold(
+        scrollable: false,
+        body: MobileErrorState(
+          title: 'Unable to load dashboard',
+          message: state.error!,
+          onRetry: () => context.read<TelecallerDashboardBloc>().add(TelecallerDashboardRequested()),
+        ),
+      );
+    }
+
+    final userName = RoleGuard.currentUser?.fullName.isNotEmpty == true
+        ? RoleGuard.currentUser!.fullName
+        : (data['telecallerName']?.toString().isNotEmpty == true
+            ? data['telecallerName'].toString()
+            : 'Telecaller');
+
+    return MobileScreenScaffold(
+      scrollable: true,
+      onRefresh: () async {
+        if (mounted) setState(() => _activityPage = 1);
+        context.read<TelecallerDashboardBloc>().add(TelecallerDashboardRequested());
+        await Future.wait([
+          _loadTransferredLeads(1),
+          _loadFollowups(),
+        ]);
+      },
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          WelcomeHeader(userName: userName),
+          if (state.error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 8),
+              child: Text(
+                state.error!,
+                style: const TextStyle(color: CRMColors.danger, fontSize: 13),
+              ),
+            ),
+          const SizedBox(height: 16),
+
+          // Next Lead Callout Card
+          _buildMobileNextLeadCard(context, next),
+          const SizedBox(height: 16),
+
+          // KPIs Grid (10 metrics)
+          _buildMobileKpiGrid(context, data),
+          const SizedBox(height: 20),
+
+          // Followups preview
+          _buildFollowupsCard(context, _visibleFollowups(data)),
+          const SizedBox(height: 16),
+
+          // Transferred Leads
+          _buildTransferredLeadsCard(context),
+          const SizedBox(height: 16),
+
+          // Personal Notes
+          _buildPersonalNotesCard(context),
+          const SizedBox(height: 16),
+
+          // Recent Activity
+          _buildRecentActivityCard(context, recentActivities),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileNextLeadCard(BuildContext context, Map<String, dynamic>? next) {
+    if (next == null) {
+      return MobileCard(
+        title: 'Calling Queue',
+        subtitle: 'No pending leads in queue',
+        leading: CircleAvatar(
+          backgroundColor: CRMColors.primary.withValues(alpha: 0.1),
+          child: Icon(Icons.phone_in_talk_rounded, color: CRMColors.primary),
+        ),
+        trailing: SizedBox(
+          width: 130,
+          child: MobileActionButton.primary(
+            MobileAction(
+              label: 'Open Queue',
+              icon: Icons.arrow_forward_rounded,
+              onPressed: () => context.go('/telecaller/leads'),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final name = (next['client_name'] ?? next['customer_name'] ?? next['name'] ?? 'Next Lead').toString();
+    final phone = (next['phone'] ?? next['mobile'] ?? '').toString();
+    final reqType = (next['lead_type'] ?? next['type'] ?? 'Requirement').toString();
+
+    return MobileCard(
+      title: name,
+      subtitle: phone.isNotEmpty ? phone : 'Next Lead to Call',
+      status: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEFF6FF),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          reqType,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+        ),
+      ),
+      leading: CircleAvatar(
+        radius: 20,
+        backgroundColor: const Color(0xFF059669).withValues(alpha: 0.12),
+        child: const Icon(Icons.phone_forwarded_rounded, color: Color(0xFF059669), size: 20),
+      ),
+      trailing: SizedBox(
+        width: 120,
+        child: MobileActionButton.primary(
+          MobileAction(
+            label: 'Call Lead',
+            icon: Icons.call_rounded,
+            onPressed: () => context.go('/telecaller/leads'),
+          ),
+        ),
+      ),
+      onTap: () => context.go('/telecaller/leads'),
+    );
+  }
+
+  Widget _buildMobileKpiGrid(BuildContext context, Map<String, dynamic> data) {
+    final width = MediaQuery.sizeOf(context).width;
+    final isVerySmall = width < 340;
+
+    final kpis = <_MobileKpiItem>[
+      _MobileKpiItem(
+        label: 'My assigned leads',
+        value: '${data['assignedLeads'] ?? 0}',
+        icon: Icons.assignment_outlined,
+        route: '/telecaller/leads',
+      ),
+      _MobileKpiItem(
+        label: 'Uncontacted',
+        value: '${data['uncontacted'] ?? 0}',
+        icon: Icons.mark_email_unread_outlined,
+        route: '/telecaller/leads',
+      ),
+      _MobileKpiItem(
+        label: 'Callbacks',
+        value: '${data['callbackCount'] ?? 0}',
+        icon: Icons.event_repeat,
+        route: '/telecaller/callbacks',
+      ),
+      _MobileKpiItem(
+        label: "Today's callbacks",
+        value: '${data['todaysCallbacks'] ?? 0}',
+        icon: Icons.today_outlined,
+        route: '/telecaller/callbacks',
+      ),
+      _MobileKpiItem(
+        label: 'CNR / Retries',
+        value: '${data['cnrCount'] ?? 0}',
+        icon: Icons.phone_missed_outlined,
+        route: '/telecaller/cnr',
+      ),
+      _MobileKpiItem(
+        label: 'Picked up',
+        value: '${data['pickedUp'] ?? 0}',
+        icon: Icons.call_received,
+        route: '/telecaller/leads',
+      ),
+      _MobileKpiItem(
+        label: 'Handed to Sales',
+        value: '${data['handedToSales'] ?? 0}',
+        icon: Icons.handshake_outlined,
+        route: '/telecaller/leads',
+      ),
+      _MobileKpiItem(
+        label: 'Not Interested',
+        value: '${data['notInterestedCount'] ?? 0}',
+        icon: Icons.do_not_disturb_on_rounded,
+        route: '/campaign/leads?view=not_interested',
+        accentColor: const Color(0xFFEF4444),
+      ),
+      _MobileKpiItem(
+        label: 'Workload',
+        value: '${data['currentWorkload'] ?? 0}/${data['maxCapacity'] ?? 0}',
+        icon: Icons.speed,
+        route: '/telecaller/leads',
+      ),
+      _MobileKpiItem(
+        label: 'Remaining Cap.',
+        value: '${data['remainingCapacity'] ?? 0}',
+        icon: Icons.hourglass_bottom,
+        route: '/telecaller/leads',
+      ),
+    ];
+
+    if (isVerySmall) {
+      return Column(
+        children: kpis.map((kpi) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _buildMobileKpiCard(context, kpi),
+        )).toList(),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardW = (constraints.maxWidth - 10) / 2;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: kpis.map((kpi) => SizedBox(
+            width: cardW,
+            child: _buildMobileKpiCard(context, kpi),
+          )).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileKpiCard(BuildContext context, _MobileKpiItem item) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = item.accentColor ?? CRMColors.primary;
+
+    return Semantics(
+      button: true,
+      label: '${item.label}: ${item.value}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => context.go(item.route),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E2430) : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(item.icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      item.value,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1515,4 +1819,20 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     }
     return 'Lead assigned';
   }
+}
+
+class _MobileKpiItem {
+  final String label;
+  final String value;
+  final IconData icon;
+  final String route;
+  final Color? accentColor;
+
+  const _MobileKpiItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.route,
+    this.accentColor,
+  });
 }

@@ -140,6 +140,8 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   final DashboardRepository _dashboardRepository;
   final DashboardService _dashboardService = DashboardService();
   StreamSubscription? _dashboardSubscription;
+  StreamSubscription? _requirementsSubscription;
+  StreamSubscription? _propertiesSubscription;
 
   DashboardBloc({required DashboardRepository dashboardRepository})
       : _dashboardRepository = dashboardRepository,
@@ -151,7 +153,13 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     on<ToggleKpiConfig>(_onToggleKpiConfig, transformer: _sequential());
 
     _dashboardSubscription = RepositoryCoordinator().dashboardStream.listen((_) {
-      add(const LoadDashboard());
+      add(RefreshDashboard());
+    });
+    _requirementsSubscription = RepositoryCoordinator().requirementsStream.listen((_) {
+      add(RefreshDashboard());
+    });
+    _propertiesSubscription = RepositoryCoordinator().propertiesStream.listen((_) {
+      add(RefreshDashboard());
     });
   }
 
@@ -162,6 +170,8 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   @override
   Future<void> close() {
     _dashboardSubscription?.cancel();
+    _requirementsSubscription?.cancel();
+    _propertiesSubscription?.cancel();
     return super.close();
   }
 

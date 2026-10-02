@@ -14,6 +14,10 @@ class DashboardSummary {
   final int resaleRequirements;
   final int rentalWonRequirements;
   final int resaleWonRequirements;
+  final int rentalActiveRequirements;
+  final int resaleActiveRequirements;
+  final int totalActiveRequirements;
+  final int totalWonRequirements;
 
   final double totalPropertiesTrend;
   final double availableTrend;
@@ -41,6 +45,10 @@ class DashboardSummary {
     this.resaleRequirements = 0,
     this.rentalWonRequirements = 0,
     this.resaleWonRequirements = 0,
+    this.rentalActiveRequirements = 0,
+    this.resaleActiveRequirements = 0,
+    this.totalActiveRequirements = 0,
+    this.totalWonRequirements = 0,
     this.totalPropertiesTrend = 0.0,
     this.availableTrend = 0.0,
     this.soldTrend = 0.0,
@@ -71,6 +79,10 @@ class DashboardSummary {
       resaleRequirements: json['resaleRequirements'] ?? 0,
       rentalWonRequirements: json['rentalWonRequirements'] ?? 0,
       resaleWonRequirements: json['resaleWonRequirements'] ?? 0,
+      rentalActiveRequirements: json['rentalActiveRequirements'] ?? 0,
+      resaleActiveRequirements: json['resaleActiveRequirements'] ?? 0,
+      totalActiveRequirements: json['totalActiveRequirements'] ?? 0,
+      totalWonRequirements: json['totalWonRequirements'] ?? 0,
       totalPropertiesTrend: (trends['totalProperties'] ?? 0.0).toDouble(),
       availableTrend: (trends['available'] ?? 0.0).toDouble(),
       soldTrend: (trends['sold'] ?? 0.0).toDouble(),
@@ -157,40 +169,131 @@ class RecentProperty {
 class DashboardLocationItem {
   final String id;
   final String code;
+  final String title;
+  final String cityName;
   final String areaName;
   final String categoryName;
   final String listingType;
+  final String status;
+  final double price;
   final DateTime? createdAt;
+
+  final String configurationName;
+  final String propertyTypeName;
+  final int bedrooms;
 
   const DashboardLocationItem({
     required this.id,
     required this.code,
+    this.title = '',
+    this.cityName = 'Ahmedabad',
     required this.areaName,
     required this.categoryName,
     required this.listingType,
+    this.status = 'Available',
+    this.price = 0.0,
     this.createdAt,
+    this.configurationName = '',
+    this.propertyTypeName = '',
+    this.bedrooms = 0,
   });
+
+  bool get isAvailable {
+    final s = status.trim().toLowerCase();
+    return s == 'available' || s == 'to be available';
+  }
+
+  bool get isRented {
+    final s = status.trim().toLowerCase();
+    return s == 'rented out' || s == 'rented';
+  }
+
+  bool get isSold {
+    final s = status.trim().toLowerCase();
+    return s == 'sold out' || s == 'sold';
+  }
+
+  bool get isClosed => isRented || isSold;
+
+  bool get isResale =>
+      listingType.trim().toLowerCase().contains('sale') ||
+      listingType.trim().toLowerCase().contains('resale');
+  bool get isRent => !isResale;
+
+  bool get isLeadWon {
+    final s = status.trim().toLowerCase();
+    return s == 'won' || s == 'deal won' || s == 'closed';
+  }
+
+  bool get isLeadActive {
+    final s = status.trim().toLowerCase();
+    return !isLeadWon &&
+        !s.startsWith('rejected') &&
+        s != 'dead' &&
+        s != 'not interested' &&
+        s != 'bin' &&
+        s != 'suspended';
+  }
+
+  bool get isLeadRejected {
+    final s = status.trim().toLowerCase();
+    return s.startsWith('rejected') ||
+        s == 'dead' ||
+        s == 'not interested' ||
+        s == 'bin' ||
+        s == 'suspended' ||
+        s == 'lost';
+  }
+
+  bool matchesCategory(String target) {
+    if (target == 'All') return true;
+    final cat = categoryName.trim().toLowerCase();
+    if (target == 'Residential') return cat.contains('residen');
+    if (target == 'Commercial') return cat.contains('commerc');
+    if (target == 'Industrial') return cat.contains('indust');
+    if (target == 'Land & Plot') return cat.contains('land') || cat.contains('plot');
+    return true;
+  }
+
+  bool get isResidential => matchesCategory('Residential');
+  bool get isCommercial => matchesCategory('Commercial');
+  bool get isIndustrial => matchesCategory('Industrial');
+  bool get isLandAndPlot => matchesCategory('Land & Plot');
 
   factory DashboardLocationItem.fromJson(Map<String, dynamic> json) {
     return DashboardLocationItem(
       id: json['id'] ?? '',
       code: json['code'] ?? '',
-      areaName: json['areaName'] ?? json['area_name'] ?? 'Other',
+      title: json['title'] ?? '',
+      cityName: json['cityName'] ?? json['city_name'] ?? 'Ahmedabad',
+      areaName: json['areaName'] ?? json['area_name'] ?? 'Ahmedabad',
       categoryName: json['categoryName'] ?? json['category_name'] ?? 'Residential',
       listingType: json['listingType'] ?? json['listing_type'] ?? 'Rent',
+      status: json['status'] ?? json['property_status']?['name'] ?? 'Available',
+      price: (json['price'] as num?)?.toDouble() ?? 0.0,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString())
           : null,
+      configurationName: json['configurationName'] ?? json['configuration_name'] ?? '',
+      propertyTypeName: json['propertyTypeName'] ?? json['property_type_name'] ?? '',
+      bedrooms: (json['bedrooms'] as num?)?.toInt() ?? 0,
     );
   }
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'code': code,
+    'title': title,
+    'cityName': cityName,
     'areaName': areaName,
     'categoryName': categoryName,
     'listingType': listingType,
+    'status': status,
+    'price': price,
     'createdAt': createdAt?.toIso8601String(),
+    'configurationName': configurationName,
+    'propertyTypeName': propertyTypeName,
+    'bedrooms': bedrooms,
   };
 }
 
@@ -202,6 +305,8 @@ class DashboardData {
   final List<DashboardFollowup> followups;
   final List<DashboardSiteVisit> siteVisits;
   final List<DashboardLocationItem> inventoryLocations;
+  final List<DashboardLocationItem> leadsLocations;
+  final Map<String, List<String>> cityAreas;
 
   const DashboardData({
     required this.summary,
@@ -211,6 +316,8 @@ class DashboardData {
     required this.followups,
     required this.siteVisits,
     this.inventoryLocations = const [],
+    this.leadsLocations = const [],
+    this.cityAreas = const {},
   });
 
   factory DashboardData.fromJson(Map<String, dynamic> json) {
@@ -223,6 +330,15 @@ class DashboardData {
 
     final rawFollowups = json['followups'] is List ? json['followups'] : json['followupsList'];
 
+    Map<String, List<String>> parsedCityAreas = {};
+    if (json['cityAreas'] is Map) {
+      (json['cityAreas'] as Map).forEach((k, v) {
+        if (v is List) {
+          parsedCityAreas[k.toString()] = v.map((e) => e.toString()).toList();
+        }
+      });
+    }
+
     return DashboardData(
       summary: DashboardSummary.fromJson(json['summary'] is Map ? json['summary'] as Map<String, dynamic> : {}),
       activity: safeList(json['activity'], (item) => RecentActivity.fromJson(item)),
@@ -231,6 +347,8 @@ class DashboardData {
       followups: safeList(rawFollowups, (item) => DashboardFollowup.fromJson(item)),
       siteVisits: safeList(json['siteVisits'], (item) => DashboardSiteVisit.fromJson(item)),
       inventoryLocations: safeList(json['inventoryLocations'], (item) => DashboardLocationItem.fromJson(item)),
+      leadsLocations: safeList(json['leadsLocations'], (item) => DashboardLocationItem.fromJson(item)),
+      cityAreas: parsedCityAreas,
     );
   }
 }

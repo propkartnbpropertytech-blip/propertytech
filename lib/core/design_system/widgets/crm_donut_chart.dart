@@ -70,22 +70,11 @@ class DonutChart3DPainter extends CustomPainter {
       final midAngle = startAngle + sweepAngle / 2;
 
       final arcPaint = Paint()
+        ..color = sector.color
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth
         ..strokeCap = StrokeCap.butt
         ..isAntiAlias = true;
-
-      final darkerColor = Color.lerp(sector.color, Colors.black, 0.25)!;
-      final lighterColor = Color.lerp(sector.color, Colors.white, 0.2)!;
-      final endAngle = math.max(startAngle + sweepAngle, startAngle + 0.001);
-      arcPaint.shader = ui.Gradient.sweep(
-        center,
-        [lighterColor, sector.color, darkerColor, sector.color],
-        [0.0, 0.3, 0.7, 1.0],
-        TileMode.clamp,
-        startAngle,
-        endAngle,
-      );
 
       final arcRect =
           Rect.fromCircle(center: center, radius: outerRadius - strokeWidth / 2);
@@ -126,16 +115,8 @@ class DonutChart3DPainter extends CustomPainter {
       startAngle += sweepAngle;
     }
 
-    final innerGradient = ui.Gradient.radial(
-      Offset(center.dx - innerRadius * 0.2, center.dy - innerRadius * 0.2),
-      innerRadius,
-      isDark
-          ? [const Color(0xFF1A2438), const Color(0xFF070B14)]
-          : [Colors.white, const Color(0xFFF1F5F9)],
-      [0.0, 1.0],
-    );
     final innerPaint = Paint()
-      ..shader = innerGradient
+      ..color = backgroundColor
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
     canvas.drawCircle(center, innerRadius - 1, innerPaint);
@@ -153,14 +134,7 @@ class DonutChart3DPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth * 0.4
       ..isAntiAlias = true
-      ..shader = ui.Gradient.linear(
-        Offset(center.dx, center.dy - outerRadius),
-        center,
-        [
-          Colors.white.withOpacity(isDark ? 0.08 : 0.18),
-          Colors.white.withOpacity(0.0),
-        ],
-      );
+      ..color = Colors.white.withOpacity(isDark ? 0.05 : 0.10);
     canvas.drawArc(highlightRect, -math.pi, math.pi, false, highlightPaint);
   }
 

@@ -74,6 +74,7 @@ class IntegrationService extends ChangeNotifier {
 
   bool _loaded = false;
   String? _loadedOrgScope;
+  String? _loadedUserScope;
   bool? _loadedCampaignOff;
   String _googleSheetUrl = '';
   Timer? _sheetPollTimer;
@@ -85,11 +86,45 @@ class IntegrationService extends ChangeNotifier {
   bool _persistInFlight = false;
   bool _persistDirty = false;
 
+  void clearSessionData() {
+    _sheetPollTimer?.cancel();
+    _sheetPollTimer = null;
+    _campaignUiWatchers = 0;
+    _leads.clear();
+    _unifiedFollowups.clear();
+    _recentlyReclassifiedLeads.clear();
+    _propertyCache = null;
+    _propertyCacheAt = null;
+    _googleSheetUrl = '';
+    lastSyncError = null;
+    _loaded = false;
+    _loadedOrgScope = null;
+    _loadedUserScope = null;
+    _loadedCampaignOff = null;
+    _persistDirty = false;
+    _lastSyncAt = null;
+    _lastSyncCount = 0;
+    _activeHealthAlerts.clear();
+    _metaStatus = null;
+    _leadsPipelineInfo = null;
+    _customHeaders.clear();
+    _propertyListingCustomHeaders.clear();
+    _requirementCustomHeaders.clear();
+    _hiddenHeaders.clear();
+    _propertyListingHiddenHeaders.clear();
+    _requirementHiddenHeaders.clear();
+    _headerOrder.clear();
+    _propertyListingHeaderOrder.clear();
+    _requirementHeaderOrder.clear();
+    _columnToCrmFieldMap
+      ..clear()
+      ..addAll(_defaultColumnToCrmFieldMap);
+    _invalidateHeaderCache();
+  }
+
   // Webhook configuration
   String get webhookUrl => '${AppEnv.apiBaseUrl}/integrations/webhooks/meta-leads';
   String get vpsDirectWebhookUrl => webhookUrl;
-  String webhookSecret = "pk_sec_99a8b7c6d5e4f3a2b1";
-  String metaVerifyToken = "propkart_meta_lead_verify_token_2026";
   bool isWebhookListening = true;
 
   // Ingested Leads (clean start)
@@ -170,7 +205,7 @@ class IntegrationService extends ChangeNotifier {
   Map<String, dynamic>? get leadsPipelineInfo => _leadsPipelineInfo;
 
   // Column header to CRM field mappings
-  final Map<String, String> _columnToCrmFieldMap = {
+  static const Map<String, String> _defaultColumnToCrmFieldMap = {
     'Client / Owner Name': 'name',
     'Owner Name': 'name',
     'Full Name': 'name',
@@ -220,6 +255,10 @@ class IntegrationService extends ChangeNotifier {
     'Project': 'property',
     'Project Name': 'property',
     'Inventory': 'property',
+  };
+
+  final Map<String, String> _columnToCrmFieldMap = {
+    ..._defaultColumnToCrmFieldMap,
   };
 
   Map<String, String> get columnMappings => Map.unmodifiable(_columnToCrmFieldMap);
@@ -870,13 +909,18 @@ class IntegrationService extends ChangeNotifier {
   Future<void> ensureLoaded() async {
     final campaignOff = RoleGuard.currentUser?.campaignEnabled == false &&
         RoleGuard.currentUser?.role.toLowerCase() != 'super admin';
+    if (_loaded && (_loadedOrgScope != _orgScope || _loadedUserScope != _userScope)) {
+      clearSessionData();
+    }
     if (_loaded &&
         _loadedOrgScope == _orgScope &&
+        _loadedUserScope == _userScope &&
         _loadedCampaignOff == campaignOff) {
       return;
     }
     _loaded = true;
     _loadedOrgScope = _orgScope;
+    _loadedUserScope = _userScope;
     _loadedCampaignOff = campaignOff;
     _leads = [];
     try {
@@ -1037,6 +1081,11 @@ class IntegrationService extends ChangeNotifier {
                     local.notInterestedReason!.trim().isNotEmpty &&
                     (res.notInterestedReason == null || res.notInterestedReason!.trim().isEmpty)) {
                   res = res.copyWith(notInterestedReason: local.notInterestedReason);
+                }
+                final localArchive = local.displayArchiveRemark;
+                final resArchive = res.displayArchiveRemark;
+                if (localArchive != null && localArchive.trim().isNotEmpty && (resArchive == null || resArchive.trim().isEmpty)) {
+                  res = res.copyWith(archiveRemark: localArchive.trim(), archiveReason: localArchive.trim());
                 }
                 final isIncDefault = res.campaignStatus.isEmpty || res.campaignStatus == 'New' || res.campaignStatus == 'Pending';
                 if (isIncDefault && (local.campaignStatus == 'Follow up' || local.campaignStatus == 'Callback')) {
@@ -1339,13 +1388,17 @@ class IntegrationService extends ChangeNotifier {
             currentRaw['not_interested_reason'] = cleanReason;
             currentRaw['not_interested_notes'] = cleanReason;
           } else if (status == 'Archived' || status == 'Property Listed' || status == 'Listed') {
-            currentRaw['archive_reason'] = cleanReason;
+            currentRaw['archive_remark'] = cleanReason;
             currentRaw['archive_remarks'] = cleanReason;
+            currentRaw['archive_reason'] = cleanReason;
           }
         }
+        final isArchivedStatus = status == 'Archived' || status == 'Property Listed' || status == 'Listed';
         _leads[idx] = _leads[idx].copyWith(
           campaignStatus: status,
-          allocationStatus: status == 'Not interested' ? 'RELEASED' : _leads[idx].allocationStatus,
+          allocationStatus: status == 'Not interested'
+              ? 'RELEASED'
+              : (isArchivedStatus ? (status == 'Property Listed' ? 'LISTED' : 'ARCHIVED') : _leads[idx].allocationStatus),
           rawJson: currentRaw,
           statusUpdatedByName: currentUserName.isNotEmpty ? currentUserName : _leads[idx].statusUpdatedByName,
           statusUpdatedById: currentUserId ?? _leads[idx].statusUpdatedById,
@@ -1356,12 +1409,17 @@ class IntegrationService extends ChangeNotifier {
           notInterestedReason: (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty)
               ? cleanReason
               : _leads[idx].notInterestedReason,
-          archivedByName: (status == 'Archived' || status == 'Property Listed' || status == 'Listed') ? currentUserName : _leads[idx].archivedByName,
-          archivedById: (status == 'Archived' || status == 'Property Listed' || status == 'Listed') ? currentUserId : _leads[idx].archivedById,
-          archivedAt: (status == 'Archived' || status == 'Property Listed' || status == 'Listed') ? DateTime.now() : _leads[idx].archivedAt,
+          archivedByName: isArchivedStatus ? currentUserName : _leads[idx].archivedByName,
+          archivedById: isArchivedStatus ? currentUserId : _leads[idx].archivedById,
+          archivedAt: isArchivedStatus ? DateTime.now() : _leads[idx].archivedAt,
+          archiveRemark: isArchivedStatus ? cleanReason : _leads[idx].archiveRemark,
+          archiveReason: isArchivedStatus ? cleanReason : _leads[idx].archiveReason,
           followupScheduledAt: isFollowup ? _leads[idx].followupScheduledAt : null,
           followupStatus: isFollowup ? _leads[idx].followupStatus : 'Completed',
+          callbackScheduledAt: isArchivedStatus ? null : _leads[idx].callbackScheduledAt,
+          callbackStatus: isArchivedStatus ? 'Completed' : _leads[idx].callbackStatus,
           clearFollowup: !isFollowup,
+          clearCallback: isArchivedStatus,
         );
         notifyListeners();
         await _persistLeads();
@@ -1372,6 +1430,8 @@ class IntegrationService extends ChangeNotifier {
       if (reason != null && reason.trim().isNotEmpty) {
         payload['reason'] = reason.trim();
         payload['notes'] = reason.trim();
+        payload['archive_remark'] = reason.trim();
+        payload['archive_remarks'] = reason.trim();
         payload['archive_reason'] = reason.trim();
       }
       final res = await _apiClient.patch('/integrations/leads/$leadId/campaign-status', payload);
@@ -1391,20 +1451,32 @@ class IntegrationService extends ChangeNotifier {
             });
             if (leadIdx != -1) {
               final isFollowup = status == 'Follow up' || status == 'Follow-up';
+              final isArchivedStatus = status == 'Archived' || status == 'Property Listed' || status == 'Listed';
               final cleanReason = reason?.trim();
               _leads[leadIdx] = updatedLead.copyWith(
                 campaignStatus: status,
-                allocationStatus: status == 'Not interested' ? 'RELEASED' : (updatedLead.allocationStatus ?? _leads[leadIdx].allocationStatus),
+                allocationStatus: status == 'Not interested'
+                    ? 'RELEASED'
+                    : (isArchivedStatus ? (status == 'Property Listed' ? 'LISTED' : 'ARCHIVED') : (updatedLead.allocationStatus ?? _leads[leadIdx].allocationStatus)),
                 notInterestedReason: (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty)
                     ? cleanReason
                     : (updatedLead.notInterestedReason ?? _leads[leadIdx].notInterestedReason),
+                archiveRemark: (isArchivedStatus && cleanReason != null && cleanReason.isNotEmpty)
+                    ? cleanReason
+                    : (updatedLead.archiveRemark ?? _leads[leadIdx].archiveRemark),
+                archiveReason: (isArchivedStatus && cleanReason != null && cleanReason.isNotEmpty)
+                    ? cleanReason
+                    : (updatedLead.archiveReason ?? _leads[leadIdx].archiveReason),
                 assignedTelecallerId: updatedLead.assignedTelecallerId ?? _leads[leadIdx].assignedTelecallerId,
                 assignedTelecallerName: updatedLead.assignedTelecallerName ?? _leads[leadIdx].assignedTelecallerName,
                 assignedTo: updatedLead.assignedTo ?? _leads[leadIdx].assignedTo,
                 assignedToName: updatedLead.assignedToName ?? _leads[leadIdx].assignedToName,
                 followupScheduledAt: isFollowup ? updatedLead.followupScheduledAt : null,
                 followupStatus: isFollowup ? updatedLead.followupStatus : 'Completed',
+                callbackScheduledAt: isArchivedStatus ? null : updatedLead.callbackScheduledAt,
+                callbackStatus: isArchivedStatus ? 'Completed' : updatedLead.callbackStatus,
                 clearFollowup: !isFollowup,
+                clearCallback: isArchivedStatus,
               );
               notifyListeners();
               await _persistLeads();
@@ -1414,10 +1486,15 @@ class IntegrationService extends ChangeNotifier {
         _unifiedFollowups.clear();
         leadEvents.add({'leadId': leadId, 'status': status, 'type': 'STATUS_UPDATED'});
         unawaited(fetchServerLeads(resetWithServer: true));
+        RepositoryCoordinator().refreshDashboard();
         return true;
       }
 
-      return res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+      final success = res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+      if (success) {
+        RepositoryCoordinator().refreshDashboard();
+      }
+      return success;
     } catch (e) {
       debugPrint('[IntegrationService] Error updating campaign status for $leadId: $e');
       return false;
@@ -1436,13 +1513,24 @@ class IntegrationService extends ChangeNotifier {
           if (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty) {
             currentRaw['not_interested_reason'] = cleanReason;
             currentRaw['not_interested_notes'] = cleanReason;
+          } else if ((status == 'Archived' || status == 'Property Listed' || status == 'Listed') && cleanReason != null && cleanReason.isNotEmpty) {
+            currentRaw['archive_remark'] = cleanReason;
+            currentRaw['archive_remarks'] = cleanReason;
+            currentRaw['archive_reason'] = cleanReason;
           }
+          final isArch = status == 'Archived' || status == 'Property Listed' || status == 'Listed';
           _leads[idx] = _leads[idx].copyWith(
             campaignStatus: status,
             rawJson: currentRaw,
             notInterestedReason: (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty)
                 ? cleanReason
                 : _leads[idx].notInterestedReason,
+            archiveRemark: (isArch && cleanReason != null && cleanReason.isNotEmpty)
+                ? cleanReason
+                : _leads[idx].archiveRemark,
+            archiveReason: (isArch && cleanReason != null && cleanReason.isNotEmpty)
+                ? cleanReason
+                : _leads[idx].archiveReason,
             followupScheduledAt: isFollowup ? _leads[idx].followupScheduledAt : null,
             followupStatus: isFollowup ? _leads[idx].followupStatus : 'Completed',
             clearFollowup: !isFollowup,
@@ -1926,20 +2014,35 @@ class IntegrationService extends ChangeNotifier {
     final isPickedUp = normOutcome == 'PICKED_UP' || normOutcome == 'PICKED UP' || normOutcome == 'ASSIGNED';
     final isNotInterested = normOutcome == 'NOT_INTERESTED' || normOutcome == 'NOT INTERESTED';
 
+    final isPropertyListed = normOutcome == 'PROPERTY_LISTED' || normOutcome == 'PROPERTY LISTED' || normOutcome == 'LISTED';
+    final isArchived = normOutcome == 'ARCHIVE' || normOutcome == 'ARCHIVED';
+
     final finalStatus = isCnr
         ? 'CNR'
         : (isCallback
             ? 'Callback'
             : (isFollowup
                 ? 'Follow up'
-                : (isPickedUp ? 'Assigned' : (isNotInterested ? 'Not interested' : normOutcome))));
+                : (isPickedUp
+                    ? 'Assigned'
+                    : (isNotInterested
+                        ? 'Not interested'
+                        : (isPropertyListed
+                            ? 'Property Listed'
+                            : (isArchived ? 'Archived' : normOutcome))))));
     final finalAllocStatus = isCnr
         ? 'CNR'
         : (isCallback
             ? 'CALLBACK'
             : (isFollowup
                 ? 'FOLLOWUP'
-                : (isPickedUp ? 'HANDED_TO_SALES' : (isNotInterested ? 'RELEASED' : normOutcome))));
+                : (isPickedUp
+                    ? 'HANDED_TO_SALES'
+                    : (isNotInterested
+                        ? 'RELEASED'
+                        : (isPropertyListed
+                            ? 'LISTED'
+                            : (isArchived ? 'ARCHIVED' : normOutcome))))));
     final now = DateTime.now();
     final user = RoleGuard.currentUser;
 
@@ -1969,6 +2072,17 @@ class IntegrationService extends ChangeNotifier {
           currentRaw['not_interested_by_id'] = user.id;
           currentRaw['not_interested_by_name'] = user.fullName.isNotEmpty ? user.fullName : user.email;
           currentRaw['not_interested_at'] = now.toIso8601String();
+        }
+      }
+      if (isPropertyListed || isArchived) {
+        if (remarks != null && remarks.isNotEmpty) {
+          currentRaw['archive_reason'] = remarks;
+          currentRaw['archive_remarks'] = remarks;
+        }
+        if (user != null) {
+          currentRaw['archived_by_id'] = user.id;
+          currentRaw['archived_by_name'] = user.fullName.isNotEmpty ? user.fullName : user.email;
+          currentRaw['archived_at'] = now.toIso8601String();
         }
       }
       if (isCnr) {
@@ -2003,19 +2117,22 @@ class IntegrationService extends ChangeNotifier {
         notInterestedByName: isNotInterested ? (user != null && user.fullName.isNotEmpty ? user.fullName : lead.notInterestedByName) : lead.notInterestedByName,
         notInterestedById: isNotInterested ? (user?.id ?? lead.notInterestedById) : lead.notInterestedById,
         notInterestedAt: isNotInterested ? now : lead.notInterestedAt,
+        archivedByName: (isPropertyListed || isArchived) ? (user != null && user.fullName.isNotEmpty ? user.fullName : user?.email) : lead.archivedByName,
+        archivedById: (isPropertyListed || isArchived) ? user?.id : lead.archivedById,
+        archivedAt: (isPropertyListed || isArchived) ? now : lead.archivedAt,
         assignedTo: isPickedUp ? (salesUserId ?? lead.assignedTo) : lead.assignedTo,
         assignedToName: isPickedUp ? (assignedToName ?? lead.assignedToName) : lead.assignedToName,
         transferRemarks: (isPickedUp || isCnr) ? (remarks ?? lead.transferRemarks) : lead.transferRemarks,
         interactedAt: now,
         interactedBy: user?.fullName ?? lead.interactedBy,
-        followupScheduledAt: isFollowup ? (parsedCallback ?? lead.followupScheduledAt) : (isPickedUp || isNotInterested || isCnr ? null : lead.followupScheduledAt),
-        followupRemarks: isFollowup ? (remarks ?? lead.followupRemarks) : (isPickedUp || isNotInterested || isCnr ? null : lead.followupRemarks),
-        followupStatus: isFollowup ? 'Pending' : (isPickedUp || isNotInterested ? 'Completed' : (isCnr ? null : lead.followupStatus)),
-        callbackScheduledAt: isCallback ? (parsedCallback ?? lead.callbackScheduledAt) : (isPickedUp || isNotInterested || isCnr ? null : lead.callbackScheduledAt),
-        callbackRemarks: isCallback ? (remarks ?? lead.callbackRemarks) : (isPickedUp || isNotInterested || isCnr ? null : lead.callbackRemarks),
-        callbackStatus: isCallback ? 'Pending' : (isPickedUp || isNotInterested ? 'Completed' : (isCnr ? null : lead.callbackStatus)),
-        clearFollowup: isPickedUp || isNotInterested || isCnr,
-        clearCallback: isPickedUp || isNotInterested || isCnr,
+        followupScheduledAt: isFollowup ? (parsedCallback ?? lead.followupScheduledAt) : (isPickedUp || isNotInterested || isCnr || isPropertyListed || isArchived ? null : lead.followupScheduledAt),
+        followupRemarks: isFollowup ? (remarks ?? lead.followupRemarks) : (isPickedUp || isNotInterested || isCnr || isPropertyListed || isArchived ? null : lead.followupRemarks),
+        followupStatus: isFollowup ? 'Pending' : (isPickedUp || isNotInterested || isPropertyListed || isArchived ? 'Completed' : (isCnr ? null : lead.followupStatus)),
+        callbackScheduledAt: isCallback ? (parsedCallback ?? lead.callbackScheduledAt) : (isPickedUp || isNotInterested || isCnr || isPropertyListed || isArchived ? null : lead.callbackScheduledAt),
+        callbackRemarks: isCallback ? (remarks ?? lead.callbackRemarks) : (isPickedUp || isNotInterested || isCnr || isPropertyListed || isArchived ? null : lead.callbackRemarks),
+        callbackStatus: isCallback ? 'Pending' : (isPickedUp || isNotInterested || isPropertyListed || isArchived ? 'Completed' : (isCnr ? null : lead.callbackStatus)),
+        clearFollowup: isPickedUp || isNotInterested || isCnr || isPropertyListed || isArchived,
+        clearCallback: isPickedUp || isNotInterested || isCnr || isPropertyListed || isArchived,
       );
       notifyListeners();
       unawaited(_persistLeads());
@@ -3564,6 +3681,7 @@ class IntegrationService extends ChangeNotifier {
   static String appsScriptSnippet(String webhookUrl) {
     return '''
 var WEBHOOK_URL = "$webhookUrl";
+var WEBHOOK_TOKEN = PropertiesService.getScriptProperties().getProperty("PROPKART_WEBHOOK_TOKEN");
 
 function rowToPayload(headers, values) {
   var payload = { source: "Google Sheets" };
@@ -3581,9 +3699,11 @@ function rowToPayload(headers, values) {
 }
 
 function postLead(payload) {
+  if (!WEBHOOK_TOKEN) throw new Error("Set PROPKART_WEBHOOK_TOKEN in Script Properties first.");
   UrlFetchApp.fetch(WEBHOOK_URL, {
     method: "post",
     contentType: "application/json",
+    headers: { "x-propkart-webhook-token": WEBHOOK_TOKEN },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   });
@@ -3663,6 +3783,11 @@ function onFormSubmit(e) {
             }
             if (l.crmMatch != null) {
               rawToStore['_crm_match'] = l.crmMatch!.toJson();
+            }
+            if (l.displayArchiveRemark != null && l.displayArchiveRemark!.isNotEmpty) {
+              rawToStore['archive_remark'] = l.displayArchiveRemark!;
+              rawToStore['archive_remarks'] = l.displayArchiveRemark!;
+              rawToStore['archive_reason'] = l.displayArchiveRemark!;
             }
             local.rawJsonString = jsonEncode(rawToStore);
             local.externalLeadId = l.externalLeadId;

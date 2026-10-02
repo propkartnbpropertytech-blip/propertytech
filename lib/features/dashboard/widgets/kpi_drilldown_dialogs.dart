@@ -10,113 +10,113 @@ class KpiDrilldownDialogs {
   static final DashboardService _dashboardService = DashboardService();
 
   /// 1. Available Inventory Drill-down Modal
-  static void showInventoryDrilldown(
+  static Future<T?> showInventoryDrilldown<T>(
     BuildContext context, {
     required KpiFilterParams params,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _InventoryDrilldownDialog(params: params),
     );
   }
 
   /// 2. Total Leads Drill-down Modal
-  static void showLeadsDrilldown(
+  static Future<T?> showLeadsDrilldown<T>(
     BuildContext context, {
     required KpiFilterParams params,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _LeadsDrilldownDialog(params: params),
     );
   }
 
   /// Lead Lifecycle & Details Modal
-  static void showLeadDetails(
+  static Future<T?> showLeadDetails<T>(
     BuildContext context, {
     required LeadListItem lead,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _LeadDetailsDialog(lead: lead),
     );
   }
 
   /// 3. Telecallers Drill-down Modal
-  static void showTelecallersDrilldown(
+  static Future<T?> showTelecallersDrilldown<T>(
     BuildContext context, {
     required KpiFilterParams params,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _TelecallersDrilldownDialog(params: params),
     );
   }
 
   /// 4. Leads Allocated Drill-down Modal
-  static void showLeadsAllocatedDrilldown(
+  static Future<T?> showLeadsAllocatedDrilldown<T>(
     BuildContext context, {
     required KpiFilterParams params,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _LeadsAllocatedDrilldownDialog(params: params),
     );
   }
 
   /// 5. Assigned to Sales Drill-down Modal
-  static void showAssignedToSalesDrilldown(
+  static Future<T?> showAssignedToSalesDrilldown<T>(
     BuildContext context, {
     required KpiFilterParams params,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _AssignedToSalesDrilldownDialog(params: params),
     );
   }
 
   /// 6. Sales Users Drill-down Modal
-  static void showSalesUsersDrilldown(
+  static Future<T?> showSalesUsersDrilldown<T>(
     BuildContext context, {
     required KpiFilterParams params,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _SalesUsersDrilldownDialog(params: params),
     );
   }
 
   /// 7. Site Visits Done Drill-down Modal
-  static void showSiteVisitsDrilldown(
+  static Future<T?> showSiteVisitsDrilldown<T>(
     BuildContext context, {
     required KpiFilterParams params,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _SiteVisitsDrilldownDialog(params: params),
     );
   }
 
   /// 8. Deal Won Drill-down Modal
-  static void showDealWonDrilldown(
+  static Future<T?> showDealWonDrilldown<T>(
     BuildContext context, {
     required KpiFilterParams params,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _DealWonDrilldownDialog(params: params),
     );
   }
 
   /// Single Telecaller Performance Drill-down
-  static void showTelecallerPerformance(
+  static Future<T?> showTelecallerPerformance<T>(
     BuildContext context, {
     required String telecallerId,
     required String telecallerName,
     String initialLeadType = 'Both',
     KpiFilterParams? params,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _TelecallerPerformanceDialog(
         telecallerId: telecallerId,
@@ -128,13 +128,13 @@ class KpiDrilldownDialogs {
   }
 
   /// Single Sales User Detailed KPI View (10 Lifecycle Statuses)
-  static void showSalesUserLifecycle(
+  static Future<T?> showSalesUserLifecycle<T>(
     BuildContext context, {
     required String salesUserId,
     required String salesUserName,
     KpiFilterParams? params,
   }) {
-    showDialog(
+    return showDialog<T>(
       context: context,
       builder: (ctx) => _SalesUserLifecycleDialog(
         salesUserId: salesUserId,
@@ -3093,9 +3093,10 @@ class _LeadsAllocatedDrilldownDialogState extends State<_LeadsAllocatedDrilldown
             // Summary Cards
             LayoutBuilder(
               builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 500;
+                final isWide = constraints.maxWidth >= 600;
                 final pills = [
-                  _buildSummaryPill('Total Allocated', '${_data.totalAllocated}', ThemeManager().primaryColor, isDark, borderColor),
+                  _buildSummaryPill('New Allocated', '${_data.newAllocated}', ThemeManager().primaryColor, isDark, borderColor),
+                  _buildSummaryPill('Old Allocated', '${_data.oldAllocated}', const Color(0xFFF59E0B), isDark, borderColor),
                   _buildSummaryPill('Listing Leads', '${_data.listingAllocated}', const Color(0xFF10B981), isDark, borderColor),
                   _buildSummaryPill('Requirement Leads', '${_data.requirementAllocated}', const Color(0xFF3B82F6), isDark, borderColor),
                 ];
@@ -3104,22 +3105,30 @@ class _LeadsAllocatedDrilldownDialogState extends State<_LeadsAllocatedDrilldown
                   return Row(
                     children: [
                       Expanded(child: pills[0]),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       Expanded(child: pills[1]),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       Expanded(child: pills[2]),
+                      const SizedBox(width: 8),
+                      Expanded(child: pills[3]),
                     ],
                   );
                 }
                 return Column(
                   children: [
-                    pills[0],
+                    Row(
+                      children: [
+                        Expanded(child: pills[0]),
+                        const SizedBox(width: 8),
+                        Expanded(child: pills[1]),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Expanded(child: pills[1]),
-                        const SizedBox(width: 8),
                         Expanded(child: pills[2]),
+                        const SizedBox(width: 8),
+                        Expanded(child: pills[3]),
                       ],
                     ),
                   ],
@@ -3151,7 +3160,7 @@ class _LeadsAllocatedDrilldownDialogState extends State<_LeadsAllocatedDrilldown
                     ),
                     title: Text(item.telecallerName, style: TextStyle(fontWeight: FontWeight.w600, color: textColor)),
                     subtitle: Text(
-                      'Listing: ${item.listingCount} | Requirement: ${item.requirementCount}',
+                      'New: ${item.newCount} | Old: ${item.oldCount} | Listing: ${item.listingCount} | Req: ${item.requirementCount}',
                       style: TextStyle(fontSize: 12, color: subColor),
                     ),
                     trailing: Row(
@@ -4734,7 +4743,8 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
-    const accentColor = Color(0xFFEC4899); // Pink
+    final isRejectedDrilldown = widget.params.outcome == 'REJECTED_AFTER_VISIT';
+    final accentColor = isRejectedDrilldown ? const Color(0xFFEF4444) : const Color(0xFFEC4899);
 
     return _buildResponsiveDialog(
       context: context,
@@ -4752,8 +4762,8 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
                       color: accentColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
-                      Icons.location_on_rounded,
+                    child: Icon(
+                      isRejectedDrilldown ? Icons.person_off_rounded : Icons.location_on_rounded,
                       color: accentColor,
                       size: 24,
                     ),
@@ -4764,7 +4774,7 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Site Visits Done',
+                          isRejectedDrilldown ? 'Rejected After Site Visit' : 'Site Visits Done',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -4786,8 +4796,8 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
                       border: Border.all(color: accentColor.withValues(alpha: 0.3)),
                     ),
                     child: Text(
-                      '$_total Completed Visits',
-                      style: const TextStyle(
+                      '$_total ${isRejectedDrilldown ? 'Rejected Visits' : 'Completed Visits'}',
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         color: accentColor,
@@ -4908,7 +4918,7 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
                                         CircleAvatar(
                                           radius: 14,
                                           backgroundColor: accentColor.withValues(alpha: 0.15),
-                                          child: const Icon(Icons.person_pin_circle_rounded, size: 16, color: accentColor),
+                                          child: Icon(Icons.person_pin_circle_rounded, size: 16, color: accentColor),
                                         ),
                                         const SizedBox(width: 10),
                                         Expanded(
@@ -5104,7 +5114,7 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
                                           children: [
                                             Row(
                                               children: [
-                                                const Icon(Icons.rate_review_outlined, size: 14, color: accentColor),
+                                                Icon(Icons.rate_review_outlined, size: 14, color: accentColor),
                                                 const SizedBox(width: 6),
                                                 Text(
                                                   'Site Visit Notes / Activity Log:',

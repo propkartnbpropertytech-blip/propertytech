@@ -933,7 +933,7 @@ class CampaignLeadLocalRepository {
   bool get _useInMemory => kIsWeb || !IsarService().isInitialized;
 
   static final Map<String, CampaignLeadLocal> inMemory = {};
-  static const String _webLeadsKey = 'isar_campaign_leads_web_v1';
+  static const String webLeadsStorageKey = 'isar_campaign_leads_web_v1';
 
   Future<void> _persistWebLeads() async {
     try {
@@ -952,7 +952,7 @@ class CampaignLeadLocalRepository {
         'metaFeedbackEventId': l.metaFeedbackEventId,
         'metaFeedbackSentAt': l.metaFeedbackSentAt?.toIso8601String(),
       }).toList();
-      await prefs.setString(_webLeadsKey, jsonEncode(list));
+      await prefs.setString(webLeadsStorageKey, jsonEncode(list));
     } catch (_) {}
   }
 
@@ -961,7 +961,7 @@ class CampaignLeadLocalRepository {
       if (inMemory.isEmpty) {
         try {
           final prefs = await SharedPreferences.getInstance();
-          final stored = prefs.getString(_webLeadsKey);
+          final stored = prefs.getString(webLeadsStorageKey);
           if (stored != null && stored.isNotEmpty) {
             final list = jsonDecode(stored) as List<dynamic>;
             for (final item in list) {

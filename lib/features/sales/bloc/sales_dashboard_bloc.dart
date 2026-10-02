@@ -17,6 +17,7 @@ import '../../properties/repository/properties_repository.dart';
 import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/theme/theme_manager.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
+import '../../../core/design_system/mobile/mobile.dart';
 
 // --- EVENTS ---
 abstract class SalesDashboardEvent extends Equatable {
@@ -219,10 +220,17 @@ class SalesDashboardBloc extends Bloc<SalesDashboardEvent, SalesDashboardState> 
 
 // --- SCREEN ENTRY ---
 class SalesDashboardScreen extends StatelessWidget {
-  const SalesDashboardScreen({super.key});
+  final SalesDashboardBloc? bloc;
+  const SalesDashboardScreen({super.key, this.bloc});
 
   @override
   Widget build(BuildContext context) {
+    if (bloc != null) {
+      return BlocProvider<SalesDashboardBloc>.value(
+        value: bloc!,
+        child: const _SalesDashboardView(),
+      );
+    }
     return BlocProvider(
       create: (_) => SalesDashboardBloc()..add(SalesDashboardRequested()),
       child: const _SalesDashboardView(),
@@ -315,6 +323,11 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
 
     return BlocBuilder<SalesDashboardBloc, SalesDashboardState>(
       builder: (context, state) {
+        final viewport = MediaQuery.sizeOf(context).width;
+        if (MobileLayout.isMobileShell(viewport)) {
+          return _buildMobileSalesDashboardView(context, state, userName);
+        }
+
         final d = state.data;
         if (state.loading && d.isEmpty) {
           return const Center(child: CircularProgressIndicator());
@@ -424,7 +437,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     'Site Visit Done',
                     '$siteVisitsDoneCount',
                     Icons.location_on_outlined,
-                    '/requirements?tab=follow-ups&subTab=site-visits',
+                    '/requirements?tab=Leads&group=all&status=Site%20Visit%20Done&mode=${_isRentMode ? 'rent' : 'resale'}',
                     accentColor: const Color(0xFF059669),
                   ),
                   _clickableKpi(
@@ -541,6 +554,587 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
     );
   }
 
+  // --- MOBILE SALES DASHBOARD VIEW (< 768px) ---
+  Widget _buildMobileSalesDashboardView(
+    BuildContext context,
+    SalesDashboardState state,
+    String userName,
+  ) {
+    final d = state.data;
+    if (state.loading && d.isEmpty) {
+      return const MobileScreenScaffold(
+        scrollable: false,
+        body: MobileLoadingState(),
+      );
+    }
+
+    if (state.error != null && d.isEmpty) {
+      return MobileScreenScaffold(
+        scrollable: false,
+        body: MobileErrorState(
+          title: 'Failed to load dashboard',
+          message: 'Unable to fetch sales summary. Please check your connection.',
+          onRetry: () => context.read<SalesDashboardBloc>().add(SalesDashboardRequested()),
+        ),
+      );
+    }
+
+    // Metrics filtered by Rent vs Re-Sale Mode
+    final availableCount = _isRentMode
+        ? (d['rentalAvailableProperties'] ?? d['availableProperties'] ?? 0)
+        : (d['resaleAvailableProperties'] ?? d['availableProperties'] ?? 0);
+
+    final siteVisitsDoneCount = _isRentMode
+        ? (d['rentalSiteVisitsDone'] ?? d['siteVisitsDone'] ?? 0)
+        : (d['resaleSiteVisitsDone'] ?? d['siteVisitsDone'] ?? 0);
+
+    final activeLeadsCount = _isRentMode
+        ? (d['rentalActiveLeads'] ?? d['activeLeads'] ?? 0)
+        : (d['resaleActiveLeads'] ?? d['activeLeads'] ?? 0);
+
+    final dealsWonCount = _isRentMode
+        ? (d['rentalDealsWon'] ?? d['dealsWon'] ?? 0)
+        : (d['resaleDealsWon'] ?? d['dealsWon'] ?? 0);
+
+    final assignedLeadsCount = _isRentMode
+        ? (d['rentalAssignedLeads'] ?? d['assignedLeads'] ?? d['leadsAssignedToMe'] ?? 0)
+        : (d['resaleAssignedLeads'] ?? d['assignedLeads'] ?? d['leadsAssignedToMe'] ?? 0);
+
+    final newLeadsCount = _isRentMode
+        ? (d['rentalNewLeads'] ?? d['newLeads'] ?? 0)
+        : (d['resaleNewLeads'] ?? d['newLeads'] ?? 0);
+
+    List<dynamic> safeList(dynamic raw) {
+      if (raw is List) return List<dynamic>.from(raw);
+      return <dynamic>[];
+    }
+
+    final rawFollowups = d['followups'];
+    final rawSiteVisits = d['siteVisits'];
+    final allFollowups = (rawFollowups is List) ? List<dynamic>.from(rawFollowups) : safeList(d['followupsList']);
+    final allSiteVisits = (rawSiteVisits is List) ? List<dynamic>.from(rawSiteVisits) : [];
+
+    final followupsCatMap = (d['followupsCategorized'] is Map) ? Map<String, dynamic>.from(d['followupsCategorized']) : <String, dynamic>{};
+    final siteVisitsCatMap = (d['siteVisitsCategorized'] is Map) ? Map<String, dynamic>.from(d['siteVisitsCategorized']) : <String, dynamic>{};
+
+    final modeFollowupsForCount = allFollowups.where(_matchesMode).toList();
+    final modeFollowupsCatForCount = _categorizeItems(modeFollowupsForCount, 'followup_date');
+
+    final activeFollowupsCount = _isRentMode
+        ? (d['rentalActiveFollowups'] ?? ((modeFollowupsCatForCount['today']?.length ?? 0) + (modeFollowupsCatForCount['future']?.length ?? 0)))
+        : (d['resaleActiveFollowups'] ?? ((modeFollowupsCatForCount['today']?.length ?? 0) + (modeFollowupsCatForCount['future']?.length ?? 0)));
+
+    final dueFollowupsCount = _isRentMode
+        ? (d['rentalDueFollowups'] ?? (modeFollowupsCatForCount['due'] ?? []).length)
+        : (d['resaleDueFollowups'] ?? (modeFollowupsCatForCount['due'] ?? []).length);
+
+    final recentLeads = safeList(d['recentLeads']);
+    final notes = safeList(d['notes']);
+    final activityLogs = safeList(d['activityLogs']);
+    final viewport = MediaQuery.sizeOf(context).width;
+
+    return MobileScreenScaffold(
+      scrollable: true,
+      onRefresh: () async {
+        setState(() {
+          _followupsPage = 1;
+          _transferredPage = 1;
+          _notesPage = 1;
+          _activityPage = 1;
+        });
+        context.read<SalesDashboardBloc>().add(SalesDashboardRequested());
+      },
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          WelcomeHeader(
+            userName: RoleGuard.currentUser?.fullName.isNotEmpty == true
+                ? RoleGuard.currentUser!.fullName
+                : userName,
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _buildRentResaleToggle(),
+          ),
+          const SizedBox(height: 16),
+
+          // 2-Column Responsive KPI Cards Grid
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: viewport < 360 ? 1.15 : 1.3,
+            children: [
+              _buildMobileKpiCard(
+                title: 'Available Inventory',
+                value: '$availableCount',
+                icon: Icons.home_work_outlined,
+                route: '/properties',
+                color: const Color(0xFF2563EB),
+              ),
+              _buildMobileKpiCard(
+                title: 'Site Visit Done',
+                value: '$siteVisitsDoneCount',
+                icon: Icons.location_on_outlined,
+                route: '/requirements?tab=follow-ups&subTab=site-visits',
+                color: const Color(0xFF059669),
+              ),
+              _buildMobileKpiCard(
+                title: 'Active Leads',
+                value: '$activeLeadsCount',
+                icon: Icons.assignment_outlined,
+                route: '/requirements',
+                color: const Color(0xFF8B5CF6),
+              ),
+              _buildMobileKpiCard(
+                title: 'Deals Won',
+                value: '$dealsWonCount',
+                icon: Icons.emoji_events_outlined,
+                route: '/requirements?status=Won',
+                color: const Color(0xFFF59E0B),
+              ),
+              _buildMobileKpiCard(
+                title: 'Assigned Leads',
+                value: '$assignedLeadsCount',
+                icon: Icons.assignment_ind_rounded,
+                route: '/requirements?group=assigned',
+                color: const Color(0xFF06B6D4),
+              ),
+              _buildMobileKpiCard(
+                title: 'New Leads',
+                value: '$newLeadsCount',
+                icon: Icons.fiber_new_rounded,
+                route: '/requirements?status=New',
+                color: const Color(0xFFEC4899),
+              ),
+              _buildMobileKpiCard(
+                title: 'Follow-ups Due',
+                value: '$dueFollowupsCount',
+                icon: Icons.event_busy_rounded,
+                route: '/requirements?tab=follow-ups',
+                color: const Color(0xFFEF4444),
+              ),
+              _buildMobileKpiCard(
+                title: 'Active Follow-ups',
+                value: '$activeFollowupsCount',
+                icon: Icons.event_note_rounded,
+                route: '/requirements?tab=follow-ups',
+                color: const Color(0xFF6366F1),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Section 1: My Scheduled
+          _buildScheduledCard(context, allFollowups, allSiteVisits, followupsCatMap, siteVisitsCatMap),
+          const SizedBox(height: 16),
+
+          // Section 2: Recent Leads
+          _buildRecentLeadsCard(context, recentLeads),
+          const SizedBox(height: 16),
+
+          // Section 3: Recent Properties Listed
+          _buildRecentPropertiesCard(context, safeList(d['recentProperties'])),
+          const SizedBox(height: 16),
+
+          // Section 4: Personal Notes
+          _buildPersonalNotesCard(context, notes),
+          const SizedBox(height: 16),
+
+          // Section 5: Recent Activity
+          _buildRecentActivityCard(context, activityLogs),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileKpiCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required String route,
+    required Color color,
+  }) {
+    return Semantics(
+      button: true,
+      label: '$title: $value',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => context.go(route),
+          borderRadius: BorderRadius.circular(12),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: CRMColors.cardBgOf(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: CRMColors.borderOf(context).withValues(alpha: 0.6),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(icon, size: 16, color: color),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: CRMColors.textMutedOf(context),
+                    ),
+                  ],
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: CRMColors.textSecondaryOf(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileRecentLeadsCard(
+    BuildContext context,
+    List<dynamic> filteredLeads,
+    int currentPage,
+    int safeTotalPages,
+    int startIndex,
+    List<dynamic> pagedLeads,
+  ) {
+    return Card(
+      elevation: 0.5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.handshake_outlined, color: Color(0xFF059669), size: 20),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Recent Leads Assigned',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(12)),
+                  child: Text('${filteredLeads.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  onPressed: () => context.read<SalesDashboardBloc>().add(SalesDashboardRequested()),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+          if (filteredLeads.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  _isRentMode ? 'No assigned rental leads yet.' : 'No assigned re-sale leads yet.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ),
+            )
+          else ...[
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: pagedLeads.length,
+              separatorBuilder: (_, _) => const Divider(height: 16),
+              itemBuilder: (context, i) {
+                final lead = pagedLeads[i] as Map;
+                final clientName = (lead['customer_name'] ?? 'Lead').toString();
+                final phone = (lead['mobile'] ?? '').toString();
+                final leadType = (lead['listing_type_name'] ?? 'Requirement').toString();
+                final status = (lead['status'] ?? 'New').toString();
+                final isUncontacted = lead['is_uncontacted'] == true;
+
+                return Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  clientName,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (isUncontacted) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                  decoration: BoxDecoration(color: const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(4)),
+                                  child: const Text('⚠️ 24h', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: leadType.toLowerCase().contains('rent') ? const Color(0xFFFEF3C7) : const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(leadType, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: leadType.toLowerCase().contains('rent') ? const Color(0xFFD97706) : const Color(0xFF2563EB))),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(4)),
+                                child: Text(status, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF059669))),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (phone.isNotEmpty) ...[
+                      IconButton(
+                        icon: const Icon(Icons.phone_forwarded, size: 20, color: Color(0xFF059669)),
+                        tooltip: 'Call client',
+                        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                        onPressed: () => _launchPhoneCall(phone),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.chat_outlined, size: 20, color: Color(0xFF25D366)),
+                        tooltip: 'WhatsApp',
+                        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                        onPressed: () => _launchWhatsAppMessage(phone),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+            if (filteredLeads.length > _transferredPerPage) ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Showing ${startIndex + 1}–${min(startIndex + _transferredPerPage, filteredLeads.length)} of ${filteredLeads.length}',
+                    style: const TextStyle(fontSize: 11.5, color: Colors.grey),
+                  ),
+                  Row(
+                    children: [
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: const Size(0, 32),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                        onPressed: currentPage > 1 ? () => setState(() => _transferredPage = currentPage - 1) : null,
+                        child: const Icon(Icons.chevron_left, size: 16),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('$currentPage / $safeTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: const Size(0, 32),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                        onPressed: currentPage < safeTotalPages ? () => setState(() => _transferredPage = currentPage + 1) : null,
+                        child: const Icon(Icons.chevron_right, size: 16),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+  Widget _buildMobileRecentPropertiesCard(
+    BuildContext context,
+    List<dynamic> filteredProps,
+    int currentPage,
+    int safeTotalPages,
+    int startIndex,
+    List<dynamic> pagedProps,
+  ) {
+    return Card(
+      elevation: 0.5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.home_work_outlined, color: Color(0xFF2563EB), size: 20),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Recent Properties',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                TextButton.icon(
+                  onPressed: () => context.go('/properties'),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                  label: const Text('View All', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+          if (filteredProps.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  _isRentMode ? 'No rental properties listed yet.' : 'No re-sale properties listed yet.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ),
+            )
+          else ...[
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: pagedProps.length,
+              separatorBuilder: (_, _) => const Divider(height: 16),
+              itemBuilder: (context, i) {
+                final prop = pagedProps[i] as Map;
+                final title = (prop['title'] ?? prop['name'] ?? prop['property_code'] ?? 'Property').toString();
+                final code = (prop['property_code'] ?? '').toString();
+                final area = (prop['area_name'] ?? prop['area'] ?? prop['address'] ?? '').toString();
+                final price = _formatPropPrice(prop['price'] ?? prop['rent_amount'] ?? prop['expected_price'], isRent: _isRentMode);
+                final id = (prop['id'] ?? '').toString();
+
+                return InkWell(
+                  onTap: id.isNotEmpty ? () => _openPropertyDetails(context, id) : null,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.home_work_outlined, color: Color(0xFF2563EB), size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                area.isNotEmpty ? (code.isNotEmpty ? '$code • $area' : area) : code,
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              price,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF059669)),
+                            ),
+                            const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.grey),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
   // --- Rent / Re-Sale Mode Toggle Switch ---
   Widget _buildRentResaleToggle() {
     return Container(
@@ -566,7 +1160,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
             });
             ThemeManager().setRentMode(true);
           }),
-          _togglePill('Re-sale', !_isRentMode, () {
+          _togglePill('Re-Sale', !_isRentMode, () {
             setState(() {
               _isRentMode = false;
               _subScheduledTab = 'Due';
@@ -636,7 +1230,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
       elevation: 0.5,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -644,45 +1238,55 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.schedule_rounded, color: Color(0xFFD97706), size: 20),
+                  child: const Icon(Icons.schedule_rounded, color: Color(0xFFD97706), size: 18),
                 ),
-                const SizedBox(width: 10),
-                const Text('My Scheduled', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
                 const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
-                  child: Text('$totalCount', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                const Expanded(
+                  child: Text(
+                    'My Scheduled',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
                 ),
-                const Spacer(),
-                TextButton.icon(
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
+                  child: Text('$totalCount', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
                   onPressed: () => context.go('/requirements?tab=follow-ups'),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 15),
-                  label: const Text('View All', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  tooltip: 'View All',
+                  visualDensity: VisualDensity.compact,
                 ),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
 
             // Main Tabs Row: [ My Follow-ups ] | [ My Site Visit Sched. ]
-            Row(
-              children: [
-                _mainTabPill('My Follow-ups', isFollowups, () {
-                  setState(() {
-                    _mainScheduledTab = 'Follow-ups';
-                    _followupsPage = 1;
-                  });
-                }),
-                const SizedBox(width: 8),
-                _mainTabPill('My Site Visit Sched.', !isFollowups, () {
-                  setState(() {
-                    _mainScheduledTab = 'Site Visits';
-                    _followupsPage = 1;
-                  });
-                }),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _mainTabPill('My Follow-ups', isFollowups, () {
+                    setState(() {
+                      _mainScheduledTab = 'Follow-ups';
+                      _followupsPage = 1;
+                    });
+                  }),
+                  const SizedBox(width: 8),
+                  _mainTabPill('My Site Visit Sched.', !isFollowups, () {
+                    setState(() {
+                      _mainScheduledTab = 'Site Visits';
+                      _followupsPage = 1;
+                    });
+                  }),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
 
@@ -959,7 +1563,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
       onTap: onTap,
       child: Container(
         alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected ? CRMColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
@@ -968,18 +1572,22 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected ? Colors.white : const Color(0xFF64748B),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: isSelected ? Colors.white : const Color(0xFF64748B),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             if (count != null) ...[
-              const SizedBox(width: 5),
+              const SizedBox(width: 3),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                 decoration: BoxDecoration(
                   color: isSelected ? Colors.white.withValues(alpha: 0.25) : const Color(0xFFE2E8F0),
                   borderRadius: BorderRadius.circular(10),
@@ -987,7 +1595,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                 child: Text(
                   '$count',
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 10,
                     fontWeight: FontWeight.bold,
                     color: isSelected ? Colors.white : const Color(0xFF475569),
                   ),
@@ -1062,6 +1670,10 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
     final currentPage = _transferredPage.clamp(1, safeTotalPages);
     final startIndex = (currentPage - 1) * _transferredPerPage;
     final pagedLeads = filteredLeads.skip(startIndex).take(_transferredPerPage).toList();
+
+    if (MobileLayout.isMobileShell(MediaQuery.sizeOf(context).width)) {
+      return _buildMobileRecentLeadsCard(context, filteredLeads, currentPage, safeTotalPages, startIndex, pagedLeads);
+    }
 
     return Card(
       elevation: 0.5,
@@ -1278,8 +1890,15 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                   child: const Icon(Icons.checklist_rtl_rounded, color: Color(0xFF8B5CF6), size: 20),
                 ),
                 const SizedBox(width: 10),
-                const Text('Personal Notes & Tasks', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-                const Spacer(),
+                const Expanded(
+                  child: Text(
+                    'Personal Notes & Tasks',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                const SizedBox(width: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(color: const Color(0xFFF3E8FF), borderRadius: BorderRadius.circular(12)),
@@ -1489,8 +2108,15 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                   child: const Icon(Icons.history_rounded, color: Color(0xFF2563EB), size: 20),
                 ),
                 const SizedBox(width: 10),
-                const Text('Recent Activity & Call Log', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-                const Spacer(),
+                const Expanded(
+                  child: Text(
+                    'Recent Activity & Call Log',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                const SizedBox(width: 6),
                 Text(
                   'Today: $totalItems',
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
@@ -1617,7 +2243,10 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => context.go(route),
+          onTap: () {
+            ThemeManager().setRentMode(_isRentMode);
+            context.go(route);
+          },
           borderRadius: BorderRadius.circular(12),
           child: StatCard(
             title: title,
@@ -1684,6 +2313,10 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
     final currentPage = _propertiesPage.clamp(1, safeTotalPages);
     final startIndex = (currentPage - 1) * _propertiesPerPage;
     final pagedProps = filteredProps.skip(startIndex).take(_propertiesPerPage).toList();
+
+    if (MobileLayout.isMobileShell(MediaQuery.sizeOf(context).width)) {
+      return _buildMobileRecentPropertiesCard(context, filteredProps, currentPage, safeTotalPages, startIndex, pagedProps);
+    }
 
     return Card(
       elevation: 0.5,

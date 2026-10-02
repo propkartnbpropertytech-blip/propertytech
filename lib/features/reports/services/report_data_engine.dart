@@ -109,9 +109,7 @@ class ReportDataEngine {
     final notStartedCount = lpk?.notStarted ?? filteredLeads.where((l) => l.status.trim().toLowerCase() == 'not started').length;
     final callAttemptedLeadsCount = lpk?.callAttempted ?? filteredLeads.where((l) =>
       l.status.toLowerCase().startsWith('call attempted') ||
-      l.status.toLowerCase() == 'picked up' ||
-      l.status.toLowerCase() == 'open' ||
-      l.status.toLowerCase() == 'assigned'
+      l.status.toLowerCase() == 'picked up'
     ).length;
     final leadsFollowupsCount = lpk?.followUps ?? filteredLeads.where((l) =>
       l.status.trim().toLowerCase() == 'follow-up' ||
@@ -128,7 +126,7 @@ class ReportDataEngine {
       l.status.trim().toLowerCase() == 'site visit scheduled'
     ).length;
     final leadsSiteVisitDoneCount = lpk?.siteVisitDone ?? filteredLeads.where((l) => l.status.trim().toLowerCase() == 'site visit done').length;
-    final leadsNegotiationCount = lpk?.negotiation ?? filteredLeads.where((l) => l.status.trim().toLowerCase().contains('negotiation')).length;
+    final leadsNegotiationCount = lpk?.negotiation ?? filteredLeads.where((l) => l.status.trim().toLowerCase() == 'negotiation').length;
     final leadsRejectedCount = lpk?.rejectedLeads ?? filteredLeads.where((l) => l.status.trim().toLowerCase().startsWith('rejected')).length;
     final leadsPageTotal = notStartedCount + callAttemptedLeadsCount + leadsFollowupsCount + leadsReFollowupsCount + leadsInterestedCount + leadsSiteVisitScheduledCount + leadsSiteVisitDoneCount + leadsNegotiationCount + leadsRejectedCount;
 

@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/network/sync_manager.dart';
 import '../../../core/storage/performance_logger.dart';
 import '../../../core/storage/repository_coordinator.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
-import '../../../core/design_system/tokens/app_shadows.dart';
+import '../../../core/design_system/mobile/mobile_screen.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 
@@ -101,26 +103,11 @@ class _SyncDebugScreenState extends State<SyncDebugScreen> {
     final state = _syncManager.state;
     final stateColor = _getStateColor(state);
     final stateLabel = _getStateLabel(state);
+    final isMobile = CRMBreakpoints.isPhone(context);
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text(
-          'Sync Diagnostics',
-          style: CRMTypography.sectionTitle.copyWith(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: CRMColors.primary),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(CRMSpacing.l),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
             // Status Card
             CRMCard(
               elevated: true,
@@ -130,21 +117,25 @@ class _SyncDebugScreenState extends State<SyncDebugScreen> {
                 padding: const EdgeInsets.only(top: CRMSpacing.m),
                 child: Column(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: CRMSpacing.s,
+                      runSpacing: CRMSpacing.xs,
                       children: [
                         Text(
                           'Connection Status',
                           style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondary),
                         ),
                         Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
                               width: 12,
                               height: 12,
                               decoration: BoxDecoration(
                                 color: stateColor,
-                                shape: BoxShape.circle,
+                                borderRadius: BorderRadius.circular(6),
                                 boxShadow: [
                                   BoxShadow(
                                     color: stateColor.withOpacity(0.4),
@@ -263,7 +254,42 @@ class _SyncDebugScreenState extends State<SyncDebugScreen> {
               ],
             ),
           ],
+        );
+
+    if (isMobile) {
+      return MobileScreenScaffold(
+        title: 'Sync Diagnostics',
+        showBack: true,
+        onBack: () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          } else {
+            context.go('/settings');
+          }
+        },
+        onRefresh: _loadMetrics,
+        padding: const EdgeInsets.all(CRMSpacing.m),
+        body: content,
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text(
+          'Sync Diagnostics',
+          style: CRMTypography.sectionTitle.copyWith(fontWeight: FontWeight.bold),
         ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: CRMColors.primaryOf(context)),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(CRMSpacing.l),
+        child: content,
       ),
     );
   }
@@ -274,8 +300,23 @@ class _SyncDebugScreenState extends State<SyncDebugScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondary)),
-          Text(value, style: CRMTypography.bodyMedium.copyWith(color: CRMColors.text, fontWeight: FontWeight.bold)),
+          Flexible(
+            child: Text(
+              label,
+              style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: CRMTypography.bodyMedium.copyWith(
+                color: CRMColors.textOf(context),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         ],
       ),
     );

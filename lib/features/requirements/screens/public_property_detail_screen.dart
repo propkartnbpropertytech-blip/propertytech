@@ -11,6 +11,7 @@ import '../../../../core/utils/currency.dart';
 import '../../../../core/utils/seo_helper.dart';
 import '../../properties/models/property_model.dart';
 import '../../../../core/design_system/widgets/crm_network_image.dart';
+import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color _kWhatsAppGreen = Color(0xFF25D366);
@@ -525,8 +526,6 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
         availableDisplay = DateFormat('dd-MM-yyyy').format(propModel.createdAt);
       }
 
-      final subtitleText = (areaName.isNotEmpty && areaName != 'N/A') ? "$config in $areaName" : config;
-
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -690,8 +689,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
       );
     }
 
-    final width = MediaQuery.of(context).size.width;
-    final isDesktop = width >= 800;
+    final isDesktop = MediaQuery.sizeOf(context).width >= CRMBreakpoints.tablet;
 
     return Scaffold(
       backgroundColor: CRMColors.backgroundOf(context),
@@ -703,6 +701,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
           style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context)),
         ),
         leading: IconButton(
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           icon: Icon(Icons.arrow_back_rounded, color: CRMColors.textOf(context)),
           onPressed: () => Navigator.pop(context),
         ),
@@ -748,6 +747,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
                               Expanded(
                                 child: OutlinedButton.icon(
                                   style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size(0, 48),
                                     padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.button)),
                                     side: BorderSide(color: CRMColors.borderOf(context)),
@@ -763,6 +763,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: _kWhatsAppGreen,
                                     foregroundColor: Colors.white,
+                                    minimumSize: const Size(0, 48),
                                     padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.button)),
                                   ),
@@ -807,6 +808,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
                     Expanded(
                       child: OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 48),
                           padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.button)),
                           side: BorderSide(color: CRMColors.borderOf(context)),
@@ -822,6 +824,7 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _kWhatsAppGreen,
                           foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 48),
                           padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.button)),
                         ),

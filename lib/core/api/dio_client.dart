@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:dio/dio.dart';
+export 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import 'dio_credentials_stub.dart'

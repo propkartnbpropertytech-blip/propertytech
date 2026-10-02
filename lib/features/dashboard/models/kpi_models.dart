@@ -49,8 +49,10 @@ class DashboardKpiCounts {
   final int totalLeads;
   final int telecallers;
   final int leadsAllocated;
+  final int oldLeadsAllocated;
   final int assignedToSales;
   final int siteVisitsDone;
+  final int rejectedAfterSiteVisit;
   final int dealWon;
   final int salesUsers;
 
@@ -59,8 +61,10 @@ class DashboardKpiCounts {
     this.totalLeads = 0,
     this.telecallers = 0,
     this.leadsAllocated = 0,
+    this.oldLeadsAllocated = 0,
     this.assignedToSales = 0,
     this.siteVisitsDone = 0,
+    this.rejectedAfterSiteVisit = 0,
     this.dealWon = 0,
     this.salesUsers = 0,
   });
@@ -70,9 +74,11 @@ class DashboardKpiCounts {
       availableInventory: (json['available_inventory'] as num?)?.toInt() ?? 0,
       totalLeads: (json['total_leads'] as num?)?.toInt() ?? 0,
       telecallers: (json['telecallers'] as num?)?.toInt() ?? 0,
-      leadsAllocated: (json['leads_allocated'] as num?)?.toInt() ?? 0,
+      leadsAllocated: (json['leads_allocated'] as num?)?.toInt() ?? (json['new_leads_allocated'] as num?)?.toInt() ?? 0,
+      oldLeadsAllocated: (json['old_leads_allocated'] as num?)?.toInt() ?? 0,
       assignedToSales: (json['assigned_to_sales'] as num?)?.toInt() ?? 0,
       siteVisitsDone: (json['site_visits_done'] as num?)?.toInt() ?? 0,
+      rejectedAfterSiteVisit: (json['rejected_after_site_visit'] as num?)?.toInt() ?? 0,
       dealWon: (json['deal_won'] as num?)?.toInt() ?? 0,
       salesUsers: (json['sales_users'] as num?)?.toInt() ?? 0,
     );
@@ -83,11 +89,15 @@ class DashboardKpisResponse {
   final List<KpiConfigItem> config;
   final DashboardKpiCounts counts;
   final Map<String, dynamic> filters;
+  final String? dateRangeDisplay;
+  final Map<String, dynamic>? dateRange;
 
   const DashboardKpisResponse({
     this.config = const [],
     this.counts = const DashboardKpiCounts(),
     this.filters = const {},
+    this.dateRangeDisplay,
+    this.dateRange,
   });
 
   factory DashboardKpisResponse.fromJson(Map<String, dynamic> json) {
@@ -98,10 +108,15 @@ class DashboardKpisResponse {
     final countsMap = json['counts'] is Map
         ? Map<String, dynamic>.from(json['counts'])
         : <String, dynamic>{};
+    final dateRangeMap = json['date_range'] is Map
+        ? Map<String, dynamic>.from(json['date_range'])
+        : null;
     return DashboardKpisResponse(
       config: cfgList,
       counts: DashboardKpiCounts.fromJson(countsMap),
       filters: json['filters'] is Map ? Map<String, dynamic>.from(json['filters']) : {},
+      dateRangeDisplay: dateRangeMap?['display']?.toString(),
+      dateRange: dateRangeMap,
     );
   }
 
@@ -634,6 +649,8 @@ class LeadsAllocatedTelecallerItem {
   final String telecallerName;
   final int listingCount;
   final int requirementCount;
+  final int newCount;
+  final int oldCount;
   final int totalCount;
 
   const LeadsAllocatedTelecallerItem({
@@ -641,6 +658,8 @@ class LeadsAllocatedTelecallerItem {
     required this.telecallerName,
     this.listingCount = 0,
     this.requirementCount = 0,
+    this.newCount = 0,
+    this.oldCount = 0,
     this.totalCount = 0,
   });
 
@@ -650,6 +669,8 @@ class LeadsAllocatedTelecallerItem {
       telecallerName: json['telecaller_name']?.toString() ?? '',
       listingCount: (json['listing_count'] as num?)?.toInt() ?? 0,
       requirementCount: (json['requirement_count'] as num?)?.toInt() ?? 0,
+      newCount: (json['new_count'] as num?)?.toInt() ?? 0,
+      oldCount: (json['old_count'] as num?)?.toInt() ?? 0,
       totalCount: (json['total_count'] as num?)?.toInt() ?? 0,
     );
   }
@@ -657,14 +678,22 @@ class LeadsAllocatedTelecallerItem {
 
 class LeadsAllocatedResponse {
   final int totalAllocated;
+  final int newAllocated;
+  final int oldAllocated;
   final int listingAllocated;
   final int requirementAllocated;
+  final int oldListingAllocated;
+  final int oldRequirementAllocated;
   final List<LeadsAllocatedTelecallerItem> telecallers;
 
   const LeadsAllocatedResponse({
     this.totalAllocated = 0,
+    this.newAllocated = 0,
+    this.oldAllocated = 0,
     this.listingAllocated = 0,
     this.requirementAllocated = 0,
+    this.oldListingAllocated = 0,
+    this.oldRequirementAllocated = 0,
     this.telecallers = const [],
   });
 
@@ -675,8 +704,12 @@ class LeadsAllocatedResponse {
         [];
     return LeadsAllocatedResponse(
       totalAllocated: (json['total_allocated'] as num?)?.toInt() ?? 0,
+      newAllocated: (json['new_allocated'] as num?)?.toInt() ?? (json['total_allocated'] as num?)?.toInt() ?? 0,
+      oldAllocated: (json['old_allocated'] as num?)?.toInt() ?? 0,
       listingAllocated: (json['listing_allocated'] as num?)?.toInt() ?? 0,
       requirementAllocated: (json['requirement_allocated'] as num?)?.toInt() ?? 0,
+      oldListingAllocated: (json['old_listing_allocated'] as num?)?.toInt() ?? 0,
+      oldRequirementAllocated: (json['old_requirement_allocated'] as num?)?.toInt() ?? 0,
       telecallers: list,
     );
   }
@@ -887,6 +920,7 @@ class KpiFilterParams {
   final String? startDate; // YYYY-MM-DD
   final String? endDate; // YYYY-MM-DD
   final String leadType; // 'Listing', 'Requirement', 'Both'
+  final String? outcome; // 'INTERESTED', 'REJECTED_AFTER_VISIT', 'DEAL_WON', etc.
 
   const KpiFilterParams({
     this.businessType = 'Rent',
@@ -894,6 +928,7 @@ class KpiFilterParams {
     this.startDate,
     this.endDate,
     this.leadType = 'Both',
+    this.outcome,
   });
 
   KpiFilterParams copyWith({
@@ -902,6 +937,7 @@ class KpiFilterParams {
     String? startDate,
     String? endDate,
     String? leadType,
+    String? outcome,
   }) {
     return KpiFilterParams(
       businessType: businessType ?? this.businessType,
@@ -909,6 +945,7 @@ class KpiFilterParams {
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       leadType: leadType ?? this.leadType,
+      outcome: outcome ?? this.outcome,
     );
   }
 
@@ -919,6 +956,7 @@ class KpiFilterParams {
       if (startDate != null && startDate!.isNotEmpty) 'startDate': startDate,
       if (endDate != null && endDate!.isNotEmpty) 'endDate': endDate,
       'leadType': leadType,
+      if (outcome != null && outcome!.isNotEmpty) 'outcome': outcome,
     };
   }
 }
@@ -931,6 +969,8 @@ class SiteVisitItem {
   final num? budgetFrom;
   final num? budgetTo;
   final String status;
+  final String? outcome;
+  final String? outcomeAt;
   final String? createdAt;
   final String? updatedAt;
   final String? notes;
@@ -951,6 +991,8 @@ class SiteVisitItem {
     this.budgetFrom,
     this.budgetTo,
     required this.status,
+    this.outcome,
+    this.outcomeAt,
     this.createdAt,
     this.updatedAt,
     this.notes,
@@ -979,6 +1021,8 @@ class SiteVisitItem {
       budgetFrom: parseNum(json['budget_from']),
       budgetTo: parseNum(json['budget_to']),
       status: json['status']?.toString() ?? 'Site Visit Done',
+      outcome: json['outcome']?.toString(),
+      outcomeAt: json['outcome_at']?.toString(),
       createdAt: json['created_at']?.toString(),
       updatedAt: json['updated_at']?.toString(),
       notes: json['notes']?.toString(),

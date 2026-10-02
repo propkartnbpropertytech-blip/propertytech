@@ -25,6 +25,8 @@ import '../bloc/users_bloc.dart';
 import '../models/user_model.dart';
 import '../utils/employee_activity.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
+import '../../../core/design_system/mobile/mobile.dart';
 
 enum _LeadFocus { all, won, rejected, followup, overdue, visits, assigned, created }
 
@@ -589,7 +591,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     UserModel user,
     UsersState usersState,
   ) {
-    final isMobile = MediaQuery.of(context).size.width < 700;
+    final isMobile = CRMBreakpoints.isPhone(context);
     final role = user.roleName.toLowerCase();
     final isAdminRole = role == 'admin' || role == 'super admin';
     final isSalesRole = role == 'sales';
@@ -861,67 +863,22 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     final inactiveSales =
         _adminStats?['inactiveSales'] ?? team.where((m) => !m.isActive).length;
 
-    return Column(
+    final scrollContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            CRMSpacing.l,
-            CRMSpacing.m,
-            CRMSpacing.l,
-            0,
-          ),
-          child: CRMPageHeader(
-            title: user.fullName,
-            eyebrow: 'Employee',
-            benefit:
-                '${user.roleName}  •  ${user.isActive ? 'Active login' : 'Inactive'}',
-            breadcrumbs: [
-              InkWell(
-                onTap: () => context.go('/users'),
-                child: Text(
-                  'Employees',
-                  style: CRMTypography.captionBold.copyWith(
-                    color: CRMColors.primaryOf(context),
-                  ),
-                ),
-              ),
-              Text(
-                '  /  ',
-                style: CRMTypography.caption.copyWith(
-                  color: CRMColors.textMutedOf(context),
-                ),
-              ),
-              Text(
-                user.fullName,
-                style: CRMTypography.caption.copyWith(
-                  color: CRMColors.textSecondaryOf(context),
-                ),
-              ),
-            ],
-            trailing: Wrap(
+        if (isMobile) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+            child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              alignment: WrapAlignment.end,
               children: [
-                CRMButton(
-                  label: 'Back',
-                  prefixIcon: Icons.arrow_back_rounded,
-                  variant: CRMButtonVariant.outline,
-                  height: 36,
-                  onPressed: () {
-                    if (context.canPop()) {
-                      context.pop();
-                    } else {
-                      context.go('/users');
-                    }
-                  },
-                ),
                 if ((user.mobile ?? '').trim().isNotEmpty)
                   CRMButton(
                     label: 'Call',
                     prefixIcon: Icons.call_rounded,
                     variant: CRMButtonVariant.outline,
-                    height: 36,
+                    height: 48,
                     onPressed: () => _call(user.mobile),
                   ),
                 if ((user.mobile ?? '').trim().isNotEmpty)
@@ -929,37 +886,21 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                     label: 'WhatsApp',
                     prefixIcon: Icons.chat_rounded,
                     variant: CRMButtonVariant.secondary,
-                    height: 36,
+                    height: 48,
                     onPressed: () => _whatsapp(user.mobile),
                   ),
                 CRMButton(
                   label: 'Email',
                   prefixIcon: Icons.mail_outline_rounded,
                   variant: CRMButtonVariant.primary,
-                  height: 36,
+                  height: 48,
                   onPressed: () => _email(user.email),
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: CRMSpacing.m),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _loadActivity,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(
-                CRMSpacing.l,
-                0,
-                CRMSpacing.l,
-                CRMSpacing.xl,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _ProfileSummaryCard(
+        ],
+        _ProfileSummaryCard(
                     user: user,
                     onCall: () => _call(user.mobile),
                     onEmail: () => _email(user.email),
@@ -1370,7 +1311,134 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                     ],
                   ],
                 ],
+              );
+
+    if (isMobile) {
+      return MobileScreenScaffold(
+        title: user.fullName,
+        showBack: true,
+        onBack: () {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/users');
+          }
+        },
+        backFallback: '/users',
+        scrollable: false,
+        body: RefreshIndicator(
+          onRefresh: _loadActivity,
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(
+              CRMSpacing.m,
+              CRMSpacing.m,
+              CRMSpacing.m,
+              CRMSpacing.xl,
+            ),
+            child: scrollContent,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            CRMSpacing.l,
+            CRMSpacing.m,
+            CRMSpacing.l,
+            0,
+          ),
+          child: CRMPageHeader(
+            title: user.fullName,
+            eyebrow: 'Employee',
+            benefit:
+                '${user.roleName}  •  ${user.isActive ? 'Active login' : 'Inactive'}',
+            breadcrumbs: [
+              InkWell(
+                onTap: () => context.go('/users'),
+                child: Text(
+                  'Employees',
+                  style: CRMTypography.captionBold.copyWith(
+                    color: CRMColors.primaryOf(context),
+                  ),
+                ),
               ),
+              Text(
+                '  /  ',
+                style: CRMTypography.caption.copyWith(
+                  color: CRMColors.textMutedOf(context),
+                ),
+              ),
+              Text(
+                user.fullName,
+                style: CRMTypography.caption.copyWith(
+                  color: CRMColors.textSecondaryOf(context),
+                ),
+              ),
+            ],
+            trailing: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                CRMButton(
+                  label: 'Back',
+                  prefixIcon: Icons.arrow_back_rounded,
+                  variant: CRMButtonVariant.outline,
+                  height: 36,
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/users');
+                    }
+                  },
+                ),
+                if ((user.mobile ?? '').trim().isNotEmpty)
+                  CRMButton(
+                    label: 'Call',
+                    prefixIcon: Icons.call_rounded,
+                    variant: CRMButtonVariant.outline,
+                    height: 36,
+                    onPressed: () => _call(user.mobile),
+                  ),
+                if ((user.mobile ?? '').trim().isNotEmpty)
+                  CRMButton(
+                    label: 'WhatsApp',
+                    prefixIcon: Icons.chat_rounded,
+                    variant: CRMButtonVariant.secondary,
+                    height: 36,
+                    onPressed: () => _whatsapp(user.mobile),
+                  ),
+                CRMButton(
+                  label: 'Email',
+                  prefixIcon: Icons.mail_outline_rounded,
+                  variant: CRMButtonVariant.primary,
+                  height: 36,
+                  onPressed: () => _email(user.email),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: CRMSpacing.m),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadActivity,
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                CRMSpacing.l,
+                0,
+                CRMSpacing.l,
+                CRMSpacing.xl,
+              ),
+              child: scrollContent,
             ),
           ),
         ),
@@ -1719,27 +1787,30 @@ class _InfoAction extends StatelessWidget {
       children: [
         Icon(icon, size: 16, color: CRMColors.textSecondaryOf(context)),
         const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label.toUpperCase(),
-              style: CRMTypography.captionBold.copyWith(
-                color: CRMColors.textMutedOf(context),
-                fontSize: 10,
-                letterSpacing: 0.6,
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label.toUpperCase(),
+                style: CRMTypography.captionBold.copyWith(
+                  color: CRMColors.textMutedOf(context),
+                  fontSize: 10,
+                  letterSpacing: 0.6,
+                ),
               ),
-            ),
-            Text(
-              value,
-              style: CRMTypography.bodyMedium.copyWith(
-                color: onTap != null
-                    ? CRMColors.primaryOf(context)
-                    : CRMColors.textOf(context),
-                fontWeight: onTap != null ? FontWeight.w600 : FontWeight.w500,
+              Text(
+                value,
+                style: CRMTypography.bodyMedium.copyWith(
+                  color: onTap != null
+                      ? CRMColors.primaryOf(context)
+                      : CRMColors.textOf(context),
+                  fontWeight: onTap != null ? FontWeight.w600 : FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );

@@ -12,9 +12,11 @@ import 'package:http_parser/http_parser.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/api/cloudinary_uploader.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
+import '../../../core/design_system/mobile/mobile_screen.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
@@ -400,13 +402,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = authState.user;
     _syncUserData(user);
 
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 768;
+    final bool isMobile = CRMBreakpoints.isPhone(context);
+
+    if (isMobile) {
+      return MobileScreenScaffold(
+        title: 'Profile',
+        showBack: true,
+        onBack: () {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/dashboard');
+          }
+        },
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout_rounded, color: CRMColors.danger),
+            tooltip: 'Logout',
+            onPressed: () {
+              RoleGuard.currentUser = null;
+              context.read<AuthBloc>().add(LogoutRequested());
+            },
+          ),
+        ],
+        padding: const EdgeInsets.all(CRMSpacing.m),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildProfileAvatarHeaderCard(user, isMobile),
+            const SizedBox(height: CRMSpacing.l),
+            _buildPersonalDetailsCard(user),
+            const SizedBox(height: CRMSpacing.l),
+            _buildCreatorAdminCard(user),
+            if (user.role == 'Super Admin' || user.role == 'Admin') ...[
+              const SizedBox(height: CRMSpacing.l),
+              MfaSecurityCard(user: user),
+            ],
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: CRMColors.backgroundOf(context),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.xl),
+        padding: const EdgeInsets.all(CRMSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -439,26 +479,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: CRMSpacing.l),
 
             // Personal Information Card & Creator Admin Card Layout
-            if (isMobile) ...[
-              _buildPersonalDetailsCard(user),
-              const SizedBox(height: CRMSpacing.l),
-              _buildCreatorAdminCard(user),
-            ] else ...[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: _buildPersonalDetailsCard(user),
-                  ),
-                  const SizedBox(width: CRMSpacing.l),
-                  Expanded(
-                    flex: 2,
-                    child: _buildCreatorAdminCard(user),
-                  ),
-                ],
-              ),
-            ],
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildPersonalDetailsCard(user),
+                ),
+                const SizedBox(width: CRMSpacing.l),
+                Expanded(
+                  flex: 2,
+                  child: _buildCreatorAdminCard(user),
+                ),
+              ],
+            ),
             if (user.role == 'Super Admin' || user.role == 'Admin') ...[
               const SizedBox(height: CRMSpacing.l),
               MfaSecurityCard(user: user),
@@ -497,7 +531,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     height: 110,
                     decoration: BoxDecoration(
                       color: CRMColors.backgroundOf(context),
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(55),
                       border: Border.all(color: roleColor.withOpacity(0.3), width: 3),
                       boxShadow: [
                         BoxShadow(
@@ -574,7 +608,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             color: CRMColors.primary,
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(999),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.2),
@@ -748,11 +782,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 Icon(Icons.person_pin_rounded, color: CRMColors.primary, size: 22),
                 const SizedBox(width: 8),
-                Text(
-                  "Personal Details",
-                  style: CRMTypography.sectionTitle.copyWith(
-                    color: CRMColors.textOf(context),
-                    fontSize: 18,
+                Expanded(
+                  child: Text(
+                    "Personal Details",
+                    style: CRMTypography.sectionTitle.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontSize: 18,
+                    ),
                   ),
                 ),
               ],

@@ -1,19 +1,90 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
+import '../../../core/design_system/mobile/mobile_screen.dart';
 
 class LibraryMainScreen extends StatelessWidget {
   const LibraryMainScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final isPhone = CRMBreakpoints.isPhone(context);
     final size = MediaQuery.of(context).size;
-    final isDesktop = size.width >= 1024;
-    final isTablet = size.width >= 600 && size.width < 1024;
+    final isDesktop = size.width >= CRMBreakpoints.desktop;
+    final isTablet = size.width >= CRMBreakpoints.tablet && size.width < CRMBreakpoints.desktop;
+
+    if (isPhone) {
+      return MobileScreenScaffold(
+        title: 'Library',
+        padding: const EdgeInsets.symmetric(
+          horizontal: CRMSpacing.m,
+          vertical: CRMSpacing.m,
+        ),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _LibraryCategoryCard(
+              width: double.infinity,
+              title: 'Rental Library',
+              subtitle: 'Property Leasing & Tenant Records',
+              description:
+                  'Store and manage all rental-related documents including lease agreements, tenant and owner ID verifications, utility bills, rent receipts, security deposits, and walkthrough media.',
+              icon: Icons.receipt_long_rounded,
+              color: CRMColors.primaryOf(context),
+              bulletPoints: const [
+                'Rental & Lease Agreements',
+                'Tenant & Owner ID Proofs',
+                'Rent & Security Deposit Receipts',
+                'Utility Bills (Electricity, Water, Maintenance)',
+                'Property Inspection Photos & Videos'
+              ],
+              onTap: () => context.go('/rental-library'),
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            _LibraryCategoryCard(
+              width: double.infinity,
+              title: 'Re-Sale Library',
+              subtitle: 'Property Purchases & Sales',
+              description:
+                  'Organize transaction deeds and sales checklists, legal society NOCs, building blueprints, tax records, registration agreements, and bank loan approvals.',
+              icon: Icons.handshake_rounded,
+              color: CRMColors.resaleAccent,
+              bulletPoints: const [
+                'Sale Deeds & Agreements',
+                'Property Legal Documents',
+                'Society NOCs & Floor Plans',
+                'Tax Assessment & Municipal Receipts',
+                'Home Loan Sanctions & Approvals'
+              ],
+              onTap: () => context.go('/resale-library'),
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            _LibraryCategoryCard(
+              width: double.infinity,
+              title: 'Service Agent Library',
+              subtitle: 'Vendor Agreements & Invoices',
+              description:
+                  'Manage active contracts, GST registrations, price catalogs, and project work proofs for builders, plumbers, AC technicians, cleaning agencies, and electricians.',
+              icon: Icons.badge_rounded,
+              color: CRMColors.info,
+              bulletPoints: const [
+                'Aadhaar / ID Verification Proofs',
+                'GST Registration Certificates',
+                'Vendor Service Agreements (SLAs)',
+                'Price Catalogs & Project Quotations',
+                'Invoices & Completed Work Showcase'
+              ],
+              onTap: () => context.go('/service-agent-library'),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: CRMColors.background,
@@ -142,7 +213,7 @@ class _LibraryCategoryCardState extends State<_LibraryCategoryCard> {
           transform: Matrix4.identity()..translate(0.0, _isHovered ? -6.0 : 0.0),
           child: CRMCard(
             elevated: _isHovered,
-            padding: const EdgeInsets.all(CRMSpacing.xl),
+            padding: EdgeInsets.all(CRMBreakpoints.isPhone(context) ? CRMSpacing.m : CRMSpacing.xl),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
