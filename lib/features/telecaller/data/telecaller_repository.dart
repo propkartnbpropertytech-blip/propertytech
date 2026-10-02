@@ -8,11 +8,16 @@ class TelecallerRepository {
     return Map<String, dynamic>.from(res.data['data'] ?? {});
   }
 
-  Future<Map<String, dynamic>> setAvailability(String status) async {
+  Future<Map<String, dynamic>> setAvailability(String status, {bool isManual = false}) async {
     final res = await DioClient.dio.post(
       ApiConstants.telecallerAvailability,
-      data: {'status': status},
+      data: {'status': status, 'isManual': isManual},
     );
+    return Map<String, dynamic>.from(res.data['data'] ?? {});
+  }
+
+  Future<Map<String, dynamic>> getAvailability() async {
+    final res = await DioClient.dio.get(ApiConstants.telecallerAvailability);
     return Map<String, dynamic>.from(res.data['data'] ?? {});
   }
 

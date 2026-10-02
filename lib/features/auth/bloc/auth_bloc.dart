@@ -10,6 +10,7 @@ import '../../../core/security/role_guard.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/notification_center.dart';
+import '../../telecaller/services/telecaller_shift_manager.dart';
 
 // ==========================================
 // Auth Events
@@ -306,7 +307,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) async {
     _sessionWatchdogTimer?.cancel();
+    final user = RoleGuard.currentUser;
     RoleGuard.currentUser = null;
+    try {
+      if (user != null && RoleGuard.isTelecaller(user.role)) {
+        await TelecallerShiftManager.instance.handleLogout();
+      }
+    } catch (_) {}
     try {
       await NotificationCenter.clearSession();
     } catch (_) {}
@@ -327,11 +334,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) async {
     _sessionWatchdogTimer?.cancel();
+    final user = RoleGuard.currentUser;
+    RoleGuard.currentUser = null;
+    try {
+      if (user != null && RoleGuard.isTelecaller(user.role)) {
+        await TelecallerShiftManager.instance.handleLogout();
+      }
+    } catch (_) {}
     try {
       await SessionCleanup.clearLocalSession(clearToken: true);
     } catch (_) {}
     unawaited(SyncManager().disconnect());
-    RoleGuard.currentUser = null;
     try {
       await NotificationCenter.clearSession();
     } catch (_) {}
