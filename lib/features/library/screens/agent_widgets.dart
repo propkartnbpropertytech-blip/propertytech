@@ -83,7 +83,7 @@ class _AgentImageUploadWidgetState extends State<AgentImageUploadWidget> {
             duration: const Duration(milliseconds: 200),
             width: 100, height: 100,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(50),
               color: CRMColors.cardBgOf(context),
               border: Border.all(color: CRMColors.primaryOf(context).withOpacity(0.4), width: 2.5),
               boxShadow: [BoxShadow(color: CRMColors.primaryOf(context).withOpacity(0.15), blurRadius: 12, offset: const Offset(0, 4))],
@@ -100,7 +100,7 @@ class _AgentImageUploadWidgetState extends State<AgentImageUploadWidget> {
           onTap: _isUploading ? null : _pickAndUpload,
           child: Container(
             padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(color: CRMColors.primaryOf(context), shape: BoxShape.circle, border: Border.all(color: CRMColors.surfaceElevatedOf(context), width: 2)),
+            decoration: BoxDecoration(color: CRMColors.primaryOf(context), borderRadius: BorderRadius.circular(999), border: Border.all(color: CRMColors.surfaceElevatedOf(context), width: 2)),
             child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 14),
           ),
         ),

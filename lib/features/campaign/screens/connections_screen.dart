@@ -15,6 +15,8 @@ import 'campaign_subshell_header.dart';
 import '../bloc/campaign_connections_bloc.dart';
 import '../models/campaign_connection_model.dart';
 import '../services/portal_integrations_service.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
+import '../../../core/design_system/mobile/mobile.dart';
 
 class ConnectionsScreen extends StatefulWidget {
   final String? providerFocus;
@@ -113,148 +115,168 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
       );
     }
 
+    final isMobile = MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet;
+    final title = widget.providerFocus == 'META'
+        ? 'Meta Connection'
+        : (widget.providerFocus == 'HOUSING'
+            ? 'Housing Connection'
+            : 'Campaign Connections');
+
+    final bodyContent = SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        isMobile ? CRMSpacing.m : CRMSpacing.l,
+        isMobile ? CRMSpacing.s : CRMSpacing.l,
+        isMobile ? CRMSpacing.m : CRMSpacing.l,
+        isMobile ? CRMSpacing.m : CRMSpacing.l,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          CampaignSubshellHeader(
+            activeTab: widget.providerFocus == 'META'
+                ? 'meta'
+                : (widget.providerFocus == 'HOUSING' ? 'housing' : 'connections'),
+            trailing: widget.providerFocus == null
+                ? CRMButton(
+                    label: 'Add Integration',
+                    prefixIcon: Icons.add_rounded,
+                    height: isMobile ? 48 : 40,
+                    onPressed: () => _showAddIntegration(context),
+                  )
+                : CRMButton(
+                    label: 'Back to Connections',
+                    prefixIcon: Icons.arrow_back_rounded,
+                    variant: CRMButtonVariant.outline,
+                    height: isMobile ? 48 : 40,
+                    onPressed: () => context.go('/campaign/connections'),
+                  ),
+          ),
+
+          const SizedBox(height: CRMSpacing.l),
+
+          // Active & Ready Connectors Grid
+          BlocConsumer<CampaignConnectionsBloc, CampaignConnectionsState>(
+            bloc: CampaignConnectionsBloc()..add(const FetchCampaignConnectionsEvent(silent: true)),
+            listener: (context, connState) {
+              if (connState.successMessage != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(connState.successMessage!),
+                    backgroundColor: CRMColors.success,
+                  ),
+                );
+                CampaignConnectionsBloc().add(const ClearCampaignConnectionMessageEvent());
+              }
+              if (connState.errorMessage != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(connState.errorMessage!),
+                    backgroundColor: CRMColors.danger,
+                  ),
+                );
+                CampaignConnectionsBloc().add(const ClearCampaignConnectionMessageEvent());
+              }
+            },
+            builder: (context, connState) {
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= CRMBreakpoints.tablet;
+                  final focus = widget.providerFocus?.toUpperCase();
+                  if (focus == 'META') {
+                    return _buildMetaConnectionCard(context);
+                  }
+                  if (focus == 'HOUSING') {
+                    return _buildHousingConnectionCard(context, connState);
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (isWide)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: _buildProviderTile(
+                                context,
+                                title: 'Meta',
+                                subtitle: 'Lead Ads webhook & quality feedback',
+                                icon: Icons.campaign_rounded,
+                                color: CRMColors.terracotta,
+                                route: '/campaign/connections/meta',
+                                status: 'Listening',
+                              ),
+                            ),
+                            const SizedBox(width: CRMSpacing.l),
+                            Expanded(
+                              child: _buildProviderTile(
+                                context,
+                                title: 'Housing',
+                                subtitle: 'HMAC pull & quality status',
+                                icon: Icons.apartment_rounded,
+                                color: const Color(0xFF6C5CE7),
+                                route: '/campaign/connections/housing',
+                                status: connState.findByProvider('HOUSING')?.isConnected == true
+                                    ? 'Connected'
+                                    : 'Ready',
+                              ),
+                            ),
+                          ],
+                        )
+                      else ...[
+                        _buildProviderTile(
+                          context,
+                          title: 'Meta',
+                          subtitle: 'Lead Ads webhook & quality feedback',
+                          icon: Icons.campaign_rounded,
+                          color: CRMColors.terracotta,
+                          route: '/campaign/connections/meta',
+                          status: 'Listening',
+                        ),
+                        const SizedBox(height: CRMSpacing.l),
+                        _buildProviderTile(
+                          context,
+                          title: 'Housing',
+                          subtitle: 'HMAC pull & quality status',
+                          icon: Icons.apartment_rounded,
+                          color: const Color(0xFF6C5CE7),
+                          route: '/campaign/connections/housing',
+                          status: connState.findByProvider('HOUSING')?.isConnected == true
+                              ? 'Connected'
+                              : 'Ready',
+                        ),
+                      ],
+                      const SizedBox(height: CRMSpacing.l),
+                      _buildPortalSection(context, isWide),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+
+          const SizedBox(height: CRMSpacing.l),
+        ],
+      ),
+    );
+
+    if (isMobile) {
+      return MobileScreenScaffold(
+        title: title,
+        scrollable: false,
+        onRefresh: () async {
+          await _loadPortals();
+        },
+        body: bodyContent,
+      );
+    }
+
     return Scaffold(
       backgroundColor: CRMColors.backgroundOf(context),
       body: SafeArea(
         top: false,
         bottom: false,
-        child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-            MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.m : CRMSpacing.l,
-            MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.s : CRMSpacing.l,
-            MediaQuery.sizeOf(context).width < 700 ? CRMSpacing.m : CRMSpacing.l,
-            MediaQuery.sizeOf(context).width < 700 ? 96 : CRMSpacing.l,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Header
-              CampaignSubshellHeader(
-                activeTab: widget.providerFocus == 'META'
-                    ? 'meta'
-                    : (widget.providerFocus == 'HOUSING' ? 'housing' : 'connections'),
-                trailing: widget.providerFocus == null
-                    ? CRMButton(
-                        label: 'Add Integration',
-                        prefixIcon: Icons.add_rounded,
-                        height: 40,
-                        onPressed: () => _showAddIntegration(context),
-                      )
-                    : CRMButton(
-                        label: 'Back to Connections',
-                        prefixIcon: Icons.arrow_back_rounded,
-                        variant: CRMButtonVariant.outline,
-                        height: 40,
-                        onPressed: () => context.go('/campaign/connections'),
-                      ),
-              ),
-
-              const SizedBox(height: CRMSpacing.l),
-
-              // Active & Ready Connectors Grid
-              BlocConsumer<CampaignConnectionsBloc, CampaignConnectionsState>(
-                bloc: CampaignConnectionsBloc()..add(const FetchCampaignConnectionsEvent(silent: true)),
-                listener: (context, connState) {
-                  if (connState.successMessage != null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(connState.successMessage!),
-                        backgroundColor: CRMColors.success,
-                      ),
-                    );
-                    CampaignConnectionsBloc().add(const ClearCampaignConnectionMessageEvent());
-                  }
-                  if (connState.errorMessage != null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(connState.errorMessage!),
-                        backgroundColor: CRMColors.danger,
-                      ),
-                    );
-                    CampaignConnectionsBloc().add(const ClearCampaignConnectionMessageEvent());
-                  }
-                },
-                builder: (context, connState) {
-                  return LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isWide = constraints.maxWidth > 900;
-                      final focus = widget.providerFocus?.toUpperCase();
-                      if (focus == 'META') {
-                        return _buildMetaConnectionCard(context);
-                      }
-                      if (focus == 'HOUSING') {
-                        return _buildHousingConnectionCard(context, connState);
-                      }
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (isWide)
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: _buildProviderTile(
-                                    context,
-                                    title: 'Meta',
-                                    subtitle: 'Lead Ads webhook & quality feedback',
-                                    icon: Icons.campaign_rounded,
-                                    color: CRMColors.terracotta,
-                                    route: '/campaign/connections/meta',
-                                    status: 'Listening',
-                                  ),
-                                ),
-                                const SizedBox(width: CRMSpacing.l),
-                                Expanded(
-                                  child: _buildProviderTile(
-                                    context,
-                                    title: 'Housing',
-                                    subtitle: 'HMAC pull & quality status',
-                                    icon: Icons.apartment_rounded,
-                                    color: const Color(0xFF6C5CE7),
-                                    route: '/campaign/connections/housing',
-                                    status: connState.findByProvider('HOUSING')?.isConnected == true
-                                        ? 'Connected'
-                                        : 'Ready',
-                                  ),
-                                ),
-                              ],
-                            )
-                          else ...[
-                            _buildProviderTile(
-                              context,
-                              title: 'Meta',
-                              subtitle: 'Lead Ads webhook & quality feedback',
-                              icon: Icons.campaign_rounded,
-                              color: CRMColors.terracotta,
-                              route: '/campaign/connections/meta',
-                              status: 'Listening',
-                            ),
-                            const SizedBox(height: CRMSpacing.l),
-                            _buildProviderTile(
-                              context,
-                              title: 'Housing',
-                              subtitle: 'HMAC pull & quality status',
-                              icon: Icons.apartment_rounded,
-                              color: const Color(0xFF6C5CE7),
-                              route: '/campaign/connections/housing',
-                              status: connState.findByProvider('HOUSING')?.isConnected == true
-                                  ? 'Connected'
-                                  : 'Ready',
-                            ),
-                          ],
-                          const SizedBox(height: CRMSpacing.l),
-                          _buildPortalSection(context, isWide),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-
-              const SizedBox(height: CRMSpacing.l),
-            ],
-          ),
-        ),
+        child: bodyContent,
       ),
     );
   }
@@ -675,16 +697,22 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
 
           const SizedBox(height: CRMSpacing.m),
 
-          // Actions
           Wrap(
             spacing: CRMSpacing.s,
+            runSpacing: CRMSpacing.s,
             children: [
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                ),
                 icon: const Icon(Icons.facebook_rounded, color: CRMColors.terracotta, size: 16),
                 label: const Text('Meta Lead Ads Setup Guide'),
                 onPressed: () => _showMetaSetupGuide(context),
               ),
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                ),
                 icon: Icon(Icons.send_rounded, color: CRMColors.primaryOf(context), size: 16),
                 label: const Text('Meta Conversions API (Lead Quality)'),
                 onPressed: () => _showMetaConversionsApiInfo(context),
@@ -785,17 +813,22 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             ),
             child: Column(
               children: [
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Icon(Icons.badge_rounded, size: 18, color: Color(0xFF6C5CE7)),
-                    const SizedBox(width: CRMSpacing.s),
-                    Text('Account / Profile ID:', style: CRMTypography.captionBold),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        accountIdMasked,
-                        style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 12),
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.badge_rounded, size: 18, color: Color(0xFF6C5CE7)),
+                        const SizedBox(width: CRMSpacing.s),
+                        Text('Account / Profile ID:', style: CRMTypography.captionBold),
+                      ],
+                    ),
+                    Text(
+                      accountIdMasked,
+                      style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 12),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -811,17 +844,22 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                   ],
                 ),
                 const Divider(height: 16),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Icon(Icons.vpn_key_rounded, size: 18, color: Color(0xFF6C5CE7)),
-                    const SizedBox(width: CRMSpacing.s),
-                    Text('HMAC Signature:', style: CRMTypography.captionBold),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        '••••••••••••••••••••••••••••••••',
-                        style: TextStyle(fontFamily: 'monospace', fontSize: 12),
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.vpn_key_rounded, size: 18, color: Color(0xFF6C5CE7)),
+                        const SizedBox(width: CRMSpacing.s),
+                        Text('HMAC Signature:', style: CRMTypography.captionBold),
+                      ],
+                    ),
+                    const Text(
+                      '••••••••••••••••••••••••••••••••',
+                      style: TextStyle(fontFamily: 'monospace', fontSize: 12),
                     ),
                     Text(
                       'AES-256 Encrypted',
@@ -874,7 +912,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
               CRMButton(
                 label: isSyncing ? 'Syncing Leads...' : 'Sync Leads Now',
                 prefixIcon: Icons.sync_rounded,
-                height: 40,
+                height: 48,
                 isLoading: isSyncing,
                 onPressed: (isSyncing || conn == null || !isEnabled)
                     ? null
@@ -886,7 +924,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                 label: isTesting ? 'Testing...' : 'Test Connection',
                 prefixIcon: Icons.speed_rounded,
                 variant: CRMButtonVariant.outline,
-                height: 40,
+                height: 48,
                 isLoading: isTesting,
                 onPressed: (isTesting || conn == null)
                     ? null
@@ -895,11 +933,17 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                       },
               ),
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                ),
                 icon: const Icon(Icons.edit_rounded, size: 16),
                 label: const Text('Configure Credentials'),
                 onPressed: () => _showHousingCredentialsModal(context, conn),
               ),
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                ),
                 icon: const Icon(Icons.menu_book_rounded, size: 16),
                 label: const Text('Housing Setup Guide'),
                 onPressed: () => _showHousingSetupGuide(context),

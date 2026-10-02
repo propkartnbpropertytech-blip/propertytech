@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
+import '../../../../core/design_system/mobile/mobile.dart';
 import '../../../../core/theme/theme_manager.dart';
 import '../../../users/models/user_model.dart';
 import '../../bloc/reports_bloc.dart';
@@ -260,7 +261,7 @@ class _TelecallerReportContentState extends State<_TelecallerReportContent> {
                 CRMBreakpoints.pagePadding(context),
                 CRMSpacing.m,
                 CRMBreakpoints.pagePadding(context),
-                MediaQuery.sizeOf(context).width < 768 ? 96 : CRMSpacing.m,
+                (MobileShellScope.isInShell(context) || MediaQuery.sizeOf(context).width >= 768) ? CRMSpacing.m : 96,
               ),
               child: Center(
                 child: ConstrainedBox(
@@ -347,13 +348,10 @@ class _TelecallerReportContentState extends State<_TelecallerReportContent> {
     required ReportOverallData? scoped,
     required ReportConfiguration config,
   }) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      alignment: WrapAlignment.spaceBetween,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 600;
+        final titleCol = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -365,9 +363,13 @@ class _TelecallerReportContentState extends State<_TelecallerReportContent> {
                   icon: const Icon(Icons.arrow_back_rounded, size: 18),
                   visualDensity: VisualDensity.compact,
                 ),
-                const Text(
-                  'Telecaller Report',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.4),
+                const Flexible(
+                  child: Text(
+                    'Telecaller Report',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.4),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 if (isSoftLoading) ...[
                   const SizedBox(width: 10),
@@ -390,26 +392,53 @@ class _TelecallerReportContentState extends State<_TelecallerReportContent> {
               ),
             ),
           ],
-        ),
-        if (scoped != null)
-          ReportExportMenu(
-            reportData: scoped,
-            config: config.copyWith(
-              showTeamRanking: false,
-              showGrowthComparison: true,
-              showLeadSourceAnalysis: true,
-              showTrendAnalysis: true,
-              filters: config.filters.copyWith(
-                telecallerId: _selectedId,
-                telecallerName: _selectedName,
-              ),
-            ),
-            reportTitle: 'PropKart CRM - Telecaller Report',
-            subjectLabel: _selectedName == null ? null : 'Telecaller: $_selectedName',
-            filenamePrefix: 'PropKart_Telecaller_Report',
-            tooltip: 'Export Telecaller Report',
-          ),
-      ],
+        );
+
+        final exportBtn = scoped != null
+            ? ReportExportMenu(
+                reportData: scoped,
+                config: config.copyWith(
+                  showTeamRanking: false,
+                  showGrowthComparison: true,
+                  showLeadSourceAnalysis: true,
+                  showTrendAnalysis: true,
+                  filters: config.filters.copyWith(
+                    telecallerId: _selectedId,
+                    telecallerName: _selectedName,
+                  ),
+                ),
+                reportTitle: 'PropKart CRM - Telecaller Report',
+                subjectLabel: _selectedName == null ? null : 'Telecaller: $_selectedName',
+                filenamePrefix: 'PropKart_Telecaller_Report',
+                tooltip: 'Export Telecaller Report',
+              )
+            : const SizedBox.shrink();
+
+        if (isNarrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              titleCol,
+              if (scoped != null) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 48),
+                  child: exportBtn,
+                ),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(child: titleCol),
+            exportBtn,
+          ],
+        );
+      },
     );
   }
 

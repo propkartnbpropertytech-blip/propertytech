@@ -502,39 +502,37 @@ class _TopLocationsChartCardState extends State<TopLocationsChartCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header Row: Title & Subtitle + Desk & Date dropdowns
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Top Locations',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: isDark
-                            ? const Color(0xFFF8FAFC)
-                            : const Color(0xFF14213D),
-                        letterSpacing: -0.2,
-                      ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 460;
+              final titleCol = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Top Locations',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark
+                          ? const Color(0xFFF8FAFC)
+                          : const Color(0xFF14213D),
+                      letterSpacing: -0.2,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Active listings by micro-market',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF68738A),
-                      ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Active listings by micro-market',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF68738A),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Wrap(
+                  ),
+                ],
+              );
+
+              final filtersWrap = Wrap(
                 spacing: 8,
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -630,8 +628,28 @@ class _TopLocationsChartCardState extends State<TopLocationsChartCard> {
                     ),
                   ),
                 ],
-              ),
-            ],
+              );
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    titleCol,
+                    const SizedBox(height: 10),
+                    filtersWrap,
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: titleCol),
+                  const SizedBox(width: 8),
+                  filtersWrap,
+                ],
+              );
+            },
           ),
 
           const SizedBox(height: 16),

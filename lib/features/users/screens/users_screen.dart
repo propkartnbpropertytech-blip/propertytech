@@ -1452,10 +1452,14 @@ class _UsersScreenState extends State<UsersScreen> {
             height: 1,
           ),
           const SizedBox(height: CRMSpacing.s),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: CRMSpacing.s,
+            runSpacing: CRMSpacing.xs,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     Icons.phone_rounded,
@@ -1472,6 +1476,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 ],
               ),
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     'Active Login',
@@ -1503,10 +1508,13 @@ class _UsersScreenState extends State<UsersScreen> {
             height: 1,
           ),
           const SizedBox(height: CRMSpacing.s),
-              Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: CRMSpacing.s,
+            runSpacing: 4,
             children: [
               TextButton.icon(
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: () => _openEmployeePage(user),
                 icon: Icon(
                   Icons.chevron_right_rounded,
@@ -1515,8 +1523,8 @@ class _UsersScreenState extends State<UsersScreen> {
                 ),
                 label: Text('Open', style: TextStyle(color: CRMColors.primary)),
               ),
-              const SizedBox(width: CRMSpacing.s),
               TextButton.icon(
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: () => _showAddEditUserDialog(user),
                 icon: Icon(
                   Icons.edit_outlined,
@@ -1525,8 +1533,8 @@ class _UsersScreenState extends State<UsersScreen> {
                 ),
                 label: Text('Edit', style: TextStyle(color: CRMColors.primary)),
               ),
-              const SizedBox(width: CRMSpacing.s),
               TextButton.icon(
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: () => _showDeleteConfirmDialog(user),
                 icon: Icon(
                   Icons.delete_outline_rounded,

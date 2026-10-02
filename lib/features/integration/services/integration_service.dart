@@ -1458,10 +1458,15 @@ class IntegrationService extends ChangeNotifier {
         _unifiedFollowups.clear();
         leadEvents.add({'leadId': leadId, 'status': status, 'type': 'STATUS_UPDATED'});
         unawaited(fetchServerLeads(resetWithServer: true));
+        RepositoryCoordinator().refreshDashboard();
         return true;
       }
 
-      return res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+      final success = res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
+      if (success) {
+        RepositoryCoordinator().refreshDashboard();
+      }
+      return success;
     } catch (e) {
       debugPrint('[IntegrationService] Error updating campaign status for $leadId: $e');
       return false;

@@ -116,7 +116,7 @@ class _VideoPlayerPlatformImplState extends State<VideoPlayerPlatformImpl> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.7),
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: Colors.white, width: 2.5),
                     boxShadow: [
                       BoxShadow(

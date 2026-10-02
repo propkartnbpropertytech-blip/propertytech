@@ -65,16 +65,13 @@ class TelecallerAvailabilityToggle extends StatelessWidget {
                     width: 8,
                     height: 8,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(4),
                       color: isActive ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
-                      boxShadow: isActive
-                          ? [
-                              BoxShadow(
-                                color: const Color(0xFF10B981).withValues(alpha: 0.6),
-                                blurRadius: 6,
-                                spreadRadius: 1,
-                              ),
-                            ]
+                      border: isActive
+                          ? Border.all(
+                              color: const Color(0xFF10B981).withValues(alpha: 0.5),
+                              width: 1.5,
+                            )
                           : null,
                     ),
                   ),

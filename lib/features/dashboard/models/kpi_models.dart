@@ -52,6 +52,7 @@ class DashboardKpiCounts {
   final int oldLeadsAllocated;
   final int assignedToSales;
   final int siteVisitsDone;
+  final int rejectedAfterSiteVisit;
   final int dealWon;
   final int salesUsers;
 
@@ -63,6 +64,7 @@ class DashboardKpiCounts {
     this.oldLeadsAllocated = 0,
     this.assignedToSales = 0,
     this.siteVisitsDone = 0,
+    this.rejectedAfterSiteVisit = 0,
     this.dealWon = 0,
     this.salesUsers = 0,
   });
@@ -76,6 +78,7 @@ class DashboardKpiCounts {
       oldLeadsAllocated: (json['old_leads_allocated'] as num?)?.toInt() ?? 0,
       assignedToSales: (json['assigned_to_sales'] as num?)?.toInt() ?? 0,
       siteVisitsDone: (json['site_visits_done'] as num?)?.toInt() ?? 0,
+      rejectedAfterSiteVisit: (json['rejected_after_site_visit'] as num?)?.toInt() ?? 0,
       dealWon: (json['deal_won'] as num?)?.toInt() ?? 0,
       salesUsers: (json['sales_users'] as num?)?.toInt() ?? 0,
     );
@@ -917,6 +920,7 @@ class KpiFilterParams {
   final String? startDate; // YYYY-MM-DD
   final String? endDate; // YYYY-MM-DD
   final String leadType; // 'Listing', 'Requirement', 'Both'
+  final String? outcome; // 'INTERESTED', 'REJECTED_AFTER_VISIT', 'DEAL_WON', etc.
 
   const KpiFilterParams({
     this.businessType = 'Rent',
@@ -924,6 +928,7 @@ class KpiFilterParams {
     this.startDate,
     this.endDate,
     this.leadType = 'Both',
+    this.outcome,
   });
 
   KpiFilterParams copyWith({
@@ -932,6 +937,7 @@ class KpiFilterParams {
     String? startDate,
     String? endDate,
     String? leadType,
+    String? outcome,
   }) {
     return KpiFilterParams(
       businessType: businessType ?? this.businessType,
@@ -939,6 +945,7 @@ class KpiFilterParams {
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       leadType: leadType ?? this.leadType,
+      outcome: outcome ?? this.outcome,
     );
   }
 
@@ -949,6 +956,7 @@ class KpiFilterParams {
       if (startDate != null && startDate!.isNotEmpty) 'startDate': startDate,
       if (endDate != null && endDate!.isNotEmpty) 'endDate': endDate,
       'leadType': leadType,
+      if (outcome != null && outcome!.isNotEmpty) 'outcome': outcome,
     };
   }
 }
@@ -961,6 +969,8 @@ class SiteVisitItem {
   final num? budgetFrom;
   final num? budgetTo;
   final String status;
+  final String? outcome;
+  final String? outcomeAt;
   final String? createdAt;
   final String? updatedAt;
   final String? notes;
@@ -981,6 +991,8 @@ class SiteVisitItem {
     this.budgetFrom,
     this.budgetTo,
     required this.status,
+    this.outcome,
+    this.outcomeAt,
     this.createdAt,
     this.updatedAt,
     this.notes,
@@ -1009,6 +1021,8 @@ class SiteVisitItem {
       budgetFrom: parseNum(json['budget_from']),
       budgetTo: parseNum(json['budget_to']),
       status: json['status']?.toString() ?? 'Site Visit Done',
+      outcome: json['outcome']?.toString(),
+      outcomeAt: json['outcome_at']?.toString(),
       createdAt: json['created_at']?.toString(),
       updatedAt: json['updated_at']?.toString(),
       notes: json['notes']?.toString(),

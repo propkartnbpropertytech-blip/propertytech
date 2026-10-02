@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 import '../../properties/services/properties_service.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
@@ -1388,7 +1389,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(26),
                 border: Border.all(color: CRMColors.primaryOf(context).withOpacity(0.3), width: 1.5),
                 boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
               ),
@@ -1708,9 +1709,9 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final isDesktop = size.width >= 1024;
-    final isTablet = size.width >= 600 && size.width < 1024;
-    final isMobile = size.width < 600;
+    final isDesktop = size.width >= CRMBreakpoints.desktop;
+    final isTablet = size.width >= CRMBreakpoints.tablet && size.width < CRMBreakpoints.desktop;
+    final isMobile = CRMBreakpoints.isPhone(context);
 
     return Scaffold(
       backgroundColor: CRMColors.background,

@@ -89,6 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     } catch (e) {
+      debugPrint('[LoginScreen] Captcha fetch failed: $e');
       if (mounted) {
         setState(() {
           _isLoadingCaptcha = false;

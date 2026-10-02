@@ -32,13 +32,16 @@ class _StatCardState extends State<StatCard> {
     final screenWidth = MediaQuery.of(context).size.width;
     final bool compact = widget.isCompact || screenWidth < 600;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      cursor: widget.onTap != null
-          ? SystemMouseCursors.click
-          : SystemMouseCursors.basic,
-      child: GestureDetector(
+    return Semantics(
+      button: widget.onTap != null,
+      label: '${widget.title}: ${widget.value}',
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        cursor: widget.onTap != null
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
@@ -149,6 +152,7 @@ class _StatCardState extends State<StatCard> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

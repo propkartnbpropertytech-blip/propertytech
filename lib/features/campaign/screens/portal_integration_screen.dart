@@ -6,19 +6,22 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/cards.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
+import '../../../core/design_system/mobile/mobile.dart';
 import '../services/portal_integrations_service.dart';
 
 class PortalIntegrationScreen extends StatefulWidget {
   final String? integrationId;
   final String? initialProvider;
-  const PortalIntegrationScreen({super.key, this.integrationId, this.initialProvider});
+  final PortalIntegrationsService? service;
+  const PortalIntegrationScreen({super.key, this.integrationId, this.initialProvider, this.service});
 
   @override
   State<PortalIntegrationScreen> createState() => _PortalIntegrationScreenState();
 }
 
 class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
-  final _service = PortalIntegrationsService();
+  late final PortalIntegrationsService _service;
   final _steps = const [
     'Basic',
     'Authentication',
@@ -54,6 +57,7 @@ class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
   @override
   void initState() {
     super.initState();
+    _service = widget.service ?? PortalIntegrationsService();
     _provider = widget.initialProvider ?? 'custom';
     _name = _defaultName(_provider);
     _nameCtrl.text = _name;
@@ -146,73 +150,88 @@ class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final isMobile = MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet;
+    final wide = !isMobile;
+    final title = _nameCtrl.text.isEmpty ? 'Add integration' : _nameCtrl.text;
+
+    final bodyContent = _loading
+        ? const Center(child: CircularProgressIndicator())
+        : Column(
+            children: [
+              SizedBox(
+                height: 64,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  itemCount: _steps.length,
+                  separatorBuilder: (_, index) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final selected = index == _step;
+                    return ChoiceChip(
+                      label: Text('${index + 1}. ${_steps[index]}'),
+                      selected: selected,
+                      onSelected: (_) => setState(() => _step = index),
+                    );
+                  },
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.fromLTRB(wide ? 32 : 16, 8, wide ? 32 : 16, 24),
+                  children: [
+                    CRMCard(
+                      elevated: true,
+                      title: _steps[_step],
+                      child: _stepBody(),
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        if (_step > 0)
+                          CRMButton(
+                            label: 'Back',
+                            variant: CRMButtonVariant.outline,
+                            height: 48,
+                            onPressed: () => setState(() => _step -= 1),
+                          ),
+                        CRMButton(
+                          label: _saving ? 'Saving...' : 'Save draft',
+                          variant: CRMButtonVariant.outline,
+                          height: 48,
+                          onPressed: _saving ? null : _save,
+                        ),
+                        if (_step < _steps.length - 1)
+                          CRMButton(label: 'Next', height: 48, onPressed: _saving ? null : _next)
+                        else
+                          CRMButton(label: 'Save & activate', height: 48, onPressed: _saving ? null : _activate),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+
+    if (isMobile) {
+      return MobileScreenScaffold(
+        title: title,
+        scrollable: false,
+        body: bodyContent,
+      );
+    }
+
     return Scaffold(
       backgroundColor: CRMColors.backgroundOf(context),
       appBar: AppBar(
         backgroundColor: CRMColors.cardBgOf(context),
         foregroundColor: CRMColors.textOf(context),
-        title: Text(_nameCtrl.text.isEmpty ? 'Add integration' : _nameCtrl.text),
+        title: Text(title),
         leading: IconButton(onPressed: () => context.go('/campaign/connections'), icon: const Icon(Icons.arrow_back_rounded)),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                SizedBox(
-                  height: 64,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    itemCount: _steps.length,
-                    separatorBuilder: (_, index) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final selected = index == _step;
-                      return ChoiceChip(
-                        label: Text('${index + 1}. ${_steps[index]}'),
-                        selected: selected,
-                        onSelected: (_) => setState(() => _step = index),
-                      );
-                    },
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    padding: EdgeInsets.fromLTRB(wide ? 32 : 16, 8, wide ? 32 : 16, 24),
-                    children: [
-                      CRMCard(
-                        elevated: true,
-                        title: _steps[_step],
-                        child: _stepBody(),
-                      ),
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        alignment: WrapAlignment.end,
-                        children: [
-                          if (_step > 0)
-                            CRMButton(
-                              label: 'Back',
-                              variant: CRMButtonVariant.outline,
-                              onPressed: () => setState(() => _step -= 1),
-                            ),
-                          CRMButton(
-                            label: _saving ? 'Saving...' : 'Save draft',
-                            variant: CRMButtonVariant.outline,
-                            onPressed: _saving ? null : _save,
-                          ),
-                          if (_step < _steps.length - 1)
-                            CRMButton(label: 'Next', onPressed: _saving ? null : _next)
-                          else
-                            CRMButton(label: 'Save & activate', onPressed: _saving ? null : _activate),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+      body: bodyContent,
     );
   }
 
@@ -407,14 +426,18 @@ class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                SizedBox(width: 220, child: TextFormField(
-                  initialValue: row['sourcePath']?.toString() ?? '',
-                  decoration: const InputDecoration(labelText: 'Source field / JSON path', hintText: 'buyerName'),
-                  onChanged: (value) => row['sourcePath'] = value,
-                )),
                 SizedBox(
-                  width: 220,
+                  width: MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet ? double.infinity : 220,
+                  child: TextFormField(
+                    initialValue: row['sourcePath']?.toString() ?? '',
+                    decoration: const InputDecoration(labelText: 'Source field / JSON path', hintText: 'buyerName'),
+                    onChanged: (value) => row['sourcePath'] = value,
+                  ),
+                ),
+                SizedBox(
+                  width: MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet ? double.infinity : 220,
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _destinations.any((d) => d['key'] == row['destination']) ? row['destination']?.toString() : 'lead_name',
                     decoration: const InputDecoration(labelText: 'PropKart field'),
                     items: _destinationItems(),
@@ -422,8 +445,9 @@ class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
                   ),
                 ),
                 SizedBox(
-                  width: 180,
+                  width: MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet ? double.infinity : 180,
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: row['transform']?.toString() ?? 'none',
                     decoration: const InputDecoration(labelText: 'Transform'),
                     items: const ['none', 'trim', 'lowercase', 'uppercase', 'phone', 'date', 'number', 'boolean', 'split']
@@ -693,6 +717,7 @@ class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
   }
 
   List<Widget> _kvList(List<Map<String, dynamic>> rows, String key, String nameHint, String valueHint) {
+    final isMobile = MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet;
     return rows.asMap().entries.map((entry) {
       final row = entry.value;
       return Padding(
@@ -700,9 +725,10 @@ class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
         child: Wrap(
           spacing: 8,
           runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             SizedBox(
-              width: 200,
+              width: isMobile ? double.infinity : 200,
               child: TextFormField(
                 initialValue: row['name']?.toString() ?? '',
                 decoration: InputDecoration(hintText: nameHint),
@@ -710,7 +736,7 @@ class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
               ),
             ),
             SizedBox(
-              width: 240,
+              width: isMobile ? double.infinity : 240,
               child: TextFormField(
                 initialValue: row['value']?.toString() ?? '',
                 decoration: InputDecoration(hintText: valueHint),
@@ -718,8 +744,9 @@ class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
               ),
             ),
             SizedBox(
-              width: 160,
+              width: isMobile ? double.infinity : 160,
               child: DropdownButtonFormField<String>(
+                isExpanded: true,
                 initialValue: row['valueType']?.toString() ?? 'static',
                 items: const ['static', 'credential', 'system', 'custom']
                     .map((item) => DropdownMenuItem(value: item, child: Text(item)))
@@ -727,7 +754,11 @@ class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
                 onChanged: (value) => setState(() => row['valueType'] = value),
               ),
             ),
-            IconButton(onPressed: () => setState(() => rows.removeAt(entry.key)), icon: const Icon(Icons.close)),
+            IconButton(
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              onPressed: () => setState(() => rows.removeAt(entry.key)),
+              icon: const Icon(Icons.close),
+            ),
           ],
         ),
       );
@@ -739,6 +770,7 @@ class _PortalIntegrationScreenState extends State<PortalIntegrationScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: DropdownButtonFormField<String>(
+        isExpanded: true,
         initialValue: selected,
         decoration: InputDecoration(labelText: label),
         items: options.entries.map((entry) => DropdownMenuItem(value: entry.key, child: Text(entry.value))).toList(),

@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../tokens/app_blur.dart';
 import '../tokens/app_colors.dart';
@@ -47,7 +48,9 @@ class CRMGlassSurface extends StatelessWidget {
       child: child,
     );
 
-    if (sigma <= 0) {
+    // On Flutter Web CanvasKit, BackdropFilter triggers WebGL pipeline drops
+    // on certain GPU configurations. Render clean translucent glass without blur pass.
+    if (kIsWeb || sigma <= 0) {
       return ClipRRect(borderRadius: radius, child: surface);
     }
 

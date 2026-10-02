@@ -44,53 +44,10 @@ class _MfaSecurityCardState extends State<MfaSecurityCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: isEnabled
-                            ? CRMColors.success.withValues(alpha: 0.12)
-                            : CRMColors.warning.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        isEnabled
-                            ? Icons.verified_user_rounded
-                            : Icons.gpp_maybe_rounded,
-                        color: isEnabled ? CRMColors.success : CRMColors.warning,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: CRMSpacing.m),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Two-Factor Authentication (2FA)',
-                          style: CRMTypography.sectionTitle.copyWith(
-                            color: CRMColors.textOf(context),
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'RFC 6238 TOTP Standard',
-                          style: CRMTypography.caption.copyWith(
-                            color: CRMColors.textSecondaryOf(context),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                Container(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 360;
+                final badge = Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: isEnabled
@@ -111,8 +68,117 @@ class _MfaSecurityCardState extends State<MfaSecurityCard> {
                       letterSpacing: 0.5,
                     ),
                   ),
-                ),
-              ],
+                );
+
+                if (isNarrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: isEnabled
+                                  ? CRMColors.success.withValues(alpha: 0.12)
+                                  : CRMColors.warning.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              isEnabled
+                                  ? Icons.verified_user_rounded
+                                  : Icons.gpp_maybe_rounded,
+                              color: isEnabled ? CRMColors.success : CRMColors.warning,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: CRMSpacing.s),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Two-Factor Auth (2FA)',
+                                  style: CRMTypography.sectionTitle.copyWith(
+                                    color: CRMColors.textOf(context),
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'RFC 6238 TOTP Standard',
+                                  style: CRMTypography.caption.copyWith(
+                                    color: CRMColors.textSecondaryOf(context),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: CRMSpacing.s),
+                      badge,
+                    ],
+                  );
+                }
+
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: isEnabled
+                                  ? CRMColors.success.withValues(alpha: 0.12)
+                                  : CRMColors.warning.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              isEnabled
+                                  ? Icons.verified_user_rounded
+                                  : Icons.gpp_maybe_rounded,
+                              color: isEnabled ? CRMColors.success : CRMColors.warning,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: CRMSpacing.m),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Two-Factor Authentication (2FA)',
+                                  style: CRMTypography.sectionTitle.copyWith(
+                                    color: CRMColors.textOf(context),
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'RFC 6238 TOTP Standard',
+                                  style: CRMTypography.caption.copyWith(
+                                    color: CRMColors.textSecondaryOf(context),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    badge,
+                  ],
+                );
+              },
             ),
             const SizedBox(height: CRMSpacing.m),
             Text(
@@ -302,7 +368,9 @@ class _MfaSecurityCardState extends State<MfaSecurityCard> {
                     ),
                     const SizedBox(height: 12),
                     Center(
-                      child: Pinput(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Pinput(
                         length: 6,
                         controller: codeController,
                         autofocus: true,
@@ -371,7 +439,8 @@ class _MfaSecurityCardState extends State<MfaSecurityCard> {
                         },
                       ),
                     ),
-                  ],
+                  ),
+                ],
                 ),
               ),
             ),
