@@ -44,6 +44,21 @@ class IntegrationLeadModel {
   final String? archivedByName;
   final String? archivedById;
   final DateTime? archivedAt;
+  final String? archiveRemark;
+  final String? archiveReason;
+
+  String? get displayArchiveRemark =>
+      archiveRemark?.trim().isNotEmpty == true
+          ? archiveRemark!.trim()
+          : (archiveReason?.trim().isNotEmpty == true
+              ? archiveReason!.trim()
+              : (rawJson['archive_remark']?.toString().trim().isNotEmpty == true
+                  ? rawJson['archive_remark'].toString().trim()
+                  : (rawJson['archive_remarks']?.toString().trim().isNotEmpty == true
+                      ? rawJson['archive_remarks'].toString().trim()
+                      : (rawJson['archive_reason']?.toString().trim().isNotEmpty == true
+                          ? rawJson['archive_reason'].toString().trim()
+                          : null))));
 
   bool get isInteracted =>
       campaignStatus == 'CNR' ||
@@ -119,6 +134,8 @@ class IntegrationLeadModel {
     this.archivedByName,
     this.archivedById,
     this.archivedAt,
+    this.archiveRemark,
+    this.archiveReason,
   }) : leadType = resolveLeadType(leadType, rawJson);
 
   /// Resolves lead type between 'Property Listing' and 'Requirement'
@@ -541,6 +558,14 @@ class IntegrationLeadModel {
       return formattedReceivedAt;
     }
 
+    // 16. Dedicated Archive Remark / Reason
+    if (normKey == 'archiveremark' ||
+        normKey == 'archiveremarks' ||
+        normKey == 'archivereason' ||
+        normKey == 'archivereasons') {
+      return displayArchiveRemark;
+    }
+
     // Fuzzy normalized search across all rawJson keys
     for (final entry in rawJson.entries) {
       final k = entry.key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
@@ -711,6 +736,8 @@ class IntegrationLeadModel {
     String? archivedByName,
     String? archivedById,
     DateTime? archivedAt,
+    String? archiveRemark,
+    String? archiveReason,
     bool clearFollowup = false,
     bool clearCallback = false,
   }) {
@@ -720,6 +747,16 @@ class IntegrationLeadModel {
     final finalLeadType = leadType ?? this.leadType;
     updatedRaw['_lead_type'] = finalLeadType;
     updatedRaw['lead_type'] = finalLeadType;
+
+    final finalArchiveRemark = archiveRemark ?? this.archiveRemark;
+    final finalArchiveReason = archiveReason ?? this.archiveReason;
+    if (finalArchiveRemark != null && finalArchiveRemark.trim().isNotEmpty) {
+      updatedRaw['archive_remark'] = finalArchiveRemark.trim();
+      updatedRaw['archive_remarks'] = finalArchiveRemark.trim();
+    }
+    if (finalArchiveReason != null && finalArchiveReason.trim().isNotEmpty) {
+      updatedRaw['archive_reason'] = finalArchiveReason.trim();
+    }
 
     return IntegrationLeadModel(
       id: id ?? this.id,
@@ -764,6 +801,8 @@ class IntegrationLeadModel {
       archivedByName: archivedByName ?? this.archivedByName,
       archivedById: archivedById ?? this.archivedById,
       archivedAt: archivedAt ?? this.archivedAt,
+      archiveRemark: finalArchiveRemark,
+      archiveReason: finalArchiveReason,
     );
   }
 
@@ -811,6 +850,8 @@ class IntegrationLeadModel {
       'archived_by_name': archivedByName,
       'archived_by_id': archivedById,
       'archived_at': archivedAt?.toIso8601String(),
+      'archive_remark': archiveRemark ?? archiveReason,
+      'archive_reason': archiveReason ?? archiveRemark,
     };
   }
 
@@ -901,6 +942,18 @@ class IntegrationLeadModel {
         raw['archived_by_id']?.toString();
     final archivedAtRaw = json['archived_at'] ?? raw['archived_at'];
     final archivedAtVal = archivedAtRaw != null ? DateTime.tryParse(archivedAtRaw.toString()) : null;
+
+    final archiveRemarkVal = json['archive_remark']?.toString() ??
+        json['archive_remarks']?.toString() ??
+        json['archive_reason']?.toString() ??
+        raw['archive_remark']?.toString() ??
+        raw['archive_remarks']?.toString() ??
+        raw['archive_reason']?.toString();
+    final archiveReasonVal = json['archive_reason']?.toString() ??
+        json['archive_remark']?.toString() ??
+        raw['archive_reason']?.toString() ??
+        raw['archive_remark']?.toString() ??
+        archiveRemarkVal;
 
     return IntegrationLeadModel(
       id: json['id']?.toString() ?? '',
@@ -1004,6 +1057,8 @@ class IntegrationLeadModel {
       archivedByName: archivedByNameVal,
       archivedById: archivedByIdVal,
       archivedAt: archivedAtVal,
+      archiveRemark: archiveRemarkVal,
+      archiveReason: archiveReasonVal,
     );
   }
 }

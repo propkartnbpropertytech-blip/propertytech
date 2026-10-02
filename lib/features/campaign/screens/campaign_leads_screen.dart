@@ -8269,6 +8269,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final remarks = remarksController.text.trim();
     final currentStatus = lead.campaignStatus.trim().isEmpty ? 'New' : lead.campaignStatus;
     lead.rawJson['pre_archive_status'] = currentStatus;
+    lead.rawJson['archive_remark'] = remarks;
+    lead.rawJson['archive_remarks'] = remarks;
     lead.rawJson['archive_reason'] = remarks;
 
     await _service.updateLeadCampaignStatus(lead.id, archiveStatus, reason: remarks);
@@ -9072,6 +9074,38 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             );
           }),
 
+          if (lead.displayArchiveRemark != null && lead.displayArchiveRemark!.trim().isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.archive_outlined, size: 14, color: Color(0xFF10B981)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    flex: 4,
+                    child: Text(
+                      'Archive Remark:',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    flex: 6,
+                    child: Text(
+                      lead.displayArchiveRemark!.trim(),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF047857),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 4),
 
           // Actions Footer
@@ -9755,8 +9789,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       headingRowColor: WidgetStateProperty.all(
                         CRMColors.surfaceElevatedOf(context),
                       ),
-                      dataRowMinHeight: 44,
-                      dataRowMaxHeight: 52,
+                      dataRowMinHeight: 46,
+                      dataRowMaxHeight: 58,
                       horizontalMargin: 12,
                       columnSpacing: 18,
                       columns: [
@@ -9879,6 +9913,72 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 );
                               }
                               final val = lead.getStringValue(header);
+                              final lowerHeader = header.toLowerCase();
+                              final isClientHeader = lowerHeader.contains('client') ||
+                                  lowerHeader.contains('owner') ||
+                                  lowerHeader == 'name' ||
+                                  lowerHeader == 'full name';
+                              final archiveRemark = lead.displayArchiveRemark?.trim();
+                              if (isClientHeader && archiveRemark != null && archiveRemark.isNotEmpty) {
+                                final clientName = _formatDisplayCellValue(header, val);
+                                return DataCell(
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 3),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          clientName,
+                                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Tooltip(
+                                          message: 'Archive Remark: $archiveRemark',
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  Icons.archive_outlined,
+                                                  size: 11,
+                                                  color: Color(0xFF059669),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                ConstrainedBox(
+                                                  constraints: const BoxConstraints(maxWidth: 220),
+                                                  child: Text(
+                                                    'Remark: $archiveRemark',
+                                                    style: const TextStyle(
+                                                      fontSize: 10.5,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Color(0xFF047857),
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+
                               return DataCell(
                                 Text(
                                   _formatDisplayCellValue(header, val),
@@ -12406,6 +12506,50 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     ],
                   ),
                 ),
+
+                if (lead.displayArchiveRemark != null && lead.displayArchiveRemark!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.archive_outlined, color: Color(0xFF059669), size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Archive Remark:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF047857),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                lead.displayArchiveRemark!.trim(),
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF065F46),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 const SizedBox(height: 14),
 

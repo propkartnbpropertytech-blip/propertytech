@@ -294,7 +294,18 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
 
     return BlocBuilder<TelecallerCallbacksBloc, TelecallerListState>(
       builder: (context, state) {
-        final allRawItems = state.items;
+        final allRawItems = state.items.where((raw) {
+          if (raw is! Map) return false;
+          final lead = raw['lead'];
+          final cs = ((lead is Map ? lead['campaign_status'] : null) ?? raw['campaign_status'] ?? '').toString().trim();
+          if (cs == 'Property Listed' || cs == 'Listed' || cs == 'Archived') return false;
+          final leadId = (raw['lead_id'] ?? raw['id'] ?? '').toString();
+          final localLead = IntegrationService().getLeadById(leadId);
+          if (localLead != null && (localLead.campaignStatus == 'Property Listed' || localLead.campaignStatus == 'Listed' || localLead.campaignStatus == 'Archived')) {
+            return false;
+          }
+          return true;
+        }).toList();
         final totalCount = allRawItems.length;
         final todayCount = allRawItems.where(_isTodayCallback).length;
         final dueCount = allRawItems.where(_isDueCallback).length;
@@ -708,10 +719,16 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
                                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                       textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                                     ),
-                                    onPressed: () => _handleOutcome(context, leadId, () {
-                                      context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(leadId));
-                                      context.read<TelecallerCallbacksBloc>().add(TelecallerCallbacksRequested());
-                                    }),
+                                    onPressed: () => _handleOutcome(
+                                      context,
+                                      leadId,
+                                      () {
+                                        context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(leadId));
+                                        context.read<TelecallerCallbacksBloc>().add(TelecallerCallbacksRequested());
+                                      },
+                                      clientName: clientName,
+                                      isPropertyListing: _section == 'Property Listing',
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1566,12 +1583,18 @@ class _CnrCardState extends State<_CnrCard> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
               ),
-              onPressed: () => _handleOutcome(context, leadId, () {
-                context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
-                context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
-                _load();
-                widget.onOutcomeRecorded();
-              }),
+              onPressed: () => _handleOutcome(
+                context,
+                leadId,
+                () {
+                  context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
+                  context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                  _load();
+                  widget.onOutcomeRecorded();
+                },
+                clientName: name,
+                isPropertyListing: queueLeadType(widget.lead) == 'Property Listing',
+              ),
             ),
           ],
         ),
@@ -1913,9 +1936,15 @@ Future<void> _showLeadDetailsModal(
           ),
           onPressed: () {
             Navigator.pop(ctx);
-            _handleOutcome(context, leadId, () {
-              onOutcomeUpdated?.call();
-            });
+            _handleOutcome(
+              context,
+              leadId,
+              () {
+                onOutcomeUpdated?.call();
+              },
+              clientName: name,
+              isPropertyListing: leadType == 'Property Listing',
+            );
           },
         ),
       ],
@@ -2373,7 +2402,13 @@ Future<void> _handleNotInterested(
 }
 
 /// Replaces the old bottom sheet with a unified, animated center dialog
-Future<void> _handleOutcome(BuildContext context, String leadId, VoidCallback onDone) async {
+Future<void> _handleOutcome(
+  BuildContext context,
+  String leadId,
+  VoidCallback onDone, {
+  String? clientName,
+  bool isPropertyListing = false,
+}) async {
   final res = await showGeneralDialog<bool>(
     context: context,
     barrierDismissible: true,
@@ -2382,6 +2417,8 @@ Future<void> _handleOutcome(BuildContext context, String leadId, VoidCallback on
     transitionDuration: const Duration(milliseconds: 240),
     pageBuilder: (ctx, anim1, anim2) => _OutcomeDialog(
       leadId: leadId,
+      clientName: clientName,
+      isPropertyListing: isPropertyListing,
       onDone: onDone,
     ),
     transitionBuilder: (ctx, anim1, anim2, child) {
@@ -2399,10 +2436,14 @@ Future<void> _handleOutcome(BuildContext context, String leadId, VoidCallback on
 
 class _OutcomeDialog extends StatefulWidget {
   final String leadId;
+  final String? clientName;
+  final bool isPropertyListing;
   final VoidCallback onDone;
 
   const _OutcomeDialog({
     required this.leadId,
+    this.clientName,
+    this.isPropertyListing = false,
     required this.onDone,
   });
 
@@ -2411,7 +2452,7 @@ class _OutcomeDialog extends StatefulWidget {
 }
 
 class _OutcomeDialogState extends State<_OutcomeDialog> {
-  String _selectedStatus = 'Picked Up'; // 'Picked Up', 'Callback', 'CNR'
+  late String _selectedStatus; // 'Archive' (Property Listing), 'Picked Up' (Requirement), 'Callback', 'CNR'
   final TextEditingController _remarksController = TextEditingController();
   final TextEditingController _callbackRemarksController = TextEditingController();
   final TextEditingController _cnrRemarksController = TextEditingController();
@@ -2428,7 +2469,10 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
   @override
   void initState() {
     super.initState();
-    _fetchSalesUsers();
+    _selectedStatus = widget.isPropertyListing ? 'Archive' : 'Picked Up';
+    if (!widget.isPropertyListing) {
+      _fetchSalesUsers();
+    }
   }
 
   @override
@@ -2455,6 +2499,86 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
   }
 
   Future<void> _submit() async {
+    if (_selectedStatus == 'Archive') {
+      final remarks = _remarksController.text.trim();
+      if (remarks.isEmpty) {
+        setState(() {
+          _remarksError = 'Archive reason is mandatory.';
+        });
+        return;
+      }
+
+      setState(() => _isSubmitting = true);
+
+      try {
+        final lead = IntegrationService().getLeadById(widget.leadId);
+        if (lead != null) {
+          final currentStatus = lead.campaignStatus.trim().isEmpty ? 'Callback' : lead.campaignStatus;
+          lead.rawJson['pre_archive_status'] = currentStatus;
+          lead.rawJson['archive_reason'] = remarks;
+          lead.rawJson['archive_remark'] = remarks;
+          lead.rawJson['archive_remarks'] = remarks;
+        }
+
+        await IntegrationService().updateLeadCampaignStatus(
+          widget.leadId,
+          'Property Listed',
+          reason: remarks,
+        );
+        IntegrationService().notifyOutcomeRecorded(
+          widget.leadId,
+          outcome: 'PROPERTY_LISTED',
+          remarks: remarks,
+        );
+        unawaited(IntegrationService().fetchServerLeads(resetWithServer: true));
+
+        widget.onDone();
+
+        if (mounted) {
+          final messenger = ScaffoldMessenger.maybeOf(context);
+          Navigator.of(context).pop(true);
+          if (messenger != null) {
+            messenger.hideCurrentSnackBar();
+            messenger.showSnackBar(
+              SnackBar(
+                content: const Row(
+                  children: [
+                    Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Property listing archived.',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF10B981),
+                duration: const Duration(milliseconds: 2600),
+                action: SnackBarAction(
+                  label: 'View Archive',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    context.go('/campaign/leads?view=archive_listed');
+                  },
+                ),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isSubmitting = false);
+          AppStatusSnackBar.show(
+            context,
+            message: 'Failed to archive property listing: $e',
+            isSuccess: false,
+          );
+        }
+      }
+      return;
+    }
+
     if (_selectedStatus == 'Picked Up') {
       if (_remarksController.text.trim().isEmpty) {
         setState(() {
@@ -2599,7 +2723,9 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
                 ),
                 Text(
-                  'Select status and handoff action for this lead',
+                  widget.isPropertyListing
+                      ? 'Select status and action for this property lead'
+                      : 'Select status and handoff action for this lead',
                   style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
                 ),
               ],
@@ -2623,18 +2749,32 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
               // Outcome 3-Card Selector Row
               Row(
                 children: [
-                  _buildOutcomeCard(
-                    context,
-                    title: 'Picked Up',
-                    subtitle: 'Handoff to Sales',
-                    icon: Icons.check_circle_rounded,
-                    color: const Color(0xFF10B981),
-                    isSelected: _selectedStatus == 'Picked Up',
-                    onTap: () => setState(() {
-                      _selectedStatus = 'Picked Up';
-                      _remarksError = null;
-                    }),
-                  ),
+                  if (widget.isPropertyListing)
+                    _buildOutcomeCard(
+                      context,
+                      title: 'Archive',
+                      subtitle: 'Move to Archive',
+                      icon: Icons.home_work_rounded,
+                      color: const Color(0xFF10B981),
+                      isSelected: _selectedStatus == 'Archive',
+                      onTap: () => setState(() {
+                        _selectedStatus = 'Archive';
+                        _remarksError = null;
+                      }),
+                    )
+                  else
+                    _buildOutcomeCard(
+                      context,
+                      title: 'Picked Up',
+                      subtitle: 'Handoff to Sales',
+                      icon: Icons.check_circle_rounded,
+                      color: const Color(0xFF10B981),
+                      isSelected: _selectedStatus == 'Picked Up',
+                      onTap: () => setState(() {
+                        _selectedStatus = 'Picked Up';
+                        _remarksError = null;
+                      }),
+                    ),
                   const SizedBox(width: 8),
                   _buildOutcomeCard(
                     context,
@@ -2667,6 +2807,48 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
               const SizedBox(height: 18),
 
               // Outcome Specific Form
+              if (_selectedStatus == 'Archive') ...[
+                RichText(
+                  text: TextSpan(
+                    text: 'Archive Reason / Remarks ',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: CRMColors.textSecondaryOf(context),
+                    ),
+                    children: const [
+                      TextSpan(
+                        text: '*',
+                        style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _remarksController,
+                  maxLines: 3,
+                  enabled: !_isSubmitting,
+                  onChanged: (v) {
+                    if (_remarksError != null) setState(() => _remarksError = null);
+                  },
+                  decoration: InputDecoration(
+                    errorText: _remarksError,
+                    hintText: 'Enter reason for archiving this lead (required)...',
+                    hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                    filled: true,
+                    fillColor: CRMColors.surfaceElevatedOf(context),
+                    contentPadding: const EdgeInsets.all(12),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFF10B981), width: 1.5),
+                    ),
+                  ),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ],
+
               if (_selectedStatus == 'Picked Up') ...[
                 RichText(
                   text: TextSpan(
@@ -2907,11 +3089,13 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 )
               : Text(
-                  _selectedStatus == 'Picked Up'
-                      ? 'Assign & Transfer Lead'
-                      : (_selectedStatus == 'Callback'
-                          ? 'Schedule Callback'
-                          : 'Confirm CNR'),
+                  _selectedStatus == 'Archive'
+                      ? 'Confirm Archive'
+                      : (_selectedStatus == 'Picked Up'
+                          ? 'Assign & Transfer Lead'
+                          : (_selectedStatus == 'Callback'
+                              ? 'Schedule Callback'
+                              : 'Confirm CNR')),
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
         ),
