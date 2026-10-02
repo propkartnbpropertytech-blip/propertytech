@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/design_system/mobile/mobile_bottom_nav.dart';
 import '../../../core/design_system/mobile/mobile_layout.dart';
@@ -9,6 +10,7 @@ import '../../../core/design_system/mobile/mobile_touch.dart';
 import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/security/role_guard.dart';
+import '../../auth/bloc/auth_bloc.dart';
 import 'mobile_nav_config.dart';
 
 /// Existing badge counts made available to routed mobile pages (e.g. More)
@@ -130,6 +132,13 @@ class _MobileAppShellState extends State<MobileAppShell> {
         onMessages,
         badgeCount: unreadMessages,
       ),
+      _OverflowAction(
+        'logout',
+        'Logout',
+        Icons.logout_rounded,
+        () => context.read<AuthBloc>().add(LogoutRequested()),
+        color: CRMColors.danger,
+      ),
     ];
 
     final topBar =
@@ -226,13 +235,15 @@ class _MobileAppShellState extends State<MobileAppShell> {
           children: [
             for (final a in actions)
               MobileListItem(
-                key: ValueKey('overflow_${a.id}'),
-                icon: a.icon,
-                title: a.label,
-                badgeCount: a.badgeCount,
-                showChevron: false,
-                onTap: () => Navigator.of(sheetContext).pop(a.id),
-              ),
+                 key: ValueKey('overflow_${a.id}'),
+                 icon: a.icon,
+                 title: a.label,
+                 badgeCount: a.badgeCount,
+                 showChevron: false,
+                 iconColor: a.color,
+                 titleColor: a.color,
+                 onTap: () => Navigator.of(sheetContext).pop(a.id),
+               ),
           ],
         ),
       ),
@@ -253,6 +264,7 @@ class _OverflowAction {
   final IconData icon;
   final VoidCallback onSelected;
   final int badgeCount;
+  final Color? color;
 
   const _OverflowAction(
     this.id,
@@ -260,5 +272,6 @@ class _OverflowAction {
     this.icon,
     this.onSelected, {
     this.badgeCount = 0,
+    this.color,
   });
 }

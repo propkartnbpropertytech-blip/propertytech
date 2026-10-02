@@ -20,6 +20,7 @@ import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_permission_denied.dart';
+import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import 'package:flutter/services.dart';
 import '../../integration/services/integration_service.dart';
 import '../../integration/models/integration_lead_model.dart';
@@ -1828,36 +1829,32 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           }
           if (mounted) {
             setState(() {});
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(isArchive ? 'Lead moved to Property Listing Archive table.' : 'Lead moved to Property Listing table.'),
-                backgroundColor: const Color(0xFF0284C7),
-                action: SnackBarAction(
-                  label: 'View',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      _selectedSection = 'Property Listing';
-                      _persistedSection = 'Property Listing';
-                      if (isArchive) {
-                        _viewMode = 'archive_listed';
-                      }
-                      _cachedFilteredLeads = null;
-                      _currentPage = 1;
-                    });
-                  },
-                ),
-              ),
+            AppStatusSnackBar.show(
+              context,
+              message: isArchive ? 'Lead moved to Property Listing Archive table.' : 'Lead moved to Property Listing table.',
+              backgroundColor: const Color(0xFF0284C7),
+              duration: const Duration(seconds: 5),
+              actionLabel: 'View',
+              onAction: () {
+                setState(() {
+                  _selectedSection = 'Property Listing';
+                  _persistedSection = 'Property Listing';
+                  if (isArchive) {
+                    _viewMode = 'archive_listed';
+                  }
+                  _cachedFilteredLeads = null;
+                  _currentPage = 1;
+                });
+              },
             );
           }
           unawaited(_service.reclassifyLead(lead.id, targetType).then((ok) {
             if (!ok && mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Failed to update lead classification on server. Please try again.'),
-                  backgroundColor: Color(0xFFEF4444),
-                ),
+              AppStatusSnackBar.show(
+                context,
+                message: 'Failed to update lead classification on server. Please try again.',
+                isSuccess: false,
+                duration: const Duration(seconds: 5),
               );
             }
           }));
@@ -1874,27 +1871,23 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           }
           if (mounted) {
             setState(() {});
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(isArchive ? 'Lead moved to Requirement Archive table.' : 'Lead moved to Requirement table.'),
-                backgroundColor: const Color(0xFF8B5CF6),
-                action: SnackBarAction(
-                  label: 'View',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      _selectedSection = 'Requirement';
-                      _persistedSection = 'Requirement';
-                      if (isArchive) {
-                        _viewMode = 'archive_requirements';
-                      }
-                      _cachedFilteredLeads = null;
-                      _currentPage = 1;
-                    });
-                  },
-                ),
-              ),
+            AppStatusSnackBar.show(
+              context,
+              message: isArchive ? 'Lead moved to Requirement Archive table.' : 'Lead moved to Requirement table.',
+              backgroundColor: const Color(0xFF8B5CF6),
+              duration: const Duration(seconds: 5),
+              actionLabel: 'View',
+              onAction: () {
+                setState(() {
+                  _selectedSection = 'Requirement';
+                  _persistedSection = 'Requirement';
+                  if (isArchive) {
+                    _viewMode = 'archive_requirements';
+                  }
+                  _cachedFilteredLeads = null;
+                  _currentPage = 1;
+                });
+              },
             );
           }
           unawaited(_service.reclassifyLead(lead.id, targetType).then((ok) {
@@ -3348,29 +3341,27 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           });
                           unawaited(_loadFollowups());
                           unawaited(_service.fetchServerLeads(resetWithServer: true));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Lead marked as Not Interested and moved to Not Interested tab.'),
-                              backgroundColor: const Color(0xFFEF4444),
-                              action: SnackBarAction(
-                                label: 'View',
-                                textColor: Colors.white,
-                                onPressed: () {
-                                  setState(() {
-                                    _viewMode = 'not_interested';
-                                    _cachedFilteredLeads = null;
-                                  });
-                                },
-                              ),
-                            ),
+                          AppStatusSnackBar.show(
+                            context,
+                            message: 'Lead marked as Not Interested and moved to Not Interested tab.',
+                            isSuccess: false,
+                            backgroundColor: const Color(0xFFEF4444),
+                            duration: const Duration(seconds: 5),
+                            actionLabel: 'View',
+                            onAction: () {
+                              setState(() {
+                                _viewMode = 'not_interested';
+                                _cachedFilteredLeads = null;
+                              });
+                            },
                           );
                         } catch (e) {
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Failed to mark lead as Not Interested: $e'),
-                                backgroundColor: const Color(0xFFEF4444),
-                              ),
+                            AppStatusSnackBar.show(
+                              context,
+                              message: 'Failed to mark lead as Not Interested: $e',
+                              isSuccess: false,
+                              duration: const Duration(seconds: 5),
                             );
                           }
                         }
@@ -3512,21 +3503,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             _cachedFilteredLeads = null;
                           });
                           unawaited(_loadFollowups());
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('$count lead(s) marked as Not Interested and moved to Not Interested tab.'),
-                              backgroundColor: const Color(0xFFEF4444),
-                              action: SnackBarAction(
-                                label: 'View',
-                                textColor: Colors.white,
-                                onPressed: () {
-                                  setState(() {
-                                    _viewMode = 'not_interested';
-                                    _cachedFilteredLeads = null;
-                                  });
-                                },
-                              ),
-                            ),
+                          AppStatusSnackBar.show(
+                            context,
+                            message: '$count lead(s) marked as Not Interested and moved to Not Interested tab.',
+                            isSuccess: false,
+                            backgroundColor: const Color(0xFFEF4444),
+                            duration: const Duration(seconds: 5),
+                            actionLabel: 'View',
+                            onAction: () {
+                              setState(() {
+                                _viewMode = 'not_interested';
+                                _cachedFilteredLeads = null;
+                              });
+                            },
                           );
                         }
                       },
@@ -8282,27 +8271,23 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         _selectedLeadIds.remove(lead.id);
       });
       unawaited(_loadFollowups());
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isProp
-              ? 'Property listing archived.'
-              : 'Requirement lead archived.'),
-          backgroundColor: isProp ? const Color(0xFF10B981) : const Color(0xFF6366F1),
-          action: SnackBarAction(
-            label: 'View Archive',
-            textColor: Colors.white,
-            onPressed: () {
-              setState(() {
-                _viewMode = isProp ? 'archive_listed' : 'archive_requirements';
-                _selectedSection = isProp ? 'Property Listing' : 'Requirement';
-                _persistedSection = _selectedSection;
-                _cachedFilteredLeads = null;
-                _currentPage = 1;
-              });
-            },
-          ),
-        ),
+      AppStatusSnackBar.show(
+        context,
+        message: isProp
+            ? 'Property listing archived.'
+            : 'Requirement lead archived.',
+        backgroundColor: isProp ? const Color(0xFF10B981) : const Color(0xFF6366F1),
+        duration: const Duration(seconds: 5),
+        actionLabel: 'View Archive',
+        onAction: () {
+          setState(() {
+            _viewMode = isProp ? 'archive_listed' : 'archive_requirements';
+            _selectedSection = isProp ? 'Property Listing' : 'Requirement';
+            _persistedSection = _selectedSection;
+            _cachedFilteredLeads = null;
+            _currentPage = 1;
+          });
+        },
       );
     }
   }
@@ -8323,14 +8308,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         _selectedLeadIds.remove(lead.id);
       });
       unawaited(_loadFollowups());
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isProp
-              ? 'Property listing restored to active Property Listing Leads tab.'
-              : 'Requirement lead restored to active Requirement Leads tab.'),
-          backgroundColor: const Color(0xFF10B981),
-        ),
+      AppStatusSnackBar.show(
+        context,
+        message: isProp
+            ? 'Property listing restored to active Property Listing Leads tab.'
+            : 'Requirement lead restored to active Requirement Leads tab.',
+        backgroundColor: const Color(0xFF10B981),
+        duration: const Duration(seconds: 5),
       );
     }
   }
@@ -8351,23 +8335,19 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         _cachedFilteredLeads = null;
       });
       unawaited(_loadFollowups());
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$count lead(s) archived.'),
-          backgroundColor: isProp ? const Color(0xFF10B981) : const Color(0xFF6366F1),
-          action: SnackBarAction(
-            label: 'View Archive',
-            textColor: Colors.white,
-            onPressed: () {
-              setState(() {
-                _viewMode = isProp ? 'archive_listed' : 'archive_requirements';
-                _cachedFilteredLeads = null;
-                _currentPage = 1;
-              });
-            },
-          ),
-        ),
+      AppStatusSnackBar.show(
+        context,
+        message: '$count lead(s) archived.',
+        backgroundColor: isProp ? const Color(0xFF10B981) : const Color(0xFF6366F1),
+        duration: const Duration(seconds: 5),
+        actionLabel: 'View Archive',
+        onAction: () {
+          setState(() {
+            _viewMode = isProp ? 'archive_listed' : 'archive_requirements';
+            _cachedFilteredLeads = null;
+            _currentPage = 1;
+          });
+        },
       );
     }
   }
@@ -8418,23 +8398,20 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           _cachedFilteredLeads = null;
         });
         unawaited(_loadFollowups());
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$count property listing(s) marked as Listed and saved in Archive.'),
-            backgroundColor: const Color(0xFF10B981),
-            action: SnackBarAction(
-              label: 'View Archive',
-              textColor: Colors.white,
-              onPressed: () {
-                setState(() {
-                  _viewMode = 'archive_listed';
-                  _selectedSection = 'Property Listing';
-                  _cachedFilteredLeads = null;
-                  _currentPage = 1;
-                });
-              },
-            ),
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: '$count property listing(s) marked as Listed and saved in Archive.',
+          backgroundColor: const Color(0xFF10B981),
+          duration: const Duration(seconds: 5),
+          actionLabel: 'View Archive',
+          onAction: () {
+            setState(() {
+              _viewMode = 'archive_listed';
+              _selectedSection = 'Property Listing';
+              _cachedFilteredLeads = null;
+              _currentPage = 1;
+            });
+          },
         );
       }
     } else if (action == 'Archive Requirement') {
@@ -8446,23 +8423,20 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           _cachedFilteredLeads = null;
         });
         unawaited(_loadFollowups());
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$count requirement lead(s) archived and saved in Archive.'),
-            backgroundColor: const Color(0xFF6366F1),
-            action: SnackBarAction(
-              label: 'View Archive',
-              textColor: Colors.white,
-              onPressed: () {
-                setState(() {
-                  _viewMode = 'archive_requirements';
-                  _selectedSection = 'Requirement';
-                  _cachedFilteredLeads = null;
-                  _currentPage = 1;
-                });
-              },
-            ),
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: '$count requirement lead(s) archived and saved in Archive.',
+          backgroundColor: const Color(0xFF6366F1),
+          duration: const Duration(seconds: 5),
+          actionLabel: 'View Archive',
+          onAction: () {
+            setState(() {
+              _viewMode = 'archive_requirements';
+              _selectedSection = 'Requirement';
+              _cachedFilteredLeads = null;
+              _currentPage = 1;
+            });
+          },
         );
       }
     } else if (action == 'Wrong Lead Requirement') {
@@ -8479,39 +8453,35 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       }
       if (mounted) {
         setState(() {});
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isArchive
-                ? '$count lead(s) moved to Requirement Archive table.'
-                : '$count lead(s) moved to Requirement table.'),
-            backgroundColor: const Color(0xFF8B5CF6),
-            action: SnackBarAction(
-              label: 'View',
-              textColor: Colors.white,
-              onPressed: () {
-                setState(() {
-                  _selectedSection = 'Requirement';
-                  _persistedSection = 'Requirement';
-                  if (isArchive) {
-                    _viewMode = 'archive_requirements';
-                  }
-                  _cachedFilteredLeads = null;
-                  _currentPage = 1;
-                });
-              },
-            ),
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: isArchive
+              ? '$count lead(s) moved to Requirement Archive table.'
+              : '$count lead(s) moved to Requirement table.',
+          backgroundColor: const Color(0xFF8B5CF6),
+          duration: const Duration(seconds: 5),
+          actionLabel: 'View',
+          onAction: () {
+            setState(() {
+              _selectedSection = 'Requirement';
+              _persistedSection = 'Requirement';
+              if (isArchive) {
+                _viewMode = 'archive_requirements';
+              }
+              _cachedFilteredLeads = null;
+              _currentPage = 1;
+            });
+          },
         );
       }
       unawaited(Future.wait(selectedIds.map((id) => _service.reclassifyLead(id, targetType))).then((results) {
         final failedCount = results.where((ok) => !ok).length;
         if (failedCount > 0 && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to update $failedCount lead(s) classification on server. Please try again.'),
-              backgroundColor: const Color(0xFFEF4444),
-            ),
+          AppStatusSnackBar.show(
+            context,
+            message: 'Failed to update $failedCount lead(s) classification on server. Please try again.',
+            isSuccess: false,
+            duration: const Duration(seconds: 5),
           );
         }
       }));
@@ -8529,39 +8499,35 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       }
       if (mounted) {
         setState(() {});
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isArchive
-                ? '$count lead(s) moved to Property Listing Archive table.'
-                : '$count lead(s) moved to Property Listing table.'),
-            backgroundColor: const Color(0xFF0284C7),
-            action: SnackBarAction(
-              label: 'View',
-              textColor: Colors.white,
-              onPressed: () {
-                setState(() {
-                  _selectedSection = 'Property Listing';
-                  _persistedSection = 'Property Listing';
-                  if (isArchive) {
-                    _viewMode = 'archive_listed';
-                  }
-                  _cachedFilteredLeads = null;
-                  _currentPage = 1;
-                });
-              },
-            ),
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: isArchive
+              ? '$count lead(s) moved to Property Listing Archive table.'
+              : '$count lead(s) moved to Property Listing table.',
+          backgroundColor: const Color(0xFF0284C7),
+          duration: const Duration(seconds: 5),
+          actionLabel: 'View',
+          onAction: () {
+            setState(() {
+              _selectedSection = 'Property Listing';
+              _persistedSection = 'Property Listing';
+              if (isArchive) {
+                _viewMode = 'archive_listed';
+              }
+              _cachedFilteredLeads = null;
+              _currentPage = 1;
+            });
+          },
         );
       }
       unawaited(Future.wait(selectedIds.map((id) => _service.reclassifyLead(id, targetType))).then((results) {
         final failedCount = results.where((ok) => !ok).length;
         if (failedCount > 0 && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to update $failedCount lead(s) classification on server. Please try again.'),
-              backgroundColor: const Color(0xFFEF4444),
-            ),
+          AppStatusSnackBar.show(
+            context,
+            message: 'Failed to update $failedCount lead(s) classification on server. Please try again.',
+            isSuccess: false,
+            duration: const Duration(seconds: 5),
           );
         }
       }));

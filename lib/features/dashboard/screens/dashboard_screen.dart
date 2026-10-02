@@ -40,7 +40,6 @@ import '../widgets/stat_card.dart';
 import '../widgets/recent_properties_card.dart';
 import '../widgets/todays_schedule_card.dart';
 import '../widgets/followups_card.dart';
-import '../widgets/analytics_section.dart';
 import '../../requirements/screens/requirements_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -315,16 +314,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   ),
                                   const SizedBox(height: 24),
 
-                                  // Rent & Re-sale Overview and City -> Area Analytics
-                                  AnalyticsSection(
-                                    data: data,
-                                    kpiFilters: kpiFilters,
-                                    kpis: kpis,
-                                    isRent: _isRent,
-                                    onPropertyTap: (id) => _openPropertyDetails(id),
-                                  ),
-                                  const SizedBox(height: 24),
-
                                   // Middle Section: Recent Properties & (Note + Follow-ups)
                                   if (isDesktop)
                                     Row(
@@ -549,13 +538,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           const SizedBox(height: 16),
           followupsWidget,
           const SizedBox(height: 16),
-
-          // 5. Analytics Section
-          AnalyticsSection(
-            data: data,
-            isRent: _isRent,
-          ),
-          const SizedBox(height: 24),
         ],
       ),
     );
@@ -564,6 +546,201 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildGlobalFilterBar(KpiFilterParams kpiFilters, bool isKpiLoading, DashboardKpisResponse? kpis) {
     final isDark = ThemeManager().isDarkMode;
     final dateRangeText = _computeDateRangeDisplay(kpiFilters, kpis);
+    final isMobile = CRMBreakpoints.isPhone(context);
+
+    if (isMobile) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // 1. Business Type (Left side)
+              Text(
+                'Business:',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                height: 30,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildFilterPill('Rent', kpiFilters.businessType == 'Rent', () {
+                      ThemeManager().setRentMode(true);
+                      setState(() => _propertyPage = 1);
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(businessType: 'Rent'));
+                    }, isDark),
+                    _buildFilterPill('Re-sale', kpiFilters.businessType == 'Re-sale', () {
+                      ThemeManager().setRentMode(false);
+                      setState(() => _propertyPage = 1);
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(businessType: 'Re-sale'));
+                    }, isDark),
+                    _buildFilterPill('Both', kpiFilters.businessType == 'Both', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(businessType: 'Both'));
+                    }, isDark),
+                  ],
+                ),
+              ),
+
+              // Separator
+              Container(
+                height: 18,
+                width: 1,
+                margin: const EdgeInsets.symmetric(horizontal: 10),
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+
+              // 2. Date Filter (Center)
+              Text(
+                'Date:',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                height: 30,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildFilterPill('Today', kpiFilters.dateFilter == 'Today', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(dateFilter: 'Today'));
+                    }, isDark),
+                    _buildFilterPill('Weekly', kpiFilters.dateFilter == 'Weekly', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(dateFilter: 'Weekly'));
+                    }, isDark),
+                    _buildFilterPill('Monthly', kpiFilters.dateFilter == 'Monthly', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(dateFilter: 'Monthly'));
+                    }, isDark),
+                    _buildFilterPill('Yearly', kpiFilters.dateFilter == 'Yearly', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(dateFilter: 'Yearly'));
+                    }, isDark),
+                    _buildFilterPill(
+                      kpiFilters.dateFilter.startsWith('Custom') && kpiFilters.startDate != null
+                          ? '${kpiFilters.startDate} ~ ${kpiFilters.endDate}'
+                          : 'Custom Range',
+                      kpiFilters.dateFilter.startsWith('Custom'),
+                      () => _pickCustomDateRange(context, kpiFilters),
+                      isDark,
+                    ),
+                  ],
+                ),
+              ),
+              if (dateRangeText.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Container(
+                  height: 30,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: ThemeManager().primaryColor.withValues(alpha: isDark ? 0.2 : 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: ThemeManager().primaryColor.withValues(alpha: isDark ? 0.35 : 0.2),
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.calendar_today_rounded,
+                        size: 12,
+                        color: ThemeManager().primaryColor,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        dateRangeText,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: ThemeManager().primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // Separator
+              Container(
+                height: 18,
+                width: 1,
+                margin: const EdgeInsets.symmetric(horizontal: 10),
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+
+              // 3. Lead Type Filter (Right side)
+              Text(
+                'Lead Type:',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                height: 30,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildFilterPill('Both', kpiFilters.leadType == 'Both', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(leadType: 'Both'));
+                    }, isDark),
+                    _buildFilterPill('Listing', kpiFilters.leadType == 'Listing', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(leadType: 'Listing'));
+                    }, isDark),
+                    _buildFilterPill('Requirement', kpiFilters.leadType == 'Requirement', () {
+                      context.read<DashboardBloc>().add(const UpdateKpiFilter(leadType: 'Requirement'));
+                    }, isDark),
+                  ],
+                ),
+              ),
+              if (isKpiLoading) ...[
+                const SizedBox(width: 8),
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

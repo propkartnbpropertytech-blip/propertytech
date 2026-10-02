@@ -2367,21 +2367,21 @@ Future<void> _handleNotInterested(
                         onDone();
 
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('$clientName marked as Not Interested.'),
-                              backgroundColor: const Color(0xFFEF4444),
-                            ),
+                          AppStatusSnackBar.show(
+                            context,
+                            message: '$clientName marked as Not Interested.',
+                            isSuccess: false,
+                            backgroundColor: const Color(0xFFEF4444),
+                            duration: const Duration(seconds: 5),
                           );
                         }
                       } catch (e) {
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Failed to mark client as Not Interested: $e'),
-                              backgroundColor: const Color(0xFFEF4444),
-                            ),
+                          AppStatusSnackBar.show(
+                            context,
+                            message: 'Failed to mark client as Not Interested: $e',
+                            isSuccess: false,
+                            duration: const Duration(seconds: 5),
                           );
                         }
                       }
@@ -2538,31 +2538,16 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
           final messenger = ScaffoldMessenger.maybeOf(context);
           Navigator.of(context).pop(true);
           if (messenger != null) {
-            messenger.hideCurrentSnackBar();
-            messenger.showSnackBar(
-              SnackBar(
-                content: const Row(
-                  children: [
-                    Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Property listing archived.',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-                backgroundColor: const Color(0xFF10B981),
-                duration: const Duration(milliseconds: 2600),
-                action: SnackBarAction(
-                  label: 'View Archive',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    context.go('/campaign/leads?view=archive_listed');
-                  },
-                ),
-              ),
+            AppStatusSnackBar.showWithMessenger(
+              messenger,
+              message: 'Property listing archived.',
+              backgroundColor: const Color(0xFF10B981),
+              icon: Icons.check_circle_rounded,
+              duration: const Duration(seconds: 5),
+              actionLabel: 'View Archive',
+              onAction: () {
+                context.go('/campaign/leads?view=archive_listed');
+              },
             );
           }
         }
@@ -2657,24 +2642,12 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
               : (_selectedStatus == 'Callback'
                   ? 'Callback scheduled successfully.'
                   : 'Lead marked as CNR.');
-          messenger.hideCurrentSnackBar();
-          messenger.showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      successMsg,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-              backgroundColor: const Color(0xFF0F766E),
-              duration: const Duration(milliseconds: 2600),
-            ),
+          AppStatusSnackBar.showWithMessenger(
+            messenger,
+            message: successMsg,
+            backgroundColor: const Color(0xFF0F766E),
+            icon: Icons.check_circle_rounded,
+            duration: const Duration(seconds: 5),
           );
         }
       }

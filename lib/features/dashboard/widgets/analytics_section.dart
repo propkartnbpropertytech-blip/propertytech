@@ -143,6 +143,8 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
   final ScrollController _areaScrollController = ScrollController();
   int? _hoveredPieSegmentIndex;
   String? _selectedBreakdownMetricKey;
+  String? _mobileActiveBreakdownKey;
+  String? _expandedCategory;
 
   // City & Area Analytics Controls State
   String _activeAreaViewType = 'properties'; // 'properties' | 'requirements'
@@ -321,6 +323,8 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.kpiFilters.businessType != widget.kpiFilters.businessType) {
       _selectedBreakdownMetricKey = null;
+      _mobileActiveBreakdownKey = null;
+      _expandedCategory = null;
       _hoveredPieSegmentIndex = null;
       final bt = widget.kpiFilters.businessType.trim().toLowerCase();
       if (bt == 'rent') {
@@ -775,27 +779,53 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
     final Color defaultAccentColor;
     final String defaultCenterLabel;
 
-    if (widget.kpiFilters.businessType == 'Rent') {
-      defaultItems = [...rentAvailableProps, ...rentActiveLeads];
-      defaultTitle = 'Rent Distribution';
-      defaultSubtitle = '${defaultItems.length} rent units broken down by property type';
-      defaultBadgeText = 'Rent • Overview';
-      defaultAccentColor = const Color(0xFF3B82F6);
-      defaultCenterLabel = 'Rent Units';
-    } else if (widget.kpiFilters.businessType == 'Re-sale') {
-      defaultItems = [...resaleAvailableProps, ...resaleActiveLeads];
-      defaultTitle = 'Re-Sale Distribution';
-      defaultSubtitle = '${defaultItems.length} re-sale units broken down by property type';
-      defaultBadgeText = 'Re-Sale • Overview';
-      defaultAccentColor = const Color(0xFFF59E0B);
-      defaultCenterLabel = 'Re-Sale Units';
+    final isMobileView = !isDesktop;
+    if (isMobileView) {
+      if (widget.kpiFilters.businessType == 'Rent') {
+        defaultItems = rentAvailableProps;
+        defaultTitle = 'Rent Property Distribution';
+        defaultSubtitle = '${defaultItems.length} rent properties broken down by property type';
+        defaultBadgeText = 'Rent • Properties';
+        defaultAccentColor = const Color(0xFF3B82F6);
+        defaultCenterLabel = 'Rent Properties';
+      } else if (widget.kpiFilters.businessType == 'Re-sale') {
+        defaultItems = resaleAvailableProps;
+        defaultTitle = 'Re-Sale Property Distribution';
+        defaultSubtitle = '${defaultItems.length} re-sale properties broken down by property type';
+        defaultBadgeText = 'Re-Sale • Properties';
+        defaultAccentColor = const Color(0xFFF59E0B);
+        defaultCenterLabel = 'Re-Sale Properties';
+      } else {
+        defaultItems = availableProps;
+        defaultTitle = 'Property Type Distribution';
+        defaultSubtitle = '${defaultItems.length} properties broken down by property type';
+        defaultBadgeText = 'Both • Properties';
+        defaultAccentColor = const Color(0xFF10B981);
+        defaultCenterLabel = 'Total Properties';
+      }
     } else {
-      defaultItems = [...availableProps, ...filteredLeads];
-      defaultTitle = 'Property Type Distribution';
-      defaultSubtitle = '${defaultItems.length} units broken down by property type';
-      defaultBadgeText = 'Both • Overview';
-      defaultAccentColor = const Color(0xFF10B981);
-      defaultCenterLabel = 'Total Units';
+      if (widget.kpiFilters.businessType == 'Rent') {
+        defaultItems = [...rentAvailableProps, ...rentActiveLeads];
+        defaultTitle = 'Rent Distribution';
+        defaultSubtitle = '${defaultItems.length} rent units broken down by property type';
+        defaultBadgeText = 'Rent • Overview';
+        defaultAccentColor = const Color(0xFF3B82F6);
+        defaultCenterLabel = 'Rent Units';
+      } else if (widget.kpiFilters.businessType == 'Re-sale') {
+        defaultItems = [...resaleAvailableProps, ...resaleActiveLeads];
+        defaultTitle = 'Re-Sale Distribution';
+        defaultSubtitle = '${defaultItems.length} re-sale units broken down by property type';
+        defaultBadgeText = 'Re-Sale • Overview';
+        defaultAccentColor = const Color(0xFFF59E0B);
+        defaultCenterLabel = 'Re-Sale Units';
+      } else {
+        defaultItems = [...availableProps, ...filteredLeads];
+        defaultTitle = 'Property Type Distribution';
+        defaultSubtitle = '${defaultItems.length} units broken down by property type';
+        defaultBadgeText = 'Both • Overview';
+        defaultAccentColor = const Color(0xFF10B981);
+        defaultCenterLabel = 'Total Units';
+      }
     }
 
     // Active items for the chart (selected metric if any, otherwise default items)
@@ -971,6 +1001,15 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                           showRent: showRent,
                           showResale: showResale,
                           selectedMetricKey: effectiveSelectedKey,
+                          isDesktop: true,
+                          availableProps: availableProps,
+                          rentAvailableProps: rentAvailableProps,
+                          resaleAvailableProps: resaleAvailableProps,
+                          filteredLeads: filteredLeads,
+                          rentActiveLeads: rentActiveLeads,
+                          resaleActiveLeads: resaleActiveLeads,
+                          rentRentedProps: rentRentedProps,
+                          resaleSoldProps: resaleSoldProps,
                         ),
                       ),
                     ],
@@ -1002,6 +1041,15 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                         showRent: showRent,
                         showResale: showResale,
                         selectedMetricKey: effectiveSelectedKey,
+                        isDesktop: false,
+                        availableProps: availableProps,
+                        rentAvailableProps: rentAvailableProps,
+                        resaleAvailableProps: resaleAvailableProps,
+                        filteredLeads: filteredLeads,
+                        rentActiveLeads: rentActiveLeads,
+                        resaleActiveLeads: resaleActiveLeads,
+                        rentRentedProps: rentRentedProps,
+                        resaleSoldProps: resaleSoldProps,
                       ),
                     ],
                   ),
@@ -1024,6 +1072,7 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
           areas: areaList,
           areaDisplayProps: areaDisplayProps,
           areaDisplayLeads: areaDisplayLeads,
+          isDesktop: isDesktop,
         ),
       ],
     );
@@ -1275,11 +1324,78 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
     required bool showRent,
     required bool showResale,
     String? selectedMetricKey,
+    required bool isDesktop,
+    required List<DashboardLocationItem> availableProps,
+    required List<DashboardLocationItem> rentAvailableProps,
+    required List<DashboardLocationItem> resaleAvailableProps,
+    required List<DashboardLocationItem> filteredLeads,
+    required List<DashboardLocationItem> rentActiveLeads,
+    required List<DashboardLocationItem> resaleActiveLeads,
+    required List<DashboardLocationItem> rentRentedProps,
+    required List<DashboardLocationItem> resaleSoldProps,
   }) {
     final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
     final titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subtitleColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+
+    // Active breakdown determination for mobile view
+    final String breakdownTitle;
+    final List<DashboardLocationItem> breakdownItems;
+    final Color breakdownColor;
+
+    if (selectedMetricKey == 'rent_props') {
+      breakdownTitle = 'Rent Properties';
+      breakdownItems = rentAvailableProps;
+      breakdownColor = const Color(0xFF3B82F6);
+    } else if (selectedMetricKey == 'rent_leads') {
+      breakdownTitle = 'Rent Leads';
+      breakdownItems = rentActiveLeads;
+      breakdownColor = const Color(0xFF06B6D4);
+    } else if (selectedMetricKey == 'rent_rented') {
+      breakdownTitle = 'Properties Rented Out';
+      breakdownItems = rentRentedProps;
+      breakdownColor = const Color(0xFF8B5CF6);
+    } else if (selectedMetricKey == 'resale_props') {
+      breakdownTitle = 'Re-Sale Properties';
+      breakdownItems = resaleAvailableProps;
+      breakdownColor = const Color(0xFFF59E0B);
+    } else if (selectedMetricKey == 'resale_leads') {
+      breakdownTitle = 'Re-Sale Leads';
+      breakdownItems = resaleActiveLeads;
+      breakdownColor = const Color(0xFF10B981);
+    } else if (selectedMetricKey == 'resale_sold') {
+      breakdownTitle = 'Properties Sold Out';
+      breakdownItems = resaleSoldProps;
+      breakdownColor = const Color(0xFF8B5CF6);
+    } else if (_mobileActiveBreakdownKey == 'both_leads' && widget.kpiFilters.businessType == 'Both') {
+      breakdownTitle = 'Both Leads';
+      breakdownItems = filteredLeads;
+      breakdownColor = const Color(0xFF06B6D4);
+    } else if (_mobileActiveBreakdownKey == 'both_props' && widget.kpiFilters.businessType == 'Both') {
+      breakdownTitle = 'Both Properties';
+      breakdownItems = availableProps;
+      breakdownColor = const Color(0xFF10B981);
+    } else {
+      if (widget.kpiFilters.businessType == 'Rent') {
+        breakdownTitle = 'Rent Properties';
+        breakdownItems = rentAvailableProps;
+        breakdownColor = const Color(0xFF3B82F6);
+      } else if (widget.kpiFilters.businessType == 'Re-sale') {
+        breakdownTitle = 'Re-Sale Properties';
+        breakdownItems = resaleAvailableProps;
+        breakdownColor = const Color(0xFFF59E0B);
+      } else {
+        breakdownTitle = 'Both Properties';
+        breakdownItems = availableProps;
+        breakdownColor = const Color(0xFF10B981);
+      }
+    }
+
+    final resItems = breakdownItems.where((i) => _isItemInCategory(i, 'Residential')).toList();
+    final comItems = breakdownItems.where((i) => _isItemInCategory(i, 'Commercial')).toList();
+    final indItems = breakdownItems.where((i) => _isItemInCategory(i, 'Industrial')).toList();
+    final landItems = breakdownItems.where((i) => _isItemInCategory(i, 'Land & Plot')).toList();
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -1414,6 +1530,29 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
               ),
             ],
           ),
+
+          if (!isDesktop) ...[
+            const SizedBox(height: 14),
+            _buildMobileCategoryConfigSection(
+              isDark: isDark,
+              borderColor: borderColor,
+              activeTitle: breakdownTitle,
+              activeColor: breakdownColor,
+              totalCount: breakdownItems.length,
+              residentialItems: resItems,
+              commercialItems: comItems,
+              industrialItems: indItems,
+              landPlotItems: landItems,
+              availableProps: availableProps,
+              rentAvailableProps: rentAvailableProps,
+              resaleAvailableProps: resaleAvailableProps,
+              filteredLeads: filteredLeads,
+              rentActiveLeads: rentActiveLeads,
+              resaleActiveLeads: resaleActiveLeads,
+              rentRentedProps: rentRentedProps,
+              resaleSoldProps: resaleSoldProps,
+            ),
+          ],
         ],
       ),
     );
@@ -1604,6 +1743,645 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
     );
   }
 
+  bool _isItemInCategory(DashboardLocationItem item, String catName) {
+    if (item.matchesCategory(catName)) return true;
+    final type = item.propertyTypeName.trim().toLowerCase();
+    final cat = item.categoryName.trim().toLowerCase();
+    if (catName == 'Residential') {
+      return cat.contains('residen') || type.contains('apart') || type.contains('flat') || type.contains('villa') || type.contains('tenament') || type.contains('bungal');
+    } else if (catName == 'Commercial') {
+      return cat.contains('commerc') || type.contains('office') || type.contains('shop') || type.contains('showroom');
+    } else if (catName == 'Industrial') {
+      return cat.contains('indust') || type.contains('warehouse') || type.contains('shed');
+    } else if (catName == 'Land & Plot') {
+      return cat.contains('land') || cat.contains('plot') || type.contains('plot') || type.contains('land');
+    }
+    return false;
+  }
+
+  Map<String, int> _computeResidentialConfigs(List<DashboardLocationItem> items) {
+    final Map<String, int> counts = {
+      '1 BHK': 0,
+      '2 BHK': 0,
+      '3 BHK': 0,
+      '4 BHK+': 0,
+      'Villa': 0,
+      'Duplex': 0,
+      'Penthouse': 0,
+    };
+
+    for (final item in items) {
+      final config = item.configurationName.trim().toLowerCase();
+      final type = item.propertyTypeName.trim().toLowerCase();
+      final title = item.title.trim().toLowerCase();
+      final beds = item.bedrooms;
+
+      if (config.contains('villa') || type.contains('villa') || title.contains('villa')) {
+        counts['Villa'] = (counts['Villa'] ?? 0) + 1;
+      } else if (config.contains('duplex') || type.contains('duplex') || title.contains('duplex')) {
+        counts['Duplex'] = (counts['Duplex'] ?? 0) + 1;
+      } else if (config.contains('penthouse') || type.contains('penthouse') || title.contains('penthouse')) {
+        counts['Penthouse'] = (counts['Penthouse'] ?? 0) + 1;
+      } else if (beds == 1 ||
+          config.contains('1 bhk') || config.contains('1bhk') || config.contains('1 rk') || config.contains('1rk') ||
+          title.contains('1 bhk') || title.contains('1bhk') || title.contains('1 rk')) {
+        counts['1 BHK'] = (counts['1 BHK'] ?? 0) + 1;
+      } else if (beds == 2 ||
+          config.contains('2 bhk') || config.contains('2bhk') || config.contains('2.5') ||
+          title.contains('2 bhk') || title.contains('2bhk')) {
+        counts['2 BHK'] = (counts['2 BHK'] ?? 0) + 1;
+      } else if (beds == 3 ||
+          config.contains('3 bhk') || config.contains('3bhk') ||
+          title.contains('3 bhk') || title.contains('3bhk')) {
+        counts['3 BHK'] = (counts['3 BHK'] ?? 0) + 1;
+      } else if (beds >= 4 ||
+          config.contains('4 bhk') || config.contains('4bhk') || config.contains('5 bhk') || config.contains('5bhk') ||
+          title.contains('4 bhk') || title.contains('5 bhk')) {
+        counts['4 BHK+'] = (counts['4 BHK+'] ?? 0) + 1;
+      } else {
+        String fallback = 'Other';
+        if (config.isNotEmpty) {
+          fallback = item.configurationName.trim();
+        } else if (type.isNotEmpty) {
+          fallback = item.propertyTypeName.trim();
+        }
+        counts[fallback] = (counts[fallback] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  Map<String, int> _computeCommercialConfigs(List<DashboardLocationItem> items) {
+    final Map<String, int> counts = {
+      'Office': 0,
+      'Shop': 0,
+      'Showroom': 0,
+    };
+    for (final item in items) {
+      final config = item.configurationName.trim().toLowerCase();
+      final type = item.propertyTypeName.trim().toLowerCase();
+      final title = item.title.trim().toLowerCase();
+
+      if (type.contains('office') || config.contains('office') || title.contains('office')) {
+        counts['Office'] = (counts['Office'] ?? 0) + 1;
+      } else if (type.contains('shop') || config.contains('shop') || title.contains('shop')) {
+        counts['Shop'] = (counts['Shop'] ?? 0) + 1;
+      } else if (type.contains('showroom') || config.contains('showroom') || title.contains('showroom')) {
+        counts['Showroom'] = (counts['Showroom'] ?? 0) + 1;
+      } else {
+        String fallback = 'Other Commercial';
+        if (config.isNotEmpty) {
+          fallback = item.configurationName.trim();
+        } else if (type.isNotEmpty) {
+          fallback = item.propertyTypeName.trim();
+        }
+        counts[fallback] = (counts[fallback] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  Map<String, int> _computeIndustrialConfigs(List<DashboardLocationItem> items) {
+    final Map<String, int> counts = {
+      'Warehouse': 0,
+      'Industrial Shed': 0,
+    };
+    for (final item in items) {
+      final config = item.configurationName.trim().toLowerCase();
+      final type = item.propertyTypeName.trim().toLowerCase();
+      final title = item.title.trim().toLowerCase();
+
+      if (type.contains('warehouse') || config.contains('warehouse') || title.contains('warehouse')) {
+        counts['Warehouse'] = (counts['Warehouse'] ?? 0) + 1;
+      } else if (type.contains('shed') || config.contains('shed') || title.contains('shed')) {
+        counts['Industrial Shed'] = (counts['Industrial Shed'] ?? 0) + 1;
+      } else {
+        String fallback = 'Other Industrial';
+        if (config.isNotEmpty) {
+          fallback = item.configurationName.trim();
+        } else if (type.isNotEmpty) {
+          fallback = item.propertyTypeName.trim();
+        }
+        counts[fallback] = (counts[fallback] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  Map<String, int> _computeLandPlotConfigs(List<DashboardLocationItem> items) {
+    final Map<String, int> counts = {
+      'Plot': 0,
+      'Land': 0,
+    };
+    for (final item in items) {
+      final config = item.configurationName.trim().toLowerCase();
+      final type = item.propertyTypeName.trim().toLowerCase();
+      final title = item.title.trim().toLowerCase();
+
+      if (type.contains('plot') || config.contains('plot') || title.contains('plot')) {
+        counts['Plot'] = (counts['Plot'] ?? 0) + 1;
+      } else if (type.contains('land') || config.contains('land') || title.contains('land')) {
+        counts['Land'] = (counts['Land'] ?? 0) + 1;
+      } else {
+        String fallback = 'Plot / Land';
+        if (config.isNotEmpty) {
+          fallback = item.configurationName.trim();
+        } else if (type.isNotEmpty) {
+          fallback = item.propertyTypeName.trim();
+        }
+        counts[fallback] = (counts[fallback] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  Widget _buildMobileCategoryConfigSection({
+    required bool isDark,
+    required Color borderColor,
+    required String activeTitle,
+    required Color activeColor,
+    required int totalCount,
+    required List<DashboardLocationItem> residentialItems,
+    required List<DashboardLocationItem> commercialItems,
+    required List<DashboardLocationItem> industrialItems,
+    required List<DashboardLocationItem> landPlotItems,
+    required List<DashboardLocationItem> availableProps,
+    required List<DashboardLocationItem> rentAvailableProps,
+    required List<DashboardLocationItem> resaleAvailableProps,
+    required List<DashboardLocationItem> filteredLeads,
+    required List<DashboardLocationItem> rentActiveLeads,
+    required List<DashboardLocationItem> resaleActiveLeads,
+    required List<DashboardLocationItem> rentRentedProps,
+    required List<DashboardLocationItem> resaleSoldProps,
+  }) {
+    final titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
+
+    final resConfigs = _computeResidentialConfigs(residentialItems);
+    final comConfigs = _computeCommercialConfigs(commercialItems);
+    final indConfigs = _computeIndustrialConfigs(industrialItems);
+    final landConfigs = _computeLandPlotConfigs(landPlotItems);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A).withValues(alpha: 0.6) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: activeColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.category_rounded, size: 14, color: activeColor),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Category & Configuration Breakdown',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: titleColor,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: activeColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: activeColor.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  '$activeTitle ($totalCount)',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: activeColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // Quick selection pill tabs to quickly toggle breakdown view on mobile
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                if (widget.kpiFilters.businessType == 'Both') ...[
+                  _buildQuickBreakdownPill(
+                    label: 'Both Properties',
+                    count: availableProps.length,
+                    isSelected: activeTitle == 'Both Properties',
+                    color: const Color(0xFF10B981),
+                    onTap: () {
+                      setState(() {
+                        _selectedBreakdownMetricKey = null;
+                        _mobileActiveBreakdownKey = 'both_props';
+                        _hoveredPieSegmentIndex = null;
+                      });
+                    },
+                    isDark: isDark,
+                  ),
+                  const SizedBox(width: 6),
+                  _buildQuickBreakdownPill(
+                    label: 'Both Leads',
+                    count: filteredLeads.length,
+                    isSelected: activeTitle == 'Both Leads',
+                    color: const Color(0xFF06B6D4),
+                    onTap: () {
+                      setState(() {
+                        _selectedBreakdownMetricKey = null;
+                        _mobileActiveBreakdownKey = 'both_leads';
+                        _hoveredPieSegmentIndex = null;
+                      });
+                    },
+                    isDark: isDark,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                if (widget.kpiFilters.businessType != 'Re-sale') ...[
+                  _buildQuickBreakdownPill(
+                    label: 'Rent Properties',
+                    count: rentAvailableProps.length,
+                    isSelected: activeTitle == 'Rent Properties',
+                    color: const Color(0xFF3B82F6),
+                    onTap: () {
+                      setState(() {
+                        _selectedBreakdownMetricKey = 'rent_props';
+                        _mobileActiveBreakdownKey = null;
+                        _hoveredPieSegmentIndex = null;
+                      });
+                    },
+                    isDark: isDark,
+                  ),
+                  const SizedBox(width: 6),
+                  _buildQuickBreakdownPill(
+                    label: 'Rent Leads',
+                    count: rentActiveLeads.length,
+                    isSelected: activeTitle == 'Rent Leads',
+                    color: const Color(0xFF06B6D4),
+                    onTap: () {
+                      setState(() {
+                        _selectedBreakdownMetricKey = 'rent_leads';
+                        _mobileActiveBreakdownKey = null;
+                        _hoveredPieSegmentIndex = null;
+                      });
+                    },
+                    isDark: isDark,
+                  ),
+                  const SizedBox(width: 6),
+                  _buildQuickBreakdownPill(
+                    label: 'Rented Out',
+                    count: rentRentedProps.length,
+                    isSelected: activeTitle == 'Properties Rented Out',
+                    color: const Color(0xFF8B5CF6),
+                    onTap: () {
+                      setState(() {
+                        _selectedBreakdownMetricKey = 'rent_rented';
+                        _mobileActiveBreakdownKey = null;
+                        _hoveredPieSegmentIndex = null;
+                      });
+                    },
+                    isDark: isDark,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                if (widget.kpiFilters.businessType != 'Rent') ...[
+                  _buildQuickBreakdownPill(
+                    label: 'Re-Sale Properties',
+                    count: resaleAvailableProps.length,
+                    isSelected: activeTitle == 'Re-Sale Properties',
+                    color: const Color(0xFFF59E0B),
+                    onTap: () {
+                      setState(() {
+                        _selectedBreakdownMetricKey = 'resale_props';
+                        _mobileActiveBreakdownKey = null;
+                        _hoveredPieSegmentIndex = null;
+                      });
+                    },
+                    isDark: isDark,
+                  ),
+                  const SizedBox(width: 6),
+                  _buildQuickBreakdownPill(
+                    label: 'Re-Sale Leads',
+                    count: resaleActiveLeads.length,
+                    isSelected: activeTitle == 'Re-Sale Leads',
+                    color: const Color(0xFF10B981),
+                    onTap: () {
+                      setState(() {
+                        _selectedBreakdownMetricKey = 'resale_leads';
+                        _mobileActiveBreakdownKey = null;
+                        _hoveredPieSegmentIndex = null;
+                      });
+                    },
+                    isDark: isDark,
+                  ),
+                  const SizedBox(width: 6),
+                  _buildQuickBreakdownPill(
+                    label: 'Sold Out',
+                    count: resaleSoldProps.length,
+                    isSelected: activeTitle == 'Properties Sold Out',
+                    color: const Color(0xFF8B5CF6),
+                    onTap: () {
+                      setState(() {
+                        _selectedBreakdownMetricKey = 'resale_sold';
+                        _mobileActiveBreakdownKey = null;
+                        _hoveredPieSegmentIndex = null;
+                      });
+                    },
+                    isDark: isDark,
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // 4 Category Accordions
+          _buildCategoryAccordion(
+            title: 'Residential',
+            count: residentialItems.length,
+            icon: Icons.home_work_rounded,
+            color: const Color(0xFF3B82F6),
+            configCounts: resConfigs,
+            isDark: isDark,
+            borderColor: borderColor,
+          ),
+          const SizedBox(height: 8),
+          _buildCategoryAccordion(
+            title: 'Commercial',
+            count: commercialItems.length,
+            icon: Icons.business_rounded,
+            color: const Color(0xFFF59E0B),
+            configCounts: comConfigs,
+            isDark: isDark,
+            borderColor: borderColor,
+          ),
+          const SizedBox(height: 8),
+          _buildCategoryAccordion(
+            title: 'Industrial',
+            count: industrialItems.length,
+            icon: Icons.factory_rounded,
+            color: const Color(0xFF8B5CF6),
+            configCounts: indConfigs,
+            isDark: isDark,
+            borderColor: borderColor,
+          ),
+          const SizedBox(height: 8),
+          _buildCategoryAccordion(
+            title: 'Land & Plot',
+            count: landPlotItems.length,
+            icon: Icons.landscape_rounded,
+            color: const Color(0xFF10B981),
+            configCounts: landConfigs,
+            isDark: isDark,
+            borderColor: borderColor,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryAccordion({
+    required String title,
+    required int count,
+    required IconData icon,
+    required Color color,
+    required Map<String, int> configCounts,
+    required bool isDark,
+    required Color borderColor,
+  }) {
+    final isExpanded = _expandedCategory == title;
+    final titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isExpanded ? color.withValues(alpha: 0.5) : borderColor,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: () {
+              setState(() {
+                if (_expandedCategory == title) {
+                  _expandedCategory = null;
+                } else {
+                  _expandedCategory = title;
+                }
+              });
+            },
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, size: 16, color: color),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: titleColor,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: count > 0
+                          ? color.withValues(alpha: 0.12)
+                          : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: count > 0 ? color : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (isExpanded) ...[
+            Container(
+              height: 1,
+              color: borderColor,
+            ),
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: configCounts.entries.map((entry) {
+                  final configName = entry.key;
+                  final configCount = entry.value;
+                  final hasItems = configCount > 0;
+
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: hasItems
+                          ? color.withValues(alpha: isDark ? 0.2 : 0.08)
+                          : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: hasItems
+                            ? color.withValues(alpha: isDark ? 0.4 : 0.3)
+                            : borderColor,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          configName,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: hasItems ? FontWeight.w700 : FontWeight.w500,
+                            color: hasItems
+                                ? (isDark ? Colors.white : const Color(0xFF0F172A))
+                                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: hasItems ? color : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$configCount',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: hasItems ? Colors.white : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickBreakdownPill({
+    required String label,
+    required int count,
+    required bool isSelected,
+    required Color color,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? color
+              : (isDark ? const Color(0xFF1E293B) : Colors.white),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? color : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.35),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1.5),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected
+                    ? Colors.white
+                    : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+              ),
+            ),
+            const SizedBox(width: 5),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? Colors.white.withValues(alpha: 0.25)
+                    : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: isSelected
+                      ? Colors.white
+                      : (isDark ? Colors.white70 : const Color(0xFF334155)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Interactive Pie Chart Canvas
   // ---------------------------------------------------------------------------
@@ -1751,6 +2529,7 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
     required List<_AreaAggregate> areas,
     required Map<String, List<DashboardLocationItem>> areaDisplayProps,
     required Map<String, List<DashboardLocationItem>> areaDisplayLeads,
+    required bool isDesktop,
   }) {
     final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
@@ -1781,47 +2560,54 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Section Title & Controls Bar
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(9),
+          if (!isDesktop) ...[
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(
+                    Icons.location_city_rounded,
+                    size: 18,
+                    color: primary,
+                  ),
                 ),
-                child: Icon(
-                  Icons.location_city_rounded,
-                  size: 18,
-                  color: primary,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'City → Area Analytics',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: titleColor,
-                        letterSpacing: -0.3,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'City → Area Analytics',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: titleColor,
+                          letterSpacing: -0.3,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'Area-wise properties and client requirements for $_selectedCity',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: subtitleColor,
-                        fontWeight: FontWeight.w500,
+                      Text(
+                        'Area-wise properties & requirements',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: subtitleColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              // City Totals Badge
-              Container(
+              ],
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: primary.withValues(alpha: 0.1),
@@ -1837,8 +2623,68 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ] else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(
+                    Icons.location_city_rounded,
+                    size: 18,
+                    color: primary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'City → Area Analytics',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: titleColor,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      Text(
+                        'Area-wise properties and client requirements for $_selectedCity',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: subtitleColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // City Totals Badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: primary.withValues(alpha: 0.25)),
+                  ),
+                  child: Text(
+                    '$_selectedCity: $cityPropsCount Properties • $cityLeadsCount Leads',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
 
           const SizedBox(height: 14),
 
@@ -2126,21 +2972,20 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
           // -----------------------------------------------------------
           // Row 2: Properties / Requirements Clickable Tabs + Count + Controls
           // -----------------------------------------------------------
-          Row(
-            children: [
-              // Segmented Clickable Tabs (Properties vs Requirements)
-              Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(9),
-                  border: Border.all(color: borderColor),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Tab 1: Properties
-                    InkWell(
+          if (!isDesktop) ...[
+            // Mobile: Row 2a (Segmented Tabs full width)
+            Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: borderColor),
+              ),
+              child: Row(
+                children: [
+                  // Tab 1: Properties
+                  Expanded(
+                    child: InkWell(
                       onTap: () {
                         if (_activeAreaViewType != 'properties') {
                           setState(() => _activeAreaViewType = 'properties');
@@ -2149,7 +2994,8 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                       borderRadius: BorderRadius.circular(7),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: _activeAreaViewType == 'properties'
                               ? const Color(0xFF3B82F6)
@@ -2166,7 +3012,7 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                               : null,
                         ),
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
                               Icons.apartment_rounded,
@@ -2175,28 +3021,34 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                                   ? Colors.white
                                   : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Properties ($cityPropsCount)',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: _activeAreaViewType == 'properties'
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
-                                color: _activeAreaViewType == 'properties'
-                                    ? Colors.white
-                                    : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                'Properties ($cityPropsCount)',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: _activeAreaViewType == 'properties'
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                  color: _activeAreaViewType == 'properties'
+                                      ? Colors.white
+                                      : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
                     ),
+                  ),
 
-                    const SizedBox(width: 3),
+                  const SizedBox(width: 3),
 
-                    // Tab 2: Requirements / Leads
-                    InkWell(
+                  // Tab 2: Requirements / Leads
+                  Expanded(
+                    child: InkWell(
                       onTap: () {
                         if (_activeAreaViewType != 'requirements') {
                           setState(() => _activeAreaViewType = 'requirements');
@@ -2205,7 +3057,8 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                       borderRadius: BorderRadius.circular(7),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: _activeAreaViewType == 'requirements'
                               ? const Color(0xFF10B981)
@@ -2222,7 +3075,7 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                               : null,
                         ),
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
                               Icons.group_rounded,
@@ -2231,78 +3084,262 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                                   ? Colors.white
                                   : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Leads ($cityLeadsCount)',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: _activeAreaViewType == 'requirements'
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
-                                color: _activeAreaViewType == 'requirements'
-                                    ? Colors.white
-                                    : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                'Leads ($cityLeadsCount)',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: _activeAreaViewType == 'requirements'
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                  color: _activeAreaViewType == 'requirements'
+                                      ? Colors.white
+                                      : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+            ),
 
-              const SizedBox(width: 14),
+            const SizedBox(height: 8),
 
-              Text(
-                '${areas.length} Areas in $_selectedCity',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
+            // Mobile: Row 2b (Areas count + Scroll Chevrons)
+            Row(
+              children: [
+                Text(
+                  '${areas.length} Areas in $_selectedCity',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
+                  ),
                 ),
-              ),
-
-              const Spacer(),
-
-              // Left / Right Scroll Chevrons
-              InkWell(
-                onTap: () => _scrollAreas(false),
-                borderRadius: BorderRadius.circular(6),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
+                const Spacer(),
+                InkWell(
+                  onTap: () => _scrollAreas(false),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: Icon(
+                      Icons.chevron_left_rounded,
+                      size: 18,
+                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: () => _scrollAreas(true),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              children: [
+                // Segmented Clickable Tabs (Properties vs Requirements)
+                Container(
+                  padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(9),
                     border: Border.all(color: borderColor),
                   ),
-                  child: Icon(
-                    Icons.chevron_left_rounded,
-                    size: 18,
-                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Tab 1: Properties
+                      InkWell(
+                        onTap: () {
+                          if (_activeAreaViewType != 'properties') {
+                            setState(() => _activeAreaViewType = 'properties');
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(7),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: _activeAreaViewType == 'properties'
+                                ? const Color(0xFF3B82F6)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(7),
+                            boxShadow: _activeAreaViewType == 'properties'
+                                ? [
+                                    BoxShadow(
+                                      color: const Color(0xFF3B82F6).withValues(alpha: 0.35),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.apartment_rounded,
+                                size: 14,
+                                color: _activeAreaViewType == 'properties'
+                                    ? Colors.white
+                                    : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Properties ($cityPropsCount)',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: _activeAreaViewType == 'properties'
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                  color: _activeAreaViewType == 'properties'
+                                      ? Colors.white
+                                      : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(width: 3),
+
+                      // Tab 2: Requirements / Leads
+                      InkWell(
+                        onTap: () {
+                          if (_activeAreaViewType != 'requirements') {
+                            setState(() => _activeAreaViewType = 'requirements');
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(7),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: _activeAreaViewType == 'requirements'
+                                ? const Color(0xFF10B981)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(7),
+                            boxShadow: _activeAreaViewType == 'requirements'
+                                ? [
+                                    BoxShadow(
+                                      color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.group_rounded,
+                                size: 14,
+                                color: _activeAreaViewType == 'requirements'
+                                    ? Colors.white
+                                    : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Leads ($cityLeadsCount)',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: _activeAreaViewType == 'requirements'
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                  color: _activeAreaViewType == 'requirements'
+                                      ? Colors.white
+                                      : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              InkWell(
-                onTap: () => _scrollAreas(true),
-                borderRadius: BorderRadius.circular(6),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: borderColor),
-                  ),
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    size: 18,
-                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+
+                const SizedBox(width: 14),
+
+                Text(
+                  '${areas.length} Areas in $_selectedCity',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
                   ),
                 ),
-              ),
-            ],
-          ),
+
+                const Spacer(),
+
+                // Left / Right Scroll Chevrons
+                InkWell(
+                  onTap: () => _scrollAreas(false),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: Icon(
+                      Icons.chevron_left_rounded,
+                      size: 18,
+                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: () => _scrollAreas(true),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
 
           const SizedBox(height: 12),
 
