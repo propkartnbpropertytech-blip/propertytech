@@ -1203,7 +1203,6 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final isPropertyListing = _selectedSection == 'Property Listing';
     final isArchiveMode = _viewMode == 'archive_listed' || _viewMode == 'archive_requirements' || _viewMode == 'listed';
     final totalArchiveCount = _cachedListedCount + _cachedArchivedReqCount;
-    final archiveCount = isPropertyListing ? _cachedListedCount : _cachedArchivedReqCount;
 
     final archiveHeaderButton = CRMButton(
       label: isArchiveMode
