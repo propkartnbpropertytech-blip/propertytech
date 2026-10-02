@@ -5,10 +5,12 @@ import '../../../core/storage/model_mappers.dart';
 import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
+import '../../../core/design_system/mobile/mobile_screen.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/data_table.dart';
@@ -576,7 +578,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     final bool hasData = _selectedTab == 'Properties' 
         ? _binProperties.isNotEmpty 
         : (_requirementsSubTab == 'Bin' && _binRequirements.isNotEmpty);
-    final bool isMobile = MediaQuery.of(context).size.width < 768;
+    final bool isMobile = CRMBreakpoints.isPhone(context);
 
     Widget headerControls = Wrap(
       spacing: CRMSpacing.s,
@@ -584,44 +586,49 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
           decoration: BoxDecoration(
             color: CRMColors.cardBgOf(context),
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
             border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 0.5),
           ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<int>(
-              value: _autoDeleteDays,
-              icon: const Icon(Icons.arrow_drop_down),
-              style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
-              dropdownColor: CRMColors.cardBgOf(context),
-              onChanged: (int? newValue) {
-                if (newValue != null) {
-                  _saveAutoDeleteDays(newValue);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Auto-delete period set to $newValue days'),
-                      backgroundColor: CRMColors.success,
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                }
-              },
-              items: const [
-                DropdownMenuItem<int>(
-                  value: 15,
-                  child: Text('Auto Delete: 15 days'),
-                ),
-                DropdownMenuItem<int>(
-                  value: 30,
-                  child: Text('Auto Delete: 30 days'),
-                ),
-                DropdownMenuItem<int>(
-                  value: 60,
-                  child: Text('Auto Delete: 60 days'),
-                ),
-              ],
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: _autoDeleteDays,
+                isDense: true,
+                icon: const Icon(Icons.arrow_drop_down),
+                style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
+                dropdownColor: CRMColors.cardBgOf(context),
+                onChanged: (int? newValue) {
+                  if (newValue != null) {
+                    _saveAutoDeleteDays(newValue);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Auto-delete period set to $newValue days'),
+                        backgroundColor: CRMColors.success,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+                items: const [
+                  DropdownMenuItem<int>(
+                    value: 15,
+                    child: Text('Auto Delete: 15 days'),
+                  ),
+                  DropdownMenuItem<int>(
+                    value: 30,
+                    child: Text('Auto Delete: 30 days'),
+                  ),
+                  DropdownMenuItem<int>(
+                    value: 60,
+                    child: Text('Auto Delete: 60 days'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -649,7 +656,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                 ),
               ),
               const SizedBox(height: CRMSpacing.s),
-              Row(
+              Wrap(
+                spacing: CRMSpacing.s,
+                runSpacing: CRMSpacing.xs,
                 children: [
                   ChoiceChip(
                     label: const Text('Properties'),
@@ -669,7 +678,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                       }
                     },
                   ),
-                  const SizedBox(width: CRMSpacing.s),
                   ChoiceChip(
                     label: const Text('Leads'),
                     selected: _selectedTab == 'Requirements',
@@ -761,13 +769,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
             ],
           );
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.l),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    final bodyContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
             pageHeader,
             const SizedBox(height: CRMSpacing.m),
             if (_selectedTab == 'Properties') ...[
@@ -1200,7 +1204,22 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
               },
             ),
           ],
-        ),
+        );
+
+    if (isMobile) {
+      return MobileScreenScaffold(
+        title: 'Recycle Bin',
+        onRefresh: _fetchBinData,
+        padding: const EdgeInsets.all(CRMSpacing.m),
+        body: bodyContent,
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(CRMSpacing.l),
+        child: bodyContent,
       ),
     );
   }
@@ -1532,8 +1551,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   Widget _buildPropertiesPagination(int totalItems, int totalPages, int currentPage) {
     final from = totalItems == 0 ? 0 : (currentPage - 1) * _propertiesPerPage + 1;
     final to = (currentPage * _propertiesPerPage).clamp(0, totalItems);
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 500;
+    final isMobile = CRMBreakpoints.isPhone(context);
 
     final infoText = Text(
       'Showing $from–$to of $totalItems',
@@ -1603,8 +1621,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   Widget _buildRequirementsPagination(int totalItems, int totalPages, int currentPage) {
     final from = totalItems == 0 ? 0 : (currentPage - 1) * _requirementsPerPage + 1;
     final to = (currentPage * _requirementsPerPage).clamp(0, totalItems);
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 500;
+    final isMobile = CRMBreakpoints.isPhone(context);
 
     final infoText = Text(
       'Showing $from–$to of $totalItems',

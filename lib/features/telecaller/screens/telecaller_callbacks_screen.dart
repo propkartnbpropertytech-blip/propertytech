@@ -14,6 +14,8 @@ import '../../integration/models/integration_lead_model.dart';
 import '../bloc/telecaller_list_bloc.dart';
 import '../data/telecaller_repository.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
+import '../../../core/design_system/mobile/mobile.dart';
+import '../widgets/mobile_telecaller_outcome_sheet.dart';
 
 class TelecallerCallbacksScreen extends StatelessWidget {
   final String? telecallerId;
@@ -292,10 +294,6 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
 
     return BlocBuilder<TelecallerCallbacksBloc, TelecallerListState>(
       builder: (context, state) {
-        if (state.loading && state.items.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
         final allRawItems = state.items;
         final totalCount = allRawItems.length;
         final todayCount = allRawItems.where(_isTodayCallback).length;
@@ -324,6 +322,26 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
           final listing = queueLeadType(raw) == 'Property Listing';
           return _section == 'Property Listing' ? listing : !listing;
         }).toList();
+
+        final isMobile = MobileLayout.isMobileShell(MediaQuery.sizeOf(context).width);
+        if (isMobile) {
+          return _buildMobileCallbacksView(
+            context,
+            state,
+            filteredItems,
+            totalCount,
+            todayCount,
+            dueCount,
+            futureCount,
+            requirementCount,
+            listingCount,
+            currentSearchController,
+          );
+        }
+
+        if (state.loading && state.items.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
         return RefreshIndicator(
           onRefresh: () async {
@@ -710,6 +728,329 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
       },
     );
   }
+
+  Widget _buildMobileCallbacksView(
+    BuildContext context,
+    TelecallerListState state,
+    List<dynamic> filteredItems,
+    int totalCount,
+    int todayCount,
+    int dueCount,
+    int futureCount,
+    int requirementCount,
+    int listingCount,
+    TextEditingController currentSearchController,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return MobileScreenScaffold(
+      title: 'Callbacks',
+      scrollable: false,
+      header: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Filter Tabs: All, Today, Due, Future
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildMobileTabChip('All', 'all', totalCount),
+                const SizedBox(width: 8),
+                _buildMobileTabChip('Today', 'today', todayCount),
+                const SizedBox(width: 8),
+                _buildMobileTabChip('Due', 'due', dueCount),
+                const SizedBox(width: 8),
+                _buildMobileTabChip('Future', 'future', futureCount),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Section Switch: Requirement vs Property Listing
+          Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  selected: _section != 'Property Listing',
+                  label: 'Requirement leads ($requirementCount)',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => setState(() => _section = 'Requirement'),
+                    child: Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _section != 'Property Listing'
+                            ? CRMColors.primary
+                            : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Requirement ($requirementCount)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _section != 'Property Listing'
+                              ? Colors.white
+                              : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  selected: _section == 'Property Listing',
+                  label: 'Property Listing leads ($listingCount)',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => setState(() => _section = 'Property Listing'),
+                    child: Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _section == 'Property Listing'
+                            ? CRMColors.primary
+                            : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Property Listing ($listingCount)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _section == 'Property Listing'
+                              ? Colors.white
+                              : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Search Field (48px height)
+          SizedBox(
+            height: 48,
+            child: TextField(
+              key: ValueKey('mobile_callback_search_$_selectedTab'),
+              controller: currentSearchController,
+              decoration: InputDecoration(
+                hintText: 'Search ${_getTabDisplayName(_selectedTab)}...',
+                hintStyle: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                ),
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                suffixIcon: currentSearchController.text.isNotEmpty
+                    ? IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () {
+                          currentSearchController.clear();
+                          setState(() {
+                            _tabSearchQueries[_selectedTab] = '';
+                          });
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                ),
+              ),
+              onChanged: (val) {
+                setState(() {
+                  _tabSearchQueries[_selectedTab] = val;
+                });
+              },
+            ),
+          ),
+        ],
+      ),
+      body: MobileList<dynamic>(
+        items: filteredItems,
+        keyOf: (item) => _campaignLeadId(item),
+        isLoading: state.loading && state.items.isEmpty,
+        hasError: state.error != null && state.items.isEmpty,
+        onRetry: () {
+          context.read<TelecallerCallbacksBloc>().add(
+            TelecallerCallbacksRequested(
+              source: _source,
+              from: _range?.start.toIso8601String(),
+              to: _range?.end.toIso8601String(),
+            ),
+          );
+        },
+        onRefresh: () async {
+          context.read<TelecallerCallbacksBloc>().add(
+            TelecallerCallbacksRequested(
+              source: _source,
+              from: _range?.start.toIso8601String(),
+              to: _range?.end.toIso8601String(),
+            ),
+          );
+        },
+        emptyState: const MobileEmptyState(
+          icon: Icons.event_available_rounded,
+          title: 'No Callbacks',
+          description: 'No callback leads scheduled for this filter.',
+        ),
+        itemBuilder: (context, raw) {
+          final leadId = _campaignLeadId(raw);
+          final cached = IntegrationService().getLeadById(leadId);
+          final name = resolveLeadClientName(raw, cachedLead: cached);
+          final phone = (raw['sanitized_phone'] ?? raw['phone'] ?? cached?.getStringValue('phone_number') ?? '').toString();
+          final scheduledAt = _parseScheduledTime(raw);
+          final remarks = (raw['remarks'] ?? '').toString();
+          final isOverdue = _isDueCallback(raw);
+          final source = (raw['source'] ?? cached?.source ?? '').toString();
+
+          final timeText = scheduledAt != null
+              ? DateFormat('EEE, d MMM • h:mm a').format(scheduledAt)
+              : 'No time set';
+
+          return MobileCard(
+            title: name.isNotEmpty ? name : 'Lead',
+            subtitle: phone.isNotEmpty ? phone : null,
+            status: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: isOverdue
+                    ? const Color(0xFFFEE2E2)
+                    : const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                isOverdue ? 'Overdue' : 'Callback',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: isOverdue ? const Color(0xFFDC2626) : const Color(0xFF2563EB),
+                ),
+              ),
+            ),
+            metadata: [
+              timeText,
+              if (source.isNotEmpty) source,
+              if (remarks.isNotEmpty) remarks,
+            ],
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (phone.isNotEmpty)
+                  Semantics(
+                    button: true,
+                    label: 'Call $name',
+                    child: IconButton(
+                      icon: const Icon(Icons.phone_forwarded_rounded, color: Color(0xFF059669), size: 22),
+                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                      tooltip: 'Call client',
+                      onPressed: () => _handleStartCall(context, leadId, phone),
+                    ),
+                  ),
+                Semantics(
+                  button: true,
+                  label: 'Record outcome for $name',
+                  child: IconButton(
+                    icon: const Icon(Icons.bolt_rounded, color: Color(0xFF2563EB), size: 24),
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    tooltip: 'Record outcome',
+                    onPressed: () {
+                      MobileTelecallerOutcomeSheet.show(
+                        context: context,
+                        leadId: leadId,
+                        clientName: name,
+                        phone: phone,
+                        initialType: TelecallerOutcomeType.callback,
+                        onDone: () {
+                          context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(leadId));
+                          context.read<TelecallerCallbacksBloc>().add(const TelecallerCallbacksRequested());
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMobileTabChip(String label, String value, int count) {
+    final isSelected = _selectedTab == value;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const activeColor = Color(0xFF2563EB);
+
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: '$label callbacks ($count)',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => setState(() => _selectedTab = value),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 40),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? activeColor
+                : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? activeColor : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                  color: isSelected ? Colors.white : (isDark ? Colors.white70 : const Color(0xFF334155)),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.white.withValues(alpha: 0.25) : (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected ? Colors.white : (isDark ? Colors.grey.shade300 : const Color(0xFF64748B)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class TelecallerCnrScreen extends StatelessWidget {
@@ -754,9 +1095,21 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
 
     return BlocBuilder<TelecallerCnrBloc, TelecallerListState>(
       builder: (context, state) {
+        final isMobile = MobileLayout.isMobileShell(MediaQuery.sizeOf(context).width);
+        if (isMobile) {
+          final filteredItems = state.items.where((raw) =>
+              queueItemMatchesSearch(raw, _query) &&
+              (queueLeadType(raw) == 'Property Listing') == (_section == 'Property Listing')
+          ).toList();
+          final reqCount = state.items.where((raw) => queueItemMatchesSearch(raw, _query) && queueLeadType(raw) != 'Property Listing').length;
+          final listCount = state.items.where((raw) => queueItemMatchesSearch(raw, _query) && queueLeadType(raw) == 'Property Listing').length;
+          return _buildMobileCnrView(context, state, filteredItems, reqCount, listCount);
+        }
+
         if (state.loading && state.items.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
+
         return RefreshIndicator(
           onRefresh: () async {
             context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
@@ -849,6 +1202,223 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
       },
     );
   }
+
+  Widget _buildMobileCnrView(
+    BuildContext context,
+    TelecallerListState state,
+    List<dynamic> filteredItems,
+    int requirementCount,
+    int listingCount,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return MobileScreenScaffold(
+      title: 'CNR / Retry',
+      scrollable: false,
+      header: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Section Switch
+          Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  selected: _section != 'Property Listing',
+                  label: 'Requirement leads ($requirementCount)',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => setState(() => _section = 'Requirement'),
+                    child: Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _section != 'Property Listing'
+                            ? CRMColors.primary
+                            : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Requirement ($requirementCount)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _section != 'Property Listing'
+                              ? Colors.white
+                              : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  selected: _section == 'Property Listing',
+                  label: 'Property Listing leads ($listingCount)',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => setState(() => _section = 'Property Listing'),
+                    child: Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _section == 'Property Listing'
+                            ? CRMColors.primary
+                            : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Property Listing ($listingCount)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _section == 'Property Listing'
+                              ? Colors.white
+                              : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Search Field
+          SizedBox(
+            height: 48,
+            child: TextField(
+              key: const ValueKey('mobile_cnr_search'),
+              controller: TextEditingController(text: _query)..selection = TextSelection.collapsed(offset: _query.length),
+              decoration: InputDecoration(
+                hintText: 'Search CNR leads...',
+                hintStyle: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                ),
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                suffixIcon: _query.isNotEmpty
+                    ? IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () {
+                          setState(() => _query = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                ),
+              ),
+              onChanged: (val) {
+                setState(() => _query = val);
+              },
+            ),
+          ),
+        ],
+      ),
+      body: MobileList<dynamic>(
+        items: filteredItems,
+        keyOf: (item) => _campaignLeadId(item),
+        isLoading: state.loading && state.items.isEmpty,
+        hasError: state.error != null && state.items.isEmpty,
+        onRetry: () {
+          context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+        },
+        onRefresh: () async {
+          context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+        },
+        emptyState: const MobileEmptyState(
+          icon: Icons.phone_callback_rounded,
+          title: 'No CNR Leads',
+          description: 'Leads marked as Customer Not Received will appear here for retry attempts.',
+        ),
+        itemBuilder: (context, raw) {
+          final leadId = _campaignLeadId(raw);
+          final cached = IntegrationService().getLeadById(leadId);
+          final name = resolveLeadClientName(raw, cachedLead: cached);
+          final phone = (raw['sanitized_phone'] ?? raw['phone'] ?? cached?.getStringValue('phone_number') ?? '').toString();
+          final source = (raw['source'] ?? cached?.source ?? '').toString();
+          final leadAttempts = int.tryParse((raw['call_attempt_count'] ?? 0).toString()) ?? 1;
+
+          return MobileCard(
+            title: name.isNotEmpty ? name : 'Lead',
+            subtitle: phone.isNotEmpty ? phone : null,
+            status: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'Attempt #$leadAttempts',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFD97706),
+                ),
+              ),
+            ),
+            metadata: [
+              'CNR / Retry',
+              if (source.isNotEmpty) source,
+            ],
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (phone.isNotEmpty)
+                  Semantics(
+                    button: true,
+                    label: 'Retry calling $name',
+                    child: IconButton(
+                      icon: const Icon(Icons.phone_forwarded_rounded, color: Color(0xFF059669), size: 22),
+                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                      tooltip: 'Retry call',
+                      onPressed: () => _handleStartCall(context, leadId, phone),
+                    ),
+                  ),
+                Semantics(
+                  button: true,
+                  label: 'Record outcome for $name',
+                  child: IconButton(
+                    icon: const Icon(Icons.bolt_rounded, color: Color(0xFF2563EB), size: 24),
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    tooltip: 'Record outcome',
+                    onPressed: () {
+                      MobileTelecallerOutcomeSheet.show(
+                        context: context,
+                        leadId: leadId,
+                        clientName: name,
+                        phone: phone,
+                        initialType: TelecallerOutcomeType.cnr,
+                        onDone: () {
+                          context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
+                          context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _CnrCard extends StatefulWidget {
@@ -914,7 +1484,7 @@ class _CnrCardState extends State<_CnrCard> {
           children: [
             Flexible(
               child: Text(
-                '$name',
+                name,
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 overflow: TextOverflow.ellipsis,
               ),

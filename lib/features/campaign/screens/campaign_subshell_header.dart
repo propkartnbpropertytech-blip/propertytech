@@ -266,6 +266,7 @@ class CampaignSubshellHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(7),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
+          constraints: const BoxConstraints(minHeight: 48),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: isActive

@@ -45,6 +45,7 @@ import '../../../core/theme/theme_manager.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/telemetry/audit_dwell_tracker.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
+import '../../../core/design_system/mobile/mobile.dart';
 
 enum PropertyDateFilterPreset {
   today,
@@ -2959,6 +2960,20 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             }
           }
 
+          if (MobileLayout.isMobileShell(screenWidth)) {
+            return _buildMobilePropertiesView(
+              context,
+              currentUser,
+              currentUserId,
+              isUserAdminOrSuperAdmin,
+              state,
+              properties,
+              metadata,
+              bookmarkedIds,
+              isInitialLoad,
+            );
+          }
+
           final totalPages =
               properties.isEmpty ? 1 : (properties.length / _pageSize).ceil();
           final safePage = _currentPage.clamp(0, totalPages - 1);
@@ -5700,6 +5715,272 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       cacheLogicalHeight: 72,
     );
   }
+
+  // =========================================================================
+  // STEP 3.4 — SALES MOBILE EXPERIENCE (Properties)
+  // =========================================================================
+
+  int _countActivePropertyFilters() {
+    int count = 0;
+    if (_activeBhkFilter != null && _activeBhkFilter != 'All' && _activeBhkFilter!.isNotEmpty) count++;
+    if (_selectedPriceSortOrRange != null && _selectedPriceSortOrRange != 'default') count++;
+    return count;
+  }
+
+  void _openMobilePropertiesFilterSheet(BuildContext context, PropertyMetadataModel? metadata) {
+    final bhkOptions = ['All', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5+ BHK'];
+    final priceSortOptions = [
+      ('default', 'Default (Newest)'),
+      ('l2h', 'Price: Low to High'),
+      ('h2l', 'Price: High to Low'),
+    ];
+
+    MobileSheet.show(
+      context,
+      title: 'Filter Properties',
+      child: StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('BHK / Configuration', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: bhkOptions.map((bhk) {
+                  final selected = _activeBhkFilter == bhk;
+                  return ChoiceChip(
+                    label: Text(bhk),
+                    selected: selected,
+                    onSelected: (val) {
+                      setSheetState(() => _activeBhkFilter = bhk);
+                      setState(() => _activeBhkFilter = bhk);
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              const Text('Price Sorting', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: priceSortOptions.map((opt) {
+                  final selected = (_selectedPriceSortOrRange ?? 'default') == opt.$1;
+                  return ChoiceChip(
+                    label: Text(opt.$2),
+                    selected: selected,
+                    onSelected: (val) {
+                      setSheetState(() => _selectedPriceSortOrRange = opt.$1 == 'default' ? null : opt.$1);
+                      setState(() => _selectedPriceSortOrRange = opt.$1 == 'default' ? null : opt.$1);
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+            ],
+          );
+        },
+      ),
+      actions: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () {
+              setState(() {
+                _activeBhkFilter = 'All';
+                _selectedPriceSortOrRange = null;
+                _searchController.clear();
+              });
+              Navigator.pop(context);
+            },
+            child: const Text('Reset All'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.primaryOf(context),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Apply'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobilePropertiesView(
+    BuildContext context,
+    UserModel? currentUser,
+    String? currentUserId,
+    bool isUserAdminOrSuperAdmin,
+    PropertiesState state,
+    List<PropertyModel> properties,
+    PropertyMetadataModel? metadata,
+    Set<String> bookmarkedIds,
+    bool isInitialLoad,
+  ) {
+    final primaryColor = CRMColors.primaryOf(context);
+    final isRent = _activeListingTab == 'Rent';
+    final categories = ['Residential', 'Commercial', 'Industrial', 'Land & Plot'];
+
+    final headerWidget = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                height: 36,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildMobileTabButton('Rent', isRent, const Color(0xFFD97706)),
+                    _buildMobileTabButton('Re-Sale', !isRent, const Color(0xFF2563EB)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (metadata != null)
+                Flexible(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showAddEditPropertyDialog(context, metadata),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text(
+                      'Add Property',
+                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      minimumSize: const Size(44, 36),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Row(
+            children: categories.map((cat) {
+              final isSelected = _activeCategoryTab == cat;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(cat),
+                  selected: isSelected,
+                  selectedColor: primaryColor.withValues(alpha: 0.15),
+                  labelStyle: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    color: isSelected ? primaryColor : CRMColors.textOf(context),
+                  ),
+                  onSelected: (val) {
+                    if (val && _activeCategoryTab != cat) {
+                      setState(() {
+                        _activeCategoryTab = cat;
+                        _currentPage = 0;
+                      });
+                    }
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: MobileSearch(
+            showResultsBody: false,
+            autofocus: false,
+            hintText: 'Search title, area, code...',
+            controller: _searchController,
+            onQueryChanged: (_) => setState(() {}),
+            onFilterTap: () => _openMobilePropertiesFilterSheet(context, metadata),
+            activeFilterCount: _countActivePropertyFilters(),
+          ),
+        ),
+      ],
+    );
+
+    return MobileScreenScaffold(
+      title: 'Properties',
+      scrollable: false,
+      header: headerWidget,
+      body: MobileList<PropertyModel>(
+        keyOf: (p) => p.id,
+        items: properties,
+        isLoading: isInitialLoad,
+        hasError: state is PropertiesError,
+        onRetry: () => _loadProperties(),
+        onRefresh: () async => _loadProperties(),
+        emptyState: MobileEmptyState(
+          icon: Icons.home_work_outlined,
+          title: 'No Properties Found',
+          description: 'No properties match the active filters or search criteria.',
+          actionLabel: 'Reset Filters',
+          onAction: () {
+            setState(() {
+              _activeCategoryTab = 'Residential';
+              _activeBhkFilter = 'All';
+              _selectedPriceSortOrRange = null;
+              _searchController.clear();
+            });
+          },
+        ),
+        itemBuilder: (context, p) => _buildMobilePropertyCard(p, currentUser, bookmarkedIds, metadata),
+      ),
+    );
+  }
+
+  Widget _buildMobileTabButton(String label, bool isActive, Color activeColor) {
+    return GestureDetector(
+      onTap: () {
+        if (_activeListingTab != label) {
+          setState(() {
+            _activeListingTab = label;
+            _currentPage = 0;
+          });
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: isActive
+              ? [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(0, 1))]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+            color: isActive ? activeColor : const Color(0xFF64748B),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class CRMChartCard extends StatefulWidget {
@@ -6033,25 +6314,13 @@ class DonutChart3DPainter extends CustomPainter {
       }
       final midAngle = startAngle + sweepAngle / 2;
 
-      // Gradient arc paint
+      // Solid arc paint avoiding WebGL CanvasKit procedural shader compiler bugs
       final arcPaint = Paint()
+        ..color = sector.color
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth
         ..strokeCap = StrokeCap.butt
         ..isAntiAlias = true;
-
-      // Create a sweep gradient for the sector for a richer look
-      final darkerColor = Color.lerp(sector.color, Colors.black, 0.25)!;
-      final lighterColor = Color.lerp(sector.color, Colors.white, 0.2)!;
-      final endAngle = math.max(startAngle + sweepAngle, startAngle + 0.001);
-      arcPaint.shader = ui.Gradient.sweep(
-        center,
-        [lighterColor, sector.color, darkerColor, sector.color],
-        [0.0, 0.3, 0.7, 1.0],
-        TileMode.clamp,
-        startAngle,
-        endAngle,
-      );
 
       final arcRect = Rect.fromCircle(center: center, radius: outerRadius - strokeWidth / 2);
       canvas.drawArc(arcRect, startAngle, sweepAngle, false, arcPaint);
@@ -6092,17 +6361,9 @@ class DonutChart3DPainter extends CustomPainter {
       startAngle += sweepAngle;
     }
 
-    // --- Inner circle (center hole) with subtle gradient for depth ---
-    final innerGradient = ui.Gradient.radial(
-      Offset(center.dx - innerRadius * 0.2, center.dy - innerRadius * 0.2),
-      innerRadius,
-      isDark
-          ? [CRMColors.surfaceElevated, CRMColors.background]
-          : [CRMColors.cardBg, CRMColors.groupedBackground],
-      [0.0, 1.0],
-    );
+    // --- Inner circle (center hole) ---
     final innerPaint = Paint()
-      ..shader = innerGradient
+      ..color = backgroundColor
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
     canvas.drawCircle(center, innerRadius - 1, innerPaint);
@@ -6115,20 +6376,13 @@ class DonutChart3DPainter extends CustomPainter {
       ..isAntiAlias = true;
     canvas.drawCircle(center, innerRadius - 1, innerRingPaint);
 
-    // --- Glossy highlight overlay on top half ---
+    // --- Subtle highlight overlay on top half (solid color, avoiding shader compilation errors) ---
     final highlightRect = Rect.fromCircle(center: center, radius: outerRadius - strokeWidth / 2);
     final highlightPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth * 0.4
       ..isAntiAlias = true
-      ..shader = ui.Gradient.linear(
-        Offset(center.dx, center.dy - outerRadius),
-        center,
-        [
-          Colors.white.withOpacity(isDark ? 0.08 : 0.18),
-          Colors.white.withOpacity(0.0),
-        ],
-      );
+      ..color = Colors.white.withOpacity(isDark ? 0.05 : 0.10);
     canvas.drawArc(highlightRect, -math.pi, math.pi, false, highlightPaint);
   }
 
@@ -6438,7 +6692,7 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.65),
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(999),
                 border: Border.all(color: Colors.white70, width: 2),
                 boxShadow: [
                   BoxShadow(

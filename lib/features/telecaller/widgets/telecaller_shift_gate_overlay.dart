@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../services/telecaller_shift_manager.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
@@ -181,90 +182,95 @@ class _TelecallerShiftGateOverlayState extends State<TelecallerShiftGateOverlay>
             builder: (context, isOnBreak, _) {
               if (!isOnBreak) return const SizedBox.shrink();
 
-              return Positioned.fill(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              final isPhone = MediaQuery.sizeOf(context).width < 360;
+              final content = Container(
+                color: Colors.black.withValues(alpha: kIsWeb ? 0.72 : 0.55),
+                alignment: Alignment.center,
+                child: Card(
+                  elevation: 12,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   child: Container(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    alignment: Alignment.center,
-                    child: Card(
-                      elevation: 12,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: Container(
-                        width: CRMBreakpoints.adaptiveWidth(context, 420),
-                        padding: const EdgeInsets.all(28),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Color(0xFFFEF3C7),
-                              ),
-                              child: const Icon(
-                                Icons.coffee_rounded,
-                                size: 36,
-                                color: Color(0xFFD97706),
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            const Text(
-                              'You are on BREAK',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF0F172A),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            ValueListenableBuilder<bool>(
-                              valueListenable: shiftManager.isManualOffNotifier,
-                              builder: (context, wasOff, _) {
-                                return Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      wasOff
-                                          ? 'You were automatically put on break after 5 minutes of inactivity. Your 6-hour OFF timer has been paused.'
-                                          : 'You were automatically put on break after 5 minutes of inactivity so no live leads are missed.',
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontSize: 13.5,
-                                        color: Color(0xFF64748B),
-                                        height: 1.4,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 24),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      height: 44,
-                                      child: ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFF059669),
-                                          foregroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                        ),
-                                        icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                                        label: Text(
-                                          wasOff ? 'Resume' : 'Resume Active',
-                                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                                        ),
-                                        onPressed: () async {
-                                          await shiftManager.resumeFromBreak();
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ],
+                    width: CRMBreakpoints.adaptiveWidth(context, 420),
+                    padding: EdgeInsets.all(isPhone ? 20 : 28),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFFFEF3C7),
+                          ),
+                          child: const Icon(
+                            Icons.coffee_rounded,
+                            size: 36,
+                            color: Color(0xFFD97706),
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'You are on BREAK',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        ValueListenableBuilder<bool>(
+                          valueListenable: shiftManager.isManualOffNotifier,
+                          builder: (context, wasOff, _) {
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  wasOff
+                                      ? 'You were automatically put on break after 5 minutes of inactivity. Your 6-hour OFF timer has been paused.'
+                                      : 'You were automatically put on break after 5 minutes of inactivity so no live leads are missed.',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    color: Color(0xFF64748B),
+                                    height: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 44,
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF059669),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                                    label: Text(
+                                      wasOff ? 'Resume' : 'Resume Active',
+                                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                    ),
+                                    onPressed: () async {
+                                      await shiftManager.resumeFromBreak();
+                                    },
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              );
+
+              return Positioned.fill(
+                child: kIsWeb
+                    ? content
+                    : BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                        child: content,
+                      ),
               );
             },
           ),
@@ -275,59 +281,64 @@ class _TelecallerShiftGateOverlayState extends State<TelecallerShiftGateOverlay>
             builder: (context, isLockedOut, _) {
               if (!isLockedOut) return const SizedBox.shrink();
 
-              return Positioned.fill(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              final isPhone = MediaQuery.sizeOf(context).width < 360;
+              final content = Container(
+                color: Colors.black.withValues(alpha: kIsWeb ? 0.80 : 0.70),
+                alignment: Alignment.center,
+                child: Card(
+                  elevation: 16,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   child: Container(
-                    color: Colors.black.withValues(alpha: 0.70),
-                    alignment: Alignment.center,
-                    child: Card(
-                      elevation: 16,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: Container(
-                        width: CRMBreakpoints.adaptiveWidth(context, 440),
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Color(0xFFFEE2E2),
-                              ),
-                              child: const Icon(
-                                Icons.lock_clock_rounded,
-                                size: 36,
-                                color: Color(0xFFDC2626),
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            const Text(
-                              'Daily Shift Completed (9 Hours)',
-                              style: TextStyle(
-                                fontSize: 19,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF0F172A),
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'You have reached the 9-hour daily work limit. Your telecaller session is locked for the remainder of today. Please log back in tomorrow.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                color: Color(0xFF64748B),
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
+                    width: CRMBreakpoints.adaptiveWidth(context, 440),
+                    padding: EdgeInsets.all(isPhone ? 20 : 32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFFFEE2E2),
+                          ),
+                          child: const Icon(
+                            Icons.lock_clock_rounded,
+                            size: 36,
+                            color: Color(0xFFDC2626),
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'Daily Shift Completed (9 Hours)',
+                          style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'You have reached the 9-hour daily work limit. Your telecaller session is locked for the remainder of today. Please log back in tomorrow.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            color: Color(0xFF64748B),
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              );
+
+              return Positioned.fill(
+                child: kIsWeb
+                    ? content
+                    : BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: content,
+                      ),
               );
             },
           ),

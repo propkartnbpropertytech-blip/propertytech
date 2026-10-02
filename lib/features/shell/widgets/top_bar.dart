@@ -850,7 +850,7 @@ class _ModernTopBarState extends State<ModernTopBar> {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: primaryColor,
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(19),
                       boxShadow: [
                         BoxShadow(
                           color: primaryColor.withValues(alpha: 0.35),

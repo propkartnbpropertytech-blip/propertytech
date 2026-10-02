@@ -4,9 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../modules/config/services/config_service.dart';
 import '../../../modules/version/presentation/update_dialogs.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
+import '../../../core/design_system/mobile/mobile_screen.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
@@ -34,6 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final ConfigService _configService = ConfigService();
   bool _isLoading = false;
   String _activeSection = 'profile';
+  String? _mobileActiveSection;
   double _selectedMatchThreshold = MatchCriteriaManager().threshold.toDouble();
   double _selectedMaxImages = UploadLimitsManager().maxImages.toDouble();
   double _selectedMaxVideos = UploadLimitsManager().maxVideos.toDouble();
@@ -443,7 +446,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   height: 38,
                   decoration: BoxDecoration(
                     color: primaryColor,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(19),
                     boxShadow: isSelected
                         ? [
                             BoxShadow(
@@ -555,11 +558,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: CRMSpacing.m),
             const Divider(height: 1),
             const SizedBox(height: CRMSpacing.m),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: CRMSpacing.m,
+              runSpacing: CRMSpacing.s,
               children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
                     Text(
                       'Palette Preview',
@@ -567,8 +575,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         color: CRMColors.textSecondaryOf(context),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         for (int i = 0; i < theme.previewColors.length; i++) ...[
                           if (i > 0) const SizedBox(width: 6),
@@ -1628,8 +1636,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 900;
+    final isMobile = CRMBreakpoints.isPhone(context);
 
     final authState = context.watch<AuthBloc>().state;
     String currentUserName = 'Guest';
@@ -1709,6 +1716,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
 
+    if (isMobile) {
+      if (_mobileActiveSection == null) {
+        return _buildMobileSettingsMenu(
+          isAdminOrSuperAdmin: isAdminOrSuperAdmin,
+          isSuperAdmin: isSuperAdmin,
+          currentUserName: currentUserName,
+          currentUserEmail: currentUserEmail,
+        );
+      }
+      final activeNav = sections.firstWhere(
+        (s) => s.id == _mobileActiveSection,
+        orElse: () => const _SettingsNavItem(id: 'settings', label: 'Settings', icon: Icons.settings),
+      );
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          setState(() => _mobileActiveSection = null);
+        },
+        child: MobileScreenScaffold(
+          title: activeNav.label,
+          showBack: true,
+          onBack: () => setState(() => _mobileActiveSection = null),
+          padding: const EdgeInsets.all(CRMSpacing.m),
+          body: sectionContent(),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: _isLoading
@@ -1720,69 +1756,282 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   const CRMPageHeader(title: 'Settings'),
                   const SizedBox(height: CRMSpacing.l),
-                  if (isMobile)
-                    Expanded(
-                      child: Column(
-                        children: [
-                          SizedBox(
-                            height: 44,
-                            child: ListView.separated(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: sections.length,
-                              separatorBuilder: (_, __) => const SizedBox(width: CRMSpacing.xs),
-                              itemBuilder: (context, index) {
-                                final item = sections[index];
-                                final selected = item.id == _activeSection;
-                                return ChoiceChip(
-                                  label: Text(item.label),
-                                  selected: selected,
-                                  onSelected: (_) => _setActiveSection(item.id),
-                                  selectedColor: CRMColors.primary.withValues(alpha: 0.12),
-                                  labelStyle: CRMTypography.captionBold.copyWith(
-                                    color: selected ? CRMColors.primary : CRMColors.textSecondaryOf(context),
-                                  ),
-                                  side: BorderSide(
-                                    color: selected ? CRMColors.primary.withValues(alpha: 0.35) : CRMColors.borderOf(context),
-                                  ),
-                                  backgroundColor: CRMColors.cardBgOf(context),
-                                );
-                              },
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 220,
+                          child: CRMCard(
+                            padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
+                            child: Column(
+                              children: [
+                                for (final item in sections)
+                                  _buildSettingsNavTile(item),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: CRMSpacing.m),
-                          Expanded(
-                            child: SingleChildScrollView(child: sectionContent()),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: 220,
-                            child: CRMCard(
-                              padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
-                              child: Column(
-                                children: [
-                                  for (final item in sections)
-                                    _buildSettingsNavTile(item),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: CRMSpacing.l),
-                          Expanded(
-                            child: SingleChildScrollView(child: sectionContent()),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: CRMSpacing.l),
+                        Expanded(
+                          child: SingleChildScrollView(child: sectionContent()),
+                        ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildMobileSettingsMenu({
+    required bool isAdminOrSuperAdmin,
+    required bool isSuperAdmin,
+    required String currentUserName,
+    required String currentUserEmail,
+  }) {
+    return MobileScreenScaffold(
+      title: 'Settings',
+      padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.m),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Account & Security Group
+          _buildSettingsGroupHeader('Account & Security'),
+          _buildMobileSettingsCard([
+            _buildMobileSettingsTile(
+              icon: Icons.person_outline_rounded,
+              title: 'Profile',
+              subtitle: currentUserName.isNotEmpty ? currentUserName : currentUserEmail,
+              onTap: () {
+                _setActiveSection('profile');
+                setState(() => _mobileActiveSection = 'profile');
+              },
+            ),
+            const Divider(height: 1, indent: 48),
+            _buildMobileSettingsTile(
+              icon: Icons.security_rounded,
+              title: 'Profile & MFA Security',
+              subtitle: 'TOTP Authentication & Session Management',
+              onTap: () => context.go('/profile'),
+            ),
+          ]),
+          const SizedBox(height: CRMSpacing.l),
+
+          // Preferences & Appearance Group
+          _buildSettingsGroupHeader('Preferences & Appearance'),
+          _buildMobileSettingsCard([
+            _buildMobileSettingsTile(
+              icon: Icons.palette_outlined,
+              title: 'Themes',
+              subtitle: 'Presets & custom accent colors',
+              onTap: () {
+                _setActiveSection('themes');
+                setState(() => _mobileActiveSection = 'themes');
+              },
+            ),
+            const Divider(height: 1, indent: 48),
+            _buildMobileSettingsTile(
+              icon: Icons.tune_rounded,
+              title: 'Appearance',
+              subtitle: 'Dark mode, contrast & layout settings',
+              onTap: () {
+                _setActiveSection('appearance');
+                setState(() => _mobileActiveSection = 'appearance');
+              },
+            ),
+          ]),
+          const SizedBox(height: CRMSpacing.l),
+
+          // Operations & Inventory Group
+          _buildSettingsGroupHeader('Operations & Inventory'),
+          _buildMobileSettingsCard([
+            _buildMobileSettingsTile(
+              icon: Icons.location_city_outlined,
+              title: 'Locations',
+              subtitle: 'Manage active operational micro-markets',
+              onTap: () {
+                _setActiveSection('locations');
+                setState(() => _mobileActiveSection = 'locations');
+              },
+            ),
+            if (isAdminOrSuperAdmin) ...[
+              const Divider(height: 1, indent: 48),
+              _buildMobileSettingsTile(
+                icon: Icons.bolt_rounded,
+                title: 'Run Match Criteria',
+                subtitle: 'Lead & property matching thresholds',
+                onTap: () {
+                  _setActiveSection('match_criteria');
+                  setState(() => _mobileActiveSection = 'match_criteria');
+                },
+              ),
+              const Divider(height: 1, indent: 48),
+              _buildMobileSettingsTile(
+                icon: Icons.photo_library_outlined,
+                title: 'Upload Limits',
+                subtitle: 'Images & video attachment thresholds',
+                onTap: () {
+                  _setActiveSection('upload_limits');
+                  setState(() => _mobileActiveSection = 'upload_limits');
+                },
+              ),
+              const Divider(height: 1, indent: 48),
+              _buildMobileSettingsTile(
+                icon: Icons.dashboard_customize_outlined,
+                title: 'KPI Configuration',
+                subtitle: 'Target thresholds & sales quotas',
+                onTap: () {
+                  _setActiveSection('kpi_config');
+                  setState(() => _mobileActiveSection = 'kpi_config');
+                },
+              ),
+            ],
+          ]),
+          const SizedBox(height: CRMSpacing.l),
+
+          // System & Diagnostics Group
+          _buildSettingsGroupHeader('System & Diagnostics'),
+          _buildMobileSettingsCard([
+            _buildMobileSettingsTile(
+              icon: Icons.info_outline_rounded,
+              title: 'System & About',
+              subtitle: 'Version, build info & telemetry',
+              onTap: () {
+                _setActiveSection('system');
+                setState(() => _mobileActiveSection = 'system');
+              },
+            ),
+            const Divider(height: 1, indent: 48),
+            _buildMobileSettingsTile(
+              icon: Icons.sync_rounded,
+              title: 'Sync Diagnostics',
+              subtitle: 'Offline queue, sync events & database health',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SyncDebugScreen()),
+              ),
+            ),
+            if (isSuperAdmin) ...[
+              const Divider(height: 1, indent: 48),
+              _buildMobileSettingsTile(
+                icon: Icons.admin_panel_settings_rounded,
+                title: 'Permission Matrix',
+                subtitle: 'Role-based access permissions',
+                onTap: () {
+                  _setActiveSection('permissions');
+                  setState(() => _mobileActiveSection = 'permissions');
+                },
+              ),
+              const Divider(height: 1, indent: 48),
+              _buildMobileSettingsTile(
+                icon: Icons.cloud_download_rounded,
+                title: 'Automated Backups',
+                subtitle: 'Cloud snapshots & restore points',
+                onTap: () {
+                  _setActiveSection('backups');
+                  setState(() => _mobileActiveSection = 'backups');
+                },
+              ),
+              const Divider(height: 1, indent: 48),
+              _buildMobileSettingsTile(
+                icon: Icons.history_rounded,
+                title: 'Audit Logs',
+                subtitle: 'System activity & security events',
+                onTap: () {
+                  _setActiveSection('audit');
+                  setState(() => _mobileActiveSection = 'audit');
+                },
+              ),
+            ],
+          ]),
+          const SizedBox(height: CRMSpacing.xxl),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsGroupHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: CRMSpacing.s),
+      child: Text(
+        title.toUpperCase(),
+        style: CRMTypography.captionBold.copyWith(
+          color: CRMColors.textSecondaryOf(context),
+          letterSpacing: 0.8,
+          fontSize: 11.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileSettingsCard(List<Widget> children) {
+    return Container(
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        border: Border.all(
+          color: CRMColors.borderOf(context).withValues(alpha: 0.6),
+          width: 0.8,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: children),
+    );
+  }
+
+  Widget _buildMobileSettingsTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: CRMColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: CRMColors.primary, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: CRMTypography.bodyMedium.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: CRMTypography.caption.copyWith(
+                      color: CRMColors.textSecondaryOf(context),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: CRMColors.textMutedOf(context),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1805,11 +2054,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: selected ? CRMColors.primary : CRMColors.textMutedOf(context),
             ),
             const SizedBox(width: CRMSpacing.s),
-            Text(
-              item.label,
-              style: CRMTypography.bodyMedium.copyWith(
-                color: selected ? CRMColors.primary : CRMColors.textOf(context),
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            Expanded(
+              child: Text(
+                item.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: CRMTypography.bodyMedium.copyWith(
+                  color: selected ? CRMColors.primary : CRMColors.textOf(context),
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
               ),
             ),
           ],

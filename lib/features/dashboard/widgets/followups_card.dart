@@ -212,48 +212,55 @@ class _FollowupsCardState extends State<FollowupsCard> {
               // ── Card Header ──────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.event_available_rounded,
-                          size: 18,
-                          color: ThemeManager().primaryColor,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Scheduled',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: isDark
-                                ? const Color(0xFFF8FAFC)
-                                : const Color(0xFF14213D),
-                            letterSpacing: -0.2,
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.event_available_rounded,
+                            size: 18,
+                            color: ThemeManager().primaryColor,
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: ThemeManager().primaryColor.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '$totalPending Pending',
+                          const SizedBox(width: 8),
+                          Text(
+                            'Scheduled',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: ThemeManager().primaryColor,
+                              color: isDark
+                                  ? const Color(0xFFF8FAFC)
+                                  : const Color(0xFF14213D),
+                              letterSpacing: -0.2,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: ThemeManager().primaryColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '$totalPending Pending',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: ThemeManager().primaryColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     if (widget.onAddFollowup != null)
                       InkWell(

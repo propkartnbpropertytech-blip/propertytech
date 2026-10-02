@@ -182,6 +182,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         requirements: next,
         newlyAdded: saved,
       ));
+      RepositoryCoordinator().refreshDashboard();
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }
@@ -213,6 +214,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         requirement: updated,
         requirements: next,
       ));
+      RepositoryCoordinator().refreshDashboard();
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }
@@ -241,6 +243,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         requirement: updated,
         requirements: next,
       ));
+      RepositoryCoordinator().refreshDashboard();
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }
@@ -261,6 +264,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         ));
       }
       emit(RequirementsSuccess("Requirement deleted successfully.", requirements: next));
+      RepositoryCoordinator().refreshDashboard();
     } catch (e) {
       emit(RequirementsError(e.toString()));
     }

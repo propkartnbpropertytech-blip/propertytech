@@ -762,7 +762,7 @@ class _AgentImageUploadZoneState extends State<AgentImageUploadZone> {
                     width: 104,
                     height: 104,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(52),
                       color: _isHovering
                           ? CRMColors.primaryOf(context).withOpacity(0.08)
                           : CRMColors.cardBgOf(context),
@@ -841,7 +841,7 @@ class _AgentImageUploadZoneState extends State<AgentImageUploadZone> {
                         child: Container(
                           padding: const EdgeInsets.all(5),
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(999),
                             color: CRMColors.danger,
                             border: Border.all(color: Colors.white, width: 2),
                             boxShadow: const [
@@ -863,7 +863,7 @@ class _AgentImageUploadZoneState extends State<AgentImageUploadZone> {
                       child: Container(
                         padding: const EdgeInsets.all(5),
                         decoration: BoxDecoration(
-                          shape: BoxShape.circle,
+                          borderRadius: BorderRadius.circular(999),
                           color: CRMColors.primaryOf(context),
                           border: Border.all(color: Colors.white, width: 2),
                           boxShadow: const [

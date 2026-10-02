@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/theme/theme_manager.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
@@ -320,66 +321,84 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
 
 
   @override
+  @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = ThemeManager().primaryColor;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768;
+    final isMobile = CRMBreakpoints.isPhone(context);
 
     final authState = context.watch<AuthBloc>().state;
     final currentUserId = authState is Authenticated ? authState.user.id : '';
     final currentUserRole = authState is Authenticated ? authState.user.role : '';
 
-    return ColoredBox(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.all(isMobile ? CRMSpacing.s : CRMSpacing.l),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ── Master Screen Header with Back Button ─────────────
-              _buildTopHeader(context, isDark, primaryColor, currentUserRole),
+    return PopScope(
+      canPop: !isMobile || _selectedUser == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_selectedUser != null) {
+          setState(() => _selectedUser = null);
+        }
+      },
+      child: ColoredBox(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(
+              isMobile
+                  ? (_selectedUser != null ? 0 : CRMSpacing.s)
+                  : CRMSpacing.l,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!isMobile || _selectedUser == null) ...[
+                  // ── Master Screen Header with Back Button ─────────────
+                  _buildTopHeader(context, isDark, primaryColor, currentUserRole),
+                  const SizedBox(height: CRMSpacing.m),
+                ],
 
-              const SizedBox(height: CRMSpacing.m),
-
-              // ── Main Body Messenger Container ─────────────────────
-              Expanded(
-                child: Container(
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                    ),
-                  ),
-                  child: isMobile
-                      ? (_selectedUser == null
-                          ? _buildUserSidebar(isDark, primaryColor)
-                          : _buildChatThread(isDark, primaryColor, currentUserId, currentUserRole, isMobile: true))
-                      : Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Left User Roster Column
-                            SizedBox(
-                              width: 320,
-                              child: _buildUserSidebar(isDark, primaryColor),
-                            ),
-                            // Vertical Divider
-                            Container(
-                              width: 1,
+                // ── Main Body Messenger Container ─────────────────────
+                Expanded(
+                  child: Container(
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      borderRadius: (isMobile && _selectedUser != null)
+                          ? BorderRadius.zero
+                          : BorderRadius.circular(12),
+                      border: (isMobile && _selectedUser != null)
+                          ? null
+                          : Border.all(
                               color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
                             ),
-                            // Right Active Chat Column
-                            Expanded(
-                              child: _buildChatThread(isDark, primaryColor, currentUserId, currentUserRole),
-                            ),
-                          ],
-                        ),
+                    ),
+                    child: isMobile
+                        ? (_selectedUser == null
+                            ? _buildUserSidebar(isDark, primaryColor)
+                            : _buildChatThread(isDark, primaryColor, currentUserId, currentUserRole, isMobile: true))
+                        : Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Left User Roster Column
+                              SizedBox(
+                                width: 320,
+                                child: _buildUserSidebar(isDark, primaryColor),
+                              ),
+                              // Vertical Divider
+                              Container(
+                                width: 1,
+                                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                              ),
+                              // Right Active Chat Column
+                              Expanded(
+                                child: _buildChatThread(isDark, primaryColor, currentUserId, currentUserRole),
+                              ),
+                            ],
+                          ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -407,6 +426,7 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
           icon: const Icon(Icons.arrow_back_rounded, size: 20),
           tooltip: 'Back to Dashboard',
           style: IconButton.styleFrom(
+            minimumSize: const Size(48, 48),
             backgroundColor: primaryColor.withValues(alpha: 0.12),
             foregroundColor: primaryColor,
           ),
@@ -418,11 +438,14 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
             children: [
               Row(
                 children: [
-                  Text(
-                    'Team Messages',
-                    style: CRMTypography.sectionTitle.copyWith(
-                      color: CRMColors.textOf(context),
-                      fontWeight: FontWeight.bold,
+                  Flexible(
+                    child: Text(
+                      'Team Messages',
+                      overflow: TextOverflow.ellipsis,
+                      style: CRMTypography.sectionTitle.copyWith(
+                        color: CRMColors.textOf(context),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1153,6 +1176,7 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
                       )
                     : const Icon(Icons.send_rounded, size: 18),
                 style: IconButton.styleFrom(
+                  minimumSize: const Size(48, 48),
                   backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
                 ),

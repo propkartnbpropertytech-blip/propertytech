@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
+import '../../../../core/design_system/mobile/mobile.dart';
 import '../../../../core/theme/theme_manager.dart';
 import '../../bloc/reports_bloc.dart';
 import '../../bloc/reports_event.dart';
@@ -189,7 +190,7 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
                 CRMBreakpoints.pagePadding(context),
                 CRMSpacing.m,
                 CRMBreakpoints.pagePadding(context),
-                MediaQuery.sizeOf(context).width < 768 ? 96 : CRMSpacing.m,
+                (MobileShellScope.isInShell(context) || MediaQuery.sizeOf(context).width >= 768) ? CRMSpacing.m : 96,
               ),
               child: Center(
                 child: ConstrainedBox(
@@ -392,41 +393,43 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Overall Business Insight',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: -0.4,
-                        ),
-                      ),
-                      if (isSoftLoading) ...[
-                        const SizedBox(width: 10),
-                        SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: primaryColor,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'Overall Business Insight',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.4,
                           ),
                         ),
+                        if (isSoftLoading) ...[
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: primaryColor,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Executive overview of lead lifecycle, agent productivity, conversion funnel, and pipeline velocity.',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      'Executive overview of lead lifecycle, agent productivity, conversion funnel, and pipeline velocity.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               Row(
                 children: [
@@ -453,10 +456,12 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
         // ====================================================================
         // SECTION 1: CAMPAIGN KPIS (Top Row / Section)
         // ====================================================================
-        Row(
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
           children: [
             const Icon(Icons.campaign_rounded, size: 20, color: Color(0xFF1877F2)),
-            const SizedBox(width: 8),
             const Text(
               'Campaign Performance KPIs',
               style: TextStyle(
@@ -465,7 +470,6 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
                 letterSpacing: -0.2,
               ),
             ),
-            const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
@@ -517,10 +521,13 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
         // ====================================================================
         // SECTION 2: LEADS PAGE KPIS (Displayed below existing Campaign KPIs)
         // ====================================================================
-        Row(
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          alignment: WrapAlignment.spaceBetween,
+          spacing: 8,
+          runSpacing: 4,
           children: [
             const Icon(Icons.people_alt_rounded, size: 20, color: Color(0xFF0D9488)),
-            const SizedBox(width: 8),
             const Text(
               'Leads Page KPIs',
               style: TextStyle(
@@ -529,7 +536,6 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
                 letterSpacing: -0.2,
               ),
             ),
-            const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
@@ -545,7 +551,6 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
                 ),
               ),
             ),
-            const Spacer(),
             Text(
               'Synchronized with Leads page pipeline',
               style: TextStyle(

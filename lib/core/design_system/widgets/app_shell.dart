@@ -5,7 +5,6 @@ import '../../../features/dashboard/repository/dashboard_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:persistent_bottom_nav_bar_v2/persistent_bottom_nav_bar_v2.dart';
 import '../../security/role_guard.dart';
 import '../../../features/integration/services/integration_service.dart';
 import '../../../features/campaign/services/portal_integrations_service.dart';
@@ -36,6 +35,11 @@ import '../../../../features/telecaller/services/telecaller_shift_manager.dart';
 import '../../../../features/telecaller/widgets/telecaller_shift_gate_overlay.dart';
 import '../../../../features/shell/widgets/top_bar.dart';
 import '../../../../features/team_messages/services/team_messages_service.dart';
+import '../../../features/shell/mobile/mobile_app_shell.dart';
+import '../../../features/shell/mobile/mobile_nav_config.dart';
+import '../../../features/telecaller/widgets/telecaller_availability_toggle.dart';
+import '../mobile/mobile_layout.dart';
+import '../mobile/mobile_top_bar.dart';
 
 class CRMAppShell extends StatefulWidget {
   final Widget child;
@@ -55,13 +59,11 @@ class _CRMAppShellState extends State<CRMAppShell>
   double _sidebarWidth = 245.0;
   bool _isDraggingSidebar = false;
   final TextEditingController _searchController = TextEditingController();
-  late PersistentTabController _tabController;
-  int _previousIndex = 0;
   final FocusNode _searchFocusNode = FocusNode();
   bool _isMobileSearchActive = false;
+  String? _mobileSearchLocation;
   late AnimationController _entryController;
   bool _notificationsPanelOpen = false;
-  bool _isBottomBarVisible = true;
   List<Map<String, dynamic>> _portalNav = [];
   bool _portalNavLoading = false;
   DateTime? _portalNavAt;
@@ -75,26 +77,6 @@ class _CRMAppShellState extends State<CRMAppShell>
       value: 1.0,
     );
     CRMAppShell._entrySettledThisSession = true;
-
-    _tabController = PersistentTabController(initialIndex: 0);
-    _tabController.addListener(() {
-      final index = _tabController.index;
-      if (index == 2) {
-        // Reset controller to previous index, show bottom sheet
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _tabController.jumpToTab(_previousIndex);
-        });
-        _showQuickActionsBottomSheet();
-      } else {
-        final location = GoRouter.of(
-          context,
-        ).routerDelegate.currentConfiguration.last.matchedLocation;
-        if (index != _previousIndex || location != _getTabRoutePath(index)) {
-          _previousIndex = index;
-          context.go(_getTabRoutePath(index));
-        }
-      }
-    });
 
     _notifCenterSub = NotificationCenter.stream.listen((newNotif) {
       if ((newNotif['action'] ?? '').toString() == 'refresh' ||
@@ -160,7 +142,6 @@ class _CRMAppShellState extends State<CRMAppShell>
   @override
   void dispose() {
     _entryController.dispose();
-    _tabController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchDebounce?.cancel();
@@ -190,29 +171,6 @@ class _CRMAppShellState extends State<CRMAppShell>
   int _totalNotificationPages = 1;
   Timer? _notificationsTimer;
   StreamSubscription<Map<String, dynamic>>? _notifCenterSub;
-
-  int _getTabRouteIndex(String location) {
-    if (location.startsWith('/dashboard')) return 0;
-    if (location.startsWith('/properties')) return 1;
-    if (location.startsWith('/requirements')) return 3;
-    if (location.startsWith('/profile')) return 4;
-    return -1;
-  }
-
-  String _getTabRoutePath(int index) {
-    switch (index) {
-      case 0:
-        return '/dashboard';
-      case 1:
-        return '/properties';
-      case 3:
-        return '/requirements';
-      case 4:
-        return '/profile';
-      default:
-        return '/dashboard';
-    }
-  }
 
   void _showQuickActionsBottomSheet() {
     final themeManager = ThemeManager();
@@ -1603,7 +1561,7 @@ class _CRMAppShellState extends State<CRMAppShell>
     final userState = context.select<AuthBloc, AuthState>((bloc) => bloc.state);
     final location = GoRouterState.of(context).matchedLocation;
     final size = MediaQuery.of(context).size;
-    final isMobile = size.width < 768;
+    final isMobile = MobileLayout.isMobileShell(size.width);
     final isTablet = size.width >= 768 && size.width < 1024;
     final isDesktop = size.width >= 1024;
 
@@ -1625,22 +1583,11 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
     }
 
-    final targetIndex = _getTabRouteIndex(location);
-    if (targetIndex >= 0 && _tabController.index != targetIndex) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (targetIndex >= 0 && _tabController.index != targetIndex) {
-          _tabController.jumpToTab(targetIndex);
-          _previousIndex = targetIndex;
-        }
-      });
+    if (isMobile) {
+      return _buildMobileShell(context, location, currentUserRole);
     }
 
     final showSidebar = isDesktop || isTablet;
-    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
-    final showBottomNav = isMobile && !keyboardOpen;
-    final navClearance = showBottomNav
-        ? CRMBreakpoints.mobileNavClearance(context)
-        : 0.0;
 
     return MobileSystemBackHandler(
       onBeforeBack: () async {
@@ -1662,23 +1609,6 @@ class _CRMAppShellState extends State<CRMAppShell>
           Scaffold(
             backgroundColor: CRMColors.backgroundOf(context),
                 extendBody: true,
-                drawer: isMobile
-                    ? Drawer(
-                        width: size.width < 360
-                            ? size.width * 0.88
-                            : (size.width < 420 ? size.width * 0.82 : 304),
-                        backgroundColor: ThemeManager().isDarkMode
-                            ? const Color(0xFF0F172A)
-                            : Colors.white,
-                        child: ModernSidebar(
-                          currentPath: location,
-                          userName: currentUserName,
-                          userEmail: currentUserEmail,
-                          userRole: currentUserRole,
-                          onItemTapped: () => Navigator.of(context).pop(),
-                        ),
-                      )
-                    : null,
                 body: TelecallerShiftGateOverlay(
                   isTelecaller: RoleGuard.isTelecaller(currentUserRole),
                   child: Stack(
@@ -1735,19 +1665,15 @@ class _CRMAppShellState extends State<CRMAppShell>
                           Builder(
                             builder: (scaffoldContext) => ModernTopBar(
                               onToggleSidebar: () {
-                                if (isMobile) {
-                                  Scaffold.of(scaffoldContext).openDrawer();
-                                } else {
-                                  setState(() {
-                                    if (_sidebarWidth > 150.0) {
-                                      _sidebarWidth = 70.0;
-                                      _isSidebarExpanded = false;
-                                    } else {
-                                      _sidebarWidth = 245.0;
-                                      _isSidebarExpanded = true;
-                                    }
-                                  });
-                                }
+                                setState(() {
+                                  if (_sidebarWidth > 150.0) {
+                                    _sidebarWidth = 70.0;
+                                    _isSidebarExpanded = false;
+                                  } else {
+                                    _sidebarWidth = 245.0;
+                                    _isSidebarExpanded = true;
+                                  }
+                                });
                               },
                               onLogout: _handleLogout,
                               userName: currentUserName,
@@ -1771,97 +1697,127 @@ class _CRMAppShellState extends State<CRMAppShell>
                               },
                             ),
                           ),
-                          Expanded(
-                            child: isMobile
-                                ? NotificationListener<ScrollNotification>(
-                                    onNotification: (scrollNotification) {
-                                      if (scrollNotification
-                                          is ScrollUpdateNotification) {
-                                        if (scrollNotification.metrics.axis ==
-                                            Axis.vertical) {
-                                          final pixels =
-                                              scrollNotification.metrics.pixels;
-                                          final scrollDelta =
-                                              scrollNotification.scrollDelta;
-                                          if (pixels <= 10) {
-                                            if (!_isBottomBarVisible) {
-                                              setState(() {
-                                                _isBottomBarVisible = true;
-                                              });
-                                            }
-                                          } else if (scrollDelta != null &&
-                                              scrollDelta.abs() > 4) {
-                                            if (scrollDelta > 0) {
-                                              if (_isBottomBarVisible) {
-                                                setState(() {
-                                                  _isBottomBarVisible = false;
-                                                });
-                                              }
-                                            } else {
-                                              if (!_isBottomBarVisible) {
-                                                setState(() {
-                                                  _isBottomBarVisible = true;
-                                                });
-                                              }
-                                            }
-                                          }
-                                        }
-                                      }
-                                      return false;
-                                    },
-                                    child: Padding(
-                                      padding: EdgeInsets.only(bottom: navClearance),
-                                      child: widget.child,
-                                    ),
-                                  )
-                                : widget.child,
-                          ),
+                          Expanded(child: widget.child),
                         ],
                       ),
                     ),
                   ],
                   ),
                     ),
-                    if (showBottomNav)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: AnimatedSlide(
-                          offset: _isBottomBarVisible
-                              ? Offset.zero
-                              : const Offset(0, 1.5),
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeInOut,
-                          child: IgnorePointer(
-                            ignoring: !_isBottomBarVisible,
-                            child: Material(
-                              type: MaterialType.transparency,
-                              child: CustomBottomNavBar(
-                                selectedIndex: targetIndex,
-                                onItemSelected: (index) {
-                                  if (index == 2) {
-                                    _showQuickActionsBottomSheet();
-                                    return;
-                                  }
-                                  final path = _getTabRoutePath(index);
-                                  if (GoRouterState.of(context)
-                                          .matchedLocation !=
-                                      path) {
-                                    context.go(path);
-                                  }
-                                },
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
             ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),
-          ValueListenableBuilder<bool>(
+          _buildSyncOverlay(),
+        ],
+      ),
+    );
+  }
+
+  /// Mobile shell (< 768px). Hosts the same shift gate, global search,
+  /// notifications panel, quick-actions sheet, and blocking sync overlay as
+  /// the existing shell; only the chrome differs.
+  Widget _buildMobileShell(
+    BuildContext context,
+    String location,
+    String role,
+  ) {
+    final isTelecaller = RoleGuard.isTelecaller(role);
+    final searchOpen =
+        _isMobileSearchActive && _mobileSearchLocation == location;
+
+    return MobileSystemBackHandler(
+      onBeforeBack: () async {
+        if (_searchOverlayEntry != null || _isMobileSearchActive) {
+          _closeMobileSearch();
+          return true;
+        }
+        if (_notificationsPanelOpen) {
+          setState(() => _notificationsPanelOpen = false);
+          return true;
+        }
+        if (!context.canPop()) {
+          final info = MobileNavConfig.resolve(role, location);
+          if (info.isSecondary &&
+              info.backFallback == MobileNavConfig.moreRoute) {
+            context.go(MobileNavConfig.moreRoute);
+            return true;
+          }
+        }
+        return false;
+      },
+      child: Stack(
+        children: [
+          TelecallerShiftGateOverlay(
+            isTelecaller: isTelecaller,
+            child: MobileAppShell(
+              role: role,
+              location: location,
+              onNavigate: (path) => context.go(path),
+              onBack: (fallback) {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go(fallback);
+                }
+              },
+              onSearch: () => setState(() {
+                _isMobileSearchActive = true;
+                _mobileSearchLocation = location;
+              }),
+              onNotifications: () {
+                setState(() => _notificationsPanelOpen = true);
+                _fetchNotifications();
+              },
+              onQuickActions: _showQuickActionsBottomSheet,
+              onMessages: () => context.go('/messages'),
+              unreadNotifications: _unreadNotificationsCount,
+              unreadMessages: _unreadTeamMessagesCount,
+              roleControl: isTelecaller
+                  ? const TelecallerAvailabilityToggle(compact: true)
+                  : null,
+              searchBar: searchOpen
+                  ? MobileSearchBar(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      layerLink: _searchLayerLink,
+                      onChanged: _onSearchChanged,
+                      onSubmitted: (val) {
+                        if (val.trim().isNotEmpty) {
+                          _performSearch(val.trim());
+                        }
+                      },
+                      onClear: () {
+                        _searchController.clear();
+                        _hideSearchOverlay();
+                      },
+                      onClose: _closeMobileSearch,
+                    )
+                  : null,
+              child: widget.child,
+            ),
+          ),
+          if (_notificationsPanelOpen) _buildNotificationsPanel(context),
+          _buildSyncOverlay(),
+        ],
+      ),
+    );
+  }
+
+  void _closeMobileSearch() {
+    _hideSearchOverlay();
+    _searchFocusNode.unfocus();
+    if (mounted) {
+      setState(() {
+        _isMobileSearchActive = false;
+        _mobileSearchLocation = null;
+      });
+    }
+  }
+
+  Widget _buildSyncOverlay() {
+    return ValueListenableBuilder<bool>(
             valueListenable: SyncManager().isSyncing,
             builder: (context, isSyncing, _) {
               if (!isSyncing) return const SizedBox.shrink();
@@ -1912,10 +1868,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                 ),
               );
             },
-          ),
-        ],
-      ),
-    );
+          );
   }
 
   Widget _buildTopBar(BuildContext context, bool isMobile) {
@@ -3958,153 +3911,6 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
               style: CRMTypography.clockDisplay.copyWith(
                 color: CRMColors.textOf(context),
                 fontSize: 14,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class CustomBottomNavBar extends StatelessWidget {
-  final int selectedIndex;
-  final ValueChanged<int> onItemSelected;
-
-  const CustomBottomNavBar({
-    super.key,
-    required this.selectedIndex,
-    required this.onItemSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final isNarrow = screenWidth < 360;
-    return SafeArea(
-      top: false,
-      minimum: EdgeInsets.only(bottom: isNarrow ? 4 : 8),
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(isNarrow ? 8 : 12, 0, isNarrow ? 8 : 12, 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Container(
-                height: 64,
-                padding: EdgeInsets.symmetric(horizontal: isNarrow ? 2 : 6),
-                decoration: BoxDecoration(
-                  color: CRMColors.cardBgOf(context),
-                  borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                  border: Border.all(color: CRMColors.borderOf(context)),
-                ),
-                child: Row(
-                  children: [
-                    _buildNavItem(
-                      context: context,
-                      index: 0,
-                      iconOutline: Icons.dashboard_outlined,
-                      iconFilled: Icons.dashboard_rounded,
-                      label: 'Dashboard',
-                    ),
-                    _buildNavItem(
-                      context: context,
-                      index: 1,
-                      iconOutline: Icons.home_work_outlined,
-                      iconFilled: Icons.home_work_rounded,
-                      label: 'Properties',
-                    ),
-                    _buildNavItem(
-                      context: context,
-                      index: 3,
-                      iconOutline: Icons.assignment_outlined,
-                      iconFilled: Icons.assignment_rounded,
-                      label: 'Leads',
-                    ),
-                    _buildNavItem(
-                      context: context,
-                      index: 4,
-                      iconOutline: Icons.person_outline_rounded,
-                      iconFilled: Icons.person_rounded,
-                      label: 'Profile',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SizedBox(width: isNarrow ? 6 : 10),
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => onItemSelected(2),
-                customBorder: const CircleBorder(),
-                child: Ink(
-                  width: isNarrow ? 48 : 52,
-                  height: isNarrow ? 48 : 52,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: CRMColors.primaryOf(context),
-                  ),
-                  child: const Icon(
-                    Icons.add_rounded,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem({
-    required BuildContext context,
-    required int index,
-    required IconData iconOutline,
-    required IconData iconFilled,
-    required String label,
-  }) {
-    final bool isSelected = selectedIndex == index;
-    final activeColor = CRMColors.primaryOf(context);
-    final inactiveColor = CRMColors.textMutedOf(context);
-
-    return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => onItemSelected(index),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              padding: EdgeInsets.symmetric(
-                horizontal: MediaQuery.sizeOf(context).width < 360 ? 4 : 8,
-                vertical: 4,
-              ),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? activeColor.withValues(alpha: CRMColors.isDark ? 0.18 : 0.12)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                isSelected ? iconFilled : iconOutline,
-                color: isSelected ? activeColor : inactiveColor,
-                size: 22,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? CRMColors.textOf(context) : inactiveColor,
               ),
             ),
           ],

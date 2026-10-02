@@ -10,16 +10,18 @@ import '../../../core/design_system/widgets/skeletons.dart';
 import '../models/audit_log_model.dart';
 import '../services/audit_logs_service.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
+import 'package:propkart/core/design_system/mobile/mobile.dart';
 
 class AuditLogsScreen extends StatefulWidget {
-  const AuditLogsScreen({super.key});
+  final AuditLogsService? service;
+  const AuditLogsScreen({super.key, this.service});
 
   @override
   State<AuditLogsScreen> createState() => _AuditLogsScreenState();
 }
 
 class _AuditLogsScreenState extends State<AuditLogsScreen> {
-  final AuditLogsService _service = AuditLogsService();
+  late final AuditLogsService _service = widget.service ?? AuditLogsService();
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
 
@@ -176,6 +178,84 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = CRMColors.primaryOf(context);
+    final isMobile = MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet;
+
+    final content = RefreshIndicator(
+      onRefresh: () async {
+        await _loadHierarchy();
+        await _loadLogs();
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.l),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isMobile) ...[
+              Text(
+                'Super Administrator Telemetry Intelligence',
+                style: CRMTypography.caption.copyWith(
+                  color: CRMColors.textSecondaryOf(context),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Individual User Audit Trails & Granular Telemetry',
+                style: CRMTypography.pageTitle.copyWith(
+                  color: CRMColors.textOf(context),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                ),
+              ),
+              const SizedBox(height: CRMSpacing.m),
+            ],
+            _buildRoleTabBar(context, isDark, primaryColor),
+            const SizedBox(height: CRMSpacing.m),
+            _buildUserHierarchySelector(context, isDark, primaryColor),
+            const SizedBox(height: CRMSpacing.m),
+            _buildActionCategoryChips(context, isDark, primaryColor),
+            const SizedBox(height: CRMSpacing.m),
+            _buildSearchAndDateControls(context, isDark, primaryColor),
+            const SizedBox(height: CRMSpacing.l),
+            if (_logsResponse?.stats != null) ...[
+              _buildMetricsBanner(context, _logsResponse!.stats, isDark),
+              const SizedBox(height: CRMSpacing.l),
+            ],
+            if (_isLoading)
+              _buildLoadingSkeleton()
+            else if (_errorMessage != null)
+              _buildErrorState(_errorMessage!)
+            else if (_logsResponse?.logs.isEmpty ?? true)
+              _buildEmptyState()
+            else
+              _buildLogsList(context, _logsResponse!.logs, isDark),
+            const SizedBox(height: CRMSpacing.l),
+            if (_logsResponse != null && _logsResponse!.totalPages > 1)
+              _buildPaginationControls(context, _logsResponse!),
+          ],
+        ),
+      ),
+    );
+
+    if (isMobile) {
+      return MobileScreenScaffold(
+        title: 'Audit Logs',
+        scrollable: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Refresh Logs',
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            onPressed: () {
+              _loadHierarchy();
+              _loadLogs();
+            },
+          ),
+        ],
+        body: content,
+      );
+    }
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -204,61 +284,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
           const SizedBox(width: CRMSpacing.m),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await _loadHierarchy();
-          await _loadLogs();
-        },
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(CRMSpacing.l),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Super Administrator Telemetry Intelligence',
-                style: CRMTypography.caption.copyWith(
-                  color: CRMColors.textSecondaryOf(context),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'Individual User Audit Trails & Granular Telemetry',
-                style: CRMTypography.pageTitle.copyWith(
-                  color: CRMColors.textOf(context),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 22,
-                ),
-              ),
-              const SizedBox(height: CRMSpacing.m),
-              _buildRoleTabBar(context, isDark, primaryColor),
-              const SizedBox(height: CRMSpacing.m),
-              _buildUserHierarchySelector(context, isDark, primaryColor),
-              const SizedBox(height: CRMSpacing.m),
-              _buildActionCategoryChips(context, isDark, primaryColor),
-              const SizedBox(height: CRMSpacing.m),
-              _buildSearchAndDateControls(context, isDark, primaryColor),
-              const SizedBox(height: CRMSpacing.l),
-              if (_logsResponse?.stats != null) ...[
-                _buildMetricsBanner(context, _logsResponse!.stats, isDark),
-                const SizedBox(height: CRMSpacing.l),
-              ],
-              if (_isLoading)
-                _buildLoadingSkeleton()
-              else if (_errorMessage != null)
-                _buildErrorState(_errorMessage!)
-              else if (_logsResponse?.logs.isEmpty ?? true)
-                _buildEmptyState()
-              else
-                _buildLogsList(context, _logsResponse!.logs, isDark),
-              const SizedBox(height: CRMSpacing.l),
-              if (_logsResponse != null && _logsResponse!.totalPages > 1)
-                _buildPaginationControls(context, _logsResponse!),
-            ],
-          ),
-        ),
-      ),
+      body: content,
     );
   }
 
@@ -305,6 +331,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
   }
 
   Widget _buildUserHierarchySelector(BuildContext context, bool isDark, Color primaryColor) {
+    final isMobile = MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet;
     return CRMCard(
       child: Padding(
         padding: const EdgeInsets.all(CRMSpacing.m),
@@ -315,14 +342,16 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
               children: [
                 Icon(Icons.person_search_rounded, size: 18, color: primaryColor),
                 const SizedBox(width: 8),
-                Text(
-                  _getUserSelectorTitle(),
-                  style: CRMTypography.bodyMedium.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: CRMColors.textOf(context),
+                Expanded(
+                  child: Text(
+                    _getUserSelectorTitle(),
+                    style: CRMTypography.bodyMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: CRMColors.textOf(context),
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Spacer(),
                 if (_selectedUserId != 'All' || _selectedAdminId != 'All')
                   TextButton.icon(
                     onPressed: () {
@@ -351,11 +380,11 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
               children: [
                 if (_selectedRole == 'Telecaller' || _selectedRole == 'Sales')
                   SizedBox(
-                    width: 260,
+                    width: isMobile ? double.infinity : 260,
                     child: _buildAdminTeamDropdown(context),
                   ),
                 SizedBox(
-                  width: 320,
+                  width: isMobile ? double.infinity : 320,
                   child: _buildSpecificUserDropdown(context),
                 ),
               ],
@@ -522,67 +551,96 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
   }
 
   Widget _buildSearchAndDateControls(BuildContext context, bool isDark, Color primaryColor) {
+    final isMobile = MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet;
     final dateFormat = DateFormat('dd MMM yyyy');
     final hasDateFilter = _startDate != null && _endDate != null;
 
+    final searchField = TextField(
+      controller: _searchController,
+      onChanged: _onSearchChanged,
+      decoration: InputDecoration(
+        hintText: 'Search description, path, user, IP, action payload...',
+        hintStyle: TextStyle(fontSize: 13, color: CRMColors.textMutedOf(context)),
+        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+        suffixIcon: _searchController.text.isNotEmpty
+            ? IconButton(
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                icon: const Icon(Icons.clear_rounded, size: 18),
+                onPressed: () {
+                  _searchController.clear();
+                  _loadLogs();
+                },
+              )
+            : null,
+        filled: true,
+        fillColor: CRMColors.cardBgOf(context),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: CRMColors.borderOf(context)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.7)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: primaryColor, width: 1.5),
+        ),
+      ),
+    );
+
+    final dateButton = OutlinedButton.icon(
+      onPressed: _pickDateRange,
+      icon: Icon(Icons.date_range_outlined, size: 18, color: hasDateFilter ? primaryColor : null),
+      label: Text(
+        hasDateFilter
+            ? '${dateFormat.format(_startDate!)} - ${dateFormat.format(_endDate!)}'
+            : 'Date Range',
+        style: TextStyle(
+          fontSize: 12.5,
+          fontWeight: hasDateFilter ? FontWeight.bold : FontWeight.normal,
+          color: hasDateFilter ? primaryColor : CRMColors.textOf(context),
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        minimumSize: isMobile ? const Size(0, 48) : null,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        backgroundColor: hasDateFilter ? primaryColor.withOpacity(0.08) : CRMColors.cardBgOf(context),
+        side: BorderSide(color: hasDateFilter ? primaryColor : CRMColors.borderOf(context)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          searchField,
+          const SizedBox(height: CRMSpacing.s),
+          Row(
+            children: [
+              Expanded(child: dateButton),
+              if (hasDateFilter) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  tooltip: 'Clear Date Filter',
+                  onPressed: _clearDateRange,
+                ),
+              ],
+            ],
+          ),
+        ],
+      );
+    }
+
     return Row(
       children: [
-        Expanded(
-          child: TextField(
-            controller: _searchController,
-            onChanged: _onSearchChanged,
-            decoration: InputDecoration(
-              hintText: 'Search description, path, user, IP, action payload...',
-              hintStyle: TextStyle(fontSize: 13, color: CRMColors.textMutedOf(context)),
-              prefixIcon: const Icon(Icons.search_rounded, size: 20),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        _loadLogs();
-                      },
-                    )
-                  : null,
-              filled: true,
-              fillColor: CRMColors.cardBgOf(context),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: CRMColors.borderOf(context)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.7)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: primaryColor, width: 1.5),
-              ),
-            ),
-          ),
-        ),
+        Expanded(child: searchField),
         const SizedBox(width: CRMSpacing.m),
-        OutlinedButton.icon(
-          onPressed: _pickDateRange,
-          icon: Icon(Icons.date_range_outlined, size: 18, color: hasDateFilter ? primaryColor : null),
-          label: Text(
-            hasDateFilter
-                ? '${dateFormat.format(_startDate!)} - ${dateFormat.format(_endDate!)}'
-                : 'Date Range',
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: hasDateFilter ? FontWeight.bold : FontWeight.normal,
-              color: hasDateFilter ? primaryColor : CRMColors.textOf(context),
-            ),
-          ),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            backgroundColor: hasDateFilter ? primaryColor.withOpacity(0.08) : CRMColors.cardBgOf(context),
-            side: BorderSide(color: hasDateFilter ? primaryColor : CRMColors.borderOf(context)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        ),
+        dateButton,
         if (hasDateFilter) ...[
           const SizedBox(width: 4),
           IconButton(
@@ -689,6 +747,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               CircleAvatar(
                 radius: 16,
@@ -705,16 +764,16 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Flexible(
-                          child: Text(
-                            log.userName ?? 'System / Anonymous',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        Text(
+                          log.userName ?? 'System / Anonymous',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
@@ -733,17 +792,26 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
                         log.userEmail!,
                         style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
                       ),
+                    if (MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet)
+                      Text(
+                        formattedDate,
+                        style: TextStyle(fontSize: 11, color: CRMColors.textMutedOf(context)),
+                      ),
                   ],
                 ),
               ),
-              Text(
-                formattedDate,
-                style: TextStyle(fontSize: 11.5, color: CRMColors.textMutedOf(context)),
-              ),
+              if (MediaQuery.sizeOf(context).width >= CRMBreakpoints.tablet)
+                Text(
+                  formattedDate,
+                  style: TextStyle(fontSize: 11.5, color: CRMColors.textMutedOf(context)),
+                ),
             ],
           ),
           const SizedBox(height: 10),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -767,7 +835,6 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
@@ -783,20 +850,16 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
                   ),
                 ),
               ),
-              if (log.path != null && log.path!.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    log.path!,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontFamily: 'monospace',
-                      color: CRMColors.textMutedOf(context),
-                    ),
-                    overflow: TextOverflow.ellipsis,
+              if (log.path != null && log.path!.isNotEmpty)
+                Text(
+                  log.path!,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontFamily: 'monospace',
+                    color: CRMColors.textMutedOf(context),
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
             ],
           ),
           const SizedBox(height: 8),
@@ -809,35 +872,43 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (log.ipAddress != null && log.ipAddress!.isNotEmpty) ...[
-                Icon(Icons.language_rounded, size: 13, color: CRMColors.textMutedOf(context)),
-                const SizedBox(width: 4),
-                Text(
-                  log.ipAddress!,
-                  style: TextStyle(fontSize: 11, color: CRMColors.textMutedOf(context)),
+              if (log.ipAddress != null && log.ipAddress!.isNotEmpty)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.language_rounded, size: 13, color: CRMColors.textMutedOf(context)),
+                    const SizedBox(width: 4),
+                    Text(
+                      log.ipAddress!,
+                      style: TextStyle(fontSize: 11, color: CRMColors.textMutedOf(context)),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-              ],
-              if (log.userAgent != null && log.userAgent!.isNotEmpty) ...[
-                Icon(Icons.devices_rounded, size: 13, color: CRMColors.textMutedOf(context)),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    _formatUserAgent(log.userAgent!),
-                    style: TextStyle(fontSize: 11, color: CRMColors.textMutedOf(context)),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+              if (log.userAgent != null && log.userAgent!.isNotEmpty)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.devices_rounded, size: 13, color: CRMColors.textMutedOf(context)),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatUserAgent(log.userAgent!),
+                      style: TextStyle(fontSize: 11, color: CRMColors.textMutedOf(context)),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-              ],
-              const Spacer(),
               if (log.details != null || log.oldData != null || log.newData != null)
                 TextButton.icon(
                   onPressed: () => _showLogDetailsDialog(context, log),
                   icon: const Icon(Icons.code_rounded, size: 14),
                   label: const Text('View Raw Payload'),
                   style: TextButton.styleFrom(
+                    minimumSize: const Size(48, 48),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     visualDensity: VisualDensity.compact,
                     textStyle: const TextStyle(fontSize: 11.5),
@@ -851,6 +922,58 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
   }
 
   Widget _buildPaginationControls(BuildContext context, AuditLogsResponse res) {
+    final isMobile = MediaQuery.sizeOf(context).width < CRMBreakpoints.tablet;
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Text(
+              'Page ${res.page} of ${res.totalPages}  •  ${res.total} total activities',
+              style: TextStyle(fontSize: 12.5, color: CRMColors.textSecondaryOf(context)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: res.page > 1
+                      ? () {
+                          setState(() => _currentPage--);
+                          _loadLogs();
+                        }
+                      : null,
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: const Text('Previous'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: res.page < res.totalPages
+                      ? () {
+                          setState(() => _currentPage++);
+                          _loadLogs();
+                        }
+                      : null,
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: const Text('Next'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1011,7 +1134,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
         return _ActionStyle('Search Query', Icons.search_rounded, const Color(0xFF0284C7));
       case 'HOVER_DWELL':
         final sec = (dwellMs / 1000).toStringAsFixed(1);
-        return _ActionStyle('Dwell s', Icons.timer_outlined, const Color(0xFFD97706));
+        return _ActionStyle('Dwell ${sec}s', Icons.timer_outlined, const Color(0xFFD97706));
       case 'Create':
         return _ActionStyle('Created Record', Icons.add_circle_outline, const Color(0xFF16A34A));
       case 'Update':
