@@ -149,7 +149,31 @@ class PropertiesRepository {
     });
   }
 
-  Future<PropertyMetadataModel> getPropertyMetadata() async {
+  Future<PropertyMetadataModel> getPropertyMetadata({bool forceRefresh = false}) async {
+    if (forceRefresh) {
+      final response = await _propertiesService.getPropertyMetadata();
+      final data = response['data'] as Map<String, dynamic>? ?? {};
+      final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
+
+      final List<LookupItemLocal> locals = [];
+      locals.addAll(meta.cities.map((c) => c.toLocal('city')));
+      locals.addAll(meta.areas.map((a) => a.toAreaLocal()));
+      locals.addAll(meta.categories.map((c) => c.toLocal('property_category')));
+      locals.addAll(meta.types.map((t) => t.toLocal('property_type')));
+      locals.addAll(meta.configurations.map((c) => c.toLocal('configuration')));
+      locals.addAll(meta.listingTypes.map((l) => l.toLocal('listing_type')));
+      locals.addAll(meta.statuses.map((s) => s.toLocal('property_status')));
+      locals.addAll(meta.furnishings.map((f) => f.toLocal('furnishing_type')));
+      locals.addAll(meta.facings.map((f) => f.toLocal('facing_type')));
+      locals.addAll(meta.ownerships.map((o) => o.toLocal('ownership_type')));
+      locals.addAll(meta.brokerages.map((b) => b.toLocal('brokerage_type')));
+      locals.addAll(meta.amenities.map((a) => a.toLocal('amenity')));
+
+      await _coordinator.lookupLocal.saveLookups(locals, clearExisting: true);
+      _coordinator.refreshLookups();
+      return meta;
+    }
+
     final start = DateTime.now();
 
     final cities = await _coordinator.lookupLocal.getLookupsByCategory('city');
@@ -222,7 +246,7 @@ class PropertiesRepository {
       locals.addAll(meta.brokerages.map((b) => b.toLocal('brokerage_type')));
       locals.addAll(meta.amenities.map((a) => a.toLocal('amenity')));
 
-      await _coordinator.lookupLocal.saveLookups(locals);
+      await _coordinator.lookupLocal.saveLookups(locals, clearExisting: true);
       final isarWriteMs = DateTime.now().difference(writeStart).inMilliseconds;
 
       final totalMs = DateTime.now().difference(start).inMilliseconds;
@@ -255,7 +279,7 @@ class PropertiesRepository {
     locals.addAll(meta.ownerships.map((o) => o.toLocal('ownership_type')));
     locals.addAll(meta.brokerages.map((b) => b.toLocal('brokerage_type')));
     locals.addAll(meta.amenities.map((a) => a.toLocal('amenity')));
-    await _coordinator.lookupLocal.saveLookups(locals);
+    await _coordinator.lookupLocal.saveLookups(locals, clearExisting: true);
     _coordinator.refreshLookups();
   }
 

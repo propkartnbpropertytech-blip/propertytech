@@ -78,30 +78,36 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
     super.dispose();
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({bool forceServer = false}) async {
     setState(() => _isLoading = true);
     try {
-      final meta = await _propertiesRepository.getPropertyMetadata();
-      setState(() {
-        _cities = meta.cities..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-        _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-        _isLoading = false;
-      });
-      _loadZonesAndAliases();
-    } catch (_) {
-      try {
-        final response = await _propertiesService.getPropertyMetadata();
-        final data = response['data'] as Map<String, dynamic>? ?? {};
-        final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
+      final meta = await _propertiesRepository.getPropertyMetadata(forceRefresh: forceServer);
+      if (mounted) {
         setState(() {
           _cities = meta.cities..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
           _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
           _isLoading = false;
         });
         _loadZonesAndAliases();
+      }
+    } catch (_) {
+      try {
+        final response = await _propertiesService.getPropertyMetadata();
+        final data = response['data'] as Map<String, dynamic>? ?? {};
+        final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
+        if (mounted) {
+          setState(() {
+            _cities = meta.cities..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+            _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+            _isLoading = false;
+          });
+          _loadZonesAndAliases();
+        }
       } catch (e) {
-        setState(() => _isLoading = false);
-        _showSnackBar('Failed to load configuration data: $e', isError: true);
+        if (mounted) {
+          setState(() => _isLoading = false);
+          _showSnackBar('Failed to load configuration data: $e', isError: true);
+        }
       }
     }
   }
@@ -455,11 +461,27 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
     setState(() => _isLoading = true);
     try {
       await _propertiesService.deleteCity(city.id);
+
+      // Evict city and all child areas from local cache
+      final childAreaIds = _areas.where((a) => a.cityId == city.id).map((a) => a.id).toList();
+      await LookupLocalRepository().deleteSingleLookup(city.id);
+      if (childAreaIds.isNotEmpty) {
+        await LookupLocalRepository().deleteLookups(childAreaIds);
+      }
+
+      // Immediately remove from screen state
+      if (mounted) {
+        setState(() {
+          _cities = _cities.where((c) => c.id != city.id).toList();
+          _areas = _areas.where((a) => a.cityId != city.id).toList();
+        });
+      }
+
       _showSnackBar('City deleted successfully.');
-      await _loadData();
+      await _loadData(forceServer: true);
     } catch (e) {
       _showSnackBar('Failed to delete city: $e', isError: true);
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -603,18 +625,25 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
 
     if (confirm != true) return;
 
+    setState(() => _isLoading = true);
     try {
       await _propertiesService.deleteArea(area.id);
-      try {
-        await LookupLocalRepository().deleteSingleLookup(area.id);
-      } catch (_) {}
-      if (!mounted) return;
-      setState(() {
-        _areas = _areas.where((a) => a.id != area.id).toList();
-      });
+
+      // Evict area from local cache
+      await LookupLocalRepository().deleteSingleLookup(area.id);
+
+      // Immediately remove from screen state
+      if (mounted) {
+        setState(() {
+          _areas = _areas.where((a) => a.id != area.id).toList();
+        });
+      }
+
       _showSnackBar('Area configuration deleted.');
+      await _loadData(forceServer: true);
     } catch (e) {
       _showSnackBar('Failed to delete area: $e', isError: true);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
