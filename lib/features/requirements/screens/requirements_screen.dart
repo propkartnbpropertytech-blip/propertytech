@@ -769,12 +769,14 @@ class RequirementsScreen extends StatefulWidget {
   final String? initialTab;
   final String? initialSubTab;
   final String? initialGroup;
+  final String? initialStatus;
 
   const RequirementsScreen({
     super.key,
     this.initialTab,
     this.initialSubTab,
     this.initialGroup,
+    this.initialStatus,
   });
 
   @override
@@ -948,7 +950,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _selectedFollowupSubTab = widget.initialSubTab!;
     }
     if (widget.initialGroup != null && widget.initialGroup!.isNotEmpty) {
-      _salesLeadGroupFilter = widget.initialGroup!;
+      final g = widget.initialGroup!.toLowerCase();
+      _salesLeadGroupFilter = (g == 'all' || g == 'active' || g == 'my_active_leads') ? 'all' : widget.initialGroup!;
+    }
+    if (widget.initialStatus != null && widget.initialStatus!.isNotEmpty) {
+      _selectedStatus = widget.initialStatus!;
     }
     _refreshFollowupsFuture(force: true);
     _requirementsStreamSub = RepositoryCoordinator().requirementsStream.listen((_) {
@@ -1005,6 +1011,32 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             setState(() {
               _selectedFollowupSubTab = subTabParam;
             });
+          }
+        }
+        final groupParam = uri.queryParameters['group'];
+        if (groupParam != null && groupParam.isNotEmpty) {
+          final g = groupParam.toLowerCase();
+          final targetGroup = (g == 'all' || g == 'active' || g == 'my_active_leads') ? 'all' : groupParam;
+          if (_salesLeadGroupFilter != targetGroup) {
+            setState(() {
+              _salesLeadGroupFilter = targetGroup;
+            });
+          }
+        }
+        final statusParam = uri.queryParameters['status'];
+        if (statusParam != null && statusParam.isNotEmpty) {
+          if (_selectedStatus != statusParam) {
+            setState(() {
+              _selectedStatus = statusParam;
+            });
+          }
+        }
+        final modeParam = uri.queryParameters['mode'];
+        if (modeParam != null && modeParam.isNotEmpty) {
+          final targetRent = modeParam.toLowerCase() == 'rent';
+          if (ThemeManager().isRentMode != targetRent) {
+            ThemeManager().setRentMode(targetRent);
+            setState(() {});
           }
         }
         final searchParam = uri.queryParameters['search'];
@@ -1101,8 +1133,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (widget.initialGroup != oldWidget.initialGroup &&
         widget.initialGroup != null &&
         widget.initialGroup!.isNotEmpty) {
+      final g = widget.initialGroup!.toLowerCase();
       setState(() {
-        _salesLeadGroupFilter = widget.initialGroup!;
+        _salesLeadGroupFilter = (g == 'all' || g == 'active' || g == 'my_active_leads') ? 'all' : widget.initialGroup!;
+      });
+    }
+    if (widget.initialStatus != oldWidget.initialStatus &&
+        widget.initialStatus != null &&
+        widget.initialStatus!.isNotEmpty) {
+      setState(() {
+        _selectedStatus = widget.initialStatus!;
       });
     }
   }
@@ -1149,6 +1189,30 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         setState(() {
           _selectedFollowupSubTab = subTabParam;
         });
+      }
+      final groupParam = uri.queryParameters['group'];
+      if (groupParam != null && groupParam.isNotEmpty) {
+        final g = groupParam.toLowerCase();
+        final targetGroup = (g == 'all' || g == 'active' || g == 'my_active_leads') ? 'all' : groupParam;
+        if (_salesLeadGroupFilter != targetGroup) {
+          setState(() {
+            _salesLeadGroupFilter = targetGroup;
+          });
+        }
+      }
+      final statusParam = uri.queryParameters['status'];
+      if (statusParam != null && statusParam.isNotEmpty && statusParam != _selectedStatus) {
+        setState(() {
+          _selectedStatus = statusParam;
+        });
+      }
+      final modeParam = uri.queryParameters['mode'];
+      if (modeParam != null && modeParam.isNotEmpty) {
+        final targetRent = modeParam.toLowerCase() == 'rent';
+        if (ThemeManager().isRentMode != targetRent) {
+          ThemeManager().setRentMode(targetRent);
+          setState(() {});
+        }
       }
       final sectionParam = uri.queryParameters['section'];
       if (sectionParam != null && (sectionParam == 'Site Visit Scheduled' || sectionParam == 'Follow ups')) {
@@ -3746,7 +3810,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ),
             const SizedBox(width: 6),
             _buildSalesGroupFilterButton(
-              label: 'My Active Deals',
+              label: 'My Active Leads',
               icon: Icons.dashboard_customize_rounded,
               value: 'all',
               count: allCount,

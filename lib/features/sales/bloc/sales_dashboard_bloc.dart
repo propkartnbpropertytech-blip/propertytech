@@ -424,7 +424,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     'Site Visit Done',
                     '$siteVisitsDoneCount',
                     Icons.location_on_outlined,
-                    '/requirements?tab=follow-ups&subTab=site-visits',
+                    '/requirements?tab=Leads&group=all&status=Site%20Visit%20Done&mode=${_isRentMode ? 'rent' : 'resale'}',
                     accentColor: const Color(0xFF059669),
                   ),
                   _clickableKpi(
@@ -1617,7 +1617,10 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => context.go(route),
+          onTap: () {
+            ThemeManager().setRentMode(_isRentMode);
+            context.go(route);
+          },
           borderRadius: BorderRadius.circular(12),
           child: StatCard(
             title: title,

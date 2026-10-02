@@ -22,6 +22,7 @@ import '../../modules/legal/presentation/terms_and_conditions_page.dart';
 import '../../modules/legal/presentation/privacy_policy_page.dart';
 import '../design_system/widgets/app_shell.dart';
 import '../design_system/widgets/crm_page_transition.dart';
+import '../theme/theme_manager.dart';
 import '../../features/settings/screens/settings_screen.dart';
 import '../../features/settings/screens/audit_logs_screen.dart';
 import '../../features/settings/screens/location_config_screen.dart';
@@ -365,12 +366,18 @@ class AppRouter {
               final tab = state.uri.queryParameters['tab'];
               final subTab = state.uri.queryParameters['subTab'];
               final group = state.uri.queryParameters['group'];
+              final status = state.uri.queryParameters['status'];
+              final mode = state.uri.queryParameters['mode'];
+              if (mode != null && mode.isNotEmpty) {
+                ThemeManager().setRentMode(mode.toLowerCase() == 'rent');
+              }
               return crmFadeSlidePage(
                 key: state.pageKey,
                 child: RequirementsScreen(
                   initialTab: tab,
                   initialSubTab: subTab,
                   initialGroup: group,
+                  initialStatus: status,
                 ),
               );
             },

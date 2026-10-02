@@ -364,6 +364,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   ),
                                   const SizedBox(height: 24),
 
+                                  // Rent & Re-sale Overview and City -> Area Analytics
+                                  AnalyticsSection(
+                                    data: data,
+                                    kpiFilters: kpiFilters,
+                                    kpis: kpis,
+                                    isRent: _isRent,
+                                    onPropertyTap: (id) => _openPropertyDetails(id),
+                                  ),
+                                  const SizedBox(height: 24),
+
                                   // Middle Section: Recent Properties & (Note + Follow-ups)
                                   if (isDesktop)
                                     Row(
@@ -397,14 +407,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                                         followupsWidget,
                                       ],
                                     ),
-
-                                  const SizedBox(height: 24),
-
-                                  // Analytics Section: Inventory Overview + Top Locations
-                                  AnalyticsSection(
-                                    data: data,
-                                    isRent: _isRent,
-                                  ),
                                   SizedBox(height: isDesktop ? 32 : 96),
                                 ],
                               );
@@ -1196,6 +1198,10 @@ class _DashboardScreenState extends State<DashboardScreen>
               value: '$siteVisitsVal',
               backgroundColor: CRMColors.cardBgOf(context),
               accentColor: CRMColors.textMutedOf(context),
+              onTap: () {
+                ThemeManager().setRentMode(_isRent);
+                context.go('/requirements?tab=Leads&group=all&status=Site%20Visit%20Done&mode=${_isRent ? 'rent' : 'resale'}');
+              },
             ),
             CRMTintedMetric(
               label: 'Leads',

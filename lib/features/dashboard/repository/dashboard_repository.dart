@@ -1,7 +1,6 @@
 import '../models/dashboard_summary.dart';
 import '../services/dashboard_service.dart';
 import '../../../core/storage/repository_coordinator.dart';
-import '../../../core/storage/isar_collections.dart';
 import '../../../core/storage/model_mappers.dart';
 import '../../../core/storage/performance_logger.dart';
 import '../../../core/security/role_guard.dart';
@@ -13,6 +12,8 @@ class DashboardRepository {
 
 
 
+  static List<DashboardLocationItem> _inMemoryLeadsLocations = [];
+  static Map<String, List<String>> _inMemoryCityAreas = {};
   static Future<void>? _refreshInFlight;
   static DateTime? _lastRefreshAt;
   static const _minRefreshInterval = Duration(seconds: 45);
@@ -45,6 +46,12 @@ class DashboardRepository {
         final authReport = await _dashboardService.getAuthoritativeReportMetrics();
 
         DashboardData freshData = DashboardData.fromJson(response);
+        if (freshData.leadsLocations.isNotEmpty) {
+          _inMemoryLeadsLocations = freshData.leadsLocations;
+        }
+        if (freshData.cityAreas.isNotEmpty) {
+          _inMemoryCityAreas = freshData.cityAreas;
+        }
         usedNetworkKpis = true;
         if (authReport.isNotEmpty && authReport['kpis'] is Map) {
           final kpis = authReport['kpis'] as Map<String, dynamic>;
@@ -67,6 +74,10 @@ class DashboardRepository {
               resaleRequirements: freshData.summary.resaleRequirements,
               rentalWonRequirements: wonCount > 0 ? wonCount : freshData.summary.rentalWonRequirements,
               resaleWonRequirements: freshData.summary.resaleWonRequirements,
+              rentalActiveRequirements: freshData.summary.rentalActiveRequirements,
+              resaleActiveRequirements: freshData.summary.resaleActiveRequirements,
+              totalActiveRequirements: freshData.summary.totalActiveRequirements,
+              totalWonRequirements: freshData.summary.totalWonRequirements,
               totalPropertiesTrend: freshData.summary.totalPropertiesTrend,
               availableTrend: freshData.summary.availableTrend,
               soldTrend: freshData.summary.soldTrend,
@@ -83,6 +94,12 @@ class DashboardRepository {
             followups: freshData.followups,
             siteVisits: freshData.siteVisits,
             inventoryLocations: freshData.inventoryLocations,
+            leadsLocations: freshData.leadsLocations.isNotEmpty
+                ? freshData.leadsLocations
+                : _inMemoryLeadsLocations,
+            cityAreas: freshData.cityAreas.isNotEmpty
+                ? freshData.cityAreas
+                : _inMemoryCityAreas,
           );
         }
 
@@ -172,13 +189,15 @@ class DashboardRepository {
       final name = item.listingTypeName ?? '';
       final id = item.listingTypeId ?? '';
       final combined = '$name $id'.toLowerCase();
-      final isWon = item.status == 'Won' || item.status == 'Closed';
+      final isWon = statusLower == 'won' || statusLower == 'deal won' || statusLower == 'closed';
       final isSiteVisit = item.status == 'Site Visit Done' ||
           item.status == 'Negotiation' ||
-          item.status == 'Won' ||
-          item.status == 'Closed';
+          isWon;
 
-      if (combined.contains('rent')) {
+      final isResale = combined.contains('sale') || combined.contains('resale');
+      final isRent = !isResale;
+
+      if (isRent) {
         if (isWon) {
           rentalWonReqs++;
         } else {
@@ -187,7 +206,7 @@ class DashboardRepository {
         if (isSiteVisit) {
           rentalSiteVisits++;
         }
-      } else if (combined.contains('sale') || combined.contains('resale')) {
+      } else {
         if (isWon) {
           resaleWonReqs++;
         } else {
@@ -222,23 +241,66 @@ class DashboardRepository {
       )).toList();
     }
 
-    final localLocationItems = allLocalProps.where((p) {
-      final st = p.propertyStatusName.trim().toLowerCase();
-      return st == 'available' || st == 'to be available';
-    }).map((p) => DashboardLocationItem(
+    final localLocationItems = allLocalProps.map((p) => DashboardLocationItem(
       id: p.id,
       code: p.propertyCode,
-      areaName: (p.areaName.trim().isNotEmpty && p.areaName != 'N/A')
-          ? p.areaName.trim()
-          : 'Other',
-      categoryName: p.categoryName.trim().isNotEmpty
-          ? p.categoryName.trim()
+      title: p.title,
+      cityName: (p.cityName != null && p.cityName!.trim().isNotEmpty && p.cityName != 'N/A')
+          ? p.cityName!.trim()
+          : 'Ahmedabad',
+      areaName: (p.areaName != null && p.areaName!.trim().isNotEmpty && p.areaName != 'N/A')
+          ? p.areaName!.trim()
+          : 'Ahmedabad',
+      categoryName: (p.categoryName != null && p.categoryName!.trim().isNotEmpty)
+          ? p.categoryName!.trim()
           : 'Residential',
-      listingType: p.listingTypeName.trim().isNotEmpty
-          ? p.listingTypeName.trim()
+      listingType: (p.listingTypeName != null && p.listingTypeName!.trim().isNotEmpty)
+          ? p.listingTypeName!.trim()
           : 'Rent',
+      status: (p.propertyStatusName != null && p.propertyStatusName!.trim().isNotEmpty)
+          ? p.propertyStatusName!.trim()
+          : 'Available',
+      price: p.price ?? 0.0,
       createdAt: p.createdAt,
+      configurationName: p.configurationName ?? '',
+      propertyTypeName: p.propertyTypeName,
+      bedrooms: p.bedrooms,
     )).toList();
+
+    final localLeadLocationItems = <DashboardLocationItem>[];
+    for (final r in localReqs) {
+      final validAreas = r.areaNames
+          .where((a) => a.trim().isNotEmpty && a != 'N/A' && a.toLowerCase() != 'null')
+          .map((a) => a.trim())
+          .toList();
+      final areas = validAreas.isNotEmpty ? validAreas : ['Ahmedabad'];
+      final leadPrice = (r.budget != null && r.budget! > 0)
+          ? r.budget!
+          : (r.maxBudget > 0 ? r.maxBudget : (r.minBudget > 0 ? r.minBudget : 0.0));
+      for (final area in areas) {
+        localLeadLocationItems.add(DashboardLocationItem(
+          id: r.id,
+          code: '',
+          title: r.clientName,
+          cityName: 'Ahmedabad',
+          areaName: area,
+          categoryName: r.categoryName.trim().isNotEmpty
+              ? r.categoryName.trim()
+              : 'Residential',
+          listingType: (r.listingTypeName != null && r.listingTypeName!.trim().isNotEmpty)
+              ? r.listingTypeName!.trim()
+              : 'Rent',
+          status: r.status.trim().isNotEmpty
+              ? r.status.trim()
+              : 'Active',
+          price: leadPrice,
+          createdAt: r.createdAt,
+          configurationName: r.configurationName ?? '',
+          propertyTypeName: r.propertyTypeName ?? '',
+          bedrooms: 0,
+        ));
+      }
+    }
 
     final allowedReqIds = <String>{};
     final allowedClientNames = <String>{};
@@ -366,6 +428,18 @@ class DashboardRepository {
         resaleRequirements: resaleReqs,
         rentalWonRequirements: rentalWonReqs,
         resaleWonRequirements: resaleWonReqs,
+        rentalActiveRequirements: cachedData.summary.rentalActiveRequirements > 0
+            ? cachedData.summary.rentalActiveRequirements
+            : rentalReqs,
+        resaleActiveRequirements: cachedData.summary.resaleActiveRequirements > 0
+            ? cachedData.summary.resaleActiveRequirements
+            : resaleReqs,
+        totalActiveRequirements: cachedData.summary.totalActiveRequirements > 0
+            ? cachedData.summary.totalActiveRequirements
+            : (rentalReqs + resaleReqs),
+        totalWonRequirements: cachedData.summary.totalWonRequirements > 0
+            ? cachedData.summary.totalWonRequirements
+            : (rentalWonReqs + resaleWonReqs),
         totalPropertiesTrend: cachedData.summary.totalPropertiesTrend,
         availableTrend: cachedData.summary.availableTrend,
         soldTrend: cachedData.summary.soldTrend,
@@ -488,12 +562,26 @@ class DashboardRepository {
         inventoryLocations: cachedData.inventoryLocations.isNotEmpty
             ? cachedData.inventoryLocations
             : localLocationItems,
+        leadsLocations: _inMemoryLeadsLocations.isNotEmpty
+            ? _inMemoryLeadsLocations
+            : (cachedData.leadsLocations.isNotEmpty
+                ? cachedData.leadsLocations
+                : localLeadLocationItems),
+        cityAreas: _inMemoryCityAreas.isNotEmpty
+            ? _inMemoryCityAreas
+            : cachedData.cityAreas,
       );
     }
 
     // Fallback if cache is completely empty on first launch
     final data = await _dashboardService.getDashboardData();
     final model = DashboardData.fromJson(data);
+    if (model.leadsLocations.isNotEmpty) {
+      _inMemoryLeadsLocations = model.leadsLocations;
+    }
+    if (model.cityAreas.isNotEmpty) {
+      _inMemoryCityAreas = model.cityAreas;
+    }
     await _coordinator.dashboardLocal.saveDashboard(model.toLocal());
 
     final updatedSummary = DashboardSummary(
@@ -511,6 +599,18 @@ class DashboardRepository {
       resaleRequirements: resaleReqs,
       rentalWonRequirements: rentalWonReqs,
       resaleWonRequirements: resaleWonReqs,
+      rentalActiveRequirements: model.summary.rentalActiveRequirements > 0
+          ? model.summary.rentalActiveRequirements
+          : rentalReqs,
+      resaleActiveRequirements: model.summary.resaleActiveRequirements > 0
+          ? model.summary.resaleActiveRequirements
+          : resaleReqs,
+      totalActiveRequirements: model.summary.totalActiveRequirements > 0
+          ? model.summary.totalActiveRequirements
+          : (rentalReqs + resaleReqs),
+      totalWonRequirements: model.summary.totalWonRequirements > 0
+          ? model.summary.totalWonRequirements
+          : (rentalWonReqs + resaleWonReqs),
       totalPropertiesTrend: model.summary.totalPropertiesTrend,
       availableTrend: model.summary.availableTrend,
       soldTrend: model.summary.soldTrend,
@@ -540,6 +640,14 @@ class DashboardRepository {
       inventoryLocations: model.inventoryLocations.isNotEmpty
           ? model.inventoryLocations
           : localLocationItems,
+      leadsLocations: _inMemoryLeadsLocations.isNotEmpty
+          ? _inMemoryLeadsLocations
+          : (model.leadsLocations.isNotEmpty
+              ? model.leadsLocations
+              : localLeadLocationItems),
+      cityAreas: _inMemoryCityAreas.isNotEmpty
+          ? _inMemoryCityAreas
+          : model.cityAreas,
     );
   }
 
@@ -557,6 +665,12 @@ class DashboardRepository {
 
       final parseStart = DateTime.now();
       final freshData = DashboardData.fromJson(response);
+      if (freshData.leadsLocations.isNotEmpty) {
+        _inMemoryLeadsLocations = freshData.leadsLocations;
+      }
+      if (freshData.cityAreas.isNotEmpty) {
+        _inMemoryCityAreas = freshData.cityAreas;
+      }
       final jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
 
       final writeStart = DateTime.now();
