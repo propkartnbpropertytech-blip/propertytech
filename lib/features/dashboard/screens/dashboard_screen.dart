@@ -1140,6 +1140,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final bool enableRejectedAfterVisits = kpis?.isKpiEnabled('rejected_after_site_visit') ?? true;
     final bool enableDealWon = kpis?.isKpiEnabled('deal_won') ?? true;
     final bool enableSalesUsers = kpis?.isKpiEnabled('sales_users') ?? true;
+    final bool enableNotInterested = kpis?.isKpiEnabled('not_interested') ?? true;
 
     // Database-authoritative exact counts
     final invCount = kpis != null
@@ -1156,6 +1157,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final rejectedAfterVisitsCount = kpis != null ? kpis.counts.rejectedAfterSiteVisit : 0;
     final dealWonCount = kpis != null ? kpis.counts.dealWon : 0;
     final salesUsersCount = kpis != null ? kpis.counts.salesUsers : 0;
+    final notInterestedCount = kpis != null ? kpis.counts.notInterested : 0;
 
     final cards = <Widget>[];
 
@@ -1358,6 +1360,27 @@ class _DashboardScreenState extends State<DashboardScreen>
           accentColor: const Color(0xFF10B981),
           onTap: () async {
             await KpiDrilldownDialogs.showSalesUsersDrilldown(
+              context,
+              params: kpiFilters,
+            );
+            if (mounted) {
+              context.read<DashboardBloc>().add(RefreshDashboard());
+            }
+          },
+        ),
+      );
+    }
+
+    // 9. Not Interested (Admin overall)
+    if (enableNotInterested) {
+      cards.add(
+        StatCard(
+          title: 'Not Interested',
+          value: '$notInterestedCount',
+          icon: Icons.do_not_disturb_on_rounded,
+          accentColor: const Color(0xFFEF4444),
+          onTap: () async {
+            await KpiDrilldownDialogs.showNotInterestedDrilldown(
               context,
               params: kpiFilters,
             );

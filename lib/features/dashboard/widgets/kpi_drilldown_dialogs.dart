@@ -108,6 +108,17 @@ class KpiDrilldownDialogs {
     );
   }
 
+  /// 9. Not Interested Leads Drill-down Modal (Admin overall)
+  static Future<T?> showNotInterestedDrilldown<T>(
+    BuildContext context, {
+    required KpiFilterParams params,
+  }) {
+    return showDialog<T>(
+      context: context,
+      builder: (ctx) => _NotInterestedDrilldownDialog(params: params),
+    );
+  }
+
   /// Single Telecaller Performance Drill-down
   static Future<T?> showTelecallerPerformance<T>(
     BuildContext context, {
@@ -5768,5 +5779,497 @@ class _DealWonDrilldownDialogState extends State<_DealWonDrilldownDialog> {
     );
   }
 }
+
+// ============================================================================
+// 9. NOT INTERESTED DRILLDOWN DIALOG (Admin Overall)
+// ============================================================================
+class _NotInterestedDrilldownDialog extends StatefulWidget {
+  final KpiFilterParams params;
+
+  const _NotInterestedDrilldownDialog({required this.params});
+
+  @override
+  State<_NotInterestedDrilldownDialog> createState() => _NotInterestedDrilldownDialogState();
+}
+
+class _NotInterestedDrilldownDialogState extends State<_NotInterestedDrilldownDialog> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  bool _isLoading = true;
+  List<LeadListItem> _leads = [];
+  int _total = 0;
+  int _page = 1;
+  String _search = '';
+  late String _selectedLeadType;
+  String _selectedSource = 'Meta';
+  int _metaCount = 0;
+  int _housingCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedLeadType = widget.params.leadType;
+    _loadLeads();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadLeads() async {
+    setState(() => _isLoading = true);
+    final currentParams = widget.params.copyWith(leadType: _selectedLeadType);
+    final res = await KpiDrilldownDialogs._dashboardService.getNotInterestedLeads(
+      params: currentParams,
+      sourceFilter: _selectedSource,
+      search: _search.trim().isEmpty ? null : _search.trim(),
+      page: _page,
+      limit: 25,
+    );
+    if (mounted) {
+      setState(() {
+        _leads = res.leads;
+        _total = res.total;
+        _metaCount = res.metaCount ?? _metaCount;
+        _housingCount = res.housingCount ?? _housingCount;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = ThemeManager().isDarkMode;
+    final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+    const accentColor = Color(0xFFEF4444);
+
+    return _buildResponsiveDialog(
+      context: context,
+      targetMaxWidth: 920,
+      targetMaxHeight: 720,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.do_not_disturb_on_rounded, color: accentColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Not Interested Leads',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      ),
+                    ),
+                    Text(
+                      'Total: ${_metaCount + _housingCount} leads | Showing: $_selectedSource ($_total) | Range: ${widget.params.dateFilter} | Type: $_selectedLeadType',
+                      style: TextStyle(fontSize: 12, color: subColor),
+                    ),
+                  ],
+                ),
+              ),
+              // Lead Type Toggle
+              Container(
+                height: 32,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: ['Both', 'Listing', 'Requirement'].map((type) {
+                    final isSel = _selectedLeadType == type;
+                    return GestureDetector(
+                      onTap: () {
+                        if (_selectedLeadType != type) {
+                          setState(() {
+                            _selectedLeadType = type;
+                            _page = 1;
+                          });
+                          _loadLeads();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isSel ? accentColor : Colors.transparent,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          type,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
+                            color: isSel ? Colors.white : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Source Tabs: Meta vs Housing
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      if (_selectedSource != 'Meta') {
+                        setState(() {
+                          _selectedSource = 'Meta';
+                          _page = 1;
+                        });
+                        _loadLeads();
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _selectedSource == 'Meta'
+                            ? const Color(0xFF1877F2)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.campaign_rounded,
+                            size: 16,
+                            color: _selectedSource == 'Meta'
+                                ? Colors.white
+                                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Meta ($_metaCount)',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: _selectedSource == 'Meta' ? FontWeight.bold : FontWeight.w600,
+                              color: _selectedSource == 'Meta'
+                                  ? Colors.white
+                                  : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      if (_selectedSource != 'Housing') {
+                        setState(() {
+                          _selectedSource = 'Housing';
+                          _page = 1;
+                        });
+                        _loadLeads();
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _selectedSource == 'Housing'
+                            ? const Color(0xFFE11D48)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.home_work_rounded,
+                            size: 16,
+                            color: _selectedSource == 'Housing'
+                                ? Colors.white
+                                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Housing ($_housingCount)',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: _selectedSource == 'Housing' ? FontWeight.bold : FontWeight.w600,
+                              color: _selectedSource == 'Housing'
+                                  ? Colors.white
+                                  : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Search Bar
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 36,
+                  child: TextField(
+                    controller: _searchCtrl,
+                    style: TextStyle(fontSize: 13, color: textColor),
+                    decoration: InputDecoration(
+                      hintText: 'Search by client name, phone, telecaller, sales user...',
+                      hintStyle: TextStyle(fontSize: 12, color: subColor),
+                      prefixIcon: Icon(Icons.search_rounded, size: 18, color: subColor),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: borderColor)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: accentColor)),
+                    ),
+                    onSubmitted: (val) {
+                      setState(() {
+                        _search = val;
+                        _page = 1;
+                      });
+                      _loadLeads();
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _search = _searchCtrl.text;
+                    _page = 1;
+                  });
+                  _loadLeads();
+                },
+                icon: const Icon(Icons.search, size: 16),
+                label: const Text('Search', style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  minimumSize: const Size(0, 36),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+
+          // Leads List
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _leads.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.inbox_outlined, size: 48, color: subColor),
+                            const SizedBox(height: 10),
+                            Text('No Not Interested leads found.', style: TextStyle(color: subColor, fontSize: 13)),
+                          ],
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: _leads.length,
+                        separatorBuilder: (context, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final lead = _leads[index];
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            hoverColor: isDark ? const Color(0xFF334155).withValues(alpha: 0.3) : const Color(0xFFF1F5F9),
+                            onTap: () => KpiDrilldownDialogs.showLeadDetails(context, lead: lead),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    lead.customerName,
+                                    style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: accentColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    lead.rejectionReason ?? 'NOT_INTERESTED',
+                                    style: const TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: accentColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        lead.sanitizedPhone.isNotEmpty ? lead.sanitizedPhone : lead.phone,
+                                        style: TextStyle(fontSize: 12, color: subColor),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: lead.leadType == 'Property Listing'
+                                              ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                                              : const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          lead.leadType,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: lead.leadType == 'Property Listing'
+                                                ? const Color(0xFF10B981)
+                                                : const Color(0xFF3B82F6),
+                                          ),
+                                        ),
+                                      ),
+                                      if (lead.budgetDisplay != null && lead.budgetDisplay!.trim().isNotEmpty) ...[
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          lead.budgetDisplay!,
+                                          style: TextStyle(fontSize: 11, color: subColor, fontWeight: FontWeight.w600),
+                                        ),
+                                      ],
+                                      if (lead.telecallerName != null && lead.telecallerName!.isNotEmpty) ...[
+                                        const SizedBox(width: 10),
+                                        Icon(Icons.support_agent_rounded, size: 12, color: subColor),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          lead.telecallerName!,
+                                          style: TextStyle(fontSize: 11, color: subColor),
+                                        ),
+                                      ],
+                                      if (lead.salesUserName != null && lead.salesUserName!.isNotEmpty) ...[
+                                        const SizedBox(width: 10),
+                                        Icon(Icons.badge_outlined, size: 12, color: subColor),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          lead.salesUserName!,
+                                          style: TextStyle(fontSize: 11, color: subColor),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  if ((lead.telecallerRemarks != null && lead.telecallerRemarks!.trim().isNotEmpty) ||
+                                      (lead.transferRemarks != null && lead.transferRemarks!.trim().isNotEmpty)) ...[
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      'Remark: ${lead.telecallerRemarks ?? lead.transferRemarks}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 11, color: subColor, fontStyle: FontStyle.italic),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            trailing: Icon(Icons.chevron_right_rounded, size: 18, color: subColor),
+                          );
+                        },
+                      ),
+          ),
+
+          // Pagination Bar
+          if (_total > 25) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Page $_page of ${((_total - 1) ~/ 25) + 1} ($_total not interested leads total)',
+                  style: TextStyle(fontSize: 12, color: subColor),
+                ),
+                Row(
+                  children: [
+                    OutlinedButton(
+                      onPressed: _page > 1
+                          ? () {
+                              setState(() => _page--);
+                              _loadLeads();
+                            }
+                          : null,
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        minimumSize: const Size(60, 30),
+                      ),
+                      child: const Text('Previous', style: TextStyle(fontSize: 11)),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: (_page * 25) < _total
+                          ? () {
+                              setState(() => _page++);
+                              _loadLeads();
+                            }
+                          : null,
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        minimumSize: const Size(60, 30),
+                      ),
+                      child: const Text('Next', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 
 

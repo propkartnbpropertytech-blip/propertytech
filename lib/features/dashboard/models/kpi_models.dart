@@ -55,6 +55,7 @@ class DashboardKpiCounts {
   final int rejectedAfterSiteVisit;
   final int dealWon;
   final int salesUsers;
+  final int notInterested;
 
   const DashboardKpiCounts({
     this.availableInventory = 0,
@@ -67,6 +68,7 @@ class DashboardKpiCounts {
     this.rejectedAfterSiteVisit = 0,
     this.dealWon = 0,
     this.salesUsers = 0,
+    this.notInterested = 0,
   });
 
   factory DashboardKpiCounts.fromJson(Map<String, dynamic> json) {
@@ -81,6 +83,7 @@ class DashboardKpiCounts {
       rejectedAfterSiteVisit: (json['rejected_after_site_visit'] as num?)?.toInt() ?? 0,
       dealWon: (json['deal_won'] as num?)?.toInt() ?? 0,
       salesUsers: (json['sales_users'] as num?)?.toInt() ?? 0,
+      notInterested: (json['not_interested'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -491,12 +494,18 @@ class LeadsListResponse {
   final int total;
   final int page;
   final int limit;
+  final int? metaCount;
+  final int? housingCount;
+  final String? sourceFilter;
 
   const LeadsListResponse({
     this.leads = const [],
     this.total = 0,
     this.page = 1,
     this.limit = 25,
+    this.metaCount,
+    this.housingCount,
+    this.sourceFilter,
   });
 
   factory LeadsListResponse.fromJson(Map<String, dynamic> json) {
@@ -509,6 +518,9 @@ class LeadsListResponse {
       total: (json['total'] as num?)?.toInt() ?? 0,
       page: (json['page'] as num?)?.toInt() ?? 1,
       limit: (json['limit'] as num?)?.toInt() ?? 25,
+      metaCount: (json['meta_count'] as num?)?.toInt(),
+      housingCount: (json['housing_count'] as num?)?.toInt(),
+      sourceFilter: json['sourceFilter'] as String?,
     );
   }
 }

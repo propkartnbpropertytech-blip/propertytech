@@ -132,4 +132,68 @@ class TelecallerRepository {
     );
     return Map<String, dynamic>.from(res.data['data'] ?? {});
   }
+
+  Future<Map<String, dynamic>> getKpiSummary({
+    String? dateFilter,
+    String? startDate,
+    String? endDate,
+    String? leadType,
+  }) async {
+    final res = await DioClient.dio.get(
+      '/telecaller/kpi-summary',
+      queryParameters: {
+        if (dateFilter != null) 'dateFilter': dateFilter,
+        if (startDate != null) 'startDate': startDate,
+        if (endDate != null) 'endDate': endDate,
+        if (leadType != null) 'leadType': leadType,
+      },
+    );
+    return Map<String, dynamic>.from(res.data['data'] ?? {});
+  }
+
+  Future<Map<String, dynamic>> getKpiLeads({
+    required String category,
+    String? salesUserId,
+    String? dateFilter,
+    String? startDate,
+    String? endDate,
+    String? leadType,
+    int page = 1,
+    int limit = 25,
+    String? search,
+  }) async {
+    final res = await DioClient.dio.get(
+      '/telecaller/kpi-leads',
+      queryParameters: {
+        'category': category,
+        if (salesUserId != null) 'salesUserId': salesUserId,
+        if (dateFilter != null) 'dateFilter': dateFilter,
+        if (startDate != null) 'startDate': startDate,
+        if (endDate != null) 'endDate': endDate,
+        if (leadType != null) 'leadType': leadType,
+        'page': page,
+        'limit': limit,
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      },
+    );
+    return Map<String, dynamic>.from(res.data['data'] ?? {});
+  }
+
+  Future<Map<String, dynamic>> getSalesUsersBreakdown({
+    String? dateFilter,
+    String? startDate,
+    String? endDate,
+    String? leadType,
+  }) async {
+    final res = await DioClient.dio.get(
+      '/telecaller/sales-users-breakdown',
+      queryParameters: {
+        if (dateFilter != null) 'dateFilter': dateFilter,
+        if (startDate != null) 'startDate': startDate,
+        if (endDate != null) 'endDate': endDate,
+        if (leadType != null) 'leadType': leadType,
+      },
+    );
+    return Map<String, dynamic>.from(res.data['data'] ?? {});
+  }
 }

@@ -16,6 +16,8 @@ import '../../dashboard/widgets/welcome_header.dart';
 import '../../integration/services/integration_service.dart';
 import '../bloc/telecaller_dashboard_bloc.dart';
 import '../data/telecaller_repository.dart';
+import '../widgets/telecaller_kpi_dialogs.dart';
+import 'telecaller_callbacks_screen.dart' show queueLeadType;
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
 
@@ -60,11 +62,25 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   static const int _followupsPerPage = 5;
   bool _loadingFollowups = false;
 
+  // Active callbacks preview state
+  List<dynamic> _callbacks = [];
+
+  // Active CNR leads preview state
+  List<dynamic> _cnrLeads = [];
+
   // Recent activity pagination state
   int _activityPage = 1;
   static const int _activityPerPage = 10;
 
   StreamSubscription<Map<String, dynamic>>? _leadEventsSub;
+
+  // Authoritative KPI state
+  String _kpiDateFilter = 'Today';
+  String? _customStartDate;
+  String? _customEndDate;
+  String _kpiLeadType = 'Both';
+  Map<String, dynamic> _kpiSummary = {};
+  bool _loadingKpis = false;
 
   @override
   void initState() {
@@ -72,20 +88,475 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     _loadPersonalNotes();
     _loadTransferredLeads();
     _loadFollowups();
+    _loadCallbacks();
+    _loadCnr();
+    _loadKpiSummary();
+    if (IntegrationService().leads.isEmpty) {
+      IntegrationService().fetchServerLeads(silent: true);
+    }
     IntegrationService().addListener(_onIntegrationChanged);
     _leadEventsSub = IntegrationService.leadEvents.stream.listen((event) {
       if (!mounted) return;
       final type = event['type']?.toString();
       if (type == 'PEER_TRANSFER' || type == 'TRANSFER_COMPLETED' || type == 'OUTCOME_RECORDED' || type == 'FOLLOWUP_UPDATED' || type == 'STATUS_UPDATED') {
         _loadFollowups(forceRefresh: true);
+        _loadCallbacks();
+        _loadCnr();
         _loadTransferredLeads(_transferredPage);
+        _loadKpiSummary();
       }
     });
+  }
+
+  Future<void> _loadKpiSummary() async {
+    if (!mounted) return;
+    setState(() => _loadingKpis = true);
+    try {
+      final res = await _repository.getKpiSummary(
+        dateFilter: _kpiDateFilter,
+        startDate: _customStartDate,
+        endDate: _customEndDate,
+        leadType: _kpiLeadType,
+      );
+      if (mounted) {
+        setState(() {
+          _kpiSummary = res;
+          _loadingKpis = false;
+        });
+      }
+    } catch (e, stack) {
+      debugPrint('[TelecallerDashboard] _loadKpiSummary error: $e\n$stack');
+      if (!mounted) return;
+      setState(() => _loadingKpis = false);
+    }
+  }
+
+  void _selectDateFilter(String filter) {
+    if (_kpiDateFilter == filter && _customStartDate == null) return;
+    setState(() {
+      _kpiDateFilter = filter;
+      _customStartDate = null;
+      _customEndDate = null;
+    });
+    _loadKpiSummary();
+  }
+
+  void _selectLeadType(String leadType) {
+    if (_kpiLeadType == leadType) return;
+    setState(() {
+      _kpiLeadType = leadType;
+    });
+    _loadKpiSummary();
+  }
+
+  Future<void> _pickCustomDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 2),
+      initialDateRange: _customStartDate != null && _customEndDate != null
+          ? DateTimeRange(
+              start: DateTime.tryParse(_customStartDate!) ?? now.subtract(const Duration(days: 7)),
+              end: DateTime.tryParse(_customEndDate!) ?? now,
+            )
+          : DateTimeRange(start: now.subtract(const Duration(days: 7)), end: now),
+    );
+
+    if (!mounted) return;
+
+    if (picked != null) {
+      if (picked.start.isAfter(picked.end)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Start Date must be less than or equal to End Date.'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+        return;
+      }
+
+      final startStr = DateFormat('yyyy-MM-dd').format(picked.start);
+      final endStr = DateFormat('yyyy-MM-dd').format(picked.end);
+
+      setState(() {
+        _kpiDateFilter = 'Custom Range';
+        _customStartDate = startStr;
+        _customEndDate = endStr;
+      });
+      _loadKpiSummary();
+    }
+  }
+
+  String _computeKpiDateRangeDisplay() {
+    if (_kpiSummary['filters'] is Map &&
+        _kpiSummary['filters']['dateRangeDisplay'] != null &&
+        _kpiSummary['filters']['dateRangeDisplay'].toString().trim().isNotEmpty) {
+      return _kpiSummary['filters']['dateRangeDisplay'].toString().trim();
+    }
+    final now = DateTime.now();
+    final formatter = DateFormat('dd MMM yyyy');
+    final filter = _kpiDateFilter.trim().toLowerCase();
+    if (filter == 'today') {
+      return 'Today: ${formatter.format(now)}';
+    } else if (filter == 'weekly') {
+      final start = now.subtract(const Duration(days: 7));
+      return '${formatter.format(start)} – ${formatter.format(now)}';
+    } else if (filter == 'monthly' || filter == 'this month') {
+      final start = now.subtract(const Duration(days: 30));
+      return '${formatter.format(start)} – ${formatter.format(now)}';
+    } else if (filter == 'yearly' || filter == 'this year') {
+      final start = now.subtract(const Duration(days: 365));
+      return '${formatter.format(start)} – ${formatter.format(now)}';
+    } else if (_customStartDate != null && _customEndDate != null) {
+      final s = DateTime.tryParse(_customStartDate!);
+      final e = DateTime.tryParse(_customEndDate!);
+      if (s != null && e != null) {
+        return '${formatter.format(s)} – ${formatter.format(e)}';
+      }
+      return '$_customStartDate ~ $_customEndDate';
+    }
+    return '';
+  }
+
+  int get _followupsKpiCount {
+    if (_followups.isEmpty) {
+      final s = _kpiSummary['follow_ups'];
+      if (s is int) return s;
+      if (s != null) return int.tryParse(s.toString()) ?? 0;
+      return 0;
+    }
+
+    final filtered = _followups.where((f) {
+      // 1. Lead Type Filter
+      if (_kpiLeadType == 'Listing') {
+        final lt = f.leadType.toLowerCase();
+        if (!lt.contains('listing') && !lt.contains('property')) return false;
+      } else if (_kpiLeadType == 'Requirement') {
+        final lt = f.leadType.toLowerCase();
+        if (!lt.contains('requirement')) return false;
+      }
+
+      // 2. Date Filter
+      final filter = _kpiDateFilter.trim().toLowerCase();
+      final now = DateTime.now();
+      final local = f.scheduledAt.toLocal();
+
+      if (filter == 'today') {
+        return local.year == now.year && local.month == now.month && local.day == now.day;
+      } else if (filter == 'weekly') {
+        final startOf7Days = DateTime(now.year, now.month, now.day - 6);
+        final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+        return !local.isBefore(startOf7Days) && !local.isAfter(endOfToday);
+      } else if (filter == 'monthly' || filter == 'this month') {
+        return local.year == now.year && local.month == now.month;
+      } else if (filter == 'yearly' || filter == 'this year') {
+        return local.year == now.year;
+      } else if (filter == 'custom' || filter == 'custom range') {
+        if (_customStartDate != null && _customEndDate != null) {
+          final s = DateTime.tryParse(_customStartDate!);
+          final e = DateTime.tryParse('${_customEndDate!} 23:59:59');
+          if (s != null && e != null) {
+            return !local.isBefore(s) && !local.isAfter(e);
+          }
+        }
+      }
+      return true;
+    }).toList();
+
+    return filtered.length;
+  }
+
+  int get _callbacksKpiCount {
+    if (_callbacks.isEmpty) {
+      final s = _kpiSummary['callbacks'];
+      if (s is int) return s;
+      if (s != null) return int.tryParse(s.toString()) ?? 0;
+      return 0;
+    }
+
+    final valid = _callbacks.where((raw) {
+      if (raw is! Map) return false;
+      final lead = raw['lead'];
+      final cs = ((lead is Map ? lead['campaign_status'] : null) ?? raw['campaign_status'] ?? '').toString().trim();
+      if (cs == 'Property Listed' || cs == 'Listed' || cs == 'Archived') return false;
+      final leadId = (raw['lead_id'] ?? raw['id'] ?? '').toString();
+      final localLead = IntegrationService().getLeadById(leadId);
+      if (localLead != null && (localLead.campaignStatus == 'Property Listed' || localLead.campaignStatus == 'Listed' || localLead.campaignStatus == 'Archived')) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    final filtered = valid.where((raw) {
+      final isListing = queueLeadType(raw) == 'Property Listing';
+      if (_kpiLeadType == 'Listing') return isListing;
+      if (_kpiLeadType == 'Requirement') return !isListing;
+      return true;
+    }).toList();
+
+    return filtered.length;
+  }
+
+  int get _cnrKpiCount {
+    if (_cnrLeads.isEmpty) {
+      final s = _kpiSummary['cnr'];
+      if (s is int) return s;
+      if (s != null) return int.tryParse(s.toString()) ?? 0;
+      return 0;
+    }
+
+    final filtered = _cnrLeads.where((raw) {
+      final isListing = queueLeadType(raw) == 'Property Listing';
+      if (_kpiLeadType == 'Listing') return isListing;
+      if (_kpiLeadType == 'Requirement') return !isListing;
+      return true;
+    }).toList();
+
+    return filtered.length;
+  }
+
+  int get _notInterestedKpiCount {
+    final leads = IntegrationService().leads;
+    if (leads.isEmpty) {
+      final s = _kpiSummary['not_interested'];
+      if (s is int) return s;
+      if (s != null) return int.tryParse(s.toString()) ?? 0;
+      return 0;
+    }
+
+    final valid = leads.where((l) {
+      final cs = l.campaignStatus.trim().toLowerCase();
+      final isNI = cs == 'not interested' || cs == 'not_interested' || cs == 'disqualified';
+      if (!isNI) return false;
+      final isArchived = cs == 'archived' ||
+          cs == 'property listed' ||
+          cs == 'listed' ||
+          l.importStatus.trim().toLowerCase() == 'archived';
+      return !isArchived;
+    }).toList();
+
+    final filtered = valid.where((l) {
+      final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
+      if (_kpiLeadType == 'Listing') return isListing;
+      if (_kpiLeadType == 'Requirement') return !isListing;
+      return true;
+    }).toList();
+
+    return filtered.length;
+  }
+
+  void _openFollowupsDrilldown() {
+    TelecallerKpiDialogs.showFollowupsDrilldown(
+      context,
+      followups: _followups,
+      dateFilter: _kpiDateFilter,
+      startDate: _customStartDate,
+      endDate: _customEndDate,
+      leadType: _kpiLeadType,
+    );
+  }
+
+  void _openKpiDrilldown({required String category, required String title}) {
+    TelecallerKpiDialogs.showKpiLeadsDrilldown(
+      context,
+      category: category,
+      title: title,
+      dateFilter: _kpiDateFilter,
+      startDate: _customStartDate,
+      endDate: _customEndDate,
+      leadType: _kpiLeadType,
+    );
+  }
+
+  void _openSalesUsersDrilldown() {
+    TelecallerKpiDialogs.showSalesUsersBreakdown(
+      context,
+      dateFilter: _kpiDateFilter,
+      startDate: _customStartDate,
+      endDate: _customEndDate,
+      leadType: _kpiLeadType,
+    );
+  }
+
+  Widget _buildFilterPill(
+    String label,
+    bool isSelected,
+    VoidCallback onTap,
+    bool isDark,
+  ) {
+    final primaryColor = CRMColors.primary;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDark ? const Color(0xFF1E293B) : Colors.white)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected
+                ? primaryColor
+                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKpiFilterBar(bool isDark) {
+    final primaryColor = CRMColors.primary;
+    final dateRangeText = _computeKpiDateRangeDisplay();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // 1. Date Filter
+            Text(
+              'Date:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              height: 32,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildFilterPill('Today', _kpiDateFilter == 'Today', () => _selectDateFilter('Today'), isDark),
+                  _buildFilterPill('Weekly', _kpiDateFilter == 'Weekly', () => _selectDateFilter('Weekly'), isDark),
+                  _buildFilterPill('Monthly', _kpiDateFilter == 'Monthly', () => _selectDateFilter('Monthly'), isDark),
+                  _buildFilterPill('Yearly', _kpiDateFilter == 'Yearly', () => _selectDateFilter('Yearly'), isDark),
+                  _buildFilterPill(
+                    _kpiDateFilter.startsWith('Custom') && _customStartDate != null
+                        ? '$_customStartDate ~ $_customEndDate'
+                        : 'Custom Range',
+                    _kpiDateFilter.startsWith('Custom'),
+                    () => _pickCustomDateRange(),
+                    isDark,
+                  ),
+                ],
+              ),
+            ),
+            if (dateRangeText.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Container(
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: isDark ? 0.2 : 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: primaryColor.withValues(alpha: isDark ? 0.35 : 0.2),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.calendar_today_rounded, size: 12, color: primaryColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      dateRangeText,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: primaryColor),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Separator
+            Container(
+              height: 20,
+              width: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 12),
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            ),
+
+            // 2. Lead Type Filter
+            Text(
+              'Lead Type:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              height: 32,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildFilterPill('Both', _kpiLeadType == 'Both', () => _selectLeadType('Both'), isDark),
+                  _buildFilterPill('Listing', _kpiLeadType == 'Listing', () => _selectLeadType('Listing'), isDark),
+                  _buildFilterPill('Requirement', _kpiLeadType == 'Requirement', () => _selectLeadType('Requirement'), isDark),
+                ],
+              ),
+            ),
+
+            if (_loadingKpis) ...[
+              const SizedBox(width: 12),
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   void _onIntegrationChanged() {
     if (!mounted) return;
     _loadFollowups();
+    _loadCallbacks();
+    _loadCnr();
+    setState(() {});
   }
 
   @override
@@ -202,6 +673,30 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     } catch (_) {
       if (mounted) setState(() => _loadingFollowups = false);
     }
+  }
+
+  // --- CALLBACKS API ---
+  Future<void> _loadCallbacks() async {
+    try {
+      final list = await _repository.callbacks();
+      if (mounted) {
+        setState(() {
+          _callbacks = list;
+        });
+      }
+    } catch (_) {}
+  }
+
+  // --- CNR API ---
+  Future<void> _loadCnr() async {
+    try {
+      final list = await _repository.cnr();
+      if (mounted) {
+        setState(() {
+          _cnrLeads = list;
+        });
+      }
+    } catch (_) {}
   }
 
 
@@ -324,6 +819,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
             await Future.wait([
               _loadTransferredLeads(1),
               _loadFollowups(),
+              _loadCallbacks(),
+              _loadCnr(),
+              _loadKpiSummary(),
             ]);
           },
           child: ListView(
@@ -343,24 +841,98 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                 ),
               const SizedBox(height: 20),
 
+              // Date & Lead Type Filter Bar above KPIs
+              _buildKpiFilterBar(Theme.of(context).brightness == Brightness.dark),
+              const SizedBox(height: 16),
+
               LayoutBuilder(
                 builder: (context, constraints) {
                   const gap = 12.0;
                   final cols = constraints.maxWidth < 340
                       ? 1
-                      : (constraints.maxWidth < 900 ? 2 : (constraints.maxWidth / 220).floor().clamp(2, 5));
+                      : (constraints.maxWidth < 900 ? 2 : (constraints.maxWidth / 220).floor().clamp(2, 4));
                   final cardW = (constraints.maxWidth - gap * (cols - 1)) / cols;
                   final cards = <Widget>[
-                    _clickableKpi(context, 'My assigned leads', '${data['assignedLeads'] ?? 0}', Icons.assignment_outlined, '/telecaller/leads', width: cardW),
-                    _clickableKpi(context, 'Uncontacted', '${data['uncontacted'] ?? 0}', Icons.mark_email_unread_outlined, '/telecaller/leads', width: cardW),
-                    _clickableKpi(context, 'Callbacks', '${data['callbackCount'] ?? 0}', Icons.event_repeat, '/telecaller/callbacks', width: cardW),
-                    _clickableKpi(context, "Today's callbacks", '${data['todaysCallbacks'] ?? 0}', Icons.today_outlined, '/telecaller/callbacks', width: cardW),
-                    _clickableKpi(context, 'CNR / Retries', '${data['cnrCount'] ?? 0}', Icons.phone_missed_outlined, '/telecaller/cnr', width: cardW),
-                    _clickableKpi(context, 'Picked up', '${data['pickedUp'] ?? 0}', Icons.call_received, '/telecaller/leads', width: cardW),
-                    _clickableKpi(context, 'Handed to Sales', '${data['handedToSales'] ?? 0}', Icons.handshake_outlined, '/telecaller/leads', width: cardW),
-                    _clickableKpi(context, 'Not Interested', '${data['notInterestedCount'] ?? 0}', Icons.do_not_disturb_on_rounded, '/campaign/leads?view=not_interested', accentColor: const Color(0xFFEF4444), width: cardW),
-                    _clickableKpi(context, 'Workload', '${data['currentWorkload'] ?? 0}/${data['maxCapacity'] ?? 0}', Icons.speed, '/telecaller/leads', width: cardW),
-                    _clickableKpi(context, 'Remaining Capacity', '${data['remainingCapacity'] ?? 0}', Icons.hourglass_bottom, '/telecaller/leads', width: cardW),
+                    _clickableKpi(
+                      context,
+                      'Total Leads',
+                      '${_kpiSummary['total_leads'] ?? 0}',
+                      Icons.assignment_outlined,
+                      onTap: () => _openKpiDrilldown(category: 'total', title: 'Total Leads'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'New Leads Allocated',
+                      '${_kpiSummary['new_allocated'] ?? 0}',
+                      Icons.person_add_alt_1_outlined,
+                      accentColor: const Color(0xFF059669),
+                      onTap: () => _openKpiDrilldown(category: 'new_allocated', title: 'New Leads Allocated'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Old Leads Allocated',
+                      '${_kpiSummary['old_allocated'] ?? 0}',
+                      Icons.history_toggle_off_rounded,
+                      accentColor: const Color(0xFF6366F1),
+                      onTap: () => _openKpiDrilldown(category: 'old_allocated', title: 'Old Leads Allocated'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Assigned to Sales',
+                      '${_kpiSummary['assigned_to_sales'] ?? 0}',
+                      Icons.handshake_outlined,
+                      accentColor: const Color(0xFF2563EB),
+                      onTap: () => _openKpiDrilldown(category: 'assigned_to_sales', title: 'Assigned to Sales'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Sales Users',
+                      '${_kpiSummary['sales_users_count'] ?? 0}',
+                      Icons.badge_outlined,
+                      accentColor: const Color(0xFF8B5CF6),
+                      onTap: () => _openSalesUsersDrilldown(),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Not Interested',
+                      '$_notInterestedKpiCount',
+                      Icons.do_not_disturb_on_rounded,
+                      accentColor: const Color(0xFFEF4444),
+                      onTap: () => _openKpiDrilldown(category: 'not_interested', title: 'Not Interested Leads'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Callback',
+                      '$_callbacksKpiCount',
+                      Icons.event_repeat,
+                      accentColor: const Color(0xFFD97706),
+                      onTap: () => _openKpiDrilldown(category: 'callback', title: 'Callback Leads'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'CNR',
+                      '$_cnrKpiCount',
+                      Icons.phone_missed_outlined,
+                      accentColor: const Color(0xFFEA580C),
+                      onTap: () => _openKpiDrilldown(category: 'cnr', title: 'CNR Leads'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Follow-Ups',
+                      '$_followupsKpiCount',
+                      Icons.schedule_rounded,
+                      accentColor: const Color(0xFFD97706),
+                      onTap: _openFollowupsDrilldown,
+                      width: cardW,
+                    ),
                   ];
                   return Wrap(spacing: gap, runSpacing: gap, children: cards);
                 },
@@ -487,6 +1059,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         await Future.wait([
           _loadTransferredLeads(1),
           _loadFollowups(),
+          _loadCallbacks(),
+          _loadCnr(),
+          _loadKpiSummary(),
         ]);
       },
       body: Column(
@@ -507,8 +1082,12 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
           _buildMobileNextLeadCard(context, next),
           const SizedBox(height: 16),
 
-          // KPIs Grid (10 metrics)
-          _buildMobileKpiGrid(context, data),
+          // Date & Lead Type Filter Bar above KPIs
+          _buildKpiFilterBar(Theme.of(context).brightness == Brightness.dark),
+          const SizedBox(height: 16),
+
+          // KPIs Grid (8 metrics)
+          _buildMobileKpiGrid(context),
           const SizedBox(height: 20),
 
           // Followups preview
@@ -590,71 +1169,72 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     );
   }
 
-  Widget _buildMobileKpiGrid(BuildContext context, Map<String, dynamic> data) {
+  Widget _buildMobileKpiGrid(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final isVerySmall = width < 340;
 
     final kpis = <_MobileKpiItem>[
       _MobileKpiItem(
-        label: 'My assigned leads',
-        value: '${data['assignedLeads'] ?? 0}',
+        label: 'Total Leads',
+        value: '${_kpiSummary['total_leads'] ?? 0}',
         icon: Icons.assignment_outlined,
-        route: '/telecaller/leads',
+        onTap: () => _openKpiDrilldown(category: 'total', title: 'Total Leads'),
       ),
       _MobileKpiItem(
-        label: 'Uncontacted',
-        value: '${data['uncontacted'] ?? 0}',
-        icon: Icons.mark_email_unread_outlined,
-        route: '/telecaller/leads',
+        label: 'New Leads Allocated',
+        value: '${_kpiSummary['new_allocated'] ?? 0}',
+        icon: Icons.person_add_alt_1_outlined,
+        accentColor: const Color(0xFF059669),
+        onTap: () => _openKpiDrilldown(category: 'new_allocated', title: 'New Leads Allocated'),
       ),
       _MobileKpiItem(
-        label: 'Callbacks',
-        value: '${data['callbackCount'] ?? 0}',
-        icon: Icons.event_repeat,
-        route: '/telecaller/callbacks',
+        label: 'Old Leads Allocated',
+        value: '${_kpiSummary['old_allocated'] ?? 0}',
+        icon: Icons.history_toggle_off_rounded,
+        accentColor: const Color(0xFF6366F1),
+        onTap: () => _openKpiDrilldown(category: 'old_allocated', title: 'Old Leads Allocated'),
       ),
       _MobileKpiItem(
-        label: "Today's callbacks",
-        value: '${data['todaysCallbacks'] ?? 0}',
-        icon: Icons.today_outlined,
-        route: '/telecaller/callbacks',
-      ),
-      _MobileKpiItem(
-        label: 'CNR / Retries',
-        value: '${data['cnrCount'] ?? 0}',
-        icon: Icons.phone_missed_outlined,
-        route: '/telecaller/cnr',
-      ),
-      _MobileKpiItem(
-        label: 'Picked up',
-        value: '${data['pickedUp'] ?? 0}',
-        icon: Icons.call_received,
-        route: '/telecaller/leads',
-      ),
-      _MobileKpiItem(
-        label: 'Handed to Sales',
-        value: '${data['handedToSales'] ?? 0}',
+        label: 'Assigned to Sales',
+        value: '${_kpiSummary['assigned_to_sales'] ?? 0}',
         icon: Icons.handshake_outlined,
-        route: '/telecaller/leads',
+        accentColor: const Color(0xFF2563EB),
+        onTap: () => _openKpiDrilldown(category: 'assigned_to_sales', title: 'Assigned to Sales'),
+      ),
+      _MobileKpiItem(
+        label: 'Sales Users',
+        value: '${_kpiSummary['sales_users_count'] ?? 0}',
+        icon: Icons.badge_outlined,
+        accentColor: const Color(0xFF8B5CF6),
+        onTap: () => _openSalesUsersDrilldown(),
       ),
       _MobileKpiItem(
         label: 'Not Interested',
-        value: '${data['notInterestedCount'] ?? 0}',
+        value: '$_notInterestedKpiCount',
         icon: Icons.do_not_disturb_on_rounded,
-        route: '/campaign/leads?view=not_interested',
         accentColor: const Color(0xFFEF4444),
+        onTap: () => _openKpiDrilldown(category: 'not_interested', title: 'Not Interested Leads'),
       ),
       _MobileKpiItem(
-        label: 'Workload',
-        value: '${data['currentWorkload'] ?? 0}/${data['maxCapacity'] ?? 0}',
-        icon: Icons.speed,
-        route: '/telecaller/leads',
+        label: 'Callback',
+        value: '$_callbacksKpiCount',
+        icon: Icons.event_repeat,
+        accentColor: const Color(0xFFD97706),
+        onTap: () => _openKpiDrilldown(category: 'callback', title: 'Callback Leads'),
       ),
       _MobileKpiItem(
-        label: 'Remaining Cap.',
-        value: '${data['remainingCapacity'] ?? 0}',
-        icon: Icons.hourglass_bottom,
-        route: '/telecaller/leads',
+        label: 'CNR',
+        value: '$_cnrKpiCount',
+        icon: Icons.phone_missed_outlined,
+        accentColor: const Color(0xFFEA580C),
+        onTap: () => _openKpiDrilldown(category: 'cnr', title: 'CNR Leads'),
+      ),
+      _MobileKpiItem(
+        label: 'Follow-Ups',
+        value: '$_followupsKpiCount',
+        icon: Icons.schedule_rounded,
+        accentColor: const Color(0xFFD97706),
+        onTap: _openFollowupsDrilldown,
       ),
     ];
 
@@ -691,7 +1271,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
       label: '${item.label}: ${item.value}',
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        onTap: () => context.go(item.route),
+        onTap: item.onTap,
         child: Container(
           constraints: const BoxConstraints(minHeight: 64),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1768,13 +2348,21 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     );
   }
 
-  Widget _clickableKpi(BuildContext context, String title, String value, IconData icon, String route, {Color? accentColor, double width = 220}) {
+  Widget _clickableKpi(
+    BuildContext context,
+    String title,
+    String value,
+    IconData icon, {
+    VoidCallback? onTap,
+    Color? accentColor,
+    double width = 220,
+  }) {
     return SizedBox(
       width: width,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => context.go(route),
+          onTap: onTap,
           borderRadius: BorderRadius.circular(12),
           child: StatCard(
             title: title,
@@ -1825,14 +2413,14 @@ class _MobileKpiItem {
   final String label;
   final String value;
   final IconData icon;
-  final String route;
+  final VoidCallback onTap;
   final Color? accentColor;
 
   const _MobileKpiItem({
     required this.label,
     required this.value,
     required this.icon,
-    required this.route,
+    required this.onTap,
     this.accentColor,
   });
 }

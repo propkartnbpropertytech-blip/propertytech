@@ -209,6 +209,36 @@ class DashboardService {
     }
   }
 
+  Future<LeadsListResponse> getNotInterestedLeads({
+    required KpiFilterParams params,
+    String? sourceFilter,
+    String? search,
+    int page = 1,
+    int limit = 25,
+  }) async {
+    try {
+      final q = params.toQueryParams();
+      q['page'] = page;
+      q['limit'] = limit;
+      if (sourceFilter != null && sourceFilter.trim().isNotEmpty) {
+        q['sourceFilter'] = sourceFilter.trim();
+      }
+      if (search != null && search.trim().isNotEmpty) {
+        q['search'] = search.trim();
+      }
+      final response = await _apiClient.get(
+        '/dashboard/not-interested-leads',
+        queryParameters: q,
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return LeadsListResponse.fromJson(response.data['data'] as Map<String, dynamic>);
+      }
+      return const LeadsListResponse();
+    } catch (_) {
+      return const LeadsListResponse();
+    }
+  }
+
   Future<TelecallersSummaryResponse> getTelecallersSummary([KpiFilterParams? params]) async {
     try {
       final response = await _apiClient.get(
