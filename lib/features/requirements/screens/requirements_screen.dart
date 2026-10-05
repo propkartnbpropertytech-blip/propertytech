@@ -2379,34 +2379,126 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               child: _buildFollowupsView(),
             )
-          : MobileList<RequirementModel>(
-              keyOf: (req) => req.id,
-              items: filteredLeads,
-              isLoading: isLoading,
-              hasError: hasError,
-              onRetry: () => _triggerFetch(),
-              onRefresh: () async => _triggerFetch(),
-              emptyState: MobileEmptyState(
-                icon: Icons.folder_open_rounded,
-                title: _activeMainTab == 'Rejected'
-                    ? 'No Rejected Leads'
-                    : ((_activeMainTab == 'Won' || _activeMainTab == 'My Won')
-                        ? 'No Won Deals'
-                        : 'No Leads Found'),
-                description: 'No leads match the active filters or search criteria.',
-                actionLabel: 'Reset Filters',
-                onAction: () {
-                  setState(() {
-                    _selectedStatus = 'All';
-                    _selectedCategoryId = null;
-                    _selectedConfigIds.clear();
-                    _selectedLeadDateFilter = LeadDateFilterPreset.today;
-                    _searchController.clear();
-                  });
-                },
-              ),
-              itemBuilder: (context, req) => _buildMobileLeadCard(context, req, currentUser),
+          : Column(
+              children: [
+                if (_selectedRequirementIds.isNotEmpty)
+                  _buildMobileBulkSelectionBar(filteredLeads),
+                Expanded(
+                  child: MobileList<RequirementModel>(
+                    keyOf: (req) => req.id,
+                    items: filteredLeads,
+                    isLoading: isLoading,
+                    hasError: hasError,
+                    onRetry: () => _triggerFetch(),
+                    onRefresh: () async => _triggerFetch(),
+                    emptyState: MobileEmptyState(
+                      icon: Icons.folder_open_rounded,
+                      title: _activeMainTab == 'Rejected'
+                          ? 'No Rejected Leads'
+                          : ((_activeMainTab == 'Won' || _activeMainTab == 'My Won')
+                              ? 'No Won Deals'
+                              : 'No Leads Found'),
+                      description: 'No leads match the active filters or search criteria.',
+                      actionLabel: 'Reset Filters',
+                      onAction: () {
+                        setState(() {
+                          _selectedStatus = 'All';
+                          _selectedCategoryId = null;
+                          _selectedConfigIds.clear();
+                          _selectedLeadDateFilter = LeadDateFilterPreset.today;
+                          _searchController.clear();
+                        });
+                      },
+                    ),
+                    itemBuilder: (context, req) => _buildMobileLeadCard(context, req, currentUser),
+                  ),
+                ),
+              ],
             ),
+    );
+  }
+
+  Widget _buildMobileBulkSelectionBar(List<RequirementModel> requirements) {
+    if (_selectedRequirementIds.isEmpty) return const SizedBox.shrink();
+
+    final allSelected = requirements.isNotEmpty && _selectedRequirementIds.length == requirements.length;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: CRMColors.primaryOf(context).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: Checkbox(
+              value: allSelected,
+              activeColor: CRMColors.primaryOf(context),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (val) {
+                setState(() {
+                  if (val == true) {
+                    _selectedRequirementIds.addAll(requirements.map((r) => r.id));
+                  } else {
+                    _selectedRequirementIds.clear();
+                  }
+                });
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${_selectedRequirementIds.length} Selected',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: CRMColors.textOf(context),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _selectedRequirementIds.clear();
+              });
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+          ),
+          const SizedBox(width: 6),
+          ElevatedButton.icon(
+            onPressed: () => _confirmBulkMoveToBin(requirements),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CRMColors.danger,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+            icon: const Icon(Icons.delete_outline_rounded, size: 14),
+            label: const Text(
+              'Move to Bin',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2481,22 +2573,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final isUnhandled = _isUnhandledAssignedLead(req, currentUser);
     final isTelecallerBadge = _shouldShowTelecallerStatusBadge(req, currentUser);
     final isClosed = _isLeadClosedOrTerminal(req);
+    final isSelected = _selectedRequirementIds.contains(req.id);
 
     return Card(
       elevation: 0.5,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: isUnhandled
-              ? const Color(0xFFF59E0B).withValues(alpha: 0.4)
-              : CRMColors.borderOf(context).withValues(alpha: 0.6),
-          width: isUnhandled ? 1.5 : 1.0,
+          color: isSelected
+              ? primary
+              : (isUnhandled
+                  ? const Color(0xFFF59E0B).withValues(alpha: 0.4)
+                  : CRMColors.borderOf(context).withValues(alpha: 0.6)),
+          width: isSelected ? 1.5 : (isUnhandled ? 1.5 : 1.0),
         ),
       ),
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => _showRequirementDetailDrawer(req),
+        onLongPress: isClosed
+            ? null
+            : () {
+                setState(() {
+                  if (isSelected) {
+                    _selectedRequirementIds.remove(req.id);
+                  } else {
+                    _selectedRequirementIds.add(req.id);
+                  }
+                });
+              },
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -2505,6 +2611,30 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2, right: 8),
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: Checkbox(
+                        value: isSelected,
+                        activeColor: primary,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onChanged: isClosed
+                            ? null
+                            : (_) {
+                                setState(() {
+                                  if (isSelected) {
+                                    _selectedRequirementIds.remove(req.id);
+                                  } else {
+                                    _selectedRequirementIds.add(req.id);
+                                  }
+                                });
+                              },
+                      ),
+                    ),
+                  ),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2555,22 +2685,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: statusColor.withValues(alpha: 0.3)),
-                    ),
-                    child: Text(
-                      displayStatusLabel(req.status),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: statusColor,
-                      ),
-                    ),
-                  ),
+                  _buildStatusControlWithNotes(req, currentUser, compact: true),
                 ],
               ),
               const SizedBox(height: 8),
@@ -2664,24 +2779,82 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   ],
                 ),
               ],
-              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')) ...[
-                const SizedBox(height: 4),
+              if (currentUser != null) ...[
+                if (_getAddedByDisplayLine(req).isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.person_add_alt_1_outlined, size: 13, color: Colors.blueGrey.shade600),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          _getAddedByDisplayLine(req),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blueGrey.shade700,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (req.leadSourceDisplay != null && req.leadSourceDisplay!.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Icon(
+                          req.isMetaLead ? Icons.campaign_rounded : Icons.hub_outlined,
+                          size: 13,
+                          color: req.isMetaLead ? const Color(0xFF1877F2) : Colors.blueGrey.shade600,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          req.leadSourceDisplay!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: req.isMetaLead ? const Color(0xFF1877F2) : Colors.blueGrey.shade700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 5),
                 Row(
                   children: [
-                    Icon(Icons.person_pin_outlined, size: 14, color: Colors.blueGrey.shade600),
+                    Icon(Icons.person_outline_rounded, size: 14, color: Colors.blueGrey.shade600),
                     const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        '${_getAddedByDisplayLine(req)} • Assigned: ${_getSalesmanName(req, currentUser)}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.blueGrey.shade700,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    Text(
+                      'Assign: ',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.blueGrey.shade800,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
+                    const SizedBox(width: 4),
+                    if (!isClosed && (_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser) || currentUser.role == 'Super Admin' || currentUser.role == 'Admin'))
+                      Expanded(
+                        child: SizedBox(
+                          height: 32,
+                          child: _buildMobileAssignToDropdown(
+                            req,
+                            isReassign: _canSalesReassignLead(currentUser),
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: Text(
+                          _getSalesmanName(req, currentUser),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.blueGrey.shade700.withValues(alpha: isClosed ? 0.7 : 1.0),
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                   ],
                 ),
               ],
@@ -4991,6 +5164,148 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     overlay.insert(_callAttemptedOverlayEntry!);
   }
 
+  Future<void> _showMobileRejectionPicker(RequirementModel req) async {
+    if (!mounted) return;
+    final List<String> reasons = [
+      'Not Answering',
+      'No Requirement',
+      'Budget Mismatch',
+      'Locality Mismatch',
+      'Broker',
+      'Already rented',
+      'Want Ready-To-Move',
+      'Negotiation Failed',
+      'Others',
+    ];
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (bottomSheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Select Rejection Reason',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () => Navigator.of(bottomSheetContext).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: reasons.length,
+                  itemBuilder: (ctx, idx) {
+                    final reason = reasons[idx];
+                    final isSelected = req.status == 'Rejected ($reason)';
+                    return ListTile(
+                      title: Text(
+                        reason,
+                        style: TextStyle(
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected ? CRMColors.danger : null,
+                        ),
+                      ),
+                      trailing: isSelected ? const Icon(Icons.check, color: CRMColors.danger) : null,
+                      onTap: () => Navigator.of(bottomSheetContext).pop('Rejected ($reason)'),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected != null) {
+      _changeStatus(req, selected);
+    }
+  }
+
+  Future<void> _showMobileCallAttemptedPicker(RequirementModel req) async {
+    if (!mounted) return;
+    final List<String> options = [
+      'Picked Up',
+      'Open',
+    ];
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (bottomSheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Select Call Attempted Status',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () => Navigator.of(bottomSheetContext).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  itemBuilder: (ctx, idx) {
+                    final opt = options[idx];
+                    final fullStatus = 'Call Attempted ($opt)';
+                    final isSelected = req.status == fullStatus || req.status == 'Call Attempted - $opt';
+                    return ListTile(
+                      title: Text(
+                        opt,
+                        style: TextStyle(
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected ? const Color(0xFF0288D1) : null,
+                        ),
+                      ),
+                      trailing: isSelected ? const Icon(Icons.check, color: Color(0xFF0288D1)) : null,
+                      onTap: () => Navigator.of(bottomSheetContext).pop(fullStatus),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected != null) {
+      _changeStatus(req, selected);
+    }
+  }
+
   Widget _buildStatusControl(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
     if (_isLeadTransferredAway(req, currentUser)) {
       return Container(
@@ -5091,8 +5406,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _removeCallAttemptedOverlay();
         },
         onSelected: (String newStatus) {
-          if (newStatus == 'Rejected' || newStatus == 'Call Attempted') {
-            // Handled via overlay
+          if (newStatus == 'Rejected') {
+            if (_rejectionOverlayEntry == null) {
+              _showMobileRejectionPicker(req);
+            }
+          } else if (newStatus == 'Call Attempted') {
+            if (_callAttemptedOverlayEntry == null) {
+              _showMobileCallAttemptedPicker(req);
+            }
           } else {
             _removeRejectionOverlay();
             _removeCallAttemptedOverlay();
@@ -5271,7 +5592,197 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _notesOverlayEntry = null;
   }
 
+  void _showMobileAddNoteSheet(BuildContext anchorContext, RequirementModel req) {
+    final notesController = TextEditingController(text: '');
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: anchorContext,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final bool hasText = notesController.text.trim().isNotEmpty;
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '+ Add Note',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(sheetContext),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(sheetContext).brightness == Brightness.dark
+                          ? Colors.black12
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: CRMColors.borderOf(sheetContext).withOpacity(0.6),
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: TextField(
+                      controller: notesController,
+                      autofocus: true,
+                      maxLines: 4,
+                      minLines: 3,
+                      onChanged: (val) => setSheetState(() {}),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: CRMColors.textOf(sheetContext),
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Type your note here...',
+                        hintStyle: TextStyle(
+                          fontSize: 13,
+                          color: CRMColors.textSecondaryOf(sheetContext).withOpacity(0.6),
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          notesController.clear();
+                          setSheetState(() {});
+                        },
+                        child: Text(
+                          'Clear',
+                          style: TextStyle(
+                            color: CRMColors.textOf(sheetContext),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: hasText
+                              ? const Color(0xFF6C5CE7)
+                              : const Color(0xFFA0AEC0),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        onPressed: (isSaving || !hasText)
+                            ? null
+                            : () async {
+                                setSheetState(() => isSaving = true);
+                                final newNoteText = notesController.text.trim();
+                                final timeStr = DateFormat("dd MMM ''yy, h:mm a").format(DateTime.now());
+                                final formattedEntry = '[$timeStr] $newNoteText';
+                                final existingClean = _getCleanNote(req);
+                                final updatedNotes = (existingClean != null && existingClean.isNotEmpty)
+                                    ? '$existingClean\n$formattedEntry'
+                                    : formattedEntry;
+
+                                try {
+                                  anchorContext.read<RequirementsBloc>().add(
+                                    UpdateRequirementEvent(
+                                      req.copyWith(notes: updatedNotes),
+                                    ),
+                                  );
+
+                                  await RequirementsRepository().updateRequirementFields(
+                                    req.id,
+                                    {'notes': updatedNotes, 'new_note': formattedEntry},
+                                  );
+
+                                  if (Navigator.of(sheetContext).canPop()) {
+                                    Navigator.of(sheetContext).pop();
+                                  }
+
+                                  if (mounted) {
+                                    setState(() {
+                                      _refreshFollowupsFuture();
+                                    });
+                                    _triggerFetch();
+                                    ScaffoldMessenger.of(anchorContext).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Note saved successfully.'),
+                                        backgroundColor: CRMColors.success,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (Navigator.of(sheetContext).canPop()) {
+                                    Navigator.of(sheetContext).pop();
+                                  }
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(anchorContext).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Failed to save note: $e'),
+                                        backgroundColor: CRMColors.danger,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                        child: isSaving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Text(
+                                'Save Note',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showNotesPopover(BuildContext anchorContext, RequirementModel req) {
+    if (MediaQuery.of(anchorContext).size.width < 600) {
+      _showMobileAddNoteSheet(anchorContext, req);
+      return;
+    }
     _removeNotesPopover();
 
     final RenderBox? renderBox = anchorContext.findRenderObject() as RenderBox?;
