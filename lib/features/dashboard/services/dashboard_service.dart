@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../models/kpi_models.dart';
+import '../models/area_analytics_model.dart';
 
 class DashboardService {
   final ApiClient _apiClient = ApiClient();
@@ -483,6 +484,51 @@ class DashboardService {
       return response.data is Map<String, dynamic> && response.data['success'] == true;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<List<AreaCountItem>> getInventoryByArea({String? businessType}) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/inventory-by-area',
+        queryParameters: {
+          if (businessType != null && businessType.isNotEmpty)
+            'businessType': businessType,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final list = (response.data['data'] as List?)
+                ?.map((item) => AreaCountItem.fromJson(Map<String, dynamic>.from(item)))
+                .toList() ??
+            [];
+        return list;
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[getInventoryByArea] Error: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<AreaCountItem>> getLeadsByArea({required String type}) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/leads-by-area',
+        queryParameters: {
+          'type': type,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final list = (response.data['data'] as List?)
+                ?.map((item) => AreaCountItem.fromJson(Map<String, dynamic>.from(item)))
+                .toList() ??
+            [];
+        return list;
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[getLeadsByArea] Error: $e');
+      rethrow;
     }
   }
 }

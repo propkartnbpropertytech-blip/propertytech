@@ -41,6 +41,7 @@ import '../widgets/recent_properties_card.dart';
 import '../widgets/todays_schedule_card.dart';
 import '../widgets/followups_card.dart';
 import '../../requirements/screens/requirements_screen.dart';
+import '../widgets/inventory_demand_analytics_section.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -314,6 +315,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   ),
                                   const SizedBox(height: 24),
 
+                                  // Inventory & Demand Analytics Section
+                                  InventoryDemandAnalyticsSection(
+                                    businessType: kpiFilters.businessType,
+                                  ),
+                                  const SizedBox(height: 24),
+
                                   // Middle Section: Recent Properties & (Note + Follow-ups)
                                   if (isDesktop)
                                     Row(
@@ -528,6 +535,12 @@ class _DashboardScreenState extends State<DashboardScreen>
             kpiFilters,
             false,
             false,
+          ),
+          const SizedBox(height: 16),
+
+          // Inventory & Demand Analytics Section
+          InventoryDemandAnalyticsSection(
+            businessType: kpiFilters.businessType,
           ),
           const SizedBox(height: 16),
 
