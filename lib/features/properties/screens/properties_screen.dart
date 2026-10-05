@@ -4852,6 +4852,215 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final currentUser = authState is Authenticated ? authState.user : null;
     final role = currentUser?.role.toLowerCase() ?? '';
     final bool canExport = role == 'admin' || role == 'super admin' || role == 'telecaller';
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobile = screenWidth < 600 || MobileLayout.isMobileShell(screenWidth);
+
+    if (isMobile) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Top row: Select All & Export Properties
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (pagedProperties.isNotEmpty)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          unselectedWidgetColor: CRMColors.textSecondaryOf(context),
+                        ),
+                        child: Checkbox(
+                          value: pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
+                          tristate: pagedProperties.any((p) => _selectedPropertyIds.contains(p.id)) &&
+                              !pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
+                          activeColor: CRMColors.primaryOf(context),
+                          onChanged: (bool? checked) {
+                            setState(() {
+                              if (checked == true) {
+                                for (final p in pagedProperties) {
+                                  _selectedPropertyIds.add(p.id);
+                                }
+                              } else {
+                                for (final p in pagedProperties) {
+                                  _selectedPropertyIds.remove(p.id);
+                                }
+                              }
+                            });
+                          },
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () {
+                          setState(() {
+                            final allSel = pagedProperties.every((p) => _selectedPropertyIds.contains(p.id));
+                            if (!allSel) {
+                              for (final p in pagedProperties) {
+                                _selectedPropertyIds.add(p.id);
+                              }
+                            } else {
+                              for (final p in pagedProperties) {
+                                _selectedPropertyIds.remove(p.id);
+                              }
+                            }
+                          });
+                        },
+                        child: Text(
+                          'Select All (${pagedProperties.length})',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: CRMColors.textOf(context),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  const SizedBox.shrink(),
+                if (canExport)
+                  ElevatedButton.icon(
+                    onPressed: () => _exportPropertiesToExcel(allProperties, currentUser),
+                    icon: const Icon(Icons.download_rounded, size: 15),
+                    label: const Text(
+                      'Export Properties',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF217346),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      elevation: 1,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Bottom row: With Photos / No Photos filters (Cards/Table removed on mobile)
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _imageFilter = _imageFilter == 'with_images' ? null : 'with_images';
+                        _noImagesOnly = false;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      height: 38,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _imageFilter == 'with_images'
+                            ? const Color(0xFF2E7D32)
+                            : const Color(0xFF2E7D32).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _imageFilter == 'with_images'
+                              ? const Color(0xFF2E7D32)
+                              : CRMColors.borderOf(context).withOpacity(0.6),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.image_rounded,
+                            size: 16,
+                            color: _imageFilter == 'with_images'
+                                ? Colors.white
+                                : const Color(0xFF2E7D32),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'With Photos ($withImagesCount)',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _imageFilter == 'with_images'
+                                    ? Colors.white
+                                    : CRMColors.textOf(context),
+                                fontWeight: _imageFilter == 'with_images'
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        final isCurrentlySelected = _imageFilter == 'no_images' || _noImagesOnly;
+                        _imageFilter = isCurrentlySelected ? null : 'no_images';
+                        _noImagesOnly = !isCurrentlySelected;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      height: 38,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: (_imageFilter == 'no_images' || _noImagesOnly)
+                            ? CRMColors.primaryOf(context)
+                            : CRMColors.primaryOf(context).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: (_imageFilter == 'no_images' || _noImagesOnly)
+                              ? CRMColors.primaryOf(context)
+                              : CRMColors.borderOf(context).withOpacity(0.6),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.no_photography_rounded,
+                            size: 16,
+                            color: (_imageFilter == 'no_images' || _noImagesOnly)
+                                ? Colors.white
+                                : CRMColors.primaryOf(context),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'No Photos ($noImagesCount)',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: (_imageFilter == 'no_images' || _noImagesOnly)
+                                    ? Colors.white
+                                    : CRMColors.textOf(context),
+                                fontWeight: (_imageFilter == 'no_images' || _noImagesOnly)
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -5893,6 +6102,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Container(
+                    width: 165,
                     height: 36,
                     padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
@@ -5904,11 +6114,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       ),
                     ),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        _buildPropertyListingTabButton('Rent'),
+                        Expanded(
+                          child: _buildPropertyListingTabButton('Rent'),
+                        ),
                         const SizedBox(width: 4),
-                        _buildPropertyListingTabButton('Re-Sale'),
+                        Expanded(
+                          child: _buildPropertyListingTabButton('Re-Sale'),
+                        ),
                       ],
                     ),
                   ),
