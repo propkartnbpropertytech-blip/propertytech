@@ -2456,7 +2456,22 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-                      child: _buildSearchAndFiltersCard(_cachedRequirements),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildMobileFilterButton(),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                            child: _isMobileFiltersExpanded
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: CRMSpacing.s),
+                                    child: _buildSearchAndFiltersCard(_cachedRequirements),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   if (_selectedRequirementIds.isNotEmpty)
@@ -3059,6 +3074,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildMobileFilterButton() {
+    final activeCount = _countActiveLeadFilters();
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -3066,26 +3082,37 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 11),
         decoration: BoxDecoration(
           color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.cardBgOf(context),
           borderRadius: BorderRadius.circular(CRMBorderRadius.button),
           border: Border.all(
-            color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.borderOf(context),
+            color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.borderOf(context).withOpacity(0.6),
             width: 1.0,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.black.withOpacity(0.3)
+                  : const Color(0xFF64748B).withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               Icons.filter_list_rounded,
-              size: 18,
+              size: 20,
               color: _isMobileFiltersExpanded ? Colors.white : CRMColors.primaryOf(context),
             ),
             const SizedBox(width: CRMSpacing.s),
             Text(
-              _isMobileFiltersExpanded ? "Hide Filters" : "Show Search Filters",
+              _isMobileFiltersExpanded
+                  ? "Hide Filters"
+                  : (activeCount > 0 ? "Show Search Filters ($activeCount)" : "Show Search Filters"),
               style: CRMTypography.bodyMedium.copyWith(
                 color: _isMobileFiltersExpanded ? Colors.white : CRMColors.textOf(context),
                 fontWeight: FontWeight.bold,

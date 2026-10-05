@@ -3758,8 +3758,43 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final listingTypes =
         metadata != null ? metadata.listingTypes : <LookupItem>[];
 
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobile = screenWidth < 600 || MobileLayout.isMobileShell(screenWidth);
+
     return CRMCard(
       title: 'Search Filter',
+      headerAction: isMobile
+          ? InkWell(
+              onTap: () {
+                setState(() {
+                  _isMobileFiltersExpanded = false;
+                });
+              },
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.filter_list_rounded,
+                      size: 16,
+                      color: CRMColors.primaryOf(context),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Hide',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: CRMColors.primaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : null,
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.s),
         child: Column(
@@ -4153,6 +4188,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
 
   Widget _buildMobileFilterButton() {
+    final activeFiltersCount = _countActivePropertyFilters();
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -4162,10 +4198,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 12),
         decoration: BoxDecoration(
-          color: _isMobileFiltersExpanded ? CRMColors.primary : CRMColors.cardBgOf(context),
+          color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.cardBgOf(context),
           borderRadius: BorderRadius.circular(CRMBorderRadius.card),
           border: Border.all(
-            color: _isMobileFiltersExpanded ? CRMColors.primary : CRMColors.borderOf(context).withOpacity(0.6),
+            color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.borderOf(context).withOpacity(0.6),
             width: 1.0,
           ),
           boxShadow: [
@@ -4183,12 +4219,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           children: [
             Icon(
               Icons.filter_list_rounded,
-              size: 18,
+              size: 20,
               color: _isMobileFiltersExpanded ? Colors.white : CRMColors.primaryOf(context),
             ),
             const SizedBox(width: CRMSpacing.s),
             Text(
-              _isMobileFiltersExpanded ? "Hide Filters" : "Show Search Filters",
+              _isMobileFiltersExpanded
+                  ? "Hide Filters"
+                  : (activeFiltersCount > 0 ? "Show Search Filters ($activeFiltersCount)" : "Show Search Filters"),
               style: CRMTypography.bodyMedium.copyWith(
                 color: _isMobileFiltersExpanded ? Colors.white : CRMColors.textOf(context),
                 fontWeight: FontWeight.bold,
@@ -4206,7 +4244,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     String? currentUserId,
   ) {
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 600;
+    final bool isMobile = screenWidth < 600 || MobileLayout.isMobileShell(screenWidth);
 
     if (isMobile) {
       return Column(
@@ -5907,8 +5945,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               _buildStatisticsRow(rawLoadedList),
               const SizedBox(height: CRMSpacing.m),
 
-              // 3. Search & Advanced Filters Card (Search input + button, Status, BHK/Type, Area, Price Range, Clear Filters, and DATE FILTER bar)
-              _buildSearchFiltersCard(metadata, rawLoadedList, currentUserId),
+              // 3. Search & Advanced Filters Card (Collapsible on mobile)
+              _buildSearchAndFilters(metadata, rawLoadedList, currentUserId),
               const SizedBox(height: CRMSpacing.m),
 
               // 4. Action Toolbar (Select All, With Photos, No Photos, Export Properties)
