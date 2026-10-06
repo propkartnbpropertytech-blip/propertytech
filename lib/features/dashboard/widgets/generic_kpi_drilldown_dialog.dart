@@ -241,49 +241,52 @@ class _GenericKpiDrilldownDialogState extends State<GenericKpiDrilldownDialog> {
   }
 
   Widget _buildFilterBar(Color cardBg, Color borderColor, Color subColor) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return Row(
       children: [
-        // Date Filter
-        DropdownButton<String>(
-          value: _filters['dateFilter']?.toString() ?? 'Weekly',
-          underline: const SizedBox(),
-          items: const [
-            DropdownMenuItem(value: 'Today', child: Text('Today')),
-            DropdownMenuItem(value: 'Weekly', child: Text('Weekly')),
-            DropdownMenuItem(value: 'Monthly', child: Text('Monthly')),
-            DropdownMenuItem(value: 'Yearly', child: Text('Yearly')),
-            DropdownMenuItem(value: 'All Time', child: Text('All Time')),
-          ],
-          onChanged: (val) {
-            if (val != null) {
-              setState(() {
-                _filters['dateFilter'] = val;
-                _currentPage = 1;
-              });
-              _loadDrilldown();
-            }
-          },
-        ),
+        Expanded(
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // Date Filter
+              DropdownButton<String>(
+                value: _filters['dateFilter']?.toString() ?? 'Weekly',
+                underline: const SizedBox(),
+                items: const [
+                  DropdownMenuItem(value: 'Today', child: Text('Today')),
+                  DropdownMenuItem(value: 'Weekly', child: Text('Weekly')),
+                  DropdownMenuItem(value: 'Monthly', child: Text('Monthly')),
+                  DropdownMenuItem(value: 'Yearly', child: Text('Yearly')),
+                  DropdownMenuItem(value: 'All Time', child: Text('All Time')),
+                ],
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _filters['dateFilter'] = val;
+                      _currentPage = 1;
+                    });
+                    _loadDrilldown();
+                  }
+                },
+              ),
 
-        // Status Filter reset if selected
-        if (_selectedStatusFilter != null) ...[
-          InputChip(
-            label: Text('Status: $_selectedStatusFilter'),
-            onDeleted: () {
-              setState(() {
-                _selectedStatusFilter = null;
-                _currentPage = 1;
-              });
-              _loadDrilldown();
-            },
+              // Status Filter reset if selected
+              if (_selectedStatusFilter != null) ...[
+                InputChip(
+                  label: Text('Status: $_selectedStatusFilter'),
+                  onDeleted: () {
+                    setState(() {
+                      _selectedStatusFilter = null;
+                      _currentPage = 1;
+                    });
+                    _loadDrilldown();
+                  },
+                ),
+              ],
+            ],
           ),
-        ],
-
-        const Spacer(),
-
+        ),
         IconButton(
           icon: const Icon(Icons.refresh_rounded, size: 20),
           tooltip: 'Refresh Data',
