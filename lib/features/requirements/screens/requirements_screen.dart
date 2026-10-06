@@ -2013,7 +2013,24 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (rawLoadedList.isEmpty) return [];
 
     final query = _searchController.text.trim().toLowerCase();
-    return rawLoadedList.where((r) {
+    final userFilterActive = _selectedUserFilterId != "All" && _selectedUserFilterId.isNotEmpty;
+    final bool isWonTab = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
+    final bool viewAllRejected = _activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser);
+    final bool unassignFilter = !viewAllRejected &&
+        !isWonTab &&
+        _selectedStatus == 'Unassign' &&
+        _canSeeUnassignStatusFilter(currentUser);
+
+    users_model.UserModel? selectedUser;
+    if (_activeMainTab != 'Leads Added by Me' && userFilterActive) {
+      try {
+        final usersState = context.read<UsersBloc>().state;
+        final allKnownUsers = usersState is UsersLoaded ? _mergedAssignUsers(usersState.users) : _assignUsers;
+        selectedUser = allKnownUsers.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
+      } catch (_) {}
+    }
+
+    final filtered = rawLoadedList.where((r) {
       if (_activeMainTab == 'Leads Added by Me') {
         if (currentUser == null || !_isUserCreator(r, currentUser)) {
           return false;
@@ -2033,6 +2050,24 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               return false;
             }
           }
+        }
+      }
+      if (currentUser != null && RoleGuard.isTelecaller(currentUser.role)) {
+        final uName = currentUser.fullName.trim().toLowerCase();
+        final isCreator = r.createdBy == currentUser.id ||
+            (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+            (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+        final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+            (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
+        final isTaggedTelecaller = (r.assignedTelecallerId != null && r.assignedTelecallerId == currentUser.id) ||
+            (r.metaCustomFields != null &&
+              (r.metaCustomFields!['telecaller_id'] == currentUser.id ||
+               r.metaCustomFields!['assigned_telecaller_id'] == currentUser.id ||
+               r.metaCustomFields!['telecaller_by_id'] == currentUser.id ||
+               r.metaCustomFields!['telecaller_by'] == currentUser.id ||
+               (r.metaCustomFields!['telecaller_by'] != null && uName.isNotEmpty && r.metaCustomFields!['telecaller_by'].toString().trim().toLowerCase() == uName)));
+        if (!isCreator && !isAssignee && !isTaggedTelecaller) {
+          return false;
         }
       }
 
@@ -2060,7 +2095,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
       if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
 
-      final bool isWonTab = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
       if (isWonTab) {
         if (!_isLeadWon(r) && mappedStatus != 'Won' && r.status != 'Won' && r.status != 'Closed') {
           return false;
@@ -2074,14 +2108,38 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
       }
 
-      if (_selectedStatus != 'All' && _selectedStatus.isNotEmpty) {
-        if (mappedStatus != _selectedStatus && r.status != _selectedStatus) {
-          final matchesCallAttempted = _selectedStatus == 'Call Attempted' &&
-              (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted'));
-          final matchesRejected = _selectedStatus == 'Rejected' && r.status.startsWith('Rejected');
-          if (!matchesCallAttempted && !matchesRejected) return false;
-        }
+      if (_activeMainTab != 'Leads Added by Me' &&
+          !isWonTab &&
+          !userFilterActive &&
+          _selectedStatus != 'Won' &&
+          !unassignFilter &&
+          mappedStatus == 'Won') return false;
+
+      final matchesStatus = isWonTab
+          ? true
+          : viewAllRejected
+          ? true
+          : unassignFilter
+          ? _isLeadUnassigned(r)
+          : (userFilterActive
+          ? (_selectedStatus == "All" ||
+              mappedStatus == _selectedStatus ||
+              r.status == _selectedStatus)
+          : (_selectedStatus == "All" ||
+          mappedStatus == _selectedStatus ||
+          (!isUnhandledAssigned && r.status == _selectedStatus) ||
+          (!isUnhandledAssigned && _selectedStatus == 'Rejected' && r.status.startsWith('Rejected')) ||
+          (!isUnhandledAssigned && _selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')))));
+      if (!matchesStatus) return false;
+
+      bool matchesUser = true;
+      if (_activeMainTab != 'Leads Added by Me' && userFilterActive) {
+        matchesUser = selectedUser != null &&
+            (currentUser != null && currentUser.role == 'Telecaller'
+                ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedUser, currentUser)
+                : TeamUserVisibility.requirementBelongsToUser(r, selectedUser));
       }
+      if (!matchesUser) return false;
 
       if (query.isNotEmpty) {
         final clientName = r.clientName.toLowerCase();
@@ -2090,16 +2148,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         final remarks = (r.remarks ?? '').toLowerCase();
         final areas = r.areaNames.join(' ').toLowerCase();
 
+        bool matchesSalesman = false;
+        if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
+          final creator = (r.creatorName ?? '').toLowerCase();
+          final assignee = (r.assigneeName ?? '').toLowerCase();
+          matchesSalesman = creator.contains(query) || assignee.contains(query);
+        }
+
         final matchesSearch = clientName.contains(query) ||
             clientMobile.contains(query) ||
             specs.contains(query) ||
             remarks.contains(query) ||
-            areas.contains(query);
+            areas.contains(query) ||
+            matchesSalesman;
         if (!matchesSearch) return false;
       }
 
       return _matchesLeadDateFilter(r);
     }).toList();
+
+    if (_activeMainTab == 'Rejected') {
+      filtered.sort((a, b) {
+        final da = _rejectedAt(a) ?? a.createdAt;
+        final db = _rejectedAt(b) ?? b.createdAt;
+        return db.compareTo(da);
+      });
+    } else {
+      filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
+
+    return filtered;
   }
 
   int _countActiveLeadFilters() {
@@ -2345,6 +2423,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ),
               const SizedBox(width: 8),
               _buildMobileMainTabChip('Rejected', _activeMainTab == 'Rejected'),
+              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')) ...[
+                const SizedBox(width: 8),
+                _buildMobileMainTabChip('Leads Added by Me', _activeMainTab == 'Leads Added by Me'),
+              ],
             ],
           ),
         ),
@@ -2354,19 +2436,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             child: _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
           ),
         ],
-        if (_activeMainTab != 'Follow-ups')
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: MobileSearch(
-              showResultsBody: false,
-              autofocus: false,
-              hintText: 'Search client, mobile, specs...',
-              controller: _searchController,
-              onQueryChanged: (_) => setState(() {}),
-              onFilterTap: () => _openMobileLeadsFilterSheet(context),
-              activeFilterCount: _countActiveLeadFilters(),
-            ),
-          ),
       ],
     );
 
@@ -2379,41 +2448,88 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               child: _buildFollowupsView(),
             )
-          : Column(
-              children: [
-                if (_selectedRequirementIds.isNotEmpty)
-                  _buildMobileBulkSelectionBar(filteredLeads),
-                Expanded(
-                  child: MobileList<RequirementModel>(
-                    keyOf: (req) => req.id,
-                    items: filteredLeads,
-                    isLoading: isLoading,
-                    hasError: hasError,
-                    onRetry: () => _triggerFetch(),
-                    onRefresh: () async => _triggerFetch(),
-                    emptyState: MobileEmptyState(
-                      icon: Icons.folder_open_rounded,
-                      title: _activeMainTab == 'Rejected'
-                          ? 'No Rejected Leads'
-                          : ((_activeMainTab == 'Won' || _activeMainTab == 'My Won')
-                              ? 'No Won Deals'
-                              : 'No Leads Found'),
-                      description: 'No leads match the active filters or search criteria.',
-                      actionLabel: 'Reset Filters',
-                      onAction: () {
-                        setState(() {
-                          _selectedStatus = 'All';
-                          _selectedCategoryId = null;
-                          _selectedConfigIds.clear();
-                          _selectedLeadDateFilter = LeadDateFilterPreset.today;
-                          _searchController.clear();
-                        });
-                      },
+          : RefreshIndicator(
+              onRefresh: () async => _triggerFetch(),
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildMobileFilterButton(),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                            child: _isMobileFiltersExpanded
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: CRMSpacing.s),
+                                    child: _buildSearchAndFiltersCard(_cachedRequirements),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
                     ),
-                    itemBuilder: (context, req) => _buildMobileLeadCard(context, req, currentUser),
                   ),
-                ),
-              ],
+                  if (_selectedRequirementIds.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: _buildMobileBulkSelectionBar(filteredLeads),
+                    ),
+                  if (isLoading)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(32),
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                    )
+                  else if (hasError)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Text(
+                          'Error loading leads',
+                          style: TextStyle(color: CRMColors.danger),
+                        ),
+                      ),
+                    )
+                  else if (filteredLeads.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: MobileEmptyState(
+                          icon: Icons.folder_open_rounded,
+                          title: _activeMainTab == 'Rejected'
+                              ? 'No Rejected Leads'
+                              : ((_activeMainTab == 'Won' || _activeMainTab == 'My Won')
+                                  ? 'No Won Deals'
+                                  : 'No Leads Found'),
+                          description: 'No leads match the active filters or search criteria.',
+                          actionLabel: 'Reset Filters',
+                          onAction: _clearFilters,
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _buildMobileLeadCard(context, filteredLeads[index], currentUser),
+                          ),
+                          childCount: filteredLeads.length,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
     );
   }
@@ -2958,6 +3074,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Widget _buildMobileFilterButton() {
+    final activeCount = _countActiveLeadFilters();
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -2965,26 +3082,37 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 11),
         decoration: BoxDecoration(
           color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.cardBgOf(context),
           borderRadius: BorderRadius.circular(CRMBorderRadius.button),
           border: Border.all(
-            color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.borderOf(context),
+            color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.borderOf(context).withOpacity(0.6),
             width: 1.0,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.black.withOpacity(0.3)
+                  : const Color(0xFF64748B).withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               Icons.filter_list_rounded,
-              size: 18,
+              size: 20,
               color: _isMobileFiltersExpanded ? Colors.white : CRMColors.primaryOf(context),
             ),
             const SizedBox(width: CRMSpacing.s),
             Text(
-              _isMobileFiltersExpanded ? "Hide Filters" : "Show Search Filters",
+              _isMobileFiltersExpanded
+                  ? "Hide Filters"
+                  : (activeCount > 0 ? "Show Search Filters ($activeCount)" : "Show Search Filters"),
               style: CRMTypography.bodyMedium.copyWith(
                 color: _isMobileFiltersExpanded ? Colors.white : CRMColors.textOf(context),
                 fontWeight: FontWeight.bold,
@@ -3130,47 +3258,63 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _buildDropdownFilter<String?>(
-                      label: 'Category',
-                      value: _selectedCategoryId,
-                      items: [
-                        const DropdownMenuItem(value: null, child: Text("All Categories")),
-                        ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildDropdownFilter<String?>(
+                            label: 'Category',
+                            value: _selectedCategoryId,
+                            items: [
+                              const DropdownMenuItem(value: null, child: Text("All Categories")),
+                              ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                            ],
+                            isMobile: isMobile,
+                            onChanged: (val) {
+                              setState(() {
+                                _selectedCategoryId = val;
+                                _selectedConfigIds.clear();
+                              });
+                              _triggerFetch();
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: CRMSpacing.s),
+                        Expanded(
+                          child: CRMMultiSelectDropdown(
+                            label: configDropdownLabel,
+                            selectedIds: _selectedConfigIds,
+                            items: specLookupItems,
+                            onChanged: (vals) {
+                              setState(() {});
+                              _triggerFetch();
+                            },
+                          ),
+                        ),
                       ],
-                      isMobile: isMobile,
-                      onChanged: (val) {
-                        setState(() {
-                          _selectedCategoryId = val;
-                          _selectedConfigIds.clear();
-                        });
-                        _triggerFetch();
-                      },
                     ),
                     const SizedBox(height: CRMSpacing.s),
-                    CRMMultiSelectDropdown(
-                      label: configDropdownLabel,
-                      selectedIds: _selectedConfigIds,
-                      items: specLookupItems,
-                      onChanged: (vals) {
-                        setState(() {});
-                        _triggerFetch();
-                      },
+                    Row(
+                      children: [
+                        if (!hideStatusFilter) ...[
+                          Expanded(
+                            child: _buildDropdownFilter(
+                              label: 'Status',
+                              value: statusFilterValue,
+                              items: statusItems,
+                              isMobile: isMobile,
+                              onChanged: (val) {
+                                setState(() => _selectedStatus = val ?? "All");
+                                _triggerFetch();
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: CRMSpacing.s),
+                        ],
+                        Expanded(
+                          child: _buildUserFilterDropdown(isMobile: isMobile),
+                        ),
+                      ],
                     ),
-                    if (!hideStatusFilter) ...[
-                      const SizedBox(height: CRMSpacing.s),
-                      _buildDropdownFilter(
-                        label: 'Status',
-                        value: statusFilterValue,
-                        items: statusItems,
-                        isMobile: isMobile,
-                        onChanged: (val) {
-                          setState(() => _selectedStatus = val ?? "All");
-                          _triggerFetch();
-                        },
-                      ),
-                    ],
-                    const SizedBox(height: CRMSpacing.s),
-                    _buildUserFilterDropdown(isMobile: isMobile),
                     const SizedBox(height: CRMSpacing.s),
                     CRMButton(
                       label: "Clear Filters",

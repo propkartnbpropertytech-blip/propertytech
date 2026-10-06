@@ -2971,6 +2971,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               metadata,
               bookmarkedIds,
               isInitialLoad,
+              rawLoadedList,
             );
           }
 
@@ -3757,8 +3758,43 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final listingTypes =
         metadata != null ? metadata.listingTypes : <LookupItem>[];
 
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobile = screenWidth < 600 || MobileLayout.isMobileShell(screenWidth);
+
     return CRMCard(
       title: 'Search Filter',
+      headerAction: isMobile
+          ? InkWell(
+              onTap: () {
+                setState(() {
+                  _isMobileFiltersExpanded = false;
+                });
+              },
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.filter_list_rounded,
+                      size: 16,
+                      color: CRMColors.primaryOf(context),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Hide',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: CRMColors.primaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : null,
       child: Padding(
         padding: const EdgeInsets.only(top: CRMSpacing.s),
         child: Column(
@@ -4152,6 +4188,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   }
 
   Widget _buildMobileFilterButton() {
+    final activeFiltersCount = _countActivePropertyFilters();
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -4161,10 +4198,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 12),
         decoration: BoxDecoration(
-          color: _isMobileFiltersExpanded ? CRMColors.primary : CRMColors.cardBgOf(context),
+          color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.cardBgOf(context),
           borderRadius: BorderRadius.circular(CRMBorderRadius.card),
           border: Border.all(
-            color: _isMobileFiltersExpanded ? CRMColors.primary : CRMColors.borderOf(context).withOpacity(0.6),
+            color: _isMobileFiltersExpanded ? CRMColors.primaryOf(context) : CRMColors.borderOf(context).withOpacity(0.6),
             width: 1.0,
           ),
           boxShadow: [
@@ -4182,12 +4219,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           children: [
             Icon(
               Icons.filter_list_rounded,
-              size: 18,
+              size: 20,
               color: _isMobileFiltersExpanded ? Colors.white : CRMColors.primaryOf(context),
             ),
             const SizedBox(width: CRMSpacing.s),
             Text(
-              _isMobileFiltersExpanded ? "Hide Filters" : "Show Search Filters",
+              _isMobileFiltersExpanded
+                  ? "Hide Filters"
+                  : (activeFiltersCount > 0 ? "Show Search Filters ($activeFiltersCount)" : "Show Search Filters"),
               style: CRMTypography.bodyMedium.copyWith(
                 color: _isMobileFiltersExpanded ? Colors.white : CRMColors.textOf(context),
                 fontWeight: FontWeight.bold,
@@ -4205,7 +4244,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     String? currentUserId,
   ) {
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 600;
+    final bool isMobile = screenWidth < 600 || MobileLayout.isMobileShell(screenWidth);
 
     if (isMobile) {
       return Column(
@@ -4813,6 +4852,215 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final currentUser = authState is Authenticated ? authState.user : null;
     final role = currentUser?.role.toLowerCase() ?? '';
     final bool canExport = role == 'admin' || role == 'super admin' || role == 'telecaller';
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobile = screenWidth < 600 || MobileLayout.isMobileShell(screenWidth);
+
+    if (isMobile) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Top row: Select All & Export Properties
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (pagedProperties.isNotEmpty)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          unselectedWidgetColor: CRMColors.textSecondaryOf(context),
+                        ),
+                        child: Checkbox(
+                          value: pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
+                          tristate: pagedProperties.any((p) => _selectedPropertyIds.contains(p.id)) &&
+                              !pagedProperties.every((p) => _selectedPropertyIds.contains(p.id)),
+                          activeColor: CRMColors.primaryOf(context),
+                          onChanged: (bool? checked) {
+                            setState(() {
+                              if (checked == true) {
+                                for (final p in pagedProperties) {
+                                  _selectedPropertyIds.add(p.id);
+                                }
+                              } else {
+                                for (final p in pagedProperties) {
+                                  _selectedPropertyIds.remove(p.id);
+                                }
+                              }
+                            });
+                          },
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () {
+                          setState(() {
+                            final allSel = pagedProperties.every((p) => _selectedPropertyIds.contains(p.id));
+                            if (!allSel) {
+                              for (final p in pagedProperties) {
+                                _selectedPropertyIds.add(p.id);
+                              }
+                            } else {
+                              for (final p in pagedProperties) {
+                                _selectedPropertyIds.remove(p.id);
+                              }
+                            }
+                          });
+                        },
+                        child: Text(
+                          'Select All (${pagedProperties.length})',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: CRMColors.textOf(context),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  const SizedBox.shrink(),
+                if (canExport)
+                  ElevatedButton.icon(
+                    onPressed: () => _exportPropertiesToExcel(allProperties, currentUser),
+                    icon: const Icon(Icons.download_rounded, size: 15),
+                    label: const Text(
+                      'Export Properties',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF217346),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      elevation: 1,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Bottom row: With Photos / No Photos filters (Cards/Table removed on mobile)
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _imageFilter = _imageFilter == 'with_images' ? null : 'with_images';
+                        _noImagesOnly = false;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      height: 38,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _imageFilter == 'with_images'
+                            ? const Color(0xFF2E7D32)
+                            : const Color(0xFF2E7D32).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _imageFilter == 'with_images'
+                              ? const Color(0xFF2E7D32)
+                              : CRMColors.borderOf(context).withOpacity(0.6),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.image_rounded,
+                            size: 16,
+                            color: _imageFilter == 'with_images'
+                                ? Colors.white
+                                : const Color(0xFF2E7D32),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'With Photos ($withImagesCount)',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _imageFilter == 'with_images'
+                                    ? Colors.white
+                                    : CRMColors.textOf(context),
+                                fontWeight: _imageFilter == 'with_images'
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        final isCurrentlySelected = _imageFilter == 'no_images' || _noImagesOnly;
+                        _imageFilter = isCurrentlySelected ? null : 'no_images';
+                        _noImagesOnly = !isCurrentlySelected;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      height: 38,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: (_imageFilter == 'no_images' || _noImagesOnly)
+                            ? CRMColors.primaryOf(context)
+                            : CRMColors.primaryOf(context).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: (_imageFilter == 'no_images' || _noImagesOnly)
+                              ? CRMColors.primaryOf(context)
+                              : CRMColors.borderOf(context).withOpacity(0.6),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.no_photography_rounded,
+                            size: 16,
+                            color: (_imageFilter == 'no_images' || _noImagesOnly)
+                                ? Colors.white
+                                : CRMColors.primaryOf(context),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'No Photos ($noImagesCount)',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: (_imageFilter == 'no_images' || _noImagesOnly)
+                                    ? Colors.white
+                                    : CRMColors.textOf(context),
+                                fontWeight: (_imageFilter == 'no_images' || _noImagesOnly)
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -5823,129 +6071,164 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     PropertyMetadataModel? metadata,
     Set<String> bookmarkedIds,
     bool isInitialLoad,
+    List<PropertyModel> rawLoadedList,
   ) {
-    final primaryColor = CRMColors.primaryOf(context);
-    final isRent = _activeListingTab == 'Rent';
-    final categories = ['Residential', 'Commercial', 'Industrial', 'Land & Plot'];
-
-    final headerWidget = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                height: 36,
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildMobileTabButton('Rent', isRent, const Color(0xFFD97706)),
-                    _buildMobileTabButton('Re-Sale', !isRent, const Color(0xFF2563EB)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (metadata != null)
-                Flexible(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showAddEditPropertyDialog(context, metadata),
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text(
-                      'Add Property',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      minimumSize: const Size(44, 36),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: Row(
-            children: categories.map((cat) {
-              final isSelected = _activeCategoryTab == cat;
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  label: Text(cat),
-                  selected: isSelected,
-                  selectedColor: primaryColor.withValues(alpha: 0.15),
-                  labelStyle: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                    color: isSelected ? primaryColor : CRMColors.textOf(context),
-                  ),
-                  onSelected: (val) {
-                    if (val && _activeCategoryTab != cat) {
-                      setState(() {
-                        _activeCategoryTab = cat;
-                        _currentPage = 0;
-                      });
-                    }
-                  },
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: MobileSearch(
-            showResultsBody: false,
-            autofocus: false,
-            hintText: 'Search title, area, code...',
-            controller: _searchController,
-            onQueryChanged: (_) => setState(() {}),
-            onFilterTap: () => _openMobilePropertiesFilterSheet(context, metadata),
-            activeFilterCount: _countActivePropertyFilters(),
-          ),
-        ),
-      ],
-    );
+    final totalPages =
+        properties.isEmpty ? 1 : (properties.length / _pageSize).ceil();
+    final safePage = _currentPage.clamp(0, totalPages - 1);
+    final pageStart = safePage * _pageSize;
+    final pageEnd = (pageStart + _pageSize).clamp(0, properties.length);
+    final pagedProperties = properties.isEmpty
+        ? properties
+        : properties.sublist(pageStart, pageEnd);
 
     return MobileScreenScaffold(
       title: 'Properties',
       scrollable: false,
-      header: headerWidget,
-      body: MobileList<PropertyModel>(
-        keyOf: (p) => p.id,
-        items: properties,
-        isLoading: isInitialLoad,
-        hasError: state is PropertiesError,
-        onRetry: () => _loadProperties(),
+      body: RefreshIndicator(
         onRefresh: () async => _loadProperties(),
-        emptyState: MobileEmptyState(
-          icon: Icons.home_work_outlined,
-          title: 'No Properties Found',
-          description: 'No properties match the active filters or search criteria.',
-          actionLabel: 'Reset Filters',
-          onAction: () {
-            setState(() {
-              _activeCategoryTab = 'Residential';
-              _activeBhkFilter = 'All';
-              _selectedPriceSortOrRange = null;
-              _searchController.clear();
-            });
-          },
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(
+            horizontal: CRMSpacing.m,
+            vertical: CRMSpacing.m,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 1. Mobile Header: Rent vs Re-Sale Toggle Tabs + My Added + Archive + Add Property
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    width: 165,
+                    height: 36,
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: CRMColors.backgroundOf(context),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: CRMColors.borderOf(context).withOpacity(0.6),
+                        width: 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildPropertyListingTabButton('Rent'),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: _buildPropertyListingTabButton('Re-Sale'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (metadata != null)
+                    ElevatedButton.icon(
+                      onPressed: () => _showAddEditPropertyDialog(context, metadata),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text(
+                        'Add Property',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: CRMColors.primaryOf(context),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 12,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _buildMyAddedToggle(),
+                  _buildArchiveToggle(),
+                ],
+              ),
+              const SizedBox(height: CRMSpacing.m),
+
+              // 2. Statistics Row (Category chips: Residential, Commercial, Industrial, Land & Plot + KPI Card + Donut Chart)
+              _buildStatisticsRow(rawLoadedList),
+              const SizedBox(height: CRMSpacing.m),
+
+              // 3. Search & Advanced Filters Card (Collapsible on mobile)
+              _buildSearchAndFilters(metadata, rawLoadedList, currentUserId),
+              const SizedBox(height: CRMSpacing.m),
+
+              // 4. Action Toolbar (Select All, With Photos, No Photos, Export Properties)
+              _buildActionToolbar(properties, pagedProperties),
+              const SizedBox(height: CRMSpacing.s),
+
+              // 5. Bulk Actions Toolbar (When properties are selected)
+              if (_selectedPropertyIds.isNotEmpty) ...[
+                _buildBulkActionsToolbar(properties),
+                const SizedBox(height: CRMSpacing.s),
+              ],
+
+              // 6. Results Header (Count + Sort by dropdown)
+              _buildHousingStyleResultsHeader(context, properties.length, pageStart, pageEnd),
+              const SizedBox(height: CRMSpacing.s),
+
+              // 7. Property Cards
+              if (isInitialLoad)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (pagedProperties.isEmpty)
+                SizedBox(
+                  width: double.infinity,
+                  child: CRMCard(
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(CRMSpacing.xl),
+                      alignment: Alignment.center,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            'No Properties Found',
+                            style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: CRMSpacing.s),
+                          Text(
+                            _noImagesOnly
+                                ? 'No properties without images found.'
+                                : 'No records match your active search terms.',
+                            style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Column(
+                  children: pagedProperties.map((p) {
+                    return _buildRichPropertyCard(p, currentUser, bookmarkedIds, metadata);
+                  }).toList(),
+                ),
+
+              // 8. Pagination Controls
+              if (properties.isNotEmpty) ...[
+                const SizedBox(height: CRMSpacing.m),
+                _buildPagination(properties.length, totalPages, safePage),
+              ],
+            ],
+          ),
         ),
-        itemBuilder: (context, p) => _buildMobilePropertyCard(p, currentUser, bookmarkedIds, metadata),
       ),
     );
   }

@@ -2173,6 +2173,7 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
   // Category drill-down state
   String? _selectedCategory; // null = overview; 'all', 'listing', 'requirement', 'open', 'cnr', 'callback', 'follow_up', 'assigned_to_sales', 'not_interested', 'archived'
   String _selectedCategoryTitle = '';
+  String _followupTab = 'current'; // 'current' or 'history'
   bool _isLoadingCategoryLeads = false;
   List<LeadListItem> _categoryLeads = [];
   int _categoryTotal = 0;
@@ -2211,11 +2212,25 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
     setState(() {
       _selectedCategory = categoryKey;
       _selectedCategoryTitle = title;
+      if (categoryKey == 'follow_up') {
+        _followupTab = 'current';
+      }
       _categoryPage = 1;
       _categorySearchController.clear();
       _isLoadingCategoryLeads = true;
     });
     await _fetchCategoryLeads();
+  }
+
+  void _switchFollowupTab(String tab) {
+    if (_followupTab == tab) return;
+    setState(() {
+      _followupTab = tab;
+      _categoryPage = 1;
+      _categorySearchController.clear();
+      _isLoadingCategoryLeads = true;
+    });
+    _fetchCategoryLeads();
   }
 
   Future<void> _fetchCategoryLeads() async {
@@ -2226,6 +2241,7 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
       widget.telecallerId,
       category: _selectedCategory!,
       leadType: _leadType,
+      tab: _selectedCategory == 'follow_up' ? _followupTab : null,
       search: _categorySearchController.text,
       page: _categoryPage,
       limit: 25,
@@ -2239,6 +2255,22 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
         _isLoadingCategoryLeads = false;
       });
     }
+  }
+
+  String _formatDateTime(String? iso) {
+    if (iso == null || iso.isEmpty) return 'N/A';
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return iso;
+    final local = dt.toLocal();
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final month = months[local.month - 1];
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final ampm = local.hour >= 12 ? 'PM' : 'AM';
+    return '${local.day} $month ${local.year}, $hour:$minute $ampm';
   }
 
   Color _getStageColor(String stage) {
@@ -2325,7 +2357,9 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
                     ),
                     Text(
                       _selectedCategory != null
-                          ? 'Showing ${_categoryLeads.length} of $_categoryTotal leads | Type: $_leadType | Range: ${widget.params?.dateFilter ?? "Weekly"}'
+                          ? (_selectedCategory == 'follow_up'
+                              ? 'Showing ${_categoryLeads.length} of $_categoryTotal leads | Tab: ${_followupTab == "history" ? "History" : "Current"} | Type: $_leadType | Range: ${widget.params?.dateFilter ?? "Weekly"}'
+                              : 'Showing ${_categoryLeads.length} of $_categoryTotal leads | Type: $_leadType | Range: ${widget.params?.dateFilter ?? "Weekly"}')
                           : 'Click any metric or category card below to view matching leads | Range: ${widget.params?.dateFilter ?? "Weekly"}',
                       style: TextStyle(fontSize: 12, color: subColor),
                     ),
@@ -2412,7 +2446,7 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
       {'key': 'open', 'title': 'Open Leads', 'count': d.openLeads, 'color': const Color(0xFF3B82F6), 'icon': Icons.folder_open_rounded, 'desc': 'New & unattempted'},
       {'key': 'cnr', 'title': 'CNR', 'count': d.cnr, 'color': const Color(0xFFF59E0B), 'icon': Icons.phone_missed_rounded, 'desc': 'Call not received'},
       {'key': 'callback', 'title': 'Callbacks', 'count': d.callbacks, 'color': const Color(0xFF8B5CF6), 'icon': Icons.ring_volume_rounded, 'desc': 'Callback requested'},
-      {'key': 'follow_up', 'title': 'Follow Up', 'count': d.followUp, 'color': const Color(0xFF06B6D4), 'icon': Icons.update_rounded, 'desc': 'Contacted & interested'},
+      {'key': 'follow_up', 'title': 'Follow Up', 'count': d.followUp, 'color': const Color(0xFF06B6D4), 'icon': Icons.update_rounded, 'desc': 'Total (${d.followUpCurrent} current, ${d.followUpHistory} history)'},
       {'key': 'assigned_to_sales', 'title': 'Assigned to Sales', 'count': d.assignedToSales, 'color': const Color(0xFF10B981), 'icon': Icons.person_add_alt_1_rounded, 'desc': 'Transferred to sales'},
       {'key': 'not_interested', 'title': 'Not Interested', 'count': d.notInterested, 'color': const Color(0xFFEF4444), 'icon': Icons.thumb_down_alt_rounded, 'desc': 'Lost / rejected'},
       {'key': 'archived', 'title': 'Archived', 'count': d.archived, 'color': const Color(0xFF64748B), 'icon': Icons.archive_rounded, 'desc': 'Listed or closed'},
@@ -2739,6 +2773,112 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
 
     return Column(
       children: [
+        // Follow-Up Tabs (Current vs History)
+        if (_selectedCategory == 'follow_up') ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _switchFollowupTab('current'),
+                    borderRadius: BorderRadius.circular(8),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _followupTab == 'current'
+                            ? ThemeManager().primaryColor
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: _followupTab == 'current'
+                            ? [
+                                BoxShadow(
+                                  color: ThemeManager().primaryColor.withValues(alpha: 0.25),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                )
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.schedule_rounded,
+                            size: 15,
+                            color: _followupTab == 'current' ? Colors.white : subColor,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Current (${_data?.followUpCurrent ?? 0})',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: _followupTab == 'current' ? FontWeight.bold : FontWeight.w500,
+                              color: _followupTab == 'current' ? Colors.white : textColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _switchFollowupTab('history'),
+                    borderRadius: BorderRadius.circular(8),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _followupTab == 'history'
+                            ? ThemeManager().primaryColor
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: _followupTab == 'history'
+                            ? [
+                                BoxShadow(
+                                  color: ThemeManager().primaryColor.withValues(alpha: 0.25),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                )
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.history_rounded,
+                            size: 15,
+                            color: _followupTab == 'history' ? Colors.white : subColor,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'History (${_data?.followUpHistory ?? 0})',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: _followupTab == 'history' ? FontWeight.bold : FontWeight.w500,
+                              color: _followupTab == 'history' ? Colors.white : textColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Search bar & count
         Row(
           children: [
@@ -2924,10 +3064,14 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
                                     ],
                                   ),
 
-                                  // Row 2.5: Configuration, Locality, Campaign
+                                  // Row 2.5: Configuration, Locality, Campaign, Follow-up, Archive, Rejection
                                   if ((lead.configuration != null && lead.configuration!.trim().isNotEmpty) ||
                                       (lead.locality != null && lead.locality!.trim().isNotEmpty) ||
-                                      (lead.campaignName != null && lead.campaignName!.trim().isNotEmpty)) ...[
+                                      (lead.campaignName != null && lead.campaignName!.trim().isNotEmpty) ||
+                                      (lead.followupScheduledAt != null && lead.followupScheduledAt!.trim().isNotEmpty) ||
+                                      (lead.followupStatus != null && lead.followupStatus!.trim().isNotEmpty) ||
+                                      (lead.archiveReason != null && lead.archiveReason!.trim().isNotEmpty) ||
+                                      (lead.rejectionReason != null && lead.rejectionReason!.trim().isNotEmpty)) ...[
                                     const SizedBox(height: 8),
                                     Wrap(
                                       spacing: 8,
@@ -2954,6 +3098,38 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
                                             color: subColor,
                                             isDark: isDark,
                                             isMuted: true,
+                                          ),
+                                        if (lead.followupScheduledAt != null && lead.followupScheduledAt!.trim().isNotEmpty)
+                                          _buildKpiMiniBadge(
+                                            icon: Icons.event_rounded,
+                                            text: 'Scheduled: ${_formatDateTime(lead.followupScheduledAt!)}',
+                                            color: const Color(0xFF06B6D4),
+                                            isDark: isDark,
+                                          ),
+                                        if (lead.followupStatus != null && lead.followupStatus!.trim().isNotEmpty)
+                                          _buildKpiMiniBadge(
+                                            icon: Icons.access_time_rounded,
+                                            text: lead.followupStatus!,
+                                            color: lead.followupStatus!.toLowerCase() == 'completed'
+                                                ? const Color(0xFF10B981)
+                                                : (lead.followupStatus!.toLowerCase() == 'pending'
+                                                    ? const Color(0xFFF59E0B)
+                                                    : const Color(0xFF64748B)),
+                                            isDark: isDark,
+                                          ),
+                                        if (lead.archiveReason != null && lead.archiveReason!.trim().isNotEmpty)
+                                          _buildKpiMiniBadge(
+                                            icon: Icons.archive_outlined,
+                                            text: 'Reason: ${lead.archiveReason!}',
+                                            color: const Color(0xFF64748B),
+                                            isDark: isDark,
+                                          ),
+                                        if (lead.rejectionReason != null && lead.rejectionReason!.trim().isNotEmpty && lead.rejectionReason != 'NOT_INTERESTED')
+                                          _buildKpiMiniBadge(
+                                            icon: Icons.thumb_down_alt_outlined,
+                                            text: 'Reason: ${lead.rejectionReason!}',
+                                            color: const Color(0xFFEF4444),
+                                            isDark: isDark,
                                           ),
                                       ],
                                     ),

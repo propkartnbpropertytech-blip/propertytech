@@ -33,7 +33,6 @@ class LeadSourceGridView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
 
     final meta = summary.sources['meta'] ?? const SourceSummary(total: 0, propertyListing: 0, requirement: 0);
@@ -49,47 +48,26 @@ class LeadSourceGridView extends StatelessWidget {
         const SizedBox(height: CRMSpacing.m),
 
         // Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Total Leads by Source',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Overall: ${summary.totalLeads} total leads across all acquisition channels (including rejected & not interested).',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
+        _buildDrilldownHeader(
+          context: context,
+          title: 'Total Leads by Source',
+          subtitle: 'Overall: ${summary.totalLeads} total leads across all acquisition channels (including rejected & not interested).',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                'Total Leads: ${summary.totalLeads}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: primaryColor,
-                ),
+            child: Text(
+              'Total Leads: ${summary.totalLeads}',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: primaryColor,
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: CRMSpacing.l),
 
@@ -221,40 +199,47 @@ class LeadSourceGridView extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(icon, color: color, size: 24),
                       ),
-                      child: Icon(icon, color: color, size: 24),
-                    ),
-                    const SizedBox(width: 14),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: -0.2,
-                          ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: -0.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              subtitle,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        Text(
-                          subtitle,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 10),
                 Text(
                   '$count',
                   style: TextStyle(
@@ -484,49 +469,28 @@ class _SourceLeadsDetailViewState extends State<SourceLeadsDetailView> with Sing
         const SizedBox(height: CRMSpacing.m),
 
         // Title Row
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${widget.source} Leads',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isManual
-                      ? 'Total: ${s.total} manually added leads (${s.requirement} Requirement, ${s.rejected} Rejected).'
-                      : 'Total: ${s.total} leads (${s.propertyListing} Property Listing, ${s.requirement} Requirement, ${s.notInterested} Not Interested).',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
+        _buildDrilldownHeader(
+          context: context,
+          title: '${widget.source} Leads',
+          subtitle: isManual
+              ? 'Total: ${s.total} manually added leads (${s.requirement} Requirement, ${s.rejected} Rejected).'
+              : 'Total: ${s.total} leads (${s.propertyListing} Property Listing, ${s.requirement} Requirement, ${s.notInterested} Not Interested).',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                'Total: ${s.total}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: primaryColor,
-                ),
+            child: Text(
+              'Total: ${s.total}',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: primaryColor,
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: CRMSpacing.m),
 
@@ -604,7 +568,6 @@ class _PropertyListingLeadsViewState extends State<PropertyListingLeadsView> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
     final prop = widget.summary.propertyListingLeads;
     final kpis = prop.getKpisForSource(_selectedSource);
 
@@ -616,47 +579,26 @@ class _PropertyListingLeadsViewState extends State<PropertyListingLeadsView> {
         const SizedBox(height: CRMSpacing.m),
 
         // Title
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Property Listing Leads',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Overall count from Meta (${prop.bySource['meta'] ?? 0}), Housing (${prop.bySource['housing'] ?? 0}), and Webhook (${prop.bySource['webhook'] ?? 0}).',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
+        _buildDrilldownHeader(
+          context: context,
+          title: 'Property Listing Leads',
+          subtitle: 'Overall count from Meta (${prop.bySource['meta'] ?? 0}), Housing (${prop.bySource['housing'] ?? 0}), and Webhook (${prop.bySource['webhook'] ?? 0}).',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0284C7).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                '${_selectedSource == 'All' ? 'Total' : _selectedSource} Listing Leads: ${kpis.totalListingLeads}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0284C7),
-                ),
+            child: Text(
+              '${_selectedSource == 'All' ? 'Total' : _selectedSource} Listing: ${kpis.totalListingLeads}',
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0284C7),
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: CRMSpacing.m),
 
@@ -883,7 +825,6 @@ class _RequirementLeadsViewState extends State<RequirementLeadsView> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
     final req = widget.summary.requirementLeads;
     final kpis = req.getKpisForSource(_selectedSource);
 
@@ -895,47 +836,26 @@ class _RequirementLeadsViewState extends State<RequirementLeadsView> {
         const SizedBox(height: CRMSpacing.m),
 
         // Title
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Requirement Leads',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Overall count from Meta (${req.bySource['meta'] ?? 0}), Housing (${req.bySource['housing'] ?? 0}), and Webhook (${req.bySource['webhook'] ?? 0}).',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
+        _buildDrilldownHeader(
+          context: context,
+          title: 'Requirement Leads',
+          subtitle: 'Overall count from Meta (${req.bySource['meta'] ?? 0}), Housing (${req.bySource['housing'] ?? 0}), and Webhook (${req.bySource['webhook'] ?? 0}).',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0D9488).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                '${_selectedSource == 'All' ? 'Total' : _selectedSource} Requirement Leads: ${kpis.totalRequirementLeads}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0D9488),
-                ),
+            child: Text(
+              '${_selectedSource == 'All' ? 'Total' : _selectedSource} Req: ${kpis.totalRequirementLeads}',
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0D9488),
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: CRMSpacing.m),
 
@@ -1152,7 +1072,6 @@ class TelecallersListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
     final telecallers = summary.telecallers;
 
@@ -1164,47 +1083,26 @@ class TelecallersListView extends StatelessWidget {
         const SizedBox(height: CRMSpacing.m),
 
         // Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Telecallers Performance & Leads',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Total Active Telecallers: ${telecallers.totalCount}. Select a telecaller to inspect assigned lead breakdowns.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
+        _buildDrilldownHeader(
+          context: context,
+          title: 'Telecallers Performance & Leads',
+          subtitle: 'Total Active Telecallers: ${telecallers.totalCount}. Select a telecaller to inspect assigned lead breakdowns.',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                'Telecallers: ${telecallers.totalCount}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: primaryColor,
-                ),
+            child: Text(
+              'Telecallers: ${telecallers.totalCount}',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: primaryColor,
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: CRMSpacing.l),
 
@@ -1257,43 +1155,50 @@ class TelecallersListView extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: primaryColor.withValues(alpha: 0.15),
-                      child: Text(
-                        tc.name.isNotEmpty ? tc.name[0].toUpperCase() : 'T',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: primaryColor,
+                Expanded(
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: primaryColor.withValues(alpha: 0.15),
+                        child: Text(
+                          tc.name.isNotEmpty ? tc.name[0].toUpperCase() : 'T',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: primaryColor,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          tc.name,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: -0.2,
-                          ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tc.name,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: -0.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              tc.email,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        Text(
-                          tc.email,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -1488,116 +1393,128 @@ class _TelecallerDetailViewState extends State<TelecallerDetailView> with Single
         const SizedBox(height: CRMSpacing.m),
 
         // Telecaller Header
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 650;
+
+            return Container(
+              padding: EdgeInsets.all(isMobile ? 14 : 20),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      CircleAvatar(
-                        radius: 26,
-                        backgroundColor: primaryColor.withValues(alpha: 0.15),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: isMobile ? 22 : 26,
+                              backgroundColor: primaryColor.withValues(alpha: 0.15),
+                              child: Text(
+                                tc.name.isNotEmpty ? tc.name[0].toUpperCase() : 'T',
+                                style: TextStyle(
+                                  fontSize: isMobile ? 18 : 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: primaryColor,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: isMobile ? 10 : 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    tc.name,
+                                    style: TextStyle(
+                                      fontSize: isMobile ? 17 : 20,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: -0.3,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    tc.email,
+                                    style: TextStyle(
+                                      fontSize: isMobile ? 12 : 13,
+                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: isMobile ? 6 : 8),
+                        decoration: BoxDecoration(
+                          color: primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
+                        ),
                         child: Text(
-                          tc.name.isNotEmpty ? tc.name[0].toUpperCase() : 'T',
+                          isMobile ? 'Assigned: ${tc.totalLeads}' : 'Assigned Leads: ${tc.totalLeads}',
                           style: TextStyle(
-                            fontSize: 22,
+                            fontSize: isMobile ? 12 : 14,
                             fontWeight: FontWeight.bold,
                             color: primaryColor,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            tc.name,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            tc.email,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: primaryColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
-                    ),
-                    child: Text(
-                      'Assigned Leads: ${tc.totalLeads}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: primaryColor,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 14),
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 14),
 
-              // Source filters
-              Row(
-                children: [
-                  const Text(
-                    'Source Filter:',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(width: 10),
+                  // Source filters
                   Wrap(
                     spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      const Text(
+                        'Source Filter:',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                      ),
                       _buildSourceFilterChip('All Sources', 'All', tc.sources['all']?.total ?? tc.totalLeads),
                       _buildSourceFilterChip('Meta', 'Meta', tc.sources['meta']?.total ?? 0),
                       _buildSourceFilterChip('Housing', 'Housing', tc.sources['housing']?.total ?? 0),
                       _buildSourceFilterChip('Webhook', 'Webhook', tc.sources['webhook']?.total ?? 0),
                     ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-              // Status Counts Chips for this telecaller
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildStatusChip('CNR: ${tc.statusCounts.cnr}', const Color(0xFFE11D48)),
-                  _buildStatusChip('Callback: ${tc.statusCounts.callback}', const Color(0xFFD97706)),
-                  _buildStatusChip('Contacted: ${tc.statusCounts.contacted}', const Color(0xFF2563EB)),
-                  _buildStatusChip('Handed to Sales: ${tc.statusCounts.handedToSales}', const Color(0xFF16A34A)),
-                  _buildStatusChip('Not Interested: ${tc.statusCounts.notInterested}', const Color(0xFFDC2626)),
+                  // Status Counts Chips for this telecaller
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildStatusChip('CNR: ${tc.statusCounts.cnr}', const Color(0xFFE11D48)),
+                      _buildStatusChip('Callback: ${tc.statusCounts.callback}', const Color(0xFFD97706)),
+                      _buildStatusChip('Contacted: ${tc.statusCounts.contacted}', const Color(0xFF2563EB)),
+                      _buildStatusChip('Handed to Sales: ${tc.statusCounts.handedToSales}', const Color(0xFF16A34A)),
+                      _buildStatusChip('Not Interested: ${tc.statusCounts.notInterested}', const Color(0xFFDC2626)),
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ),
+            );
+          },
         ),
         const SizedBox(height: CRMSpacing.m),
 
@@ -2148,5 +2065,84 @@ Widget _buildBreadcrumb(BuildContext context, String previousLabel, VoidCallback
         ],
       ),
     ),
+  );
+}
+
+// Helper Responsive Drilldown Header
+Widget _buildDrilldownHeader({
+  required BuildContext context,
+  required String title,
+  required String subtitle,
+  required Widget badge,
+}) {
+  final isDark = ThemeManager().isDarkMode;
+
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      final isMobile = constraints.maxWidth < 650;
+      if (isMobile) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                badge,
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        );
+      }
+
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          badge,
+        ],
+      );
+    },
   );
 }

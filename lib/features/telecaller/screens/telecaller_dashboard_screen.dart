@@ -14,6 +14,7 @@ import '../../campaign/models/campaign_followup_model.dart';
 import '../../dashboard/widgets/stat_card.dart';
 import '../../dashboard/widgets/welcome_header.dart';
 import '../../integration/services/integration_service.dart';
+import '../../integration/models/integration_lead_model.dart';
 import '../bloc/telecaller_dashboard_bloc.dart';
 import '../data/telecaller_repository.dart';
 import '../widgets/telecaller_kpi_dialogs.dart';
@@ -344,6 +345,93 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     }).toList();
 
     return filtered.length;
+  }
+
+  static bool _isLeadArchived(IntegrationLeadModel l) {
+    if (l.archivedAt != null) return true;
+    if (l.rawJson['archived_at'] != null && l.rawJson['archived_at'].toString().trim().isNotEmpty) return true;
+    final s = l.campaignStatus.trim().toLowerCase();
+    if (s == 'archived' || s == 'property listed' || s == 'listed') return true;
+    if (l.importStatus.trim().toLowerCase() == 'archived') return true;
+    return false;
+  }
+
+  static bool _isOpenUntouchedLead(IntegrationLeadModel l) {
+    if (_isLeadArchived(l)) return false;
+    final cs = l.campaignStatus.trim().toLowerCase();
+    if (cs == 'not interested' || cs == 'not_interested' || cs == 'disqualified') return false;
+    if (cs == 'assigned' || l.importStatus.trim().toLowerCase() == 'imported') return false;
+    if (l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned') return false;
+    if (cs == 'cnr' || (l.allocationStatus ?? '').toUpperCase() == 'CNR') return false;
+    if (cs == 'callback' || cs == 'call back' || (l.allocationStatus ?? '').toUpperCase() == 'CALLBACK') return false;
+    if (l.callbackScheduledAt != null && (l.callbackStatus?.toLowerCase() == 'pending')) return false;
+    if (cs == 'follow up' || cs == 'follow-up' || (l.allocationStatus ?? '').toUpperCase() == 'FOLLOWUP') return false;
+    if (l.followupScheduledAt != null) return false;
+    if (cs == 'interested' || cs == 'picked up') return false;
+    if (l.isInteracted || l.interactedAt != null) return false;
+    final attempts = int.tryParse(l.rawJson['call_attempt_count']?.toString() ?? '0') ?? 0;
+    if (attempts > 0) return false;
+    return cs == 'new' || cs.isEmpty;
+  }
+
+  int get _openLeadsKpiCount {
+    final leads = IntegrationService().leads;
+    if (leads.isEmpty) {
+      final s = _kpiSummary['open_leads'];
+      if (s is int) return s;
+      if (s != null) return int.tryParse(s.toString()) ?? 0;
+      return 0;
+    }
+
+    final valid = leads.where((l) => _isOpenUntouchedLead(l)).toList();
+    final filtered = valid.where((l) {
+      final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
+      if (_kpiLeadType == 'Listing') return isListing;
+      if (_kpiLeadType == 'Requirement') return !isListing;
+      return true;
+    }).toList();
+
+    return filtered.length;
+  }
+
+  int get _archivedKpiCount {
+    final leads = IntegrationService().leads;
+    if (leads.isEmpty) {
+      final s = _kpiSummary['archived'];
+      if (s is int) return s;
+      if (s != null) return int.tryParse(s.toString()) ?? 0;
+      return 0;
+    }
+
+    final valid = leads.where((l) => _isLeadArchived(l)).toList();
+    final filtered = valid.where((l) {
+      final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
+      if (_kpiLeadType == 'Listing') return isListing;
+      if (_kpiLeadType == 'Requirement') return !isListing;
+      return true;
+    }).toList();
+
+    return filtered.length;
+  }
+
+  void _openOpenLeadsDrilldown() {
+    TelecallerKpiDialogs.showOpenLeadsDrilldown(
+      context,
+      dateFilter: _kpiDateFilter,
+      startDate: _customStartDate,
+      endDate: _customEndDate,
+      leadType: _kpiLeadType,
+    );
+  }
+
+  void _openArchiveDrilldown() {
+    TelecallerKpiDialogs.showArchiveLeadsDrilldown(
+      context,
+      dateFilter: _kpiDateFilter,
+      startDate: _customStartDate,
+      endDate: _customEndDate,
+      leadType: _kpiLeadType,
+    );
   }
 
   void _openFollowupsDrilldown() {
@@ -822,6 +910,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
               _loadCallbacks(),
               _loadCnr(),
               _loadKpiSummary(),
+              IntegrationService().fetchServerLeads(silent: true),
             ]);
           },
           child: ListView(
@@ -881,6 +970,15 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                     ),
                     _clickableKpi(
                       context,
+                      'Open Leads',
+                      '$_openLeadsKpiCount',
+                      Icons.folder_open_rounded,
+                      accentColor: const Color(0xFF3B82F6),
+                      onTap: _openOpenLeadsDrilldown,
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
                       'Assigned to Sales',
                       '${_kpiSummary['assigned_to_sales'] ?? 0}',
                       Icons.handshake_outlined,
@@ -931,6 +1029,15 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                       Icons.schedule_rounded,
                       accentColor: const Color(0xFFD97706),
                       onTap: _openFollowupsDrilldown,
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Archive',
+                      '$_archivedKpiCount',
+                      Icons.archive_outlined,
+                      accentColor: const Color(0xFF64748B),
+                      onTap: _openArchiveDrilldown,
                       width: cardW,
                     ),
                   ];
@@ -1195,6 +1302,13 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         onTap: () => _openKpiDrilldown(category: 'old_allocated', title: 'Old Leads Allocated'),
       ),
       _MobileKpiItem(
+        label: 'Open Leads',
+        value: '$_openLeadsKpiCount',
+        icon: Icons.folder_open_rounded,
+        accentColor: const Color(0xFF3B82F6),
+        onTap: _openOpenLeadsDrilldown,
+      ),
+      _MobileKpiItem(
         label: 'Assigned to Sales',
         value: '${_kpiSummary['assigned_to_sales'] ?? 0}',
         icon: Icons.handshake_outlined,
@@ -1235,6 +1349,13 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         icon: Icons.schedule_rounded,
         accentColor: const Color(0xFFD97706),
         onTap: _openFollowupsDrilldown,
+      ),
+      _MobileKpiItem(
+        label: 'Archive',
+        value: '$_archivedKpiCount',
+        icon: Icons.archive_outlined,
+        accentColor: const Color(0xFF64748B),
+        onTap: _openArchiveDrilldown,
       ),
     ];
 

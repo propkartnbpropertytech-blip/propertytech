@@ -116,31 +116,11 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
         const SizedBox(height: CRMSpacing.m),
 
         // Header Row
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(widget.kpiType.icon, color: headerColor, size: 24),
-                    const SizedBox(width: 8),
-                    Text(
-                      title,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: -0.4),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(fontSize: 12.5, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                ),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 650;
+            final badge = Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
                 color: headerColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
@@ -148,10 +128,75 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
               ),
               child: Text(
                 'Count: ${_calculateTotalCount(allLeads)}',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: headerColor),
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: headerColor),
               ),
-            ),
-          ],
+            );
+
+            if (isMobile) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Icon(widget.kpiType.icon, color: headerColor, size: 22),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.4),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      badge,
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                  ),
+                ],
+              );
+            }
+
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(widget.kpiType.icon, color: headerColor, size: 24),
+                          const SizedBox(width: 8),
+                          Text(
+                            title,
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: -0.4),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: TextStyle(fontSize: 12.5, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                badge,
+              ],
+            );
+          },
         ),
         const SizedBox(height: CRMSpacing.l),
 
