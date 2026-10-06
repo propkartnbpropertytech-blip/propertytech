@@ -78,6 +78,19 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
     super.dispose();
   }
 
+  List<AreaLookup> _deduplicateAreas(List<AreaLookup> rawAreas) {
+    final seen = <String>{};
+    final result = <AreaLookup>[];
+    for (final a in rawAreas) {
+      final key = '${a.cityId}_${a.name.trim().toLowerCase()}';
+      if (!seen.contains(key)) {
+        seen.add(key);
+        result.add(a);
+      }
+    }
+    return result..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  }
+
   Future<void> _loadData({bool forceServer = false}) async {
     setState(() => _isLoading = true);
     try {
@@ -85,7 +98,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
       if (mounted) {
         setState(() {
           _cities = meta.cities..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-          _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+          _areas = _deduplicateAreas(meta.areas);
           _isLoading = false;
         });
         _loadZonesAndAliases();
@@ -98,7 +111,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
         if (mounted) {
           setState(() {
             _cities = meta.cities..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-            _areas = meta.areas..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+            _areas = _deduplicateAreas(meta.areas);
             _isLoading = false;
           });
           _loadZonesAndAliases();
@@ -629,13 +642,22 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
     try {
       await _propertiesService.deleteArea(area.id);
 
-      // Evict area from local cache
-      await LookupLocalRepository().deleteSingleLookup(area.id);
+      final normName = area.name.trim().toLowerCase();
+      final matchingAreaIds = _areas
+          .where((a) => a.id == area.id || (a.cityId == area.cityId && a.name.trim().toLowerCase() == normName))
+          .map((a) => a.id)
+          .toList();
+
+      // Evict area(s) from local cache
+      final lookupRepo = LookupLocalRepository();
+      for (final id in matchingAreaIds) {
+        await lookupRepo.deleteSingleLookup(id);
+      }
 
       // Immediately remove from screen state
       if (mounted) {
         setState(() {
-          _areas = _areas.where((a) => a.id != area.id).toList();
+          _areas = _areas.where((a) => a.id != area.id && !(a.cityId == area.cityId && a.name.trim().toLowerCase() == normName)).toList();
         });
       }
 
