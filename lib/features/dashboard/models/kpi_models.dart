@@ -346,6 +346,8 @@ class LeadListItem {
   final String? configuration;
   final String? locality;
   final String? campaignName;
+  final String? followupStatus;
+  final String? followupScheduledAt;
   final Map<String, dynamic>? rawJson;
 
   const LeadListItem({
@@ -390,6 +392,8 @@ class LeadListItem {
     this.configuration,
     this.locality,
     this.campaignName,
+    this.followupStatus,
+    this.followupScheduledAt,
     this.rawJson,
   });
 
@@ -484,6 +488,8 @@ class LeadListItem {
       configuration: json['configuration']?.toString(),
       locality: json['locality']?.toString(),
       campaignName: json['campaign_name']?.toString(),
+      followupStatus: json['followup_status']?.toString() ?? json['follow_up_status']?.toString(),
+      followupScheduledAt: json['followup_scheduled_at']?.toString() ?? json['follow_up_scheduled_at']?.toString(),
       rawJson: parsedRaw,
     );
   }
@@ -609,6 +615,8 @@ class TelecallerDrilldownData {
   final int cnr;
   final int callbacks;
   final int followUp;
+  final int followUpCurrent;
+  final int followUpHistory;
   final int assignedToSales;
   final List<SalesBreakdownItem> salesUserBreakdown;
   final int notInterested;
@@ -625,6 +633,8 @@ class TelecallerDrilldownData {
     this.cnr = 0,
     this.callbacks = 0,
     this.followUp = 0,
+    this.followUpCurrent = 0,
+    this.followUpHistory = 0,
     this.assignedToSales = 0,
     this.salesUserBreakdown = const [],
     this.notInterested = 0,
@@ -648,6 +658,8 @@ class TelecallerDrilldownData {
       cnr: (json['cnr'] as num?)?.toInt() ?? 0,
       callbacks: (json['callbacks'] as num?)?.toInt() ?? 0,
       followUp: (json['follow_up'] as num?)?.toInt() ?? 0,
+      followUpCurrent: (json['follow_up_current'] as num?)?.toInt() ?? 0,
+      followUpHistory: (json['follow_up_history'] as num?)?.toInt() ?? 0,
       assignedToSales: (json['assigned_to_sales'] as num?)?.toInt() ?? 0,
       salesUserBreakdown: salesList,
       notInterested: (json['not_interested'] as num?)?.toInt() ?? 0,

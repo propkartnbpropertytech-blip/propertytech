@@ -280,6 +280,7 @@ class DashboardService {
     String telecallerId, {
     String category = 'all',
     String leadType = 'Both',
+    String? tab,
     String? search,
     int page = 1,
     int limit = 25,
@@ -291,6 +292,9 @@ class DashboardService {
       q['leadType'] = leadType;
       q['page'] = page;
       q['limit'] = limit;
+      if (tab != null && tab.trim().isNotEmpty) {
+        q['tab'] = tab.trim();
+      }
       if (search != null && search.trim().isNotEmpty) {
         q['search'] = search.trim();
       }
