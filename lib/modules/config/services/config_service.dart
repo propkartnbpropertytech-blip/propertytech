@@ -43,8 +43,8 @@ class AppConfigModel {
       maintenanceMessage: json['maintenance_message'] ?? '',
       androidLink: json['android_link'] ?? 'comingsoon',
       iosLink: json['ios_link'] ?? 'comingsoon',
-      minVersion: json['min_version'] ?? '1.1.5',
-      maxVersion: json['max_version'] ?? '3.0.0',
+      minVersion: json['min_version'] ?? '1.0.0',
+      maxVersion: json['max_version'] ?? '1.1.1',
       latestTermsVersion: json['latest_terms_version'] ?? 1,
       latestPrivacyVersion: json['latest_privacy_version'] ?? 1,
       enableAi: json['enable_ai'] ?? true,
@@ -87,8 +87,8 @@ class ConfigService {
           maintenanceMessage: '',
           androidLink: 'comingsoon',
           iosLink: 'comingsoon',
-          minVersion: '1.1.5',
-          maxVersion: '3.0.0',
+          minVersion: '1.0.0',
+          maxVersion: '1.1.1',
           latestTermsVersion: 1,
           latestPrivacyVersion: 1,
           enableAi: true,
@@ -133,8 +133,8 @@ class ConfigService {
         // Ensure versionStatus accurately reflects currentVersion against server limits
         final recalculatedStatus = _calculateVersionStatus(
           currentVersion: currentVersion,
-          minVersion: payload['min_version']?.toString() ?? '1.1.5',
-          maxVersion: payload['max_version']?.toString() ?? '3.0.0',
+          minVersion: payload['min_version']?.toString() ?? '1.0.0',
+          maxVersion: payload['max_version']?.toString() ?? '1.1.1',
         );
         payload['versionStatus'] = recalculatedStatus;
 
@@ -169,8 +169,8 @@ class ConfigService {
       maintenanceMessage: '',
       androidLink: 'comingsoon',
       iosLink: 'comingsoon',
-      minVersion: '1.1.5',
-      maxVersion: '3.0.0',
+      minVersion: '1.0.0',
+      maxVersion: '1.1.1',
       latestTermsVersion: 1,
       latestPrivacyVersion: 1,
       enableAi: true,
