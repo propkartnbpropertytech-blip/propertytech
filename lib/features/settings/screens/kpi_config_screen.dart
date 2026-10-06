@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../dashboard/bloc/dashboard_bloc.dart';
 import '../../dashboard/models/kpi_models.dart';
@@ -7,7 +8,8 @@ import '../../dashboard/services/dashboard_service.dart';
 import '../../dashboard/widgets/generic_kpi_drilldown_dialog.dart';
 
 class KpiConfigScreen extends StatefulWidget {
-  const KpiConfigScreen({super.key});
+  final bool isEmbedded;
+  const KpiConfigScreen({super.key, this.isEmbedded = false});
 
   @override
   State<KpiConfigScreen> createState() => _KpiConfigScreenState();
@@ -958,26 +960,89 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 1. Top Header Bar
-          _buildTopHeader(cardBg, textColor, subColor, borderColor),
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final hasBoundedHeight = constraints.hasBoundedHeight;
 
-          // 2. Segmented Navigation Bar
-          _buildSegmentedTabBar(cardBg, textColor, subColor, borderColor),
+        return Container(
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            mainAxisSize: hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 1. Top Header Bar
+              _buildTopHeader(cardBg, textColor, subColor, borderColor),
 
-          // 3. Tab Body
-          Expanded(
-            child: _buildCurrentTab(cardBg, textColor, subColor, borderColor),
+              // 2. Segmented Navigation Bar
+              _buildSegmentedTabBar(cardBg, textColor, subColor, borderColor),
+
+              // 3. Tab Body
+              if (hasBoundedHeight)
+                Expanded(
+                  child: _buildCurrentTab(
+                    cardBg,
+                    textColor,
+                    subColor,
+                    borderColor,
+                    hasBoundedHeight: true,
+                  ),
+                )
+              else
+                _buildCurrentTab(
+                  cardBg,
+                  textColor,
+                  subColor,
+                  borderColor,
+                  hasBoundedHeight: false,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (widget.isEmbedded) {
+      return content;
+    }
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text(
+          'KPI Registry & Configuration',
+          style: TextStyle(
+            color: textColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        backgroundColor: cardBg,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_rounded, color: textColor),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              context.go('/settings');
+            }
+          },
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh_rounded, color: textColor),
+            tooltip: 'Refresh Registry',
+            onPressed: _loadAll,
           ),
         ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: content,
       ),
     );
   }
@@ -1106,10 +1171,22 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
     );
   }
 
-  Widget _buildCurrentTab(Color cardBg, Color textColor, Color subColor, Color borderColor) {
+  Widget _buildCurrentTab(
+    Color cardBg,
+    Color textColor,
+    Color subColor,
+    Color borderColor, {
+    bool hasBoundedHeight = true,
+  }) {
     switch (_activeTabIndex) {
       case 0:
-        return _buildRegistryTab(cardBg, textColor, subColor, borderColor);
+        return _buildRegistryTab(
+          cardBg,
+          textColor,
+          subColor,
+          borderColor,
+          hasBoundedHeight: hasBoundedHeight,
+        );
       case 1:
         return _buildBuilderTab(cardBg, textColor, subColor, borderColor);
       case 2:
@@ -1117,34 +1194,219 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
       case 3:
         return _buildAuditHistoryTab(cardBg, textColor, subColor, borderColor);
       default:
-        return _buildRegistryTab(cardBg, textColor, subColor, borderColor);
+        return _buildRegistryTab(
+          cardBg,
+          textColor,
+          subColor,
+          borderColor,
+          hasBoundedHeight: hasBoundedHeight,
+        );
     }
   }
 
   // ==========================================
   // TAB 1: KPI REGISTRY TABLE
   // ==========================================
-  Widget _buildRegistryTab(Color cardBg, Color textColor, Color subColor, Color borderColor) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
+  Widget _buildRegistryTab(
+    Color cardBg,
+    Color textColor,
+    Color subColor,
+    Color borderColor, {
+    bool hasBoundedHeight = true,
+  }) {
+    if (_isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(40.0),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
 
     if (_errorMessage.isNotEmpty) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline_rounded, size: 40, color: Colors.red),
-            const SizedBox(height: 10),
-            Text('Failed to load registry: $_errorMessage'),
-            const SizedBox(height: 10),
-            ElevatedButton(onPressed: _loadAll, child: const Text('Retry')),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline_rounded, size: 40, color: Colors.red),
+              const SizedBox(height: 10),
+              Text(
+                'Failed to load registry: $_errorMessage',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton(onPressed: _loadAll, child: const Text('Retry')),
+            ],
+          ),
         ),
       );
     }
 
     final isDark = ThemeManager().isDarkMode;
 
+    Widget tableWidget;
+    if (_kpiList.isEmpty) {
+      tableWidget = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.dashboard_customize_outlined, size: 48, color: subColor),
+              const SizedBox(height: 12),
+              Text(
+                'No KPIs Found',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'No metrics match the selected filter criteria.',
+                style: TextStyle(fontSize: 13, color: subColor),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: const Text('Create KPI'),
+                    onPressed: () {
+                      _resetBuilder();
+                      setState(() => _activeTabIndex = 1);
+                    },
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    label: const Text('Refresh'),
+                    onPressed: _loadAll,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      tableWidget = SingleChildScrollView(
+        scrollDirection: Axis.vertical,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 1100),
+            child: DataTable(
+              columnSpacing: 18,
+              headingRowColor: WidgetStateProperty.all(
+                isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+              ),
+              columns: const [
+                DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
+                DataColumn(label: Text('KPI Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                DataColumn(label: Text('KPI Key', style: TextStyle(fontWeight: FontWeight.bold))),
+                DataColumn(label: Text('Business Purpose', style: TextStyle(fontWeight: FontWeight.bold))),
+                DataColumn(label: Text('Data Source', style: TextStyle(fontWeight: FontWeight.bold))),
+                DataColumn(label: Text('Pages', style: TextStyle(fontWeight: FontWeight.bold))),
+                DataColumn(label: Text('Admin', style: TextStyle(fontWeight: FontWeight.bold))),
+                DataColumn(label: Text('Telecaller', style: TextStyle(fontWeight: FontWeight.bold))),
+                DataColumn(label: Text('Sales User', style: TextStyle(fontWeight: FontWeight.bold))),
+                DataColumn(label: Text('Active', style: TextStyle(fontWeight: FontWeight.bold))),
+                DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
+              ],
+              rows: List.generate(_kpiList.length, (index) {
+                final kpi = _kpiList[index];
+                return DataRow(
+                  cells: [
+                    DataCell(Text('${index + 1}', style: TextStyle(color: subColor, fontSize: 13))),
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(_getIconData(kpi.icon), size: 18, color: ThemeManager().primaryColor),
+                          const SizedBox(width: 8),
+                          Text(kpi.kpiLabel, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          if (kpi.isSystem) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text('SYS', style: TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    DataCell(
+                      Text(kpi.kpiKey, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Color(0xFF6366F1))),
+                    ),
+                    DataCell(
+                      SizedBox(
+                        width: 220,
+                        child: Tooltip(
+                          message: kpi.whyDoWeHaveIt,
+                          child: Text(kpi.whyDoWeHaveIt, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: subColor)),
+                        ),
+                      ),
+                    ),
+                    DataCell(
+                      Text('${kpi.dataSource} (${kpi.aggregation})', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    ),
+                    DataCell(
+                      Text(kpi.pages.join(', ').replaceAll(' Dashboard', ''), style: TextStyle(fontSize: 12, color: subColor)),
+                    ),
+                    DataCell(Checkbox(value: kpi.adminVisible, onChanged: (val) => _toggleRole(kpi, admin: val))),
+                    DataCell(Checkbox(value: kpi.telecallerVisible, onChanged: (val) => _toggleRole(kpi, telecaller: val))),
+                    DataCell(Checkbox(value: kpi.salesVisible, onChanged: (val) => _toggleRole(kpi, sales: val))),
+                    DataCell(Switch(value: kpi.isEnabled, onChanged: (val) => _toggleStatus(kpi, val))),
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+                            tooltip: 'Preview Live Drilldown',
+                            onPressed: () {
+                              GenericKpiDrilldownDialog.show(
+                                context,
+                                kpiKey: kpi.kpiKey,
+                                kpiLabel: kpi.kpiLabel,
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.edit_rounded, size: 18),
+                            tooltip: 'Edit in Builder',
+                            onPressed: () => _initEdit(kpi),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy_rounded, size: 18),
+                            tooltip: 'Duplicate',
+                            onPressed: () => _duplicate(kpi),
+                          ),
+                          if (!kpi.isSystem)
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
+                              tooltip: 'Delete KPI',
+                              onPressed: () => _deleteKpi(kpi),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Column(
+      mainAxisSize: hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Filter toolbar
@@ -1206,122 +1468,11 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
           ),
         ),
 
-        // Registry Table
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.vertical,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 1100),
-                child: DataTable(
-                  columnSpacing: 18,
-                  headingRowColor: WidgetStateProperty.all(
-                    isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                  ),
-                  columns: const [
-                    DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('KPI Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('KPI Key', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Business Purpose', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Data Source', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Pages', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Admin', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Telecaller', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Sales User', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Active', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
-                  rows: List.generate(_kpiList.length, (index) {
-                    final kpi = _kpiList[index];
-                    return DataRow(
-                      cells: [
-                        DataCell(Text('${index + 1}', style: TextStyle(color: subColor, fontSize: 13))),
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(_getIconData(kpi.icon), size: 18, color: ThemeManager().primaryColor),
-                              const SizedBox(width: 8),
-                              Text(kpi.kpiLabel, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                              if (kpi.isSystem) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text('SYS', style: TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold)),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        DataCell(
-                          Text(kpi.kpiKey, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Color(0xFF6366F1))),
-                        ),
-                        DataCell(
-                          SizedBox(
-                            width: 220,
-                            child: Tooltip(
-                              message: kpi.whyDoWeHaveIt,
-                              child: Text(kpi.whyDoWeHaveIt, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: subColor)),
-                            ),
-                          ),
-                        ),
-                        DataCell(
-                          Text('${kpi.dataSource} (${kpi.aggregation})', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                        ),
-                        DataCell(
-                          Text(kpi.pages.join(', ').replaceAll(' Dashboard', ''), style: TextStyle(fontSize: 12, color: subColor)),
-                        ),
-                        DataCell(Checkbox(value: kpi.adminVisible, onChanged: (val) => _toggleRole(kpi, admin: val))),
-                        DataCell(Checkbox(value: kpi.telecallerVisible, onChanged: (val) => _toggleRole(kpi, telecaller: val))),
-                        DataCell(Checkbox(value: kpi.salesVisible, onChanged: (val) => _toggleRole(kpi, sales: val))),
-                        DataCell(Switch(value: kpi.isEnabled, onChanged: (val) => _toggleStatus(kpi, val))),
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
-                                tooltip: 'Preview Live Drilldown',
-                                onPressed: () {
-                                  GenericKpiDrilldownDialog.show(
-                                    context,
-                                    kpiKey: kpi.kpiKey,
-                                    kpiLabel: kpi.kpiLabel,
-                                  );
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.edit_rounded, size: 18),
-                                tooltip: 'Edit in Builder',
-                                onPressed: () => _initEdit(kpi),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.copy_rounded, size: 18),
-                                tooltip: 'Duplicate',
-                                onPressed: () => _duplicate(kpi),
-                              ),
-                              if (!kpi.isSystem)
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
-                                  tooltip: 'Delete KPI',
-                                  onPressed: () => _deleteKpi(kpi),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }),
-                ),
-              ),
-            ),
-          ),
-        ),
+        // Registry Table or Empty State
+        if (hasBoundedHeight)
+          Expanded(child: tableWidget)
+        else
+          tableWidget,
       ],
     );
   }

@@ -520,12 +520,19 @@ class DashboardService {
                 ?.map((c) => KpiRegistryItem.fromJson(Map<String, dynamic>.from(c)))
                 .toList() ??
             [];
+        if (list.isNotEmpty) return list;
+        if ((search == null || search.isEmpty) &&
+            (page == null || page == 'All') &&
+            (role == null || role == 'All') &&
+            (status == null || status == 'All')) {
+          return KpiRegistryItem.canonicalDefaults;
+        }
         return list;
       }
-      return [];
+      return KpiRegistryItem.canonicalDefaults;
     } catch (e) {
       debugPrint('[getKpiRegistry] Error: $e');
-      return [];
+      return KpiRegistryItem.canonicalDefaults;
     }
   }
 

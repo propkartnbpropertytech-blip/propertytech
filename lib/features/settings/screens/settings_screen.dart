@@ -1691,7 +1691,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         case 'upload_limits':
           return _buildUploadLimitsSection();
         case 'kpi_config':
-          return const KpiConfigScreen();
+          return const KpiConfigScreen(isEmbedded: true);
         case 'permissions':
           if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
           return const PermissionMatrixCard();
@@ -1740,6 +1740,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           showBack: true,
           onBack: () => setState(() => _mobileActiveSection = null),
           padding: const EdgeInsets.all(CRMSpacing.m),
+          scrollable: _mobileActiveSection != 'kpi_config',
           body: sectionContent(),
         ),
       );
