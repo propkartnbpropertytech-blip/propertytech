@@ -1774,7 +1774,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(width: CRMSpacing.l),
                         Expanded(
-                          child: SingleChildScrollView(child: sectionContent()),
+                          child: _activeSection == 'kpi_config'
+                              ? sectionContent()
+                              : SingleChildScrollView(child: sectionContent()),
                         ),
                       ],
                     ),

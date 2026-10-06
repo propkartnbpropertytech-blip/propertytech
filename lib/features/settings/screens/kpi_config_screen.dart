@@ -13,24 +13,21 @@ class KpiConfigScreen extends StatefulWidget {
   State<KpiConfigScreen> createState() => _KpiConfigScreenState();
 }
 
-class _KpiConfigScreenState extends State<KpiConfigScreen>
-    with SingleTickerProviderStateMixin {
+class _KpiConfigScreenState extends State<KpiConfigScreen> {
   final DashboardService _service = DashboardService();
-  late TabController _tabController;
+  int _activeTabIndex = 0; // 0: Registry, 1: Builder, 2: Role Visibility, 3: Audit History
 
   bool _isLoading = true;
   bool _isSaving = false;
   String _errorMessage = '';
   List<KpiRegistryItem> _kpiList = [];
   List<KpiAuditLogItem> _auditLogs = [];
-  // ignore: unused_field
-  Map<String, dynamic> _builderMetadata = {};
 
-  // Filter States
+  // Filter States for Registry Table
   String _searchQuery = '';
   String _selectedPageFilter = 'All';
   String _selectedRoleFilter = 'All';
-  String _selectedStatusFilter = 'All';
+  final String _selectedStatusFilter = 'All';
 
   // Builder State
   bool _isEditing = false;
@@ -42,12 +39,10 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
 
   // Friendly Data Source Selection
   String _selectedSourceId = 'site_visits';
-  String _selectedCountField = 'id';
-  String _selectedAggregation = 'COUNT';
-  String _selectedConditionField = 'status';
-  String _selectedConditionValue = 'DONE';
-  String _selectedDateField = 'created_at';
-  bool _hasCondition = true;
+  String _selectedCountType = 'records'; // 'records', 'unique', 'sum', 'avg'
+  List<Map<String, String>> _activeFilters = [
+    {'field': 'status', 'operator': '=', 'value': 'DONE'}
+  ];
 
   // Pages & Roles
   final List<String> _selectedPages = ['Admin Dashboard'];
@@ -55,7 +50,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
   bool _telecallerVisible = false;
   bool _salesVisible = false;
   String _uiComponent = 'KPI Card';
-  String _displayFormat = 'Count';
+  final String _displayFormat = 'Count';
   String _selectedIcon = 'insights_rounded';
   bool _isClickable = true;
 
@@ -87,24 +82,84 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
     'map_rounded': Icons.map_rounded,
     'bar_chart_rounded': Icons.bar_chart_rounded,
     'pie_chart_rounded': Icons.pie_chart_rounded,
+    'trending_up_rounded': Icons.trending_up_rounded,
+    'check_circle_rounded': Icons.check_circle_rounded,
   };
+
+  final List<Map<String, dynamic>> _dataSources = [
+    {
+      'id': 'site_visits',
+      'label': 'Site Visits',
+      'description': 'Customer property visits and in-person tours',
+      'icon': Icons.location_on_rounded,
+      'defaultField': 'id',
+      'defaultDate': 'created_at',
+      'filterFields': [
+        {'id': 'status', 'label': 'Status', 'values': ['DONE', 'SCHEDULED', 'CANCELLED', 'REJECTED_AFTER_VISIT']},
+        {'id': 'outcome', 'label': 'Outcome', 'values': ['INTERESTED', 'REJECTED_AFTER_VISIT', 'OFFER_MADE', 'CANCELLED']},
+      ],
+    },
+    {
+      'id': 'properties',
+      'label': 'Properties / Inventory',
+      'description': 'Marketable units, rentals, and resale listings',
+      'icon': Icons.home_work_rounded,
+      'defaultField': 'id',
+      'defaultDate': 'created_at',
+      'filterFields': [
+        {'id': 'status', 'label': 'Status', 'values': ['Available', 'Sold', 'Rented', 'Draft']},
+        {'id': 'listing_type', 'label': 'Listing Type', 'values': ['Rent', 'Re-sale']},
+        {'id': 'property_type', 'label': 'Property Type', 'values': ['Apartment', 'Villa', 'Plot', 'Commercial']},
+      ],
+    },
+    {
+      'id': 'leads',
+      'label': 'Leads (Direct & Campaigns)',
+      'description': 'Inbound prospects from Meta, Housing, and manual entry',
+      'icon': Icons.assignment_rounded,
+      'defaultField': 'id',
+      'defaultDate': 'created_at',
+      'filterFields': [
+        {'id': 'campaign_status', 'label': 'Campaign Status', 'values': ['NEW', 'CONTACTED', 'INTERESTED', 'NOT_INTERESTED']},
+        {'id': 'source', 'label': 'Source', 'values': ['Meta Ads', 'Housing', 'Manual', 'Webhook API']},
+        {'id': 'lead_type', 'label': 'Lead Type', 'values': ['Listing', 'Requirement', 'Both']},
+      ],
+    },
+    {
+      'id': 'requirements',
+      'label': 'Requirements',
+      'description': 'Buyer and tenant requirement demands',
+      'icon': Icons.badge_rounded,
+      'defaultField': 'id',
+      'defaultDate': 'created_at',
+      'filterFields': [
+        {'id': 'status', 'label': 'Status', 'values': ['Active', 'Closed', 'Matched']},
+        {'id': 'listing_type', 'label': 'Listing Type', 'values': ['Rent', 'Re-sale']},
+      ],
+    },
+    {
+      'id': 'users',
+      'label': 'Team Members',
+      'description': 'Admins, telecallers, and sales executives',
+      'icon': Icons.groups_rounded,
+      'defaultField': 'id',
+      'defaultDate': 'created_at',
+      'filterFields': [
+        {'id': 'role', 'label': 'Role', 'values': ['admin', 'telecaller', 'sales']},
+        {'id': 'status', 'label': 'Status', 'values': ['active', 'inactive']},
+      ],
+    },
+  ];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _tabController.addListener(() {
-      if (_tabController.index == 3 && _auditLogs.isEmpty) {
-        _loadAuditLogs();
-      }
-    });
     _initDefaultDrilldownComponents();
     _loadAll();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _nameController.dispose();
     _whyController.dispose();
     _keyController.dispose();
@@ -140,7 +195,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
       {
         'id': 'comp_table',
         'type': 'table',
-        'title': 'Record Details',
+        'title': 'Recent Records',
         'columns': ['Customer', 'Property', 'Date', 'Status'],
         'data_source': 'site_visits',
       },
@@ -149,6 +204,34 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
 
   IconData _getIconData(String iconName) {
     return _iconCatalog[iconName] ?? Icons.insights_rounded;
+  }
+
+  Map<String, dynamic> _getCurrentSourceDef() {
+    return _dataSources.firstWhere(
+      (s) => s['id'] == _selectedSourceId,
+      orElse: () => _dataSources.first,
+    );
+  }
+
+  String get _mappedAggregation {
+    switch (_selectedCountType) {
+      case 'unique':
+        return 'COUNT_DISTINCT';
+      case 'sum':
+        return 'SUM';
+      case 'avg':
+        return 'AVG';
+      case 'records':
+      default:
+        return 'COUNT';
+    }
+  }
+
+  String get _mappedPrimaryField {
+    if (_selectedSourceId == 'site_visits' && _selectedCountType == 'unique') {
+      return 'lead_id';
+    }
+    return 'id';
   }
 
   Future<void> _loadAll() async {
@@ -163,11 +246,9 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
         role: _selectedRoleFilter,
         status: _selectedStatusFilter,
       );
-      final meta = await _service.getKpiBuilderMetadata();
       if (mounted) {
         setState(() {
           _kpiList = kpis;
-          _builderMetadata = meta;
           _isLoading = false;
         });
       }
@@ -210,19 +291,16 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
       _keyController.clear();
       _orderController.text = '10';
       _selectedSourceId = 'site_visits';
-      _selectedCountField = 'id';
-      _selectedAggregation = 'COUNT';
-      _selectedConditionField = 'status';
-      _selectedConditionValue = 'DONE';
-      _selectedDateField = 'created_at';
-      _hasCondition = true;
+      _selectedCountType = 'records';
+      _activeFilters = [
+        {'field': 'status', 'operator': '=', 'value': 'DONE'}
+      ];
       _selectedPages.clear();
       _selectedPages.add('Admin Dashboard');
       _adminVisible = true;
       _telecallerVisible = false;
       _salesVisible = false;
       _uiComponent = 'KPI Card';
-      _displayFormat = 'Count';
       _selectedIcon = 'insights_rounded';
       _isClickable = true;
       _initDefaultDrilldownComponents();
@@ -238,25 +316,36 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
       _keyController.text = kpi.kpiKey;
       _orderController.text = kpi.displayOrder.toString();
       _selectedSourceId = kpi.dataSource;
-      _selectedCountField = kpi.primaryField;
-      _selectedAggregation = kpi.aggregation;
-      _selectedDateField = kpi.dateField;
+      if (kpi.aggregation == 'COUNT_DISTINCT') {
+        _selectedCountType = 'unique';
+      } else if (kpi.aggregation == 'SUM') {
+        _selectedCountType = 'sum';
+      } else if (kpi.aggregation == 'AVG') {
+        _selectedCountType = 'avg';
+      } else {
+        _selectedCountType = 'records';
+      }
+
       _selectedPages.clear();
       _selectedPages.addAll(kpi.pages);
       _adminVisible = kpi.adminVisible;
       _telecallerVisible = kpi.telecallerVisible;
       _salesVisible = kpi.salesVisible;
       _uiComponent = kpi.uiComponent;
-      _displayFormat = kpi.displayFormat;
       _selectedIcon = kpi.icon;
       _isClickable = kpi.isClickable;
 
-      if (kpi.conditionsJson.isNotEmpty && kpi.conditionsJson.first is Map) {
-        _hasCondition = true;
-        _selectedConditionField = kpi.conditionsJson.first['field']?.toString() ?? 'status';
-        _selectedConditionValue = kpi.conditionsJson.first['value']?.toString() ?? 'DONE';
+      if (kpi.conditionsJson.isNotEmpty) {
+        _activeFilters = kpi.conditionsJson
+            .whereType<Map>()
+            .map((c) => {
+                  'field': c['field']?.toString() ?? 'status',
+                  'operator': c['operator']?.toString() ?? '=',
+                  'value': c['value']?.toString() ?? '',
+                })
+            .toList();
       } else {
-        _hasCondition = false;
+        _activeFilters = [];
       }
 
       if (kpi.drilldownConfig.containsKey('components') &&
@@ -268,8 +357,8 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
       } else {
         _initDefaultDrilldownComponents();
       }
+      _activeTabIndex = 1;
     });
-    _tabController.animateTo(1);
   }
 
   void _duplicate(KpiRegistryItem kpi) {
@@ -279,16 +368,17 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
       _whyController.text = kpi.whyDoWeHaveIt;
       _keyController.text = '${kpi.kpiKey}_copy';
       _selectedSourceId = kpi.dataSource;
-      _selectedCountField = kpi.primaryField;
-      _selectedAggregation = kpi.aggregation;
-      _selectedDateField = kpi.dateField;
+      if (kpi.aggregation == 'COUNT_DISTINCT') {
+        _selectedCountType = 'unique';
+      } else {
+        _selectedCountType = 'records';
+      }
       _selectedPages.clear();
       _selectedPages.addAll(kpi.pages);
       _adminVisible = kpi.adminVisible;
       _telecallerVisible = kpi.telecallerVisible;
       _salesVisible = kpi.salesVisible;
       _uiComponent = kpi.uiComponent;
-      _displayFormat = kpi.displayFormat;
       _selectedIcon = kpi.icon;
       _isClickable = kpi.isClickable;
       if (kpi.drilldownConfig.containsKey('components') &&
@@ -298,8 +388,8 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
               .map((c) => Map<String, dynamic>.from(c)),
         );
       }
+      _activeTabIndex = 1;
     });
-    _tabController.animateTo(1);
     _showFeedback('Pre-filled new KPI from "${kpi.kpiLabel}".', isSuccess: true);
   }
 
@@ -325,16 +415,6 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
 
     setState(() => _isSaving = true);
 
-    final conditions = _hasCondition
-        ? [
-            {
-              'field': _selectedConditionField,
-              'operator': '=',
-              'value': _selectedConditionValue,
-            }
-          ]
-        : [];
-
     final payload = {
       'kpi_name': name,
       'kpi_label': name,
@@ -344,11 +424,11 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
       'why_do_we_have_it': why,
       'data_source': _selectedSourceId,
       'entity_table': _selectedSourceId,
-      'primary_field': _selectedCountField,
-      'aggregation': _selectedAggregation,
-      'conditions_json': conditions,
-      'date_field': _selectedDateField,
-      'database_mapping_description': '$_selectedSourceId ($_selectedAggregation) ${conditions.isNotEmpty ? "WHERE $_selectedConditionField = $_selectedConditionValue" : ""}',
+      'primary_field': _mappedPrimaryField,
+      'aggregation': _mappedAggregation,
+      'conditions_json': _activeFilters,
+      'date_field': _getCurrentSourceDef()['defaultDate'] ?? 'created_at',
+      'database_mapping_description': '$_selectedSourceId ($_mappedAggregation) ${_activeFilters.isNotEmpty ? "WHERE ${_activeFilters.map((f) => "${f['field']} ${f['operator']} ${f['value']}").join(" AND ")}" : ""}',
       'pages': _selectedPages,
       'ui_component': _uiComponent,
       'display_format': _displayFormat,
@@ -387,7 +467,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
       }
 
       _resetBuilder();
-      _tabController.animateTo(0);
+      setState(() => _activeTabIndex = 0);
       _loadAll();
     } catch (e) {
       _showFeedback('Failed to save KPI: $e', isSuccess: false);
@@ -492,59 +572,89 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
     );
   }
 
-  // Drilldown Component Add Dialogs
+  // ==========================================
+  // DRILLDOWN COMPONENT ADD DIALOGS
+  // ==========================================
   void _openAddSubKpiDialog() {
     String subLabel = 'Scheduled';
     String subStatus = 'SCHEDULED';
     String? selectedKpiKey;
     bool isCustom = false;
+    bool isSecondaryClickable = true;
+    String? nextDrilldownKey;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDlgState) => AlertDialog(
           title: const Text('Add Sub-KPI to Drilldown'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  ChoiceChip(
-                    label: const Text('Select Existing KPI'),
-                    selected: !isCustom,
-                    onSelected: (val) => setDlgState(() => isCustom = !val),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Select Existing KPI'),
+                      selected: !isCustom,
+                      onSelected: (val) => setDlgState(() => isCustom = !val),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('Create New Sub-Metric'),
+                      selected: isCustom,
+                      onSelected: (val) => setDlgState(() => isCustom = val),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (!isCustom) ...[
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(labelText: 'Choose Registered KPI', border: OutlineInputBorder()),
+                    items: _kpiList.map((k) {
+                      return DropdownMenuItem(value: k.kpiKey, child: Text(k.kpiLabel));
+                    }).toList(),
+                    onChanged: (val) => selectedKpiKey = val,
                   ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('New Sub-Metric'),
-                    selected: isCustom,
-                    onSelected: (val) => setDlgState(() => isCustom = val),
+                ] else ...[
+                  TextFormField(
+                    initialValue: subLabel,
+                    decoration: const InputDecoration(labelText: 'Metric Label', hintText: 'e.g. Scheduled Visits', border: OutlineInputBorder()),
+                    onChanged: (val) => subLabel = val,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    initialValue: subStatus,
+                    decoration: const InputDecoration(labelText: 'Target Status Filter', hintText: 'e.g. SCHEDULED', border: OutlineInputBorder()),
+                    onChanged: (val) => subStatus = val,
                   ),
                 ],
-              ),
-              const SizedBox(height: 14),
-              if (!isCustom)
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Choose Registered KPI', border: OutlineInputBorder()),
-                  items: _kpiList.map((k) {
-                    return DropdownMenuItem(value: k.kpiKey, child: Text(k.kpiLabel));
-                  }).toList(),
-                  onChanged: (val) => selectedKpiKey = val,
-                )
-              else ...[
-                TextFormField(
-                  initialValue: subLabel,
-                  decoration: const InputDecoration(labelText: 'Metric Label', hintText: 'e.g. Scheduled', border: OutlineInputBorder()),
-                  onChanged: (val) => subLabel = val,
-                ),
+                const SizedBox(height: 16),
+                const Divider(),
                 const SizedBox(height: 10),
-                TextFormField(
-                  initialValue: subStatus,
-                  decoration: const InputDecoration(labelText: 'Target Status Value', hintText: 'e.g. SCHEDULED', border: OutlineInputBorder()),
-                  onChanged: (val) => subStatus = val,
+                Row(
+                  children: [
+                    Checkbox(
+                      value: isSecondaryClickable,
+                      onChanged: (val) => setDlgState(() => isSecondaryClickable = val ?? true),
+                    ),
+                    const Text('Make this Sub-KPI clickable (Nested Drilldown)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                  ],
                 ),
+                if (isSecondaryClickable) ...[
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(labelText: 'Target Nested Drilldown', border: OutlineInputBorder()),
+                    items: [
+                      const DropdownMenuItem(value: 'filtered_records', child: Text('Open Filtered Records List')),
+                      ..._kpiList.map((k) => DropdownMenuItem(value: k.kpiKey, child: Text('Open ${k.kpiLabel} Drilldown'))),
+                    ],
+                    onChanged: (val) => nextDrilldownKey = val,
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -557,7 +667,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                   );
                   if (kpiGroupComp.isEmpty) {
                     kpiGroupComp = {
-                      'id': 'comp_kpis',
+                      'id': 'comp_kpis_${DateTime.now().millisecondsSinceEpoch}',
                       'type': 'kpi_group',
                       'title': 'Status Summary',
                       'items': [],
@@ -566,16 +676,26 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                   }
                   final items = (kpiGroupComp['items'] as List?) ?? [];
                   if (isCustom) {
-                    items.add({'label': subLabel, 'status': subStatus, 'is_clickable': true});
+                    items.add({
+                      'label': subLabel,
+                      'status': subStatus,
+                      'is_clickable': isSecondaryClickable,
+                      if (nextDrilldownKey != null) 'next_drilldown_kpi': nextDrilldownKey,
+                    });
                   } else if (selectedKpiKey != null) {
                     final matched = _kpiList.firstWhere((k) => k.kpiKey == selectedKpiKey);
-                    items.add({'label': matched.kpiLabel, 'kpi_key': matched.kpiKey, 'is_clickable': true});
+                    items.add({
+                      'label': matched.kpiLabel,
+                      'kpi_key': matched.kpiKey,
+                      'is_clickable': isSecondaryClickable,
+                      if (nextDrilldownKey != null) 'next_drilldown_kpi': nextDrilldownKey,
+                    });
                   }
                   kpiGroupComp['items'] = items;
                 });
                 Navigator.pop(ctx);
               },
-              child: const Text('Add'),
+              child: const Text('Add to Drilldown'),
             ),
           ],
         ),
@@ -601,7 +721,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                 decoration: const InputDecoration(labelText: 'Chart Title', border: OutlineInputBorder()),
                 onChanged: (val) => chartTitle = val,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: chartType,
                 decoration: const InputDecoration(labelText: 'Chart Type', border: OutlineInputBorder()),
@@ -612,7 +732,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                 ],
                 onChanged: (val) => chartType = val ?? 'donut',
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: dimension,
                 decoration: const InputDecoration(labelText: 'Group By (Dimension)', border: OutlineInputBorder()),
@@ -652,30 +772,105 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
   void _openAddTableDialog() {
     String tableTitle = 'Record Details';
     String dataSource = _selectedSourceId;
+    final Set<String> selectedCols = {'Customer', 'Property', 'Date', 'Status'};
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          title: const Text('Add Records Table to Drilldown'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextFormField(
+                initialValue: tableTitle,
+                decoration: const InputDecoration(labelText: 'Table Title', border: OutlineInputBorder()),
+                onChanged: (val) => tableTitle = val,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: dataSource,
+                decoration: const InputDecoration(labelText: 'Data Source', border: OutlineInputBorder()),
+                items: _dataSources.map((ds) {
+                  return DropdownMenuItem(value: ds['id'] as String, child: Text(ds['label'] as String));
+                }).toList(),
+                onChanged: (val) => setDlgState(() => dataSource = val ?? 'site_visits'),
+              ),
+              const SizedBox(height: 12),
+              const Text('Visible Columns:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: ['Customer', 'Property', 'Sales User', 'Date', 'Status', 'Phone'].map((col) {
+                  final isSel = selectedCols.contains(col);
+                  return FilterChip(
+                    label: Text(col),
+                    selected: isSel,
+                    onSelected: (val) {
+                      setDlgState(() {
+                        if (val) {
+                          selectedCols.add(col);
+                        } else {
+                          selectedCols.remove(col);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _drilldownComponents.add({
+                    'id': 'table_${DateTime.now().millisecondsSinceEpoch}',
+                    'type': 'table',
+                    'title': tableTitle,
+                    'data_source': dataSource,
+                    'columns': selectedCols.toList(),
+                  });
+                });
+                Navigator.pop(ctx);
+              },
+              child: const Text('Add Table'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openAddStatusBreakdownDialog() {
+    String title = 'Status Breakdown';
+    String dimension = 'status';
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Add Records Table to Drilldown'),
+        title: const Text('Add Status Breakdown'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextFormField(
-              initialValue: tableTitle,
-              decoration: const InputDecoration(labelText: 'Table Title', border: OutlineInputBorder()),
-              onChanged: (val) => tableTitle = val,
+              initialValue: title,
+              decoration: const InputDecoration(labelText: 'Breakdown Title', border: OutlineInputBorder()),
+              onChanged: (val) => title = val,
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              initialValue: dataSource,
-              decoration: const InputDecoration(labelText: 'Data Source', border: OutlineInputBorder()),
+              initialValue: dimension,
+              decoration: const InputDecoration(labelText: 'Dimension', border: OutlineInputBorder()),
               items: const [
-                DropdownMenuItem(value: 'site_visits', child: Text('Site Visits')),
-                DropdownMenuItem(value: 'properties', child: Text('Properties')),
-                DropdownMenuItem(value: 'leads', child: Text('Leads')),
-                DropdownMenuItem(value: 'requirements', child: Text('Requirements')),
+                DropdownMenuItem(value: 'status', child: Text('Status')),
+                DropdownMenuItem(value: 'stage', child: Text('Stage')),
+                DropdownMenuItem(value: 'source', child: Text('Source')),
               ],
-              onChanged: (val) => dataSource = val ?? 'site_visits',
+              onChanged: (val) => dimension = val ?? 'status',
             ),
           ],
         ),
@@ -685,22 +880,76 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
             onPressed: () {
               setState(() {
                 _drilldownComponents.add({
-                  'id': 'table_${DateTime.now().millisecondsSinceEpoch}',
-                  'type': 'table',
-                  'title': tableTitle,
-                  'data_source': dataSource,
-                  'columns': ['Customer', 'Property', 'Date', 'Status'],
+                  'id': 'breakdown_${DateTime.now().millisecondsSinceEpoch}',
+                  'type': 'status_breakdown',
+                  'title': title,
+                  'dimension': dimension,
                 });
               });
               Navigator.pop(ctx);
             },
-            child: const Text('Add Table'),
+            child: const Text('Add Breakdown'),
           ),
         ],
       ),
     );
   }
 
+  void _openAddFilterDialog() {
+    String filterTitle = 'Sales User Filter';
+    String filterKey = 'sales_user';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Filter to Drilldown'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              initialValue: filterTitle,
+              decoration: const InputDecoration(labelText: 'Filter Label', border: OutlineInputBorder()),
+              onChanged: (val) => filterTitle = val,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: filterKey,
+              decoration: const InputDecoration(labelText: 'Filter Dimension', border: OutlineInputBorder()),
+              items: const [
+                DropdownMenuItem(value: 'sales_user', child: Text('Sales User')),
+                DropdownMenuItem(value: 'telecaller', child: Text('Telecaller')),
+                DropdownMenuItem(value: 'lead_source', child: Text('Lead Source')),
+                DropdownMenuItem(value: 'property_type', child: Text('Property Type')),
+                DropdownMenuItem(value: 'date_range', child: Text('Date Range')),
+              ],
+              onChanged: (val) => filterKey = val ?? 'sales_user',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _drilldownComponents.add({
+                  'id': 'filter_${DateTime.now().millisecondsSinceEpoch}',
+                  'type': 'filter',
+                  'title': filterTitle,
+                  'filter_key': filterKey,
+                });
+              });
+              Navigator.pop(ctx);
+            },
+            child: const Text('Add Filter'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // ROOT BUILD METHOD (STABLE CONTAINER)
+  // ==========================================
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
@@ -709,61 +958,171 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dynamic KPI Builder'),
-        centerTitle: false,
-        actions: [
-          if (_isSaving)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh Registry',
-            onPressed: _loadAll,
-          ),
-          const SizedBox(width: 8),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          labelColor: ThemeManager().primaryColor,
-          unselectedLabelColor: subColor,
-          indicatorColor: ThemeManager().primaryColor,
-          tabs: [
-            Tab(icon: const Icon(Icons.table_chart_rounded, size: 18), text: 'KPI Registry (${_kpiList.length})'),
-            Tab(
-              icon: Icon(_isEditing ? Icons.edit_rounded : Icons.add_circle_outline_rounded, size: 18),
-              text: _isEditing ? 'Edit KPI' : '+ No-Code Builder',
-            ),
-            const Tab(icon: Icon(Icons.security_rounded, size: 18), text: 'Role Visibility Matrix'),
-            const Tab(icon: Icon(Icons.history_rounded, size: 18), text: 'Audit History'),
-          ],
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. KPI Registry
-          _buildRegistryTab(cardBg, textColor, subColor, borderColor),
+          // 1. Top Header Bar
+          _buildTopHeader(cardBg, textColor, subColor, borderColor),
 
-          // 2. No-Code KPI Builder + Drilldown Composer
-          _buildBuilderTab(cardBg, textColor, subColor, borderColor),
+          // 2. Segmented Navigation Bar
+          _buildSegmentedTabBar(cardBg, textColor, subColor, borderColor),
 
-          // 3. Role Visibility Matrix
-          _buildRoleMatrixTab(cardBg, textColor, subColor, borderColor),
-
-          // 4. Audit History
-          _buildAuditHistoryTab(cardBg, textColor, subColor, borderColor),
+          // 3. Tab Body
+          Expanded(
+            child: _buildCurrentTab(cardBg, textColor, subColor, borderColor),
+          ),
         ],
       ),
     );
   }
 
+  Widget _buildTopHeader(Color cardBg, Color textColor, Color subColor, Color borderColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: borderColor)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: ThemeManager().primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.dashboard_customize_outlined, color: ThemeManager().primaryColor, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'KPI Registry & No-Code Builder',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
+                ),
+                Text(
+                  'Centralized registry for metrics, guided database mappings, and visual drilldowns.',
+                  style: TextStyle(fontSize: 12, color: subColor),
+                ),
+              ],
+            ),
+          ),
+          if (_isSaving)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, size: 20),
+            tooltip: 'Refresh Registry',
+            onPressed: _loadAll,
+          ),
+          if (_activeTabIndex == 0) ...[
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('+ Add KPI'),
+              onPressed: () {
+                _resetBuilder();
+                setState(() => _activeTabIndex = 1);
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSegmentedTabBar(Color cardBg, Color textColor, Color subColor, Color borderColor) {
+    final tabs = [
+      {'index': 0, 'label': 'KPI Registry (${_kpiList.length})', 'icon': Icons.table_chart_rounded},
+      {'index': 1, 'label': _isEditing ? 'Edit KPI' : '+ No-Code Builder', 'icon': _isEditing ? Icons.edit_rounded : Icons.auto_awesome_rounded},
+      {'index': 2, 'label': 'Role Visibility Matrix', 'icon': Icons.security_rounded},
+      {'index': 3, 'label': 'Audit History', 'icon': Icons.history_rounded},
+    ];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: ThemeManager().isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        border: Border(bottom: BorderSide(color: borderColor)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: tabs.map((t) {
+            final idx = t['index'] as int;
+            final isSelected = _activeTabIndex == idx;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  setState(() {
+                    _activeTabIndex = idx;
+                    if (_activeTabIndex == 3 && _auditLogs.isEmpty) {
+                      _loadAuditLogs();
+                    }
+                  });
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isSelected ? ThemeManager().primaryColor : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        t['icon'] as IconData,
+                        size: 15,
+                        color: isSelected ? Colors.white : subColor,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        t['label'] as String,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                          color: isSelected ? Colors.white : textColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCurrentTab(Color cardBg, Color textColor, Color subColor, Color borderColor) {
+    switch (_activeTabIndex) {
+      case 0:
+        return _buildRegistryTab(cardBg, textColor, subColor, borderColor);
+      case 1:
+        return _buildBuilderTab(cardBg, textColor, subColor, borderColor);
+      case 2:
+        return _buildRoleMatrixTab(cardBg, textColor, subColor, borderColor);
+      case 3:
+        return _buildAuditHistoryTab(cardBg, textColor, subColor, borderColor);
+      default:
+        return _buildRegistryTab(cardBg, textColor, subColor, borderColor);
+    }
+  }
+
   // ==========================================
-  // TAB 1: KPI REGISTRY
+  // TAB 1: KPI REGISTRY TABLE
   // ==========================================
   Widget _buildRegistryTab(Color cardBg, Color textColor, Color subColor, Color borderColor) {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
@@ -790,7 +1149,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
       children: [
         // Filter toolbar
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
             color: cardBg,
             border: Border(bottom: BorderSide(color: borderColor)),
@@ -801,12 +1160,12 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               SizedBox(
-                width: 250,
+                width: 240,
                 child: TextField(
                   decoration: InputDecoration(
                     hintText: 'Search KPIs...',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     isDense: true,
                   ),
@@ -841,15 +1200,6 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                     setState(() => _selectedRoleFilter = val);
                     _loadAll();
                   }
-                },
-              ),
-              const Spacer(),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('+ Add KPI'),
-                onPressed: () {
-                  _resetBuilder();
-                  _tabController.animateTo(1);
                 },
               ),
             ],
@@ -980,6 +1330,8 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
   // TAB 2: NO-CODE KPI BUILDER & DRILLDOWN COMPOSER
   // ==========================================
   Widget _buildBuilderTab(Color cardBg, Color textColor, Color subColor, Color borderColor) {
+    final curSource = _getCurrentSourceDef();
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Center(
@@ -1013,22 +1365,28 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
                         ),
                         Text(
-                          'Create and configure a KPI with drilldown in 30–60 seconds without writing code or SQL.',
+                          'Name your metric, choose data source, select dashboards, and visually compose the drilldown.',
                           style: TextStyle(fontSize: 13, color: subColor),
                         ),
                       ],
                     ),
                   ),
                   if (_isEditing)
-                    TextButton(onPressed: _resetBuilder, child: const Text('Cancel Edit')),
+                    TextButton(
+                      onPressed: () {
+                        _resetBuilder();
+                        setState(() => _activeTabIndex = 0);
+                      },
+                      child: const Text('Cancel Edit'),
+                    ),
                 ],
               ),
               const SizedBox(height: 20),
 
-              // STEP 1: Basic Information
+              // STEP 1: What do you want to measure?
               _buildBuilderCard(
-                title: '1. What do you want to measure?',
-                subtitle: 'Enter the human-friendly name and purpose.',
+                title: '1. What do you want to call it?',
+                subtitle: 'Enter the human-readable KPI name and business description.',
                 cardBg: cardBg,
                 borderColor: borderColor,
                 textColor: textColor,
@@ -1054,10 +1412,23 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                       ),
                     ),
                     if (_keyController.text.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Machine Key: ${_keyController.text}',
-                        style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Color(0xFF6366F1)),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6366F1).withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.vpn_key_rounded, size: 14, color: Color(0xFF6366F1)),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Auto-generated KPI Key: ${_keyController.text}',
+                              style: const TextStyle(fontFamily: 'monospace', fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF6366F1)),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ],
@@ -1065,10 +1436,10 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
               ),
               const SizedBox(height: 16),
 
-              // STEP 2: Map Database Data (NO SQL!)
+              // STEP 2: Where does its data come from?
               _buildBuilderCard(
-                title: '2. Where does this data come from?',
-                subtitle: 'Select from registered entities and fields. No SQL required.',
+                title: '2. Where does its data come from?',
+                subtitle: 'Select from available business entities and friendly filters without writing SQL.',
                 cardBg: cardBg,
                 borderColor: borderColor,
                 textColor: textColor,
@@ -1081,29 +1452,29 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                           child: DropdownButtonFormField<String>(
                             initialValue: _selectedSourceId,
                             decoration: const InputDecoration(labelText: 'Data Source', border: OutlineInputBorder()),
-                            items: const [
-                              DropdownMenuItem(value: 'site_visits', child: Text('Site Visits')),
-                              DropdownMenuItem(value: 'properties', child: Text('Properties / Inventory')),
-                              DropdownMenuItem(value: 'leads', child: Text('Leads (Direct & Campaigns)')),
-                              DropdownMenuItem(value: 'requirements', child: Text('Sales Requirements')),
-                              DropdownMenuItem(value: 'users', child: Text('Team Members')),
-                            ],
+                            items: _dataSources.map((ds) {
+                              return DropdownMenuItem(
+                                value: ds['id'] as String,
+                                child: Row(
+                                  children: [
+                                    Icon(ds['icon'] as IconData, size: 18, color: ThemeManager().primaryColor),
+                                    const SizedBox(width: 8),
+                                    Text(ds['label'] as String),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
                             onChanged: (val) {
                               if (val != null) {
                                 setState(() {
                                   _selectedSourceId = val;
+                                  _activeFilters.clear();
                                   if (val == 'site_visits') {
-                                    _selectedCountField = 'id';
-                                    _selectedConditionField = 'status';
-                                    _selectedConditionValue = 'DONE';
+                                    _activeFilters.add({'field': 'status', 'operator': '=', 'value': 'DONE'});
                                   } else if (val == 'properties') {
-                                    _selectedCountField = 'id';
-                                    _selectedConditionField = 'status';
-                                    _selectedConditionValue = 'Available';
+                                    _activeFilters.add({'field': 'status', 'operator': '=', 'value': 'Available'});
                                   } else if (val == 'leads') {
-                                    _selectedCountField = 'id';
-                                    _selectedConditionField = 'stage';
-                                    _selectedConditionValue = 'INTERESTED';
+                                    _activeFilters.add({'field': 'campaign_status', 'operator': '=', 'value': 'INTERESTED'});
                                   }
                                 });
                               }
@@ -1113,61 +1484,137 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            initialValue: _selectedAggregation,
-                            decoration: const InputDecoration(labelText: 'What to calculate?', border: OutlineInputBorder()),
+                            initialValue: _selectedCountType,
+                            decoration: const InputDecoration(labelText: 'Count Method', border: OutlineInputBorder()),
                             items: const [
-                              DropdownMenuItem(value: 'COUNT', child: Text('Count Records')),
-                              DropdownMenuItem(value: 'COUNT_DISTINCT', child: Text('Count Unique')),
-                              DropdownMenuItem(value: 'SUM', child: Text('Sum Value')),
-                              DropdownMenuItem(value: 'AVG', child: Text('Average Value')),
+                              DropdownMenuItem(value: 'records', child: Text('Count Records (Total)')),
+                              DropdownMenuItem(value: 'unique', child: Text('Count Unique Leads / Users')),
+                              DropdownMenuItem(value: 'sum', child: Text('Sum of Value')),
+                              DropdownMenuItem(value: 'avg', child: Text('Average of Value')),
                             ],
-                            onChanged: (val) => setState(() => _selectedAggregation = val ?? 'COUNT'),
+                            onChanged: (val) => setState(() => _selectedCountType = val ?? 'records'),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
+
+                    // Active Filters Section
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Checkbox(
-                          value: _hasCondition,
-                          onChanged: (val) => setState(() => _hasCondition = val ?? false),
+                        const Text('Data Filters', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        TextButton.icon(
+                          icon: const Icon(Icons.add_rounded, size: 16),
+                          label: const Text('Add Filter'),
+                          onPressed: () {
+                            final filterFields = curSource['filterFields'] as List;
+                            final firstField = filterFields.first;
+                            setState(() {
+                              _activeFilters.add({
+                                'field': firstField['id'] as String,
+                                'operator': '=',
+                                'value': (firstField['values'] as List).first as String,
+                              });
+                            });
+                          },
                         ),
-                        const Text('Add Status Filter', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                       ],
                     ),
-                    if (_hasCondition) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              initialValue: _selectedConditionField,
-                              decoration: const InputDecoration(labelText: 'Field', border: OutlineInputBorder()),
-                              onChanged: (val) => _selectedConditionField = val,
-                            ),
+                    if (_activeFilters.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text('No filters applied (All records in $_selectedSourceId will be counted)', style: TextStyle(fontSize: 12, color: subColor)),
+                      )
+                    else
+                      ...List.generate(_activeFilters.length, (idx) {
+                        final filter = _activeFilters[idx];
+                        final filterFields = curSource['filterFields'] as List;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: ThemeManager().isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          const SizedBox(width: 10),
-                          const Text('equals', style: TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: TextFormField(
-                              initialValue: _selectedConditionValue,
-                              decoration: const InputDecoration(labelText: 'Value', border: OutlineInputBorder()),
-                              onChanged: (val) => _selectedConditionValue = val,
-                            ),
+                          child: Row(
+                            children: [
+                              DropdownButton<String>(
+                                value: filter['field'],
+                                underline: const SizedBox(),
+                                items: filterFields.map<DropdownMenuItem<String>>((f) {
+                                  return DropdownMenuItem(value: f['id'] as String, child: Text(f['label'] as String, style: const TextStyle(fontSize: 13)));
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    final fDef = filterFields.firstWhere((f) => f['id'] == val);
+                                    setState(() {
+                                      filter['field'] = val;
+                                      filter['value'] = (fDef['values'] as List).first as String;
+                                    });
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              const Text('equals', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextFormField(
+                                  initialValue: filter['value'],
+                                  decoration: const InputDecoration(
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                  onChanged: (val) => filter['value'] = val,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded, size: 16, color: Colors.red),
+                                onPressed: () => setState(() => _activeFilters.removeAt(idx)),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ],
+                        );
+                      }),
+
+                    const SizedBox(height: 10),
+                    // Technical Mapping Accordion
+                    ExpansionTile(
+                      title: const Text('Advanced / Technical Mapping', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF6366F1))),
+                      tilePadding: EdgeInsets.zero,
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: ThemeManager().isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: borderColor),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Table: $_selectedSourceId', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                              Text('Field: $_mappedPrimaryField', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                              Text('Aggregation: $_mappedAggregation', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                              Text('Date Field: ${curSource['defaultDate']}', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                              Text('Filters: ${_activeFilters.toString()}', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
 
-              // STEP 3: Where should this KPI appear?
+              // STEP 3: Where should it appear?
               _buildBuilderCard(
                 title: '3. Where should this KPI appear?',
-                subtitle: 'Choose target dashboards and pages.',
+                subtitle: 'Choose target dashboards and pages for this metric.',
                 cardBg: cardBg,
                 borderColor: borderColor,
                 textColor: textColor,
@@ -1199,7 +1646,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
               // STEP 4: Who can see this KPI?
               _buildBuilderCard(
                 title: '4. Who can see this KPI?',
-                subtitle: 'Enforced at both backend API and frontend views.',
+                subtitle: 'Enforced at both backend API and frontend role-based access control.',
                 cardBg: cardBg,
                 borderColor: borderColor,
                 textColor: textColor,
@@ -1215,10 +1662,10 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
               ),
               const SizedBox(height: 16),
 
-              // STEP 5: Display Type & Advanced Settings
+              // STEP 5: Visual Presentation
               _buildBuilderCard(
-                title: '5. How should it appear?',
-                subtitle: 'Select component style. Advanced settings optional.',
+                title: '5. Visual Presentation',
+                subtitle: 'Select component card type and display icon.',
                 cardBg: cardBg,
                 borderColor: borderColor,
                 textColor: textColor,
@@ -1236,41 +1683,35 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                         );
                       }).toList(),
                     ),
-                    const SizedBox(height: 10),
-                    ExpansionTile(
-                      title: const Text('Advanced Settings (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                      tilePadding: EdgeInsets.zero,
+                    const SizedBox(height: 12),
+                    Row(
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                initialValue: _selectedIcon,
-                                decoration: const InputDecoration(labelText: 'Icon', border: OutlineInputBorder()),
-                                items: _iconCatalog.entries.map((entry) {
-                                  return DropdownMenuItem(
-                                    value: entry.key,
-                                    child: Row(
-                                      children: [
-                                        Icon(entry.value, size: 18),
-                                        const SizedBox(width: 8),
-                                        Text(entry.key.replaceAll('_rounded', '')),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                                onChanged: (val) => setState(() => _selectedIcon = val ?? 'insights_rounded'),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                controller: _orderController,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(labelText: 'Display Order', border: OutlineInputBorder()),
-                              ),
-                            ),
-                          ],
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _selectedIcon,
+                            decoration: const InputDecoration(labelText: 'Icon', border: OutlineInputBorder()),
+                            items: _iconCatalog.entries.map((entry) {
+                              return DropdownMenuItem(
+                                value: entry.key,
+                                child: Row(
+                                  children: [
+                                    Icon(entry.value, size: 18),
+                                    const SizedBox(width: 8),
+                                    Text(entry.key.replaceAll('_rounded', '')),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (val) => setState(() => _selectedIcon = val ?? 'insights_rounded'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _orderController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Display Order', border: OutlineInputBorder()),
+                          ),
                         ),
                       ],
                     ),
@@ -1279,10 +1720,10 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
               ),
               const SizedBox(height: 16),
 
-              // STEP 6: Make KPI Clickable & Drilldown Builder
+              // STEP 6: Visual Drilldown Builder
               _buildBuilderCard(
-                title: '6. Make this KPI clickable?',
-                subtitle: 'Configure interactive drilldown behavior when clicked.',
+                title: '6. Should users be able to click this KPI?',
+                subtitle: 'Visually compose the drilldown view that appears upon tap.',
                 cardBg: cardBg,
                 borderColor: borderColor,
                 textColor: textColor,
@@ -1311,100 +1752,126 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Drilldown Layout Components', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: textColor)),
+                          Text('What should users see when they click?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: textColor)),
                           Wrap(
-                            spacing: 8,
+                            spacing: 6,
                             children: [
                               OutlinedButton.icon(
-                                icon: const Icon(Icons.add_rounded, size: 16),
-                                label: const Text('Sub-KPI'),
+                                icon: const Icon(Icons.add_rounded, size: 15),
+                                label: const Text('KPI'),
                                 onPressed: _openAddSubKpiDialog,
                               ),
                               OutlinedButton.icon(
-                                icon: const Icon(Icons.bar_chart_rounded, size: 16),
+                                icon: const Icon(Icons.filter_list_rounded, size: 15),
+                                label: const Text('Filter'),
+                                onPressed: _openAddFilterDialog,
+                              ),
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.bar_chart_rounded, size: 15),
                                 label: const Text('Chart'),
                                 onPressed: _openAddChartDialog,
                               ),
                               OutlinedButton.icon(
-                                icon: const Icon(Icons.table_rows_rounded, size: 16),
+                                icon: const Icon(Icons.table_rows_rounded, size: 15),
                                 label: const Text('Table'),
                                 onPressed: _openAddTableDialog,
+                              ),
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.pie_chart_outline_rounded, size: 15),
+                                label: const Text('Status'),
+                                onPressed: _openAddStatusBreakdownDialog,
                               ),
                             ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      ...List.generate(_drilldownComponents.length, (idx) {
-                        final comp = _drilldownComponents[idx];
-                        final cTitle = comp['title']?.toString() ?? 'Component';
-                        final cType = comp['type']?.toString() ?? '';
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      const SizedBox(height: 14),
+                      if (_drilldownComponents.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          alignment: Alignment.center,
                           decoration: BoxDecoration(
+                            border: Border.all(color: borderColor, style: BorderStyle.solid),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: borderColor),
                           ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                cType == 'kpi_group'
-                                    ? Icons.space_dashboard_rounded
-                                    : cType == 'chart'
-                                        ? Icons.bar_chart_rounded
-                                        : cType == 'status_breakdown'
-                                            ? Icons.pie_chart_outline_rounded
-                                            : Icons.table_chart_rounded,
-                                size: 18,
-                                color: ThemeManager().primaryColor,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(cTitle, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                                    Text('Type: $cType', style: TextStyle(fontSize: 11, color: subColor)),
-                                  ],
+                          child: Text('No drilldown components added yet. Use the buttons above to compose.', style: TextStyle(fontSize: 12, color: subColor)),
+                        )
+                      else
+                        ...List.generate(_drilldownComponents.length, (idx) {
+                          final comp = _drilldownComponents[idx];
+                          final cTitle = comp['title']?.toString() ?? 'Component';
+                          final cType = comp['type']?.toString() ?? '';
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: borderColor),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  cType == 'kpi_group'
+                                      ? Icons.space_dashboard_rounded
+                                      : cType == 'chart'
+                                          ? Icons.bar_chart_rounded
+                                          : cType == 'filter'
+                                              ? Icons.filter_list_rounded
+                                              : cType == 'status_breakdown'
+                                                  ? Icons.pie_chart_outline_rounded
+                                                  : Icons.table_chart_rounded,
+                                  size: 18,
+                                  color: ThemeManager().primaryColor,
                                 ),
-                              ),
-                              if (idx > 0)
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(cTitle, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                      Text('Type: $cType', style: TextStyle(fontSize: 11, color: subColor)),
+                                    ],
+                                  ),
+                                ),
+                                if (idx > 0)
+                                  IconButton(
+                                    icon: const Icon(Icons.arrow_upward_rounded, size: 16),
+                                    tooltip: 'Move Up',
+                                    onPressed: () {
+                                      setState(() {
+                                        final item = _drilldownComponents.removeAt(idx);
+                                        _drilldownComponents.insert(idx - 1, item);
+                                      });
+                                    },
+                                  ),
+                                if (idx < _drilldownComponents.length - 1)
+                                  IconButton(
+                                    icon: const Icon(Icons.arrow_downward_rounded, size: 16),
+                                    tooltip: 'Move Down',
+                                    onPressed: () {
+                                      setState(() {
+                                        final item = _drilldownComponents.removeAt(idx);
+                                        _drilldownComponents.insert(idx + 1, item);
+                                      });
+                                    },
+                                  ),
                                 IconButton(
-                                  icon: const Icon(Icons.arrow_upward_rounded, size: 16),
+                                  icon: const Icon(Icons.close_rounded, size: 16, color: Colors.red),
+                                  tooltip: 'Remove',
                                   onPressed: () {
-                                    setState(() {
-                                      final item = _drilldownComponents.removeAt(idx);
-                                      _drilldownComponents.insert(idx - 1, item);
-                                    });
+                                    setState(() => _drilldownComponents.removeAt(idx));
                                   },
                                 ),
-                              if (idx < _drilldownComponents.length - 1)
-                                IconButton(
-                                  icon: const Icon(Icons.arrow_downward_rounded, size: 16),
-                                  onPressed: () {
-                                    setState(() {
-                                      final item = _drilldownComponents.removeAt(idx);
-                                      _drilldownComponents.insert(idx + 1, item);
-                                    });
-                                  },
-                                ),
-                              IconButton(
-                                icon: const Icon(Icons.close_rounded, size: 16, color: Colors.red),
-                                onPressed: () {
-                                  setState(() => _drilldownComponents.removeAt(idx));
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
+                              ],
+                            ),
+                          );
+                        }),
                     ],
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
               // LIVE PREVIEW CARD
               Container(
@@ -1487,16 +1954,27 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
               ),
               const SizedBox(height: 24),
 
-              // Action Buttons
+              // SAVE ACTION BUTTONS
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  OutlinedButton(onPressed: _resetBuilder, child: const Text('Reset Form')),
-                  const SizedBox(width: 14),
+                  OutlinedButton(
+                    onPressed: () {
+                      _resetBuilder();
+                      setState(() => _activeTabIndex = 0);
+                    },
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 12),
                   ElevatedButton.icon(
-                    icon: const Icon(Icons.check_circle_rounded, size: 18),
-                    label: Text(_isEditing ? 'Update KPI' : 'Save & Publish KPI'),
-                    onPressed: _saveKpi,
+                    icon: _isSaving
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.check_rounded, size: 18),
+                    label: Text(_isEditing ? 'Update KPI' : 'Save KPI Definition'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    ),
+                    onPressed: _isSaving ? null : _saveKpi,
                   ),
                 ],
               ),
@@ -1519,31 +1997,31 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: cardBg,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borderColor),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: textColor)),
+          Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textColor)),
           const SizedBox(height: 2),
-          Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          const SizedBox(height: 16),
+          Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+          const SizedBox(height: 14),
           child,
         ],
       ),
     );
   }
 
-  Widget _buildRoleCheckbox(String label, bool isChecked, ValueChanged<bool> onChanged) {
+  Widget _buildRoleCheckbox(String label, bool value, ValueChanged<bool> onChanged) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Checkbox(
-          value: isChecked,
+          value: value,
           onChanged: (val) => onChanged(val ?? false),
         ),
-        Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
       ],
     );
   }
@@ -1579,12 +2057,12 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                     final kpi = _kpiList[index];
                     return DataRow(
                       cells: [
-                        DataCell(Text('${index + 1}', style: TextStyle(color: subColor))),
-                        DataCell(Text(kpi.kpiLabel, style: const TextStyle(fontWeight: FontWeight.w600))),
-                        DataCell(Checkbox(value: kpi.adminVisible, onChanged: (v) => _toggleRole(kpi, admin: v))),
-                        DataCell(Checkbox(value: kpi.telecallerVisible, onChanged: (v) => _toggleRole(kpi, telecaller: v))),
-                        DataCell(Checkbox(value: kpi.salesVisible, onChanged: (v) => _toggleRole(kpi, sales: v))),
-                        DataCell(Switch(value: kpi.isEnabled, onChanged: (v) => _toggleStatus(kpi, v))),
+                        DataCell(Text('${index + 1}', style: TextStyle(color: subColor, fontSize: 13))),
+                        DataCell(Text(kpi.kpiLabel, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+                        DataCell(Checkbox(value: kpi.adminVisible, onChanged: (val) => _toggleRole(kpi, admin: val))),
+                        DataCell(Checkbox(value: kpi.telecallerVisible, onChanged: (val) => _toggleRole(kpi, telecaller: val))),
+                        DataCell(Checkbox(value: kpi.salesVisible, onChanged: (val) => _toggleRole(kpi, sales: val))),
+                        DataCell(Switch(value: kpi.isEnabled, onChanged: (val) => _toggleStatus(kpi, val))),
                       ],
                     );
                   }),
@@ -1626,7 +2104,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: borderColor),
                   ),
-                  child: Text('No audit events recorded yet.', style: TextStyle(color: subColor)),
+                  child: Text('No audit logs recorded yet.', style: TextStyle(color: subColor)),
                 )
               else
                 Container(
@@ -1640,14 +2118,14 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                       DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
                       DataColumn(label: Text('KPI', style: TextStyle(fontWeight: FontWeight.bold))),
                       DataColumn(label: Text('Performed By', style: TextStyle(fontWeight: FontWeight.bold))),
-                      DataColumn(label: Text('Date / Time', style: TextStyle(fontWeight: FontWeight.bold))),
+                      DataColumn(label: Text('Timestamp', style: TextStyle(fontWeight: FontWeight.bold))),
                     ],
                     rows: _auditLogs.map((log) {
                       final actionColor = log.action == 'CREATED'
                           ? Colors.green
                           : log.action == 'DELETED'
                               ? Colors.red
-                              : Colors.blue;
+                              : Colors.orange;
 
                       return DataRow(
                         cells: [
@@ -1655,18 +2133,15 @@ class _KpiConfigScreenState extends State<KpiConfigScreen>
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: actionColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(6),
+                                color: actionColor.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
                               ),
-                              child: Text(
-                                log.action,
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: actionColor),
-                              ),
+                              child: Text(log.action, style: TextStyle(color: actionColor, fontWeight: FontWeight.bold, fontSize: 11)),
                             ),
                           ),
-                          DataCell(Text(log.kpiLabel ?? log.kpiKey ?? '-', style: const TextStyle(fontWeight: FontWeight.w500))),
-                          DataCell(Text(log.performedByName ?? log.performedByEmail ?? 'Admin', style: TextStyle(color: subColor))),
-                          DataCell(Text(log.createdAt?.toLocal().toString().split('.').first ?? '-', style: TextStyle(color: subColor, fontSize: 12))),
+                          DataCell(Text(log.kpiLabel ?? log.kpiKey ?? '-', style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13))),
+                          DataCell(Text(log.performedByName ?? log.performedByEmail ?? 'Admin User', style: TextStyle(fontSize: 12, color: subColor))),
+                          DataCell(Text(log.createdAt != null ? '${log.createdAt!.toLocal()}'.split('.')[0] : '-', style: TextStyle(fontSize: 12, color: subColor))),
                         ],
                       );
                     }).toList(),
