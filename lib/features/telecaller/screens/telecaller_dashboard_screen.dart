@@ -346,6 +346,20 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     return filtered.length;
   }
 
+  int get _openLeadsKpiCount {
+    final s = _kpiSummary['open_leads'];
+    if (s is int) return s;
+    if (s != null) return int.tryParse(s.toString()) ?? 0;
+    return 0;
+  }
+
+  int get _archivedKpiCount {
+    final s = _kpiSummary['archived'];
+    if (s is int) return s;
+    if (s != null) return int.tryParse(s.toString()) ?? 0;
+    return 0;
+  }
+
   void _openFollowupsDrilldown() {
     TelecallerKpiDialogs.showFollowupsDrilldown(
       context,
@@ -881,6 +895,15 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                     ),
                     _clickableKpi(
                       context,
+                      'Open Leads',
+                      '$_openLeadsKpiCount',
+                      Icons.folder_open_rounded,
+                      accentColor: const Color(0xFF3B82F6),
+                      onTap: () => _openKpiDrilldown(category: 'open', title: 'Open Leads'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
                       'Assigned to Sales',
                       '${_kpiSummary['assigned_to_sales'] ?? 0}',
                       Icons.handshake_outlined,
@@ -931,6 +954,15 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                       Icons.schedule_rounded,
                       accentColor: const Color(0xFFD97706),
                       onTap: _openFollowupsDrilldown,
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Archive',
+                      '$_archivedKpiCount',
+                      Icons.archive_outlined,
+                      accentColor: const Color(0xFF64748B),
+                      onTap: () => _openKpiDrilldown(category: 'archived', title: 'Archived Leads'),
                       width: cardW,
                     ),
                   ];
@@ -1195,6 +1227,13 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         onTap: () => _openKpiDrilldown(category: 'old_allocated', title: 'Old Leads Allocated'),
       ),
       _MobileKpiItem(
+        label: 'Open Leads',
+        value: '$_openLeadsKpiCount',
+        icon: Icons.folder_open_rounded,
+        accentColor: const Color(0xFF3B82F6),
+        onTap: () => _openKpiDrilldown(category: 'open', title: 'Open Leads'),
+      ),
+      _MobileKpiItem(
         label: 'Assigned to Sales',
         value: '${_kpiSummary['assigned_to_sales'] ?? 0}',
         icon: Icons.handshake_outlined,
@@ -1235,6 +1274,13 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         icon: Icons.schedule_rounded,
         accentColor: const Color(0xFFD97706),
         onTap: _openFollowupsDrilldown,
+      ),
+      _MobileKpiItem(
+        label: 'Archive',
+        value: '$_archivedKpiCount',
+        icon: Icons.archive_outlined,
+        accentColor: const Color(0xFF64748B),
+        onTap: () => _openKpiDrilldown(category: 'archived', title: 'Archived Leads'),
       ),
     ];
 
