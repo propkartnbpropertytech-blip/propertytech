@@ -149,12 +149,14 @@ class DashboardService {
   Future<InventoryPropertiesResponse> getInventoryProperties({
     required String status,
     required KpiFilterParams params,
+    String? areaId,
     int page = 1,
     int limit = 20,
   }) async {
     try {
       final q = params.toQueryParams();
       q['status'] = status;
+      if (areaId != null && areaId.isNotEmpty) q['areaId'] = areaId;
       q['page'] = page;
       q['limit'] = limit;
       final response = await _apiClient.get(
@@ -189,12 +191,18 @@ class DashboardService {
   Future<LeadsListResponse> getLeadsList({
     String? source,
     required KpiFilterParams params,
+    String? areaId,
+    String? stage,
+    bool? isDealWon,
     int page = 1,
     int limit = 25,
   }) async {
     try {
       final q = params.toQueryParams();
       if (source != null && source.isNotEmpty) q['source'] = source;
+      if (areaId != null && areaId.isNotEmpty) q['areaId'] = areaId;
+      if (stage != null && stage.isNotEmpty) q['stage'] = stage;
+      if (isDealWon != null) q['isDealWon'] = isDealWon.toString();
       q['page'] = page;
       q['limit'] = limit;
       final response = await _apiClient.get(
@@ -487,6 +495,97 @@ class DashboardService {
     }
   }
 
+  Future<List<KpiRegistryItem>> getKpiRegistry({
+    String? search,
+    String? page,
+    String? role,
+    String? status,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/kpi-registry',
+        queryParameters: {
+          if (search != null && search.isNotEmpty) 'search': search,
+          if (page != null && page.isNotEmpty && page != 'All') 'page': page,
+          if (role != null && role.isNotEmpty && role != 'All') 'role': role,
+          if (status != null && status.isNotEmpty && status != 'All') 'status': status.toLowerCase(),
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final list = (response.data['data'] as List?)
+                ?.map((c) => KpiRegistryItem.fromJson(Map<String, dynamic>.from(c)))
+                .toList() ??
+            [];
+        return list;
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[getKpiRegistry] Error: $e');
+      return [];
+    }
+  }
+
+  Future<KpiRegistryItem?> createKpiRegistryItem(Map<String, dynamic> data) async {
+    try {
+      final response = await _apiClient.post(
+        '/dashboard/kpi-registry',
+        data,
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return KpiRegistryItem.fromJson(Map<String, dynamic>.from(response.data['data']));
+      }
+      return null;
+    } on DioException catch (e) {
+      final msg = e.response?.data?['message'] ?? e.message;
+      throw ApiException(message: msg?.toString() ?? 'Failed to register KPI.');
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<KpiRegistryItem?> updateKpiRegistryItem(String id, Map<String, dynamic> data) async {
+    try {
+      final response = await _apiClient.put(
+        '/dashboard/kpi-registry/$id',
+        data,
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return KpiRegistryItem.fromJson(Map<String, dynamic>.from(response.data['data']));
+      }
+      return null;
+    } on DioException catch (e) {
+      final msg = e.response?.data?['message'] ?? e.message;
+      throw ApiException(message: msg?.toString() ?? 'Failed to update KPI.');
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<bool> toggleKpiRegistryStatus(String id, bool isEnabled) async {
+    try {
+      final response = await _apiClient.patch(
+        '/dashboard/kpi-registry/$id/status',
+        {'is_enabled': isEnabled},
+      );
+      return response.data is Map<String, dynamic> && response.data['success'] == true;
+    } catch (e) {
+      debugPrint('[toggleKpiRegistryStatus] Error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteKpiRegistryItem(String id) async {
+    try {
+      final response = await _apiClient.delete('/dashboard/kpi-registry/$id');
+      return response.data is Map<String, dynamic> && response.data['success'] == true;
+    } on DioException catch (e) {
+      final msg = e.response?.data?['message'] ?? e.message;
+      throw ApiException(message: msg?.toString() ?? 'Failed to delete KPI.');
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
   Future<List<AreaCountItem>> getInventoryByArea({String? businessType}) async {
     try {
       final response = await _apiClient.get(
@@ -531,4 +630,26 @@ class DashboardService {
       rethrow;
     }
   }
+
+  Future<LocalityIntelligenceData> getLocalityIntelligence({String? businessType}) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/locality-intelligence',
+        queryParameters: {
+          if (businessType != null && businessType.isNotEmpty)
+            'businessType': businessType,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return LocalityIntelligenceData.fromJson(
+          Map<String, dynamic>.from(response.data['data'] as Map),
+        );
+      }
+      return const LocalityIntelligenceData();
+    } catch (e) {
+      debugPrint('[getLocalityIntelligence] Error: $e');
+      rethrow;
+    }
+  }
 }
+

@@ -44,6 +44,216 @@ class KpiConfigItem {
   }
 }
 
+class KpiRegistryItem {
+  final String id;
+  final String? organizationId;
+  final String kpiKey;
+  final String kpiLabel;
+  final String whyDoWeHaveIt;
+  final String? description;
+  final String dataSource;
+  final String entityTable;
+  final String primaryField;
+  final String aggregation;
+  final List<dynamic> conditionsJson;
+  final String dateField;
+  final String? relationships;
+  final String databaseMappingDescription;
+  final List<String> pages;
+  final String uiComponent;
+  final String displayFormat;
+  final String icon;
+  final bool isClickable;
+  final String drilldownType;
+  final String? drilldownRoute;
+  final String? drilldownApi;
+  final bool secondLevelEnabled;
+  final String? drilldownMappingDescription;
+  final bool adminVisible;
+  final bool telecallerVisible;
+  final bool salesVisible;
+  final bool isSystem;
+  final bool isEnabled;
+  final int displayOrder;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const KpiRegistryItem({
+    required this.id,
+    this.organizationId,
+    required this.kpiKey,
+    required this.kpiLabel,
+    required this.whyDoWeHaveIt,
+    this.description,
+    this.dataSource = 'leads',
+    this.entityTable = 'leads',
+    this.primaryField = 'id',
+    this.aggregation = 'COUNT',
+    this.conditionsJson = const [],
+    this.dateField = 'created_at',
+    this.relationships,
+    this.databaseMappingDescription = '',
+    this.pages = const ['Admin Dashboard'],
+    this.uiComponent = 'Dashboard KPI Card',
+    this.displayFormat = 'Count',
+    this.icon = 'insights_rounded',
+    this.isClickable = true,
+    this.drilldownType = 'Modal',
+    this.drilldownRoute,
+    this.drilldownApi,
+    this.secondLevelEnabled = false,
+    this.drilldownMappingDescription,
+    this.adminVisible = true,
+    this.telecallerVisible = false,
+    this.salesVisible = false,
+    this.isSystem = false,
+    this.isEnabled = true,
+    this.displayOrder = 1,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory KpiRegistryItem.fromJson(Map<String, dynamic> json) {
+    return KpiRegistryItem(
+      id: json['id']?.toString() ?? '',
+      organizationId: json['organization_id']?.toString(),
+      kpiKey: json['kpi_key']?.toString() ?? '',
+      kpiLabel: json['kpi_label']?.toString() ?? json['kpi_key']?.toString() ?? '',
+      whyDoWeHaveIt: json['why_do_we_have_it']?.toString() ?? '',
+      description: json['description']?.toString(),
+      dataSource: json['data_source']?.toString() ?? 'leads',
+      entityTable: json['entity_table']?.toString() ?? 'leads',
+      primaryField: json['primary_field']?.toString() ?? 'id',
+      aggregation: json['aggregation']?.toString() ?? 'COUNT',
+      conditionsJson: json['conditions_json'] is List ? (json['conditions_json'] as List) : const [],
+      dateField: json['date_field']?.toString() ?? 'created_at',
+      relationships: json['relationships']?.toString(),
+      databaseMappingDescription: json['database_mapping_description']?.toString() ?? '',
+      pages: (json['pages'] as List?)?.map((p) => p.toString()).toList() ?? const ['Admin Dashboard'],
+      uiComponent: json['ui_component']?.toString() ?? 'Dashboard KPI Card',
+      displayFormat: json['display_format']?.toString() ?? 'Count',
+      icon: json['icon']?.toString() ?? 'insights_rounded',
+      isClickable: json['is_clickable'] != false,
+      drilldownType: json['drilldown_type']?.toString() ?? 'Modal',
+      drilldownRoute: json['drilldown_route']?.toString(),
+      drilldownApi: json['drilldown_api']?.toString(),
+      secondLevelEnabled: json['second_level_enabled'] == true,
+      drilldownMappingDescription: json['drilldown_mapping_description']?.toString(),
+      adminVisible: json['admin_visible'] != false,
+      telecallerVisible: json['telecaller_visible'] == true,
+      salesVisible: json['sales_visible'] == true,
+      isSystem: json['is_system'] == true,
+      isEnabled: json['is_enabled'] != false,
+      displayOrder: (json['display_order'] as num?)?.toInt() ?? 1,
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
+      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'].toString()) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (id.isNotEmpty) 'id': id,
+      'kpi_key': kpiKey,
+      'kpi_label': kpiLabel,
+      'why_do_we_have_it': whyDoWeHaveIt,
+      if (description != null) 'description': description,
+      'data_source': dataSource,
+      'entity_table': entityTable,
+      'primary_field': primaryField,
+      'aggregation': aggregation,
+      'conditions_json': conditionsJson,
+      'date_field': dateField,
+      if (relationships != null) 'relationships': relationships,
+      'database_mapping_description': databaseMappingDescription,
+      'pages': pages,
+      'ui_component': uiComponent,
+      'display_format': displayFormat,
+      'icon': icon,
+      'is_clickable': isClickable,
+      'drilldown_type': drilldownType,
+      if (drilldownRoute != null) 'drilldown_route': drilldownRoute,
+      if (drilldownApi != null) 'drilldown_api': drilldownApi,
+      'second_level_enabled': secondLevelEnabled,
+      if (drilldownMappingDescription != null) 'drilldown_mapping_description': drilldownMappingDescription,
+      'admin_visible': adminVisible,
+      'telecaller_visible': telecallerVisible,
+      'sales_visible': salesVisible,
+      'is_enabled': isEnabled,
+      'display_order': displayOrder,
+    };
+  }
+
+  KpiRegistryItem copyWith({
+    String? id,
+    String? organizationId,
+    String? kpiKey,
+    String? kpiLabel,
+    String? whyDoWeHaveIt,
+    String? description,
+    String? dataSource,
+    String? entityTable,
+    String? primaryField,
+    String? aggregation,
+    List<dynamic>? conditionsJson,
+    String? dateField,
+    String? relationships,
+    String? databaseMappingDescription,
+    List<String>? pages,
+    String? uiComponent,
+    String? displayFormat,
+    String? icon,
+    bool? isClickable,
+    String? drilldownType,
+    String? drilldownRoute,
+    String? drilldownApi,
+    bool? secondLevelEnabled,
+    String? drilldownMappingDescription,
+    bool? adminVisible,
+    bool? telecallerVisible,
+    bool? salesVisible,
+    bool? isSystem,
+    bool? isEnabled,
+    int? displayOrder,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return KpiRegistryItem(
+      id: id ?? this.id,
+      organizationId: organizationId ?? this.organizationId,
+      kpiKey: kpiKey ?? this.kpiKey,
+      kpiLabel: kpiLabel ?? this.kpiLabel,
+      whyDoWeHaveIt: whyDoWeHaveIt ?? this.whyDoWeHaveIt,
+      description: description ?? this.description,
+      dataSource: dataSource ?? this.dataSource,
+      entityTable: entityTable ?? this.entityTable,
+      primaryField: primaryField ?? this.primaryField,
+      aggregation: aggregation ?? this.aggregation,
+      conditionsJson: conditionsJson ?? this.conditionsJson,
+      dateField: dateField ?? this.dateField,
+      relationships: relationships ?? this.relationships,
+      databaseMappingDescription: databaseMappingDescription ?? this.databaseMappingDescription,
+      pages: pages ?? this.pages,
+      uiComponent: uiComponent ?? this.uiComponent,
+      displayFormat: displayFormat ?? this.displayFormat,
+      icon: icon ?? this.icon,
+      isClickable: isClickable ?? this.isClickable,
+      drilldownType: drilldownType ?? this.drilldownType,
+      drilldownRoute: drilldownRoute ?? this.drilldownRoute,
+      drilldownApi: drilldownApi ?? this.drilldownApi,
+      secondLevelEnabled: secondLevelEnabled ?? this.secondLevelEnabled,
+      drilldownMappingDescription: drilldownMappingDescription ?? this.drilldownMappingDescription,
+      adminVisible: adminVisible ?? this.adminVisible,
+      telecallerVisible: telecallerVisible ?? this.telecallerVisible,
+      salesVisible: salesVisible ?? this.salesVisible,
+      isSystem: isSystem ?? this.isSystem,
+      isEnabled: isEnabled ?? this.isEnabled,
+      displayOrder: displayOrder ?? this.displayOrder,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
 class DashboardKpiCounts {
   final int availableInventory;
   final int totalLeads;
