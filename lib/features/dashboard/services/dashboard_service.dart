@@ -586,6 +586,60 @@ class DashboardService {
     }
   }
 
+  Future<Map<String, dynamic>> getKpiBuilderMetadata() async {
+    try {
+      final response = await _apiClient.get('/dashboard/kpi-builder/metadata');
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return Map<String, dynamic>.from(response.data['data'] ?? {});
+      }
+      return {};
+    } catch (e) {
+      debugPrint('[getKpiBuilderMetadata] Error: $e');
+      return {};
+    }
+  }
+
+  Future<Map<String, dynamic>> getKpiDrilldownData(
+    String kpiKey, {
+    Map<String, dynamic>? filters,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/drilldown/$kpiKey',
+        queryParameters: filters,
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return Map<String, dynamic>.from(response.data['data'] ?? {});
+      }
+      return {};
+    } catch (e) {
+      debugPrint('[getKpiDrilldownData] Error: $e');
+      return {};
+    }
+  }
+
+  Future<List<KpiAuditLogItem>> getKpiAuditLogs({String? kpiId}) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/kpi-audit-logs',
+        queryParameters: {
+          if (kpiId != null && kpiId.isNotEmpty) 'kpiId': kpiId,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final list = (response.data['data'] as List?)
+                ?.map((c) => KpiAuditLogItem.fromJson(Map<String, dynamic>.from(c)))
+                .toList() ??
+            [];
+        return list;
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[getKpiAuditLogs] Error: $e');
+      return [];
+    }
+  }
+
   Future<List<AreaCountItem>> getInventoryByArea({String? businessType}) async {
     try {
       final response = await _apiClient.get(

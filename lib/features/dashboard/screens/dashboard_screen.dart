@@ -31,6 +31,7 @@ import '../bloc/dashboard_bloc.dart';
 import '../models/dashboard_summary.dart';
 import '../models/kpi_models.dart';
 import '../widgets/kpi_drilldown_dialogs.dart';
+import '../widgets/generic_kpi_drilldown_dialog.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/utils/currency.dart';
 import '../../../core/theme/theme_manager.dart';
@@ -1405,6 +1406,41 @@ class _DashboardScreenState extends State<DashboardScreen>
       );
     }
 
+    // 10. Dynamic Custom KPIs (Configured for 'Admin Dashboard')
+    if (kpis != null) {
+      final customKpis = kpis.config.where((c) =>
+          !c.isSystem &&
+          c.isEnabled &&
+          c.pages.contains('Admin Dashboard'));
+
+      for (final customKpi in customKpis) {
+        final count = kpis.getDynamicCount(customKpi.kpiKey);
+        final iconData = _resolveKpiIcon(customKpi.icon);
+        final accentColor = _resolveKpiColor(customKpi.kpiKey);
+        cards.add(
+          StatCard(
+            title: customKpi.kpiLabel,
+            value: '$count',
+            icon: iconData,
+            accentColor: accentColor,
+            onTap: customKpi.isClickable
+                ? () async {
+                    await GenericKpiDrilldownDialog.show(
+                      context,
+                      kpiKey: customKpi.kpiKey,
+                      kpiLabel: customKpi.kpiLabel,
+                      initialFilters: kpiFilters.toJson(),
+                    );
+                    if (mounted) {
+                      context.read<DashboardBloc>().add(RefreshDashboard());
+                    }
+                  }
+                : null,
+          ),
+        );
+      }
+    }
+
     if (cards.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -1457,6 +1493,59 @@ class _DashboardScreenState extends State<DashboardScreen>
         return Column(children: rows);
       },
     );
+  }
+
+  IconData _resolveKpiIcon(String iconName) {
+    switch (iconName) {
+      case 'location_on_rounded':
+        return Icons.location_on_rounded;
+      case 'home_work_rounded':
+        return Icons.home_work_rounded;
+      case 'assignment_rounded':
+        return Icons.assignment_rounded;
+      case 'support_agent_rounded':
+        return Icons.support_agent_rounded;
+      case 'badge_rounded':
+        return Icons.badge_rounded;
+      case 'emoji_events_rounded':
+        return Icons.emoji_events_rounded;
+      case 'groups_rounded':
+        return Icons.groups_rounded;
+      case 'phone_disabled_rounded':
+        return Icons.phone_disabled_rounded;
+      case 'map_rounded':
+        return Icons.map_rounded;
+      case 'bar_chart_rounded':
+        return Icons.bar_chart_rounded;
+      case 'pie_chart_rounded':
+        return Icons.pie_chart_rounded;
+      case 'check_circle_rounded':
+        return Icons.check_circle_rounded;
+      case 'trending_up_rounded':
+        return Icons.trending_up_rounded;
+      case 'monetization_on_rounded':
+        return Icons.monetization_on_rounded;
+      case 'verified_rounded':
+        return Icons.verified_rounded;
+      case 'insights_rounded':
+      default:
+        return Icons.insights_rounded;
+    }
+  }
+
+  Color _resolveKpiColor(String key) {
+    const palette = [
+      Color(0xFF6366F1), // Indigo
+      Color(0xFF0EA5E9), // Sky
+      Color(0xFF10B981), // Emerald
+      Color(0xFFF59E0B), // Amber
+      Color(0xFFEC4899), // Pink
+      Color(0xFF8B5CF6), // Purple
+      Color(0xFF14B8A6), // Teal
+      Color(0xFF3B82F6), // Blue
+    ];
+    final hash = key.codeUnits.fold(0, (acc, c) => acc + c);
+    return palette[hash % palette.length];
   }
 
 

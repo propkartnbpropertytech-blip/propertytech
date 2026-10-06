@@ -13,10 +13,18 @@ class KpiDrilldownDialogs {
   static Future<T?> showInventoryDrilldown<T>(
     BuildContext context, {
     required KpiFilterParams params,
+    String? initialStatus,
+    String? initialAreaId,
+    String? initialAreaName,
   }) {
     return showDialog<T>(
       context: context,
-      builder: (ctx) => _InventoryDrilldownDialog(params: params),
+      builder: (ctx) => _InventoryDrilldownDialog(
+        params: params,
+        initialStatus: initialStatus,
+        initialAreaId: initialAreaId,
+        initialAreaName: initialAreaName,
+      ),
     );
   }
 
@@ -24,10 +32,22 @@ class KpiDrilldownDialogs {
   static Future<T?> showLeadsDrilldown<T>(
     BuildContext context, {
     required KpiFilterParams params,
+    String? initialSource,
+    String? initialAreaId,
+    String? initialAreaName,
+    String? initialStage,
+    bool? isDealWon,
   }) {
     return showDialog<T>(
       context: context,
-      builder: (ctx) => _LeadsDrilldownDialog(params: params),
+      builder: (ctx) => _LeadsDrilldownDialog(
+        params: params,
+        initialSource: initialSource,
+        initialAreaId: initialAreaId,
+        initialAreaName: initialAreaName,
+        initialStage: initialStage,
+        isDealWon: isDealWon,
+      ),
     );
   }
 
@@ -259,8 +279,16 @@ Widget _buildResponsiveDialog({
 // ============================================================================
 class _InventoryDrilldownDialog extends StatefulWidget {
   final KpiFilterParams params;
+  final String? initialStatus;
+  final String? initialAreaId;
+  final String? initialAreaName;
 
-  const _InventoryDrilldownDialog({required this.params});
+  const _InventoryDrilldownDialog({
+    required this.params,
+    this.initialStatus,
+    this.initialAreaId,
+    this.initialAreaName,
+  });
 
   @override
   State<_InventoryDrilldownDialog> createState() => _InventoryDrilldownDialogState();
@@ -279,7 +307,11 @@ class _InventoryDrilldownDialogState extends State<_InventoryDrilldownDialog> {
   @override
   void initState() {
     super.initState();
-    _loadBreakdown();
+    if (widget.initialStatus != null || widget.initialAreaId != null) {
+      _loadProperties(widget.initialStatus ?? 'Available');
+    } else {
+      _loadBreakdown();
+    }
   }
 
   Future<void> _loadBreakdown() async {
@@ -303,6 +335,7 @@ class _InventoryDrilldownDialogState extends State<_InventoryDrilldownDialog> {
     final res = await KpiDrilldownDialogs._dashboardService.getInventoryProperties(
       status: status,
       params: widget.params,
+      areaId: widget.initialAreaId,
       page: page,
       limit: 20,
     );
@@ -335,8 +368,14 @@ class _InventoryDrilldownDialogState extends State<_InventoryDrilldownDialog> {
               if (_selectedStatus != null) ...[
                 IconButton(
                   icon: const Icon(Icons.arrow_back_rounded),
-                  onPressed: () => setState(() => _selectedStatus = null),
-                  tooltip: 'Back to Statuses',
+                  onPressed: () {
+                    if (widget.initialAreaId != null) {
+                      Navigator.of(context).pop();
+                    } else {
+                      setState(() => _selectedStatus = null);
+                    }
+                  },
+                  tooltip: widget.initialAreaId != null ? 'Back' : 'Back to Statuses',
                 ),
                 const SizedBox(width: 8),
               ],
@@ -352,7 +391,7 @@ class _InventoryDrilldownDialogState extends State<_InventoryDrilldownDialog> {
                   children: [
                     Text(
                       _selectedStatus != null
-                          ? '$_selectedStatus Properties'
+                          ? '${widget.initialAreaName != null ? '${widget.initialAreaName} • ' : ''}$_selectedStatus Properties'
                           : 'Available Inventory Breakdown',
                       style: TextStyle(
                         fontSize: 18,
@@ -361,7 +400,7 @@ class _InventoryDrilldownDialogState extends State<_InventoryDrilldownDialog> {
                       ),
                     ),
                     Text(
-                      'Business: ${widget.params.businessType} | Range: ${widget.params.dateFilter}',
+                      '${widget.initialAreaName != null ? 'Area: ${widget.initialAreaName} | ' : ''}Business: ${widget.params.businessType} | Range: ${widget.params.dateFilter}',
                       style: TextStyle(fontSize: 12, color: subColor),
                     ),
                   ],
@@ -668,8 +707,20 @@ class _InventoryDrilldownDialogState extends State<_InventoryDrilldownDialog> {
 // ============================================================================
 class _LeadsDrilldownDialog extends StatefulWidget {
   final KpiFilterParams params;
+  final String? initialSource;
+  final String? initialAreaId;
+  final String? initialAreaName;
+  final String? initialStage;
+  final bool? isDealWon;
 
-  const _LeadsDrilldownDialog({required this.params});
+  const _LeadsDrilldownDialog({
+    required this.params,
+    this.initialSource,
+    this.initialAreaId,
+    this.initialAreaName,
+    this.initialStage,
+    this.isDealWon,
+  });
 
   @override
   State<_LeadsDrilldownDialog> createState() => _LeadsDrilldownDialogState();
@@ -690,7 +741,11 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
   void initState() {
     super.initState();
     _selectedLeadType = widget.params.leadType;
-    _fetchBreakdown();
+    if (widget.initialAreaId != null || widget.initialSource != null || widget.isDealWon == true || widget.initialStage != null) {
+      _fetchLeadsList(widget.initialSource ?? 'All');
+    } else {
+      _fetchBreakdown();
+    }
   }
 
   Future<void> _fetchBreakdown() async {
@@ -714,8 +769,11 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
 
     final currentParams = widget.params.copyWith(leadType: _selectedLeadType);
     final res = await KpiDrilldownDialogs._dashboardService.getLeadsList(
-      source: source,
+      source: (source == 'All' || source == 'ALL') ? null : source,
       params: currentParams,
+      areaId: widget.initialAreaId,
+      stage: widget.initialStage,
+      isDealWon: widget.isDealWon,
       page: page,
       limit: 25,
     );
@@ -748,8 +806,16 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
               if (_selectedSource != null) ...[
                 IconButton(
                   icon: const Icon(Icons.arrow_back_rounded),
-                  onPressed: () => setState(() => _selectedSource = null),
-                  tooltip: 'Back to Sources',
+                  onPressed: () {
+                    if (widget.initialAreaId != null || widget.initialSource != null || widget.isDealWon == true || widget.initialStage != null) {
+                      Navigator.of(context).pop();
+                    } else {
+                      setState(() => _selectedSource = null);
+                    }
+                  },
+                  tooltip: (widget.initialAreaId != null || widget.initialSource != null || widget.isDealWon == true)
+                      ? 'Back'
+                      : 'Back to Sources',
                 ),
                 const SizedBox(width: 8),
               ],
@@ -764,9 +830,13 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _selectedSource != null
-                          ? '$_selectedSource Leads'
-                          : 'Total Leads by Source',
+                      widget.isDealWon == true
+                          ? 'Deal Won Leads${widget.initialAreaName != null ? ' - ${widget.initialAreaName}' : ''}'
+                          : widget.initialAreaName != null
+                              ? '${widget.initialAreaName} Leads'
+                              : (_selectedSource != null && _selectedSource != 'All')
+                                  ? '$_selectedSource Leads'
+                                  : 'Total Leads by Source',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -774,7 +844,7 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
                       ),
                     ),
                     Text(
-                      'Type: $_selectedLeadType | Range: ${widget.params.dateFilter}',
+                      '${widget.initialAreaName != null ? 'Area: ${widget.initialAreaName} | ' : ''}${widget.initialSource != null && widget.initialSource != 'All' ? 'Source: ${widget.initialSource} | ' : ''}Type: $_selectedLeadType | Range: ${widget.params.dateFilter}',
                       style: TextStyle(fontSize: 12, color: subColor),
                     ),
                   ],

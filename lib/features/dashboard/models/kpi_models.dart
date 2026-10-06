@@ -1,45 +1,95 @@
 class KpiConfigItem {
+  final String? id;
   final String kpiKey;
   final String kpiLabel;
   final bool isEnabled;
   final int displayOrder;
+  final bool isSystem;
+  final String icon;
+  final bool isClickable;
+  final List<String> pages;
+  final String uiComponent;
+  final String displayFormat;
+  final Map<String, dynamic> drilldownConfig;
 
   const KpiConfigItem({
+    this.id,
     required this.kpiKey,
     required this.kpiLabel,
     required this.isEnabled,
     required this.displayOrder,
+    this.isSystem = false,
+    this.icon = 'insights_rounded',
+    this.isClickable = true,
+    this.pages = const ['Admin Dashboard'],
+    this.uiComponent = 'KPI Card',
+    this.displayFormat = 'Count',
+    this.drilldownConfig = const {'layout': 'default', 'components': []},
   });
 
   factory KpiConfigItem.fromJson(Map<String, dynamic> json) {
     return KpiConfigItem(
+      id: json['id']?.toString(),
       kpiKey: json['kpi_key']?.toString() ?? '',
       kpiLabel: json['kpi_label']?.toString() ?? json['kpi_key']?.toString() ?? '',
       isEnabled: json['is_enabled'] != false,
       displayOrder: (json['display_order'] as num?)?.toInt() ?? 1,
+      isSystem: json['is_system'] == true,
+      icon: json['icon']?.toString() ?? 'insights_rounded',
+      isClickable: json['is_clickable'] != false,
+      pages: (json['pages'] as List?)?.map((p) => p.toString()).toList() ?? const ['Admin Dashboard'],
+      uiComponent: json['ui_component']?.toString() ?? 'KPI Card',
+      displayFormat: json['display_format']?.toString() ?? 'Count',
+      drilldownConfig: json['drilldown_config'] is Map
+          ? Map<String, dynamic>.from(json['drilldown_config'])
+          : const {'layout': 'default', 'components': []},
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
+      if (id != null) 'id': id,
       'kpi_key': kpiKey,
       'kpi_label': kpiLabel,
       'is_enabled': isEnabled,
       'display_order': displayOrder,
+      'is_system': isSystem,
+      'icon': icon,
+      'is_clickable': isClickable,
+      'pages': pages,
+      'ui_component': uiComponent,
+      'display_format': displayFormat,
+      'drilldown_config': drilldownConfig,
     };
   }
 
   KpiConfigItem copyWith({
+    String? id,
     String? kpiKey,
     String? kpiLabel,
     bool? isEnabled,
     int? displayOrder,
+    bool? isSystem,
+    String? icon,
+    bool? isClickable,
+    List<String>? pages,
+    String? uiComponent,
+    String? displayFormat,
+    Map<String, dynamic>? drilldownConfig,
   }) {
     return KpiConfigItem(
+      id: id ?? this.id,
       kpiKey: kpiKey ?? this.kpiKey,
       kpiLabel: kpiLabel ?? this.kpiLabel,
       isEnabled: isEnabled ?? this.isEnabled,
       displayOrder: displayOrder ?? this.displayOrder,
+      isSystem: isSystem ?? this.isSystem,
+      icon: icon ?? this.icon,
+      isClickable: isClickable ?? this.isClickable,
+      pages: pages ?? this.pages,
+      uiComponent: uiComponent ?? this.uiComponent,
+      displayFormat: displayFormat ?? this.displayFormat,
+      drilldownConfig: drilldownConfig ?? this.drilldownConfig,
     );
   }
 }
@@ -69,6 +119,9 @@ class KpiRegistryItem {
   final String? drilldownApi;
   final bool secondLevelEnabled;
   final String? drilldownMappingDescription;
+  final Map<String, dynamic> drilldownConfig;
+  final String? parentKpiId;
+  final String lifecycleStatus;
   final bool adminVisible;
   final bool telecallerVisible;
   final bool salesVisible;
@@ -94,7 +147,7 @@ class KpiRegistryItem {
     this.relationships,
     this.databaseMappingDescription = '',
     this.pages = const ['Admin Dashboard'],
-    this.uiComponent = 'Dashboard KPI Card',
+    this.uiComponent = 'KPI Card',
     this.displayFormat = 'Count',
     this.icon = 'insights_rounded',
     this.isClickable = true,
@@ -103,6 +156,9 @@ class KpiRegistryItem {
     this.drilldownApi,
     this.secondLevelEnabled = false,
     this.drilldownMappingDescription,
+    this.drilldownConfig = const {'layout': 'default', 'components': []},
+    this.parentKpiId,
+    this.lifecycleStatus = 'active',
     this.adminVisible = true,
     this.telecallerVisible = false,
     this.salesVisible = false,
@@ -130,7 +186,7 @@ class KpiRegistryItem {
       relationships: json['relationships']?.toString(),
       databaseMappingDescription: json['database_mapping_description']?.toString() ?? '',
       pages: (json['pages'] as List?)?.map((p) => p.toString()).toList() ?? const ['Admin Dashboard'],
-      uiComponent: json['ui_component']?.toString() ?? 'Dashboard KPI Card',
+      uiComponent: json['ui_component']?.toString() ?? 'KPI Card',
       displayFormat: json['display_format']?.toString() ?? 'Count',
       icon: json['icon']?.toString() ?? 'insights_rounded',
       isClickable: json['is_clickable'] != false,
@@ -139,6 +195,11 @@ class KpiRegistryItem {
       drilldownApi: json['drilldown_api']?.toString(),
       secondLevelEnabled: json['second_level_enabled'] == true,
       drilldownMappingDescription: json['drilldown_mapping_description']?.toString(),
+      drilldownConfig: json['drilldown_config'] is Map
+          ? Map<String, dynamic>.from(json['drilldown_config'])
+          : const {'layout': 'default', 'components': []},
+      parentKpiId: json['parent_kpi_id']?.toString(),
+      lifecycleStatus: json['lifecycle_status']?.toString() ?? 'active',
       adminVisible: json['admin_visible'] != false,
       telecallerVisible: json['telecaller_visible'] == true,
       salesVisible: json['sales_visible'] == true,
@@ -175,6 +236,9 @@ class KpiRegistryItem {
       if (drilldownApi != null) 'drilldown_api': drilldownApi,
       'second_level_enabled': secondLevelEnabled,
       if (drilldownMappingDescription != null) 'drilldown_mapping_description': drilldownMappingDescription,
+      'drilldown_config': drilldownConfig,
+      if (parentKpiId != null) 'parent_kpi_id': parentKpiId,
+      'lifecycle_status': lifecycleStatus,
       'admin_visible': adminVisible,
       'telecaller_visible': telecallerVisible,
       'sales_visible': salesVisible,
@@ -208,6 +272,9 @@ class KpiRegistryItem {
     String? drilldownApi,
     bool? secondLevelEnabled,
     String? drilldownMappingDescription,
+    Map<String, dynamic>? drilldownConfig,
+    String? parentKpiId,
+    String? lifecycleStatus,
     bool? adminVisible,
     bool? telecallerVisible,
     bool? salesVisible,
@@ -242,6 +309,9 @@ class KpiRegistryItem {
       drilldownApi: drilldownApi ?? this.drilldownApi,
       secondLevelEnabled: secondLevelEnabled ?? this.secondLevelEnabled,
       drilldownMappingDescription: drilldownMappingDescription ?? this.drilldownMappingDescription,
+      drilldownConfig: drilldownConfig ?? this.drilldownConfig,
+      parentKpiId: parentKpiId ?? this.parentKpiId,
+      lifecycleStatus: lifecycleStatus ?? this.lifecycleStatus,
       adminVisible: adminVisible ?? this.adminVisible,
       telecallerVisible: telecallerVisible ?? this.telecallerVisible,
       salesVisible: salesVisible ?? this.salesVisible,
@@ -250,6 +320,50 @@ class KpiRegistryItem {
       displayOrder: displayOrder ?? this.displayOrder,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
+class KpiAuditLogItem {
+  final String id;
+  final String? organizationId;
+  final String? kpiId;
+  final String? kpiLabel;
+  final String? kpiKey;
+  final String action;
+  final String? performedByName;
+  final String? performedByEmail;
+  final Map<String, dynamic>? oldConfig;
+  final Map<String, dynamic>? newConfig;
+  final DateTime? createdAt;
+
+  const KpiAuditLogItem({
+    required this.id,
+    this.organizationId,
+    this.kpiId,
+    this.kpiLabel,
+    this.kpiKey,
+    required this.action,
+    this.performedByName,
+    this.performedByEmail,
+    this.oldConfig,
+    this.newConfig,
+    this.createdAt,
+  });
+
+  factory KpiAuditLogItem.fromJson(Map<String, dynamic> json) {
+    return KpiAuditLogItem(
+      id: json['id']?.toString() ?? '',
+      organizationId: json['organization_id']?.toString(),
+      kpiId: json['kpi_id']?.toString(),
+      kpiLabel: json['kpi_label']?.toString(),
+      kpiKey: json['kpi_key']?.toString(),
+      action: json['action']?.toString() ?? 'UPDATED',
+      performedByName: json['performed_by_name']?.toString(),
+      performedByEmail: json['performed_by_email']?.toString(),
+      oldConfig: json['old_config'] is Map ? Map<String, dynamic>.from(json['old_config']) : null,
+      newConfig: json['new_config'] is Map ? Map<String, dynamic>.from(json['new_config']) : null,
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
     );
   }
 }
@@ -301,6 +415,7 @@ class DashboardKpiCounts {
 class DashboardKpisResponse {
   final List<KpiConfigItem> config;
   final DashboardKpiCounts counts;
+  final Map<String, dynamic> rawCounts;
   final Map<String, dynamic> filters;
   final String? dateRangeDisplay;
   final Map<String, dynamic>? dateRange;
@@ -308,10 +423,17 @@ class DashboardKpisResponse {
   const DashboardKpisResponse({
     this.config = const [],
     this.counts = const DashboardKpiCounts(),
+    this.rawCounts = const {},
     this.filters = const {},
     this.dateRangeDisplay,
     this.dateRange,
   });
+
+  int getDynamicCount(String key) {
+    final val = rawCounts[key];
+    if (val is num) return val.toInt();
+    return int.tryParse(val?.toString() ?? '') ?? 0;
+  }
 
   factory DashboardKpisResponse.fromJson(Map<String, dynamic> json) {
     final cfgList = (json['config'] as List?)
@@ -327,6 +449,7 @@ class DashboardKpisResponse {
     return DashboardKpisResponse(
       config: cfgList,
       counts: DashboardKpiCounts.fromJson(countsMap),
+      rawCounts: countsMap,
       filters: json['filters'] is Map ? Map<String, dynamic>.from(json['filters']) : {},
       dateRangeDisplay: dateRangeMap?['display']?.toString(),
       dateRange: dateRangeMap,
@@ -1181,6 +1304,8 @@ class KpiFilterParams {
       if (outcome != null && outcome!.isNotEmpty) 'outcome': outcome,
     };
   }
+
+  Map<String, dynamic> toJson() => toQueryParams();
 }
 
 class SiteVisitItem {
