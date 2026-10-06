@@ -1410,6 +1410,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (kpis != null) {
       final customKpis = kpis.config.where((c) =>
           !c.isSystem &&
+          !KpiRegistryItem.isCanonicalKey(c.kpiKey) &&
           c.isEnabled &&
           c.pages.contains('Admin Dashboard'));
 

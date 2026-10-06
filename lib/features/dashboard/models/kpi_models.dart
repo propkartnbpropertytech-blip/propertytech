@@ -203,7 +203,7 @@ class KpiRegistryItem {
       adminVisible: json['admin_visible'] != false,
       telecallerVisible: json['telecaller_visible'] == true,
       salesVisible: json['sales_visible'] == true,
-      isSystem: json['is_system'] == true,
+      isSystem: json['is_system'] == true || isCanonicalKey(json['kpi_key']?.toString()),
       isEnabled: json['is_enabled'] != false,
       displayOrder: (json['display_order'] as num?)?.toInt() ?? 1,
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
@@ -322,6 +322,27 @@ class KpiRegistryItem {
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
+
+  static const Set<String> canonicalKeys = {
+    'available_inventory',
+    'total_leads',
+    'telecallers',
+    'leads_allocated',
+    'old_leads_allocated',
+    'assigned_to_sales',
+    'site_visits_done',
+    'deal_won',
+    'sales_users',
+    'rejected_after_site_visit',
+    'not_interested',
+    'locality_inventory',
+    'locality_leads',
+    'locality_demand_ratio',
+    'lead_sources_reconciliation',
+  };
+
+  static bool isCanonicalKey(String? key) =>
+      key != null && canonicalKeys.contains(key.trim().toLowerCase());
 
   static List<KpiRegistryItem> get canonicalDefaults => const [
         KpiRegistryItem(
