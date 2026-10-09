@@ -92,21 +92,21 @@
   <title>PropKart - Premium Property Management Software & CRM</title>
   <link rel="manifest" href="manifest.json">
 
-  <!-- Google Tag Manager -->
-  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-  })(window,document,'script','dataLayer','GTM-T7VTBN65');</script>
-  <!-- End Google Tag Manager -->
-
-  <!-- Microsoft Clarity Tracking Code -->
+  <!-- Google Tag Manager & Microsoft Clarity Tracking (Production Only) -->
   <script type="text/javascript">
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+      'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+      })(window,document,'script','dataLayer','GTM-T7VTBN65');
+
       (function(c,l,a,r,i,t,y){
           c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
           t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
           y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
       })(window, document, "clarity", "script", "xxjzhszh2b");
+    }
   </script>
 
   <!-- Accessibility & Lighthouse Viewport Fix -->
@@ -214,26 +214,27 @@
   height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   <!-- End Google Tag Manager (noscript) -->
 
-  <!-- Web Vitals -> GA4 (via dataLayer) -->
+  <!-- Web Vitals -> GA4 (via dataLayer) (Production Only) -->
   <script type="module">
-    import {onCLS, onINP, onLCP, onFCP, onTTFB} from 'https://unpkg.com/web-vitals@4?module';
-
-    function sendToDataLayer(metric) {
-      window.dataLayer = window.dataLayer || [];
-      window.dataLayer.push({
-        event: 'web_vitals',
-        metric_name: metric.name,
-        metric_value: Math.round(metric.name === 'CLS' ? metric.value * 1000 : metric.value),
-        metric_id: metric.id,
-        metric_rating: metric.rating
-      });
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      import('https://unpkg.com/web-vitals@4?module').then(({onCLS, onINP, onLCP, onFCP, onTTFB}) => {
+        function sendToDataLayer(metric) {
+          window.dataLayer = window.dataLayer || [];
+          window.dataLayer.push({
+            event: 'web_vitals',
+            metric_name: metric.name,
+            metric_value: Math.round(metric.name === 'CLS' ? metric.value * 1000 : metric.value),
+            metric_id: metric.id,
+            metric_rating: metric.rating
+          });
+        }
+        onCLS(sendToDataLayer);
+        onINP(sendToDataLayer);
+        onLCP(sendToDataLayer);
+        onFCP(sendToDataLayer);
+        onTTFB(sendToDataLayer);
+      }).catch(() => {});
     }
-
-    onCLS(sendToDataLayer);
-    onINP(sendToDataLayer);
-    onLCP(sendToDataLayer);
-    onFCP(sendToDataLayer);
-    onTTFB(sendToDataLayer);
   </script>
 
   <!--

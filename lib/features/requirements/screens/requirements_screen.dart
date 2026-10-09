@@ -50,11 +50,8 @@ import '../../../core/storage/model_mappers.dart';
 import '../../../core/storage/isar_collections.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../../core/utils/formatters.dart';
-import '../utils/property_share_pdf.dart';
 import '../widgets/pdf_option_selection_dialog.dart';
-import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
-import '../../../core/telemetry/audit_dwell_tracker.dart';
 import '../../../core/utils/team_user_visibility.dart';
 import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/security/role_guard.dart';
@@ -908,11 +905,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _triggerFetch();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$count lead(s) moved to Recycle Bin successfully.'),
-            backgroundColor: CRMColors.success,
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: '$count lead(s) moved to Recycle Bin successfully.',
+          isSuccess: true,
         );
       }
     }
@@ -1549,11 +1545,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
 
     if (!_isValidStatusTransition(req.status, newStatus)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Cannot skip pipeline stages from '${req.status}' to '$newStatus'."),
-          backgroundColor: CRMColors.warning,
-        ),
+      AppStatusSnackBar.show(
+        context,
+        message: "Cannot skip pipeline stages from '${req.status}' to '$newStatus'.",
+        isSuccess: false,
       );
       return;
     }
@@ -1595,23 +1590,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               );
             }
             if (isReFollowup && mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Row(
-                    children: [
-                      const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '🔔 Re-Followup Scheduled! Notification reminder active for ${req.clientName}.',
-                        ),
-                      ),
-                    ],
-                  ),
-                  backgroundColor: CRMColors.warning,
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 4),
-                ),
+              AppStatusSnackBar.show(
+                context,
+                message: '🔔 Re-Followup Scheduled! Notification reminder active for ${req.clientName}.',
+                isSuccess: true,
+                duration: const Duration(seconds: 4),
               );
             }
             _triggerFetch();
@@ -1678,15 +1661,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             _triggerFetch();
 
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    propertyStatusUpdated
-                        ? 'Requirement marked as Won and property status updated!'
-                        : 'Requirement marked as Won. Property status could not be updated.',
-                  ),
-                  backgroundColor: propertyStatusUpdated ? CRMColors.success : CRMColors.warning,
-                ),
+              AppStatusSnackBar.show(
+                context,
+                message: propertyStatusUpdated
+                    ? 'Requirement marked as Won and property status updated!'
+                    : 'Requirement marked as Won. Property status could not be updated.',
+                isSuccess: propertyStatusUpdated,
               );
             }
           },
@@ -1771,11 +1751,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         "Target Areas: ${req.displayAreasText}";
         
     Clipboard.setData(ClipboardData(text: shareText));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Requirement details copied to clipboard!"),
-        backgroundColor: CRMColors.success,
-      ),
+    AppStatusSnackBar.show(
+      context,
+      message: "Requirement details copied to clipboard!",
+      isSuccess: true,
     );
   }
 
@@ -1937,9 +1916,25 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               const SizedBox(height: CRMSpacing.l),
 
               if (_activeMainTab == 'Leads' || _activeMainTab == 'Leads Added by Me' || _activeMainTab == 'Rejected') ...[
-                if (_activeMainTab == 'Leads' && currentUser != null && currentUser.role == 'Sales') ...[
-                  _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
-                  const SizedBox(height: CRMSpacing.m),
+                if (_activeMainTab == 'Leads') ...[
+                  if (currentUser != null && currentUser.role == 'Sales') ...[
+                    _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
+                    const SizedBox(height: CRMSpacing.m),
+                  ] else if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')) ...[
+                    _buildSalesTeamOverviewBar(currentUser, _cachedRequirements),
+                    if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) ...[
+                      Builder(builder: (context) {
+                        final selUser = _getSalesUsers().firstWhereOrNull((u) => u.id == _selectedUserFilterId);
+                        if (selUser != null) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+                            child: _buildSalesLeadGroupSelector(selUser, _cachedRequirements, isForOtherUser: true),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      }),
+                    ],
+                  ],
                 ],
 
                 // Filters & Search Card
@@ -2138,6 +2133,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             (currentUser != null && currentUser.role == 'Telecaller'
                 ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedUser, currentUser)
                 : TeamUserVisibility.requirementBelongsToUser(r, selectedUser));
+        if (matchesUser && _activeMainTab == 'Leads' && _salesLeadGroupFilter != 'all' && selectedUser != null && selectedUser.roleName.toLowerCase().contains('sales')) {
+          if (_salesLeadGroupFilter == 'assigned') {
+            matchesUser = _isUserAssignee(r, selectedUser) && !_isUserCreator(r, selectedUser);
+          } else if (_salesLeadGroupFilter == 'added') {
+            matchesUser = _isUserCreator(r, selectedUser);
+          }
+        }
       }
       if (!matchesUser) return false;
 
@@ -2189,170 +2191,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return count;
   }
 
-  void _openMobileLeadsFilterSheet(BuildContext context) {
-    final categories = _metadata?.categories ?? [];
-    final configs = _metadata?.configurations.where((c) => _selectedCategoryId == null || c.categoryId == _selectedCategoryId).toList() ?? [];
-
-    MobileSheet.show(
-      context,
-      title: 'Filter Leads',
-      child: StatefulBuilder(
-        builder: (ctx, setSheetState) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  'All', 'New', 'Not Started', 'Follow-up', 'Interested', 'Site Visit', 'Won', 'Not Interested', 'Rejected'
-                ].map((s) {
-                  final selected = _selectedStatus == s;
-                  return ChoiceChip(
-                    label: Text(s),
-                    selected: selected,
-                    onSelected: (val) {
-                      setSheetState(() => _selectedStatus = s);
-                      setState(() => _selectedStatus = s);
-                    },
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-              if (categories.isNotEmpty) ...[
-                const Text('Category', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('All Categories'),
-                      selected: _selectedCategoryId == null,
-                      onSelected: (val) {
-                        setSheetState(() => _selectedCategoryId = null);
-                        setState(() => _selectedCategoryId = null);
-                      },
-                    ),
-                    ...categories.map((c) {
-                      final selected = _selectedCategoryId == c.id;
-                      return ChoiceChip(
-                        label: Text(c.name),
-                        selected: selected,
-                        onSelected: (val) {
-                          setSheetState(() => _selectedCategoryId = val ? c.id : null);
-                          setState(() => _selectedCategoryId = val ? c.id : null);
-                        },
-                      );
-                    }),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
-              if (configs.isNotEmpty) ...[
-                const Text('Configuration / BHK', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: configs.take(10).map((cfg) {
-                    final selected = _selectedConfigIds.contains(cfg.id);
-                    return FilterChip(
-                      label: Text(cfg.name),
-                      selected: selected,
-                      onSelected: (val) {
-                        setSheetState(() {
-                          if (val) {
-                            _selectedConfigIds.add(cfg.id);
-                          } else {
-                            _selectedConfigIds.remove(cfg.id);
-                          }
-                        });
-                        setState(() {});
-                      },
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-              ],
-              const Text('Date Created', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  LeadDateFilterPreset.today,
-                  LeadDateFilterPreset.yesterday,
-                  LeadDateFilterPreset.last7Days,
-                  LeadDateFilterPreset.thisMonth,
-                  LeadDateFilterPreset.allTime,
-                ].map((preset) {
-                  final label = preset == LeadDateFilterPreset.today
-                      ? 'Today'
-                      : preset == LeadDateFilterPreset.yesterday
-                          ? 'Yesterday'
-                          : preset == LeadDateFilterPreset.last7Days
-                              ? 'Last 7 Days'
-                              : preset == LeadDateFilterPreset.thisMonth
-                                  ? 'This Month'
-                                  : 'All Time';
-                  final selected = _selectedLeadDateFilter == preset;
-                  return ChoiceChip(
-                    label: Text(label),
-                    selected: selected,
-                    onSelected: (val) {
-                      setSheetState(() => _selectedLeadDateFilter = preset);
-                      setState(() => _selectedLeadDateFilter = preset);
-                    },
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-            ],
-          );
-        },
-      ),
-      actions: [
-        Expanded(
-          child: OutlinedButton(
-            onPressed: () {
-              setState(() {
-                _selectedStatus = 'All';
-                _selectedCategoryId = null;
-                _selectedConfigIds.clear();
-                _selectedLeadDateFilter = LeadDateFilterPreset.today;
-                _searchController.clear();
-              });
-              Navigator.pop(context);
-            },
-            child: const Text('Reset All'),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: CRMColors.primaryOf(context),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Apply'),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildMobileRequirementsView(
     BuildContext context,
     UserModel? currentUser,
     RequirementsState reqBlocState,
   ) {
     final isSales = currentUser?.role == 'Sales';
-    final primaryColor = CRMColors.primaryOf(context);
     final isRent = _activeListingTab == 'Rent';
     final filteredLeads = _getMobileFilteredRequirements(currentUser);
     final isLoading = (reqBlocState is RequirementsLoading || reqBlocState is RequirementsInitial) && _cachedRequirements.isEmpty;
@@ -2383,22 +2227,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ),
               const SizedBox(width: 8),
               Flexible(
-                child: ElevatedButton.icon(
+                child: CRMButton(
+                  label: 'Add Lead',
+                  prefixIcon: Icons.add_rounded,
+                  height: 36,
                   onPressed: () => _showAddEditDialog(null, 0, false),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text(
-                    'Add Lead',
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    minimumSize: const Size(44, 36),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
                 ),
               ),
             ],
@@ -2430,11 +2263,30 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ],
           ),
         ),
-        if (isSales && currentUser != null && _activeMainTab == 'Leads') ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
-          ),
+        if (_activeMainTab == 'Leads') ...[
+          if (isSales && currentUser != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
+            ),
+          ] else if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: _buildSalesTeamOverviewBar(currentUser, _cachedRequirements),
+            ),
+            if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) ...[
+              Builder(builder: (context) {
+                final selUser = _getSalesUsers().firstWhereOrNull((u) => u.id == _selectedUserFilterId);
+                if (selUser != null) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: _buildSalesLeadGroupSelector(selUser, _cachedRequirements, isForOtherUser: true),
+                  );
+                }
+                return const SizedBox.shrink();
+              }),
+            ],
+          ],
         ],
       ],
     );
@@ -2680,7 +2532,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = CRMColors.primaryOf(context);
-    final statusColor = _getStatusColor(req.status);
     final budgetStr = (req.minBudget > 0 || req.maxBudget > 0)
         ? '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}'
         : 'On Request';
@@ -4599,23 +4450,27 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  bool _isUserCreator(RequirementModel r, UserModel user) {
-    if (r.createdBy == user.id) return true;
-    final uName = user.fullName.trim().toLowerCase();
-    if (uName.isNotEmpty) {
-      if (r.createdBy != null && r.createdBy!.trim().toLowerCase() == uName) return true;
-      if (r.creatorName != null && r.creatorName!.trim().toLowerCase() == uName) return true;
+  bool _isUserCreator(RequirementModel r, dynamic user) {
+    if (user == null) return false;
+    final userId = (user is UserModel ? user.id : (user is users_model.UserModel ? user.id : user.toString()));
+    final userName = (user is UserModel ? user.fullName : (user is users_model.UserModel ? user.fullName : '')).trim().toLowerCase();
+    if (r.createdBy == userId) return true;
+    if (userName.isNotEmpty) {
+      if (r.createdBy != null && r.createdBy!.trim().toLowerCase() == userName) return true;
+      if (r.creatorName != null && r.creatorName!.trim().toLowerCase() == userName) return true;
     }
     return false;
   }
 
-  bool _isUserAssignee(RequirementModel r, UserModel user) {
-    final uName = user.fullName.trim().toLowerCase();
+  bool _isUserAssignee(RequirementModel r, dynamic user) {
+    if (user == null) return false;
+    final userId = (user is UserModel ? user.id : (user is users_model.UserModel ? user.id : user.toString()));
+    final userName = (user is UserModel ? user.fullName : (user is users_model.UserModel ? user.fullName : '')).trim().toLowerCase();
     if (r.assignedTo != null && r.assignedTo!.isNotEmpty) {
-      if (r.assignedTo == user.id) return true;
-      if (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName) return true;
+      if (r.assignedTo == userId) return true;
+      if (userName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == userName) return true;
     }
-    if (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName) return true;
+    if (r.assigneeName != null && userName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == userName) return true;
     return false;
   }
 
@@ -4635,8 +4490,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return false;
   }
 
-  bool _isLeadTransferredAway(RequirementModel r, UserModel? currentUser) {
-    if (currentUser == null || currentUser.role != 'Sales') return false;
+  bool _isLeadTransferredAway(RequirementModel r, dynamic currentUser) {
+    if (currentUser == null) return false;
+    final role = (currentUser is UserModel ? currentUser.role : (currentUser is users_model.UserModel ? currentUser.roleName : ''));
+    if (!role.toLowerCase().contains('sales')) return false;
     final isAssignee = _isUserAssignee(r, currentUser);
     final isCreator = _isUserCreator(r, currentUser);
     if (!isCreator) return false;
@@ -4645,7 +4502,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     return !isAssignee;
   }
 
-  bool _salesCanViewRequirement(RequirementModel r, UserModel currentUser) {
+  bool _salesCanViewRequirement(RequirementModel r, dynamic currentUser) {
+    if (currentUser == null) return false;
     if (_isLeadTransferredAway(r, currentUser)) return false;
     return _isUserCreator(r, currentUser) || _isUserAssignee(r, currentUser);
   }
@@ -4862,27 +4720,237 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  Widget _buildSalesLeadGroupSelector(UserModel currentUser, List<RequirementModel> allLoadedReqs) {
+  List<users_model.UserModel> _getSalesUsers() {
+    try {
+      final usersState = context.read<UsersBloc>().state;
+      final allKnown = usersState is UsersLoaded ? _mergedAssignUsers(usersState.users) : _assignUsers;
+      return allKnown.where((u) => u.roleName.toLowerCase().contains('sales')).toList();
+    } catch (_) {
+      return _assignUsers.where((u) => u.roleName.toLowerCase().contains('sales')).toList();
+    }
+  }
+
+  Widget _buildMiniLeadPill(String label, String value, Color? color) {
+    final pillColor = color ?? CRMColors.textSecondaryOf(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: pillColor.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '$label: $value',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: pillColor,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSalesTeamOverviewBar(UserModel currentUser, List<RequirementModel> allReqs) {
+    final salesUsers = _getSalesUsers();
+    if (salesUsers.isEmpty) return const SizedBox.shrink();
+
+    final activeTabReqs = allReqs.where((r) => getListingTypeLabel(r) == _activeListingTab).toList();
+    final bool isDark = ThemeManager().isDarkMode;
+    final primaryColor = CRMColors.primaryOf(context);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: CRMColors.cardBgOf(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+        border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.people_alt_rounded, size: 18, color: primaryColor),
+              const SizedBox(width: 8),
+              Text(
+                'Sales Team Leads Overview',
+                style: CRMTypography.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: CRMColors.textOf(context),
+                ),
+              ),
+              const Spacer(),
+              if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty)
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedUserFilterId = 'All';
+                      _salesLeadGroupFilter = 'all';
+                      _currentPage = 1;
+                    });
+                    _triggerFetch();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.clear_rounded, size: 13, color: primaryColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Show All Leads',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: primaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: salesUsers.map((u) {
+                final isSelected = _selectedUserFilterId == u.id;
+
+                final uTotal = activeTabReqs.where((r) =>
+                    TeamUserVisibility.requirementBelongsToUser(r, u) &&
+                    r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)).length;
+
+                final uAssigned = activeTabReqs.where((r) =>
+                    _isUserAssignee(r, u) && !_isUserCreator(r, u) &&
+                    r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)).length;
+
+                final uAdded = activeTabReqs.where((r) =>
+                    _isUserCreator(r, u) &&
+                    r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)).length;
+
+                return Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (_selectedUserFilterId == u.id) {
+                          _selectedUserFilterId = 'All';
+                        } else {
+                          _selectedUserFilterId = u.id;
+                        }
+                        _salesLeadGroupFilter = 'all';
+                        _currentPage = 1;
+                      });
+                      _triggerFetch();
+                    },
+                    borderRadius: BorderRadius.circular(10),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? primaryColor.withValues(alpha: 0.12)
+                            : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC)),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected
+                              ? primaryColor
+                              : CRMColors.borderOf(context).withValues(alpha: 0.6),
+                          width: isSelected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircleAvatar(
+                                radius: 10,
+                                backgroundColor: isSelected ? primaryColor : CRMColors.textSecondaryOf(context).withValues(alpha: 0.2),
+                                child: Text(
+                                  u.fullName.isNotEmpty ? u.fullName[0].toUpperCase() : 'S',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected ? Colors.white : CRMColors.textOf(context),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                u.fullName,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isSelected ? primaryColor : CRMColors.textOf(context),
+                                ),
+                              ),
+                              if (isSelected) ...[
+                                const SizedBox(width: 4),
+                                Icon(Icons.check_circle_rounded, size: 14, color: primaryColor),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildMiniLeadPill('Total', uTotal.toString(), isSelected ? primaryColor : null),
+                              const SizedBox(width: 4),
+                              _buildMiniLeadPill('Assigned', uAssigned.toString(), const Color(0xFF2563EB)),
+                              const SizedBox(width: 4),
+                              _buildMiniLeadPill('Self-Added', uAdded.toString(), const Color(0xFF16A34A)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSalesLeadGroupSelector(
+    dynamic targetSalesUser,
+    List<RequirementModel> allLoadedReqs, {
+    bool isForOtherUser = false,
+  }) {
     final activeTabReqs = allLoadedReqs.where((r) => getListingTypeLabel(r) == _activeListingTab).toList();
+    final firstName = targetSalesUser.fullName.trim().split(' ').first;
 
     final assignedCount = activeTabReqs.where((r) =>
-        _salesCanViewRequirement(r, currentUser) &&
-        _isUserAssignee(r, currentUser) &&
-        !_isUserCreator(r, currentUser) &&
-        !_isLeadTransferredAway(r, currentUser) &&
+        (isForOtherUser || _salesCanViewRequirement(r, targetSalesUser)) &&
+        _isUserAssignee(r, targetSalesUser) &&
+        !_isUserCreator(r, targetSalesUser) &&
+        !_isLeadTransferredAway(r, targetSalesUser) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
     final addedCount = activeTabReqs.where((r) =>
-        _salesCanViewRequirement(r, currentUser) &&
-        _isUserCreator(r, currentUser) &&
-        !_isLeadTransferredAway(r, currentUser) &&
+        (isForOtherUser || _salesCanViewRequirement(r, targetSalesUser)) &&
+        _isUserCreator(r, targetSalesUser) &&
+        !_isLeadTransferredAway(r, targetSalesUser) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
     final allCount = activeTabReqs.where((r) =>
-        _salesCanViewRequirement(r, currentUser) &&
-        !_isLeadTransferredAway(r, currentUser) &&
+        (isForOtherUser || _salesCanViewRequirement(r, targetSalesUser)) &&
+        TeamUserVisibility.requirementBelongsToUser(r, targetSalesUser) &&
+        !_isLeadTransferredAway(r, targetSalesUser) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
@@ -4899,24 +4967,24 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildSalesGroupFilterButton(
-              label: 'Assigned to Me',
+              label: isForOtherUser ? 'All Leads ($firstName)' : 'My Active Leads',
+              icon: Icons.dashboard_customize_rounded,
+              value: 'all',
+              count: allCount,
+            ),
+            const SizedBox(width: 6),
+            _buildSalesGroupFilterButton(
+              label: isForOtherUser ? 'Assigned to $firstName' : 'Assigned to Me',
               icon: Icons.assignment_ind_rounded,
               value: 'assigned',
               count: assignedCount,
             ),
             const SizedBox(width: 6),
             _buildSalesGroupFilterButton(
-              label: 'Added by Me',
+              label: isForOtherUser ? 'Added by $firstName' : 'Added by Me',
               icon: Icons.person_add_alt_1_rounded,
               value: 'added',
               count: addedCount,
-            ),
-            const SizedBox(width: 6),
-            _buildSalesGroupFilterButton(
-              label: 'My Active Leads',
-              icon: Icons.dashboard_customize_rounded,
-              value: 'all',
-              count: allCount,
             ),
           ],
         ),
@@ -5105,7 +5173,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  Offset _lastTapPosition = const Offset(400, 300);
   OverlayEntry? _rejectionOverlayEntry;
 
   void _removeRejectionOverlay() {
@@ -5539,13 +5606,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       );
     }
 
-    return GestureDetector(
-      onTapDown: (details) {
-        _lastTapPosition = details.globalPosition;
-      },
-      child: PopupMenuButton<String>(
-        tooltip: 'Change Status',
-        onCanceled: () {
+    return PopupMenuButton<String>(
+      tooltip: 'Change Status',
+      onCanceled: () {
           _removeRejectionOverlay();
           _removeCallAttemptedOverlay();
         },
@@ -5723,8 +5786,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   String? _getCleanNote(RequirementModel req) {
@@ -5873,11 +5935,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                       _refreshFollowupsFuture();
                                     });
                                     _triggerFetch();
-                                    ScaffoldMessenger.of(anchorContext).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Note saved successfully.'),
-                                        backgroundColor: CRMColors.success,
-                                      ),
+                                    AppStatusSnackBar.show(
+                                      anchorContext,
+                                      message: 'Note saved successfully.',
+                                      isSuccess: true,
                                     );
                                   }
                                 } catch (e) {
@@ -5885,11 +5946,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                     Navigator.of(sheetContext).pop();
                                   }
                                   if (mounted) {
-                                    ScaffoldMessenger.of(anchorContext).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Failed to save note: $e'),
-                                        backgroundColor: CRMColors.danger,
-                                      ),
+                                    AppStatusSnackBar.show(
+                                      anchorContext,
+                                      message: 'Failed to save note: $e',
+                                      isSuccess: false,
                                     );
                                   }
                                 }
@@ -6119,21 +6179,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                                     _refreshFollowupsFuture();
                                                   });
                                                   _triggerFetch();
-                                                  ScaffoldMessenger.of(context).showSnackBar(
-                                                    const SnackBar(
-                                                      content: Text('Note saved successfully.'),
-                                                      backgroundColor: CRMColors.success,
-                                                    ),
+                                                  AppStatusSnackBar.show(
+                                                    context,
+                                                    message: 'Note saved successfully.',
+                                                    isSuccess: true,
                                                   );
                                                 }
                                               } catch (e) {
                                                 setOverlayState(() => isSaving = false);
                                                 if (mounted) {
-                                                  ScaffoldMessenger.of(context).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text('Failed to save note: $e'),
-                                                      backgroundColor: CRMColors.danger,
-                                                    ),
+                                                  AppStatusSnackBar.show(
+                                                    context,
+                                                    message: 'Failed to save note: $e',
+                                                    isSuccess: false,
                                                   );
                                                 }
                                               }
@@ -6401,6 +6459,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   (currentUser != null && currentUser.role == 'Telecaller'
                       ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedUser, currentUser)
                       : TeamUserVisibility.requirementBelongsToUser(r, selectedUser));
+              if (matchesUser && _activeMainTab == 'Leads' && _salesLeadGroupFilter != 'all' && selectedUser != null && selectedUser.roleName.toLowerCase().contains('sales')) {
+                if (_salesLeadGroupFilter == 'assigned') {
+                  matchesUser = _isUserAssignee(r, selectedUser) && !_isUserCreator(r, selectedUser);
+                } else if (_salesLeadGroupFilter == 'added') {
+                  matchesUser = _isUserCreator(r, selectedUser);
+                }
+              }
             }
 
             bool matchesSearch = true;
@@ -8365,34 +8430,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  Widget _buildDetailChip(IconData icon, String label, String value, {bool isMobile = false}) {
-    return Container(
-      constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 160),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: CRMColors.textMuted),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label, style: CRMTypography.caption.copyWith(color: CRMColors.textMuted, fontSize: 10)),
-                Text(
-                  value,
-                  style: CRMTypography.captionBold.copyWith(color: CRMColors.text),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildViewSwitcher() {
     return Container(
       padding: const EdgeInsets.all(2),
@@ -8517,11 +8554,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   Future<void> _exportLeadsToExcel(List<RequirementModel> requirements, UserModel? currentUser) async {
     if (requirements.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No requirements available to export.'),
-          backgroundColor: CRMColors.warning,
-        ),
+      AppStatusSnackBar.show(
+        context,
+        message: 'No requirements available to export.',
+        isSuccess: false,
+        backgroundColor: CRMColors.warning,
       );
       return;
     }
@@ -8535,11 +8572,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         final filename = 'Requirements_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
         await FileDownloader.download(response.data!, filename);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('All requirements exported successfully from server!'),
-              backgroundColor: CRMColors.success,
-            ),
+          AppStatusSnackBar.show(
+            context,
+            message: 'All requirements exported successfully from server!',
+            isSuccess: true,
           );
         }
         return;
@@ -8577,9 +8613,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         req.requirementCode,
         req.clientName,
         req.clientMobile,
-        req.categoryName ?? '',
+        req.categoryName,
         req.configurationName ?? '',
-        req.propertyTypeName ?? '',
+        req.propertyTypeName,
         req.listingTypeName ?? '',
         BudgetFormatter.format(req.minBudget),
         BudgetFormatter.format(req.maxBudget),
@@ -8591,7 +8627,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         (req.creatorName != null && req.creatorName != 'System' && req.creatorName!.trim().isNotEmpty) ? req.creatorName! : 'Propkart Admin',
         _getSalesmanName(req, currentUser),
         _getCleanNote(req) ?? '',
-        req.createdAt != null ? DateFormat('dd/MM/yyyy hh:mm a').format(req.createdAt!.toLocal()) : '',
+        DateFormat('dd/MM/yyyy hh:mm a').format(req.createdAt.toLocal()),
       ];
 
       csvBuffer.writeln(row.map((val) => '"${CsvSanitizer.sanitize(val)}"').join(','));
@@ -8601,11 +8637,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final filename = 'Requirements_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
     FileDownloader.download(bytes, filename);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${requirements.length} requirements exported to Excel format successfully!'),
-        backgroundColor: CRMColors.success,
-      ),
+    AppStatusSnackBar.show(
+      context,
+      message: '${requirements.length} requirements exported to Excel format successfully!',
+      isSuccess: true,
     );
   }
 
@@ -8641,29 +8676,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       default:
         return CRMColors.primary;
     }
-  }
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required Color color,
-    required VoidCallback onPressed,
-    required String tooltip,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: IconButton(
-        icon: Icon(icon, color: color, size: 16),
-        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-        style: IconButton.styleFrom(
-          backgroundColor: color.withValues(alpha: 0.1),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          padding: EdgeInsets.zero,
-        ),
-        onPressed: onPressed,
-      ),
-    );
   }
 
   Widget _buildMainViewTabButton(String label) {
@@ -9036,11 +9048,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               setState(() {
                                 _refreshFollowupsFuture();
                               });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(_selectedMainFollowupSection == 'Site Visit Scheduled' ? 'Site Visit updated successfully' : 'Follow-up updated successfully'),
-                                  backgroundColor: CRMColors.success,
-                                ),
+                              AppStatusSnackBar.show(
+                                context,
+                                message: _selectedMainFollowupSection == 'Site Visit Scheduled' ? 'Site Visit updated successfully' : 'Follow-up updated successfully',
+                                isSuccess: true,
                               );
                             }
                           } catch (e) {
@@ -9048,11 +9059,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               setDialogState(() {
                                 isSaving = false;
                               });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Error updating follow-up: $e'),
-                                  backgroundColor: CRMColors.danger,
-                                ),
+                              AppStatusSnackBar.show(
+                                context,
+                                message: 'Error updating follow-up: $e',
+                                isSuccess: false,
                               );
                             }
                           }
@@ -9222,8 +9232,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           if (reqModel != null) {
             _showRequirementDetailDrawer(reqModel);
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Associated requirement details not found.')),
+            AppStatusSnackBar.show(
+              context,
+              message: 'Associated requirement details not found.',
+              isSuccess: false,
             );
           }
         },
@@ -9425,11 +9437,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
       if (mounted) {
         _selectedFollowupClientKeys.remove(_getFollowupClientKey(f));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('All records for "${f.clientName}" deleted successfully.'),
-            backgroundColor: CRMColors.success,
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: 'All records for "${f.clientName}" deleted successfully.',
+          isSuccess: true,
         );
         setState(() {
           _refreshFollowupsFuture(force: true);
@@ -9438,11 +9449,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to delete client records: $e'),
-            backgroundColor: CRMColors.danger,
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: 'Failed to delete client records: $e',
+          isSuccess: false,
         );
       }
     }
@@ -9516,11 +9526,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$successCount client(s) deleted successfully.'),
-          backgroundColor: CRMColors.success,
-        ),
+      AppStatusSnackBar.show(
+        context,
+        message: '$successCount client(s) deleted successfully.',
+        isSuccess: true,
       );
       setState(() {
         _refreshFollowupsFuture(force: true);
@@ -10264,8 +10273,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                             _showRequirementDetailDrawer(reqModel);
                                           }
                                         } else {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(content: Text('Associated requirement details not found.')),
+                                          AppStatusSnackBar.show(
+                                            context,
+                                            message: 'Associated requirement details not found.',
+                                            isSuccess: false,
                                           );
                                         }
                                       },
@@ -10557,8 +10568,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             label: const Text("Copy"),
                             onPressed: () {
                               Clipboard.setData(ClipboardData(text: generatedLink!));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text("Link copied to clipboard!")),
+                              AppStatusSnackBar.show(
+                                context,
+                                message: "Link copied to clipboard!",
+                                isSuccess: true,
                               );
                             },
                           ),
@@ -10591,8 +10604,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         } catch (e) {
                           await Clipboard.setData(ClipboardData(text: generatedLink!));
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text("Link copied to clipboard!")),
+                            AppStatusSnackBar.show(
+                              context,
+                              message: "Link copied to clipboard!",
+                              isSuccess: true,
                             );
                           }
                         }
@@ -11429,8 +11444,10 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
   Future<void> _saveFollowup() async {
     final remarks = _remarksController.text.trim();
     if (remarks.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Please enter ${widget.isSiteVisit ? "site visit" : "followup"} remarks.')),
+      AppStatusSnackBar.show(
+        context,
+        message: 'Please enter ${widget.isSiteVisit ? "site visit" : "followup"} remarks.',
+        isSuccess: false,
       );
       return;
     }
@@ -11612,21 +11629,21 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         widget.onSavedWithDate?.call(scheduledDateTime);
         widget.onSaved();
         Navigator.pop(context);
-        messenger?.showSnackBar(
-          SnackBar(
-            content: Text(widget.isSiteVisit ? 'Site visit scheduled successfully!' : 'Followup added successfully!'),
-            backgroundColor: CRMColors.success,
-          ),
-        );
+        if (messenger != null) {
+          AppStatusSnackBar.showWithMessenger(
+            messenger,
+            message: widget.isSiteVisit ? 'Site visit scheduled successfully!' : 'Followup added successfully!',
+            isSuccess: true,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSavingFollowup = false);
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(
-            content: Text(widget.isSiteVisit ? 'Failed to schedule site visit: $e' : 'Failed to add followup: $e'),
-            backgroundColor: CRMColors.danger,
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: widget.isSiteVisit ? 'Failed to schedule site visit: $e' : 'Failed to add followup: $e',
+          isSuccess: false,
         );
       }
     }
@@ -11916,12 +11933,10 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
                                     debugPrint('Error completing followup: $e');
                                   }
                                   if (context.mounted) {
-                                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Followup marked as Completed!'),
-                                        backgroundColor: CRMColors.success,
-                                        duration: Duration(seconds: 2),
-                                      ),
+                                    AppStatusSnackBar.show(
+                                      context,
+                                      message: 'Followup marked as Completed!',
+                                      isSuccess: true,
                                     );
                                   }
                                 },
@@ -12451,8 +12466,10 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
       } catch (e) {
         Navigator.pop(context);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to download images: $e')),
+          AppStatusSnackBar.show(
+            context,
+            message: 'Failed to download images: $e',
+            isSuccess: false,
           );
         }
       }
@@ -12465,8 +12482,10 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
         await _logShareAction(p, false);
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not launch WhatsApp')),
+          AppStatusSnackBar.show(
+            context,
+            message: 'Could not launch WhatsApp',
+            isSuccess: false,
           );
         }
       }
@@ -12492,10 +12511,6 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
     _loadAndFilterMatches();
   }
 
-  Future<bool> _isRequirementPropertyMatchAsync(PropertyModel p, RequirementModel req) async {
-    return _RequirementsScreenState._isRequirementPropertyMatchAsync(p, req);
-  }
-
   Future<void> _autoMapGotaAndVaishnodevi() async {
     setState(() => _isAutoMapping = true);
     try {
@@ -12513,11 +12528,10 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
 
       RequirementsRepository().invalidateCache();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFF0F766E),
-            content: Text('Requirement successfully mapped to Gota & Vaishnodevi! Re-running match engine...'),
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: 'Requirement successfully mapped to Gota & Vaishnodevi! Re-running match engine...',
+          isSuccess: true,
         );
         setState(() {
           _isAutoMapping = false;
@@ -12529,11 +12543,10 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
     } catch (e) {
       if (mounted) {
         setState(() => _isAutoMapping = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.red.shade700,
-            content: Text('Auto-map failed: $e'),
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: 'Auto-map failed: $e',
+          isSuccess: false,
         );
       }
     }
@@ -13094,8 +13107,10 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
                                       "💰 Price: $price\n\n"
                                       "📞 For more details, please contact NB Prop Tech.";
                                   Clipboard.setData(ClipboardData(text: message));
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Copied to clipboard')),
+                                  AppStatusSnackBar.show(
+                                    context,
+                                    message: 'Copied to clipboard',
+                                    isSuccess: true,
                                   );
                                 },
                               ),
@@ -13293,20 +13308,23 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
     try {
       final response = await DioClient.dio.post('/share-sessions/$sessionId/revoke');
       if (response.data != null && response.data['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Share link revoked successfully.")),
+        AppStatusSnackBar.show(
+          context,
+          message: "Share link revoked successfully.",
+          isSuccess: true,
         );
         _loadHistory();
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Failed to revoke share link.")),
+      AppStatusSnackBar.show(
+        context,
+        message: "Failed to revoke share link.",
+        isSuccess: false,
       );
     }
   }
 
   Widget _buildShareHistoryTable() {
-    final req = widget.requirement;
     return _isLoading
         ? const Center(child: CircularProgressIndicator())
         : _error != null
@@ -13395,8 +13413,10 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                     tooltip: "Copy Link",
                                     onPressed: () {
                                       Clipboard.setData(ClipboardData(text: link));
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text("Link copied to clipboard!")),
+                                      AppStatusSnackBar.show(
+                                        context,
+                                        message: "Link copied to clipboard!",
+                                        isSuccess: true,
                                       );
                                     },
                                   ),
@@ -13797,9 +13817,9 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
       margin: const EdgeInsets.only(top: CRMSpacing.m),
       padding: const EdgeInsets.all(CRMSpacing.m),
       decoration: BoxDecoration(
-        color: const Color(0xFF1877F2).withOpacity(0.05),
+        color: const Color(0xFF1877F2).withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-        border: Border.all(color: const Color(0xFF1877F2).withOpacity(0.25)),
+        border: Border.all(color: const Color(0xFF1877F2).withValues(alpha: 0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -13819,7 +13839,7 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1877F2).withOpacity(0.1),
+                  color: const Color(0xFF1877F2).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -14001,20 +14021,6 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                         .toList(),
                   ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoLabel(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(right: CRMSpacing.m),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: CRMTypography.caption.copyWith(color: CRMColors.textMuted)),
-          const SizedBox(height: 2),
-          Text(value, style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -14488,10 +14494,10 @@ class _FollowupActionButton extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: CRMColors.cardBgOf(context),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                  border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.5)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
+                      color: Colors.black.withValues(alpha: 0.12),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -14989,12 +14995,10 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
     });
     widget.onSave(updatedNotesStr, updatedReq, null, deletedNoteStr);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Note deleted successfully.'),
-        backgroundColor: CRMColors.success,
-        duration: Duration(seconds: 2),
-      ),
+    AppStatusSnackBar.show(
+      context,
+      message: 'Note deleted successfully.',
+      isSuccess: true,
     );
   }
 
@@ -15017,12 +15021,10 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
     });
     widget.onSave(updatedNotes, updatedReq, formattedEntry);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Note added successfully.'),
-        backgroundColor: CRMColors.success,
-        duration: Duration(seconds: 2),
-      ),
+    AppStatusSnackBar.show(
+      context,
+      message: 'Note added successfully.',
+      isSuccess: true,
     );
   }
 
@@ -15076,7 +15078,7 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
               ],
             ),
             const SizedBox(height: 8),
-            Divider(color: CRMColors.borderOf(context).withOpacity(0.6), height: 1),
+            Divider(color: CRMColors.borderOf(context).withValues(alpha: 0.6), height: 1),
             const SizedBox(height: 12),
 
             Flexible(
@@ -15090,7 +15092,7 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
                             Icon(
                               Icons.notes_outlined,
                               size: 48,
-                              color: CRMColors.textMutedOf(context).withOpacity(0.5),
+                              color: CRMColors.textMutedOf(context).withValues(alpha: 0.5),
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -15114,11 +15116,11 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: Theme.of(context).brightness == Brightness.dark
-                                ? Colors.white.withOpacity(0.05)
+                                ? Colors.white.withValues(alpha: 0.05)
                                 : const Color(0xFFF8F9FA),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: CRMColors.borderOf(context).withOpacity(0.4),
+                              color: CRMColors.borderOf(context).withValues(alpha: 0.4),
                             ),
                           ),
                           child: Column(
@@ -15176,7 +15178,7 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
             ),
 
             const SizedBox(height: 12),
-            Divider(color: CRMColors.borderOf(context).withOpacity(0.6), height: 1),
+            Divider(color: CRMColors.borderOf(context).withValues(alpha: 0.6), height: 1),
             const SizedBox(height: 12),
 
             if (!_isAdding)
@@ -15207,7 +15209,7 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
                           : Colors.white,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: CRMColors.primaryOf(context).withOpacity(0.6),
+                        color: CRMColors.primaryOf(context).withValues(alpha: 0.6),
                       ),
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -15221,7 +15223,7 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
                         hintText: 'Type new note here...',
                         hintStyle: TextStyle(
                           fontSize: 13,
-                          color: CRMColors.textSecondaryOf(context).withOpacity(0.6),
+                          color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.6),
                         ),
                         border: InputBorder.none,
                         isDense: true,

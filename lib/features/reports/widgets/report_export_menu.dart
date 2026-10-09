@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
+import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../models/report_configuration.dart';
 import '../models/report_data.dart';
 import '../services/report_export_service.dart';
@@ -180,12 +181,10 @@ class _ReportExportMenuState extends State<ReportExportMenu> {
 
   void _showSnackbar(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
-        behavior: SnackBarBehavior.floating,
-      ),
+    AppStatusSnackBar.show(
+      context,
+      message: message,
+      isSuccess: !isError,
     );
   }
 }

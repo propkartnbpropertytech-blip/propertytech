@@ -135,6 +135,8 @@ class TeamMemberRanking {
   final String userName;
   final String role;
   final int leadsCount;
+  final int assignedCount;
+  final int selfAddedCount;
   final int contactedCount;
   final int qualifiedCount;
   final int siteVisitsCount;
@@ -147,6 +149,8 @@ class TeamMemberRanking {
     required this.userName,
     required this.role,
     required this.leadsCount,
+    this.assignedCount = 0,
+    this.selfAddedCount = 0,
     required this.contactedCount,
     required this.qualifiedCount,
     required this.siteVisitsCount,
@@ -154,13 +158,19 @@ class TeamMemberRanking {
     required this.conversionRate,
   });
 
-  TeamMemberRanking copyWith({int? rank}) {
+  TeamMemberRanking copyWith({
+    int? rank,
+    int? assignedCount,
+    int? selfAddedCount,
+  }) {
     return TeamMemberRanking(
       rank: rank ?? this.rank,
       userId: userId,
       userName: userName,
       role: role,
       leadsCount: leadsCount,
+      assignedCount: assignedCount ?? this.assignedCount,
+      selfAddedCount: selfAddedCount ?? this.selfAddedCount,
       contactedCount: contactedCount,
       qualifiedCount: qualifiedCount,
       siteVisitsCount: siteVisitsCount,

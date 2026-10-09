@@ -1,3 +1,8 @@
+/// ============================================================================
+/// ⚠️ PROPKART MASTER KPI GOVERNANCE RULE:
+/// All data models and JSON serializations in this file MUST conform to the
+/// Master KPI Rulebook: `lib/core/constants/kpi_rulebook.dart` and `docs/KPIs.docx`.
+/// ============================================================================
 class KpiConfigItem {
   final String? id;
   final String kpiKey;
@@ -335,11 +340,46 @@ class KpiRegistryItem {
     'sales_users',
     'rejected_after_site_visit',
     'not_interested',
+    'cnr',
     'locality_inventory',
     'locality_leads',
     'locality_demand_ratio',
     'lead_sources_reconciliation',
+    // Group A – Inventory Sourcing
+    'properties_by_sales_available',
+    'properties_by_sales_total',
+    'properties_by_telecaller_available',
+    'properties_by_telecaller_total',
+    'properties_by_admin_available',
+    'properties_by_admin_total',
+    'total_portfolio',
+    'rented_out_count',
+    'sold_out_count',
+    'rental_count',
+    'resale_count',
+    // Group B – Manual Leads
+    'manual_leads_total',
+    'manual_leads_by_sales',
+    'manual_leads_by_telecaller',
+    'manual_leads_by_admin',
+    // Group C – Sales Pipeline
+    'active_requirements',
+    'allocation_telecaller',
+    'allocation_self',
+    'followup_active',
+    'refollowup_active',
+    'site_visits_scheduled',
+    'site_visits_done_req',
+    'sales_rejection_count',
+    'deals_won_count',
+    // Group D – Qualified Leads
+    'qualified_interested',
+    'want_rent_count',
+    'want_list_count',
+    'want_resale_count',
+    'active_in_sales_count',
   };
+
 
   static bool isCanonicalKey(String? key) =>
       key != null && canonicalKeys.contains(key.trim().toLowerCase());
@@ -530,6 +570,23 @@ class KpiRegistryItem {
           isEnabled: true,
           displayOrder: 11,
         ),
+        KpiRegistryItem(
+          id: 'cnr',
+          kpiKey: 'cnr',
+          kpiLabel: 'CNR (No Response)',
+          whyDoWeHaveIt: 'Monitors unreached lead volume where client could not be contacted.',
+          dataSource: 'leads',
+          entityTable: 'leads',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'phone_missed_rounded',
+          isClickable: true,
+          adminVisible: true,
+          telecallerVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 12,
+        ),
       ];
 }
 
@@ -580,6 +637,8 @@ class KpiAuditLogItem {
 class DashboardKpiCounts {
   final int availableInventory;
   final int totalLeads;
+  final int allAvailableInventory;
+  final int allTotalLeads;
   final int telecallers;
   final int leadsAllocated;
   final int oldLeadsAllocated;
@@ -589,10 +648,50 @@ class DashboardKpiCounts {
   final int dealWon;
   final int salesUsers;
   final int notInterested;
+  final int cnr;
+
+  // ── Group A: Inventory Sourcing (KPIs 1-7) ────────────────────────────────
+  final int propertiesBySalesAvailable;
+  final int propertiesBySalesTotal;
+  final int propertiesByTelecallerAvailable;
+  final int propertiesByTelecallerTotal;
+  final int propertiesByAdminAvailable;
+  final int propertiesByAdminTotal;
+  final int totalPortfolio;
+  final int rentedOutCount;
+  final int soldOutCount;
+  final int rentalCount;
+  final int resaleCount;
+
+  // ── Group B: Manual / Direct Leads (KPIs 8-11) ────────────────────────────
+  final int manualLeadsTotal;
+  final int manualLeadsBySales;
+  final int manualLeadsByTelecaller;
+  final int manualLeadsByAdmin;
+
+  // ── Group C: Sales Team Pipeline (KPIs 12-19) ─────────────────────────────
+  final int activeRequirements;
+  final int allocationTelecaller;
+  final int allocationSelf;
+  final int followupActive;
+  final int refollowupActive;
+  final int siteVisitsScheduled;
+  final int siteVisitsDoneReq;
+  final int salesRejectionCount;
+  final int dealsWonCount;
+
+  // ── Group D: Qualified Interested Leads (KPIs 20-24) ─────────────────────
+  final int qualifiedInterested;
+  final int wantRentCount;
+  final int wantListCount;
+  final int wantResaleCount;
+  final int activeInSalesCount;
 
   const DashboardKpiCounts({
     this.availableInventory = 0,
     this.totalLeads = 0,
+    this.allAvailableInventory = 0,
+    this.allTotalLeads = 0,
     this.telecallers = 0,
     this.leadsAllocated = 0,
     this.oldLeadsAllocated = 0,
@@ -602,12 +701,50 @@ class DashboardKpiCounts {
     this.dealWon = 0,
     this.salesUsers = 0,
     this.notInterested = 0,
+    this.cnr = 0,
+    // Group A
+    this.propertiesBySalesAvailable = 0,
+    this.propertiesBySalesTotal = 0,
+    this.propertiesByTelecallerAvailable = 0,
+    this.propertiesByTelecallerTotal = 0,
+    this.propertiesByAdminAvailable = 0,
+    this.propertiesByAdminTotal = 0,
+    this.totalPortfolio = 0,
+    this.rentedOutCount = 0,
+    this.soldOutCount = 0,
+    this.rentalCount = 0,
+    this.resaleCount = 0,
+    // Group B
+    this.manualLeadsTotal = 0,
+    this.manualLeadsBySales = 0,
+    this.manualLeadsByTelecaller = 0,
+    this.manualLeadsByAdmin = 0,
+    // Group C
+    this.activeRequirements = 0,
+    this.allocationTelecaller = 0,
+    this.allocationSelf = 0,
+    this.followupActive = 0,
+    this.refollowupActive = 0,
+    this.siteVisitsScheduled = 0,
+    this.siteVisitsDoneReq = 0,
+    this.salesRejectionCount = 0,
+    this.dealsWonCount = 0,
+    // Group D
+    this.qualifiedInterested = 0,
+    this.wantRentCount = 0,
+    this.wantListCount = 0,
+    this.wantResaleCount = 0,
+    this.activeInSalesCount = 0,
   });
 
   factory DashboardKpiCounts.fromJson(Map<String, dynamic> json) {
     return DashboardKpiCounts(
       availableInventory: (json['available_inventory'] as num?)?.toInt() ?? 0,
       totalLeads: (json['total_leads'] as num?)?.toInt() ?? 0,
+      allAvailableInventory: (json['all_available_inventory'] as num?)?.toInt() ??
+          (json['global_available_inventory'] as num?)?.toInt() ?? 0,
+      allTotalLeads: (json['all_total_leads'] as num?)?.toInt() ??
+          (json['global_total_leads'] as num?)?.toInt() ?? 0,
       telecallers: (json['telecallers'] as num?)?.toInt() ?? 0,
       leadsAllocated: (json['leads_allocated'] as num?)?.toInt() ?? (json['new_leads_allocated'] as num?)?.toInt() ?? 0,
       oldLeadsAllocated: (json['old_leads_allocated'] as num?)?.toInt() ?? 0,
@@ -617,9 +754,44 @@ class DashboardKpiCounts {
       dealWon: (json['deal_won'] as num?)?.toInt() ?? 0,
       salesUsers: (json['sales_users'] as num?)?.toInt() ?? 0,
       notInterested: (json['not_interested'] as num?)?.toInt() ?? 0,
+      cnr: (json['cnr'] as num?)?.toInt() ?? 0,
+      // Group A
+      propertiesBySalesAvailable: (json['properties_by_sales_available'] as num?)?.toInt() ?? 0,
+      propertiesBySalesTotal: (json['properties_by_sales_total'] as num?)?.toInt() ?? 0,
+      propertiesByTelecallerAvailable: (json['properties_by_telecaller_available'] as num?)?.toInt() ?? 0,
+      propertiesByTelecallerTotal: (json['properties_by_telecaller_total'] as num?)?.toInt() ?? 0,
+      propertiesByAdminAvailable: (json['properties_by_admin_available'] as num?)?.toInt() ?? 0,
+      propertiesByAdminTotal: (json['properties_by_admin_total'] as num?)?.toInt() ?? 0,
+      totalPortfolio: (json['total_portfolio'] as num?)?.toInt() ?? 0,
+      rentedOutCount: (json['rented_out_count'] as num?)?.toInt() ?? 0,
+      soldOutCount: (json['sold_out_count'] as num?)?.toInt() ?? 0,
+      rentalCount: (json['rental_count'] as num?)?.toInt() ?? 0,
+      resaleCount: (json['resale_count'] as num?)?.toInt() ?? 0,
+      // Group B
+      manualLeadsTotal: (json['manual_leads_total'] as num?)?.toInt() ?? 0,
+      manualLeadsBySales: (json['manual_leads_by_sales'] as num?)?.toInt() ?? 0,
+      manualLeadsByTelecaller: (json['manual_leads_by_telecaller'] as num?)?.toInt() ?? 0,
+      manualLeadsByAdmin: (json['manual_leads_by_admin'] as num?)?.toInt() ?? 0,
+      // Group C
+      activeRequirements: (json['active_requirements'] as num?)?.toInt() ?? 0,
+      allocationTelecaller: (json['allocation_telecaller'] as num?)?.toInt() ?? 0,
+      allocationSelf: (json['allocation_self'] as num?)?.toInt() ?? 0,
+      followupActive: (json['followup_active'] as num?)?.toInt() ?? 0,
+      refollowupActive: (json['refollowup_active'] as num?)?.toInt() ?? 0,
+      siteVisitsScheduled: (json['site_visits_scheduled'] as num?)?.toInt() ?? 0,
+      siteVisitsDoneReq: (json['site_visits_done_req'] as num?)?.toInt() ?? 0,
+      salesRejectionCount: (json['sales_rejection_count'] as num?)?.toInt() ?? 0,
+      dealsWonCount: (json['deals_won_count'] as num?)?.toInt() ?? 0,
+      // Group D
+      qualifiedInterested: (json['qualified_interested'] as num?)?.toInt() ?? 0,
+      wantRentCount: (json['want_rent_count'] as num?)?.toInt() ?? 0,
+      wantListCount: (json['want_list_count'] as num?)?.toInt() ?? 0,
+      wantResaleCount: (json['want_resale_count'] as num?)?.toInt() ?? 0,
+      activeInSalesCount: (json['active_in_sales_count'] as num?)?.toInt() ?? 0,
     );
   }
 }
+
 
 class DashboardKpisResponse {
   final List<KpiConfigItem> config;
