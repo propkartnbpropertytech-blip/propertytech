@@ -1102,7 +1102,19 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
                             senderLabel = null;
                           }
 
-                          return _buildMessageBubble(
+                          final bool showDateHeader;
+                          if (index == 0) {
+                            showDateHeader = true;
+                          } else {
+                            final prevMsg = _messages[index - 1];
+                            final prevDate = prevMsg.createdAt.toLocal();
+                            final currDate = msg.createdAt.toLocal();
+                            showDateHeader = prevDate.year != currDate.year ||
+                                prevDate.month != currDate.month ||
+                                prevDate.day != currDate.day;
+                          }
+
+                          final bubble = _buildMessageBubble(
                             msg,
                             isMe,
                             primaryColor,
@@ -1110,6 +1122,18 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
                             senderLabel: senderLabel,
                             currentUserRole: currentUserRole,
                           );
+
+                          if (showDateHeader) {
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _buildDateHeaderChip(msg.createdAt, isDark),
+                                bubble,
+                              ],
+                            );
+                          }
+                          return bubble;
                         },
                       ),
           ),
@@ -1377,15 +1401,52 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
     return const Color(0xFF7C3AED); // Purple for Sales
   }
 
-  String _formatTimeAgo(DateTime time) {
+  String _formatDynamicMessageDate(DateTime time) {
+    final localTime = time.toLocal();
     final now = DateTime.now();
-    final diff = now.difference(time.toLocal());
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final msgDate = DateTime(localTime.year, localTime.month, localTime.day);
 
-    if (diff.inMinutes < 1) return 'now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24) return '${diff.inHours}h';
-    if (diff.inDays == 1) return 'yesterday';
-    return DateFormat('MMM d').format(time.toLocal());
+    if (msgDate == today) {
+      return 'Today';
+    } else if (msgDate == yesterday) {
+      return 'Yesterday';
+    } else {
+      if (localTime.year == now.year) {
+        return DateFormat('MMM d').format(localTime);
+      } else {
+        return DateFormat('MMM d, yyyy').format(localTime);
+      }
+    }
+  }
+
+  String _formatTimeAgo(DateTime time) {
+    return _formatDynamicMessageDate(time);
+  }
+
+  Widget _buildDateHeaderChip(DateTime dateTime, bool isDark) {
+    final dateLabel = _formatDynamicMessageDate(dateTime);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            dateLabel,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildWallpaperBackground({

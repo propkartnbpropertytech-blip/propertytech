@@ -859,23 +859,25 @@ class _ModernTopBarState extends State<ModernTopBar> {
                         ),
                       ],
                     ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.add_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 38,
-                        height: 38,
-                      ),
-                      style: IconButton.styleFrom(
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    child: Builder(
+                      builder: (btnContext) => IconButton(
+                        icon: const Icon(
+                          Icons.add_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                         padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 38,
+                          height: 38,
+                        ),
+                        style: IconButton.styleFrom(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          padding: EdgeInsets.zero,
+                        ),
+                        onPressed: widget.onQuickAdd ?? () => _showQuickAddModal(btnContext),
+                        tooltip: 'Quick Add',
                       ),
-                      onPressed: widget.onQuickAdd ?? () => _showQuickAddModal(context),
-                      tooltip: 'Quick Add',
                     ),
                   ),
                 ),
@@ -1050,136 +1052,194 @@ class _ModernTopBarState extends State<ModernTopBar> {
     final isDark = themeManager.isDarkMode;
     final primaryColor = themeManager.primaryColor;
 
-    showModalBottomSheet(
+    final RenderBox? button = context.findRenderObject() as RenderBox?;
+    final RenderBox? overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+
+    RelativeRect position;
+    if (button != null && overlay != null) {
+      final buttonOrigin = button.localToGlobal(Offset.zero, ancestor: overlay);
+      final buttonSize = button.size;
+      position = RelativeRect.fromRect(
+        Rect.fromPoints(
+          buttonOrigin + Offset(0, buttonSize.height + 6),
+          buttonOrigin + Offset(buttonSize.width, buttonSize.height + 6),
+        ),
+        Offset.zero & overlay.size,
+      );
+    } else {
+      position = const RelativeRect.fromLTRB(100, 80, 20, 0);
+    }
+
+    showMenu<String>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      position: position,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
       ),
-      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+      items: [
+        PopupMenuItem<String>(
+          enabled: false,
+          height: 36,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ),
+        const PopupMenuDivider(height: 4),
+        PopupMenuItem<String>(
+          value: 'property',
+          child: Row(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.add_home_work_rounded,
+                  color: primaryColor,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Quick Actions',
+                    'Add New Property',
                     style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
                       color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
                     ),
                   ),
-                  IconButton(
-                    icon: Icon(
-                      Icons.close_rounded,
-                      size: 20,
+                  const SizedBox(height: 2),
+                  Text(
+                    'Create a rental or re-sale listing',
+                    style: TextStyle(
+                      fontSize: 11,
                       color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
                     ),
-                    onPressed: () => Navigator.pop(ctx),
                   ),
                 ],
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: primaryColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.add_home_work_rounded,
-                    color: primaryColor,
-                  ),
-                ),
-                title: Text(
-                  'Add New Property',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                  ),
-                ),
-                subtitle: Text(
-                  'Create a rental or re-sale listing',
-                  style: TextStyle(
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.go('/properties');
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.person_add_rounded,
-                    color: Color(0xFF3B82F6),
-                  ),
-                ),
-                title: Text(
-                  'Add New Lead / Requirement',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                  ),
-                ),
-                subtitle: Text(
-                  'Capture customer demand details',
-                  style: TextStyle(
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.go('/requirements');
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.calendar_month_rounded,
-                    color: Color(0xFF8B5CF6),
-                  ),
-                ),
-                title: Text(
-                  'Schedule Site Visit',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                  ),
-                ),
-                subtitle: Text(
-                  'Book client inspection appointment',
-                  style: TextStyle(
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.go('/dashboard');
-                },
               ),
             ],
           ),
         ),
-      ),
-    );
+        PopupMenuItem<String>(
+          value: 'requirement',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.person_add_rounded,
+                  color: Color(0xFF3B82F6),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Add New Lead / Requirement',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Capture customer demand details',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'visit',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.calendar_month_rounded,
+                  color: Color(0xFF8B5CF6),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Schedule Site Visit',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Book client inspection appointment',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (!context.mounted) return;
+      if (value == 'property') {
+        context.go('/properties');
+      } else if (value == 'requirement') {
+        context.go('/requirements');
+      } else if (value == 'visit') {
+        context.go('/dashboard');
+      }
+    });
   }
 }
 
