@@ -23,10 +23,17 @@ import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
 
 class TelecallerDashboardScreen extends StatelessWidget {
-  const TelecallerDashboardScreen({super.key});
+  final TelecallerDashboardBloc? bloc;
+  const TelecallerDashboardScreen({super.key, this.bloc});
 
   @override
   Widget build(BuildContext context) {
+    if (bloc != null) {
+      return BlocProvider<TelecallerDashboardBloc>.value(
+        value: bloc!,
+        child: const _TelecallerDashboardView(),
+      );
+    }
     return BlocProvider(
       create: (_) => TelecallerDashboardBloc()..add(TelecallerDashboardRequested()),
       child: const _TelecallerDashboardView(),
@@ -1190,7 +1197,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
           const SizedBox(height: 16),
 
           // Date & Lead Type Filter Bar above KPIs
-          _buildKpiFilterBar(Theme.of(context).brightness == Brightness.dark),
+          _buildMobileFilterBar(Theme.of(context).brightness == Brightness.dark),
           const SizedBox(height: 16),
 
           // KPIs Grid (8 metrics)
@@ -1218,23 +1225,58 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   }
 
   Widget _buildMobileNextLeadCard(BuildContext context, Map<String, dynamic>? next) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     if (next == null) {
-      return MobileCard(
-        title: 'Calling Queue',
-        subtitle: 'No pending leads in queue',
-        leading: CircleAvatar(
-          backgroundColor: CRMColors.primary.withValues(alpha: 0.1),
-          child: Icon(Icons.phone_in_talk_rounded, color: CRMColors.primary),
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E2430) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
         ),
-        trailing: SizedBox(
-          width: 130,
-          child: MobileActionButton.primary(
-            MobileAction(
-              label: 'Open Queue',
-              icon: Icons.arrow_forward_rounded,
-              onPressed: () => context.go('/telecaller/leads'),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: CRMColors.primary.withValues(alpha: 0.12),
+              child: Icon(Icons.phone_in_talk_rounded, color: CRMColors.primary, size: 20),
             ),
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Calling Queue',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'No pending leads in queue',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: () => context.go('/telecaller/leads'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
+              icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+              label: const Text('Open Queue', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+            ),
+          ],
         ),
       );
     }
@@ -1243,36 +1285,239 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     final phone = (next['phone'] ?? next['mobile'] ?? '').toString();
     final reqType = (next['lead_type'] ?? next['type'] ?? 'Requirement').toString();
 
-    return MobileCard(
-      title: name,
-      subtitle: phone.isNotEmpty ? phone : 'Next Lead to Call',
-      status: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(
-          color: const Color(0xFFEFF6FF),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
-          reqType,
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
-        ),
-      ),
-      leading: CircleAvatar(
-        radius: 20,
-        backgroundColor: const Color(0xFF059669).withValues(alpha: 0.12),
-        child: const Icon(Icons.phone_forwarded_rounded, color: Color(0xFF059669), size: 20),
-      ),
-      trailing: SizedBox(
-        width: 120,
-        child: MobileActionButton.primary(
-          MobileAction(
-            label: 'Call Lead',
-            icon: Icons.call_rounded,
-            onPressed: () => context.go('/telecaller/leads'),
-          ),
-        ),
-      ),
+    return InkWell(
       onTap: () => context.go('/telecaller/leads'),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E2430) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: const Color(0xFF059669).withValues(alpha: 0.12),
+              child: const Icon(Icons.phone_forwarded_rounded, color: Color(0xFF059669), size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 2,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          reqType,
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                        ),
+                      ),
+                      if (phone.isNotEmpty)
+                        Text(
+                          phone,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: () => context.go('/telecaller/leads'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF059669),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                minimumSize: const Size(0, 38),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
+              icon: const Icon(Icons.call_rounded, size: 16, color: Colors.white),
+              label: const Text(
+                'Call Lead',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileFilterBar(bool isDark) {
+    final primaryColor = CRMColors.primary;
+    final dateRangeText = _computeKpiDateRangeDisplay();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Row 1: Date Filter
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Date:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  height: 32,
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildFilterPill('Today', _kpiDateFilter == 'Today', () => _selectDateFilter('Today'), isDark),
+                      _buildFilterPill('Weekly', _kpiDateFilter == 'Weekly', () => _selectDateFilter('Weekly'), isDark),
+                      _buildFilterPill('Monthly', _kpiDateFilter == 'Monthly', () => _selectDateFilter('Monthly'), isDark),
+                      _buildFilterPill('Yearly', _kpiDateFilter == 'Yearly', () => _selectDateFilter('Yearly'), isDark),
+                      _buildFilterPill(
+                        _kpiDateFilter.startsWith('Custom') && _customStartDate != null
+                            ? '$_customStartDate ~ $_customEndDate'
+                            : 'Custom Range',
+                        _kpiDateFilter.startsWith('Custom'),
+                        () => _pickCustomDateRange(),
+                        isDark,
+                      ),
+                    ],
+                  ),
+                ),
+                if (dateRangeText.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: isDark ? 0.2 : 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: primaryColor.withValues(alpha: isDark ? 0.35 : 0.2),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.calendar_today_rounded, size: 12, color: primaryColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          dateRangeText,
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: primaryColor),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (_loadingKpis) ...[
+                  const SizedBox(width: 10),
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+                const SizedBox(width: 4),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Row 2: Lead Type Filter
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Type:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  height: 32,
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildFilterPill('Both', _kpiLeadType == 'Both', () => _selectLeadType('Both'), isDark),
+                      _buildFilterPill('Listing', _kpiLeadType == 'Listing', () => _selectLeadType('Listing'), isDark),
+                      _buildFilterPill('Requirement', _kpiLeadType == 'Requirement', () => _selectLeadType('Requirement'), isDark),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1374,16 +1619,21 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         return Wrap(
           spacing: 10,
           runSpacing: 10,
-          children: kpis.map((kpi) => SizedBox(
-            width: cardW,
-            child: _buildMobileKpiCard(context, kpi),
-          )).toList(),
+          children: kpis.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final kpi = entry.value;
+            final isLastOdd = idx == kpis.length - 1 && kpis.length.isOdd;
+            return SizedBox(
+              width: isLastOdd ? constraints.maxWidth : cardW,
+              child: _buildMobileKpiCard(context, kpi, isFullWidth: isLastOdd),
+            );
+          }).toList(),
         );
       },
     );
   }
 
-  Widget _buildMobileKpiCard(BuildContext context, _MobileKpiItem item) {
+  Widget _buildMobileKpiCard(BuildContext context, _MobileKpiItem item, {bool isFullWidth = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final color = item.accentColor ?? CRMColors.primary;
 
@@ -1440,6 +1690,12 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   ],
                 ),
               ),
+              if (isFullWidth)
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: isDark ? Colors.grey.shade500 : const Color(0xFF94A3B8),
+                  size: 20,
+                ),
             ],
           ),
         ),
@@ -1542,12 +1798,13 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                         separatorBuilder: (context, index) => const SizedBox(height: 10),
                         itemBuilder: (context, i) {
                           final fu = pagedFollowups[i];
+                          final isDark = Theme.of(context).brightness == Brightness.dark;
                           return Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
+                              color: isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
                             ),
                             child: LayoutBuilder(
                               builder: (context, constraints) {
@@ -1557,7 +1814,11 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                   children: [
                                     Text(
                                       fu.clientName,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                      ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -1582,14 +1843,14 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                     const SizedBox(height: 4),
                                     Text(
                                       DateFormat('EEE, d MMM • h:mm a').format(fu.scheduledAt),
-                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                      style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
                                     ),
                                     if (fu.mobile.isNotEmpty)
-                                      Text(fu.mobile, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                      Text(fu.mobile, style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600)),
                                     if (fu.remarks.isNotEmpty)
                                       Text(
                                         fu.remarks,
-                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
+                                        style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade300 : Colors.grey.shade700, fontStyle: FontStyle.italic),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -1608,6 +1869,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                           if (await canLaunchUrl(uri)) await launchUrl(uri);
                                         },
                                       ),
+                                      const SizedBox(width: 4),
                                       _compactIconButton(
                                         icon: Icons.chat_outlined,
                                         color: const Color(0xFF25D366),
@@ -1618,10 +1880,11 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                           if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
                                         },
                                       ),
+                                      const SizedBox(width: 4),
                                     ],
                                     _compactIconButton(
                                       icon: Icons.arrow_forward_ios_rounded,
-                                      color: Colors.grey,
+                                      color: isDark ? Colors.grey.shade400 : Colors.grey,
                                       tooltip: 'Open in Follow-ups tab',
                                       onPressed: () => context.go('/campaign/leads?view=followups'),
                                     ),
@@ -1631,7 +1894,109 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                   return Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      details,
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              fu.clientName,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14.5,
+                                                color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Wrap(
+                                            spacing: 6,
+                                            children: [
+                                              if (fu.isToday)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFFEF3C7),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: const Text('Today', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                                                ),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFEFF6FF),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(fu.leadType, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.access_time_rounded, size: 13, color: Color(0xFFD97706)),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            DateFormat('EEE, d MMM • h:mm a').format(fu.scheduledAt),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (fu.mobile.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.phone_outlined, size: 13, color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B)),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              fu.mobile,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                      if (fu.remarks.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                          decoration: BoxDecoration(
+                                            color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Icon(Icons.format_quote_rounded, size: 13, color: isDark ? Colors.grey.shade500 : const Color(0xFF94A3B8)),
+                                              const SizedBox(width: 4),
+                                              Expanded(
+                                                child: Text(
+                                                  fu.remarks,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: isDark ? Colors.grey.shade300 : const Color(0xFF334155),
+                                                    fontStyle: FontStyle.italic,
+                                                  ),
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 8),
                                       Align(alignment: Alignment.centerRight, child: actions),
                                     ],
                                   );
@@ -1734,52 +2099,139 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   final dt = DateTime.tryParse(lead['transferredAt'].toString());
                   if (dt != null) timeStr = DateFormat('d MMM, h:mm a').format(dt.toLocal());
                 }
+                final isDark = Theme.of(context).brightness == Brightness.dark;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Row 1: Index pill + Name + Lead Type badge
                         Row(
                           children: [
-                            Text('#$index', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '#$index',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.grey.shade300 : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 clientName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                leadType,
+                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(phone.isEmpty ? 'No phone' : phone, style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                         const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
+                        // Row 2: Phone + Transferred to
+                        Row(
                           children: [
-                            Text(leadType, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
-                            Text('· $transferredTo', style: const TextStyle(fontSize: 12, color: Color(0xFF1E293B))),
+                            if (phone.isNotEmpty) ...[
+                              Icon(Icons.phone_outlined, size: 13, color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B)),
+                              const SizedBox(width: 4),
+                              Text(
+                                phone,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDark ? Colors.grey.shade400 : const Color(0xFF475569),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            const Icon(Icons.person_outline_rounded, size: 14, color: Color(0xFF059669)),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                transferredTo,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(timeStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () => _showTransferRemarkDialog(context, clientName, remarks, transferredTo, timeStr),
-                            child: const Text('View remarks'),
-                          ),
+                        const SizedBox(height: 8),
+                        // Row 3: Timestamp & View Remarks button
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.access_time_rounded, size: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                                const SizedBox(width: 4),
+                                Text(
+                                  timeStr,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            InkWell(
+                              onTap: () => _showTransferRemarkDialog(context, clientName, remarks, transferredTo, timeStr),
+                              borderRadius: BorderRadius.circular(6),
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.chat_bubble_outline_rounded, size: 13, color: Color(0xFF059669)),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'View remarks',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF059669),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -2383,14 +2835,21 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     required Color color,
     required String tooltip,
     required VoidCallback onPressed,
+    Color? backgroundColor,
   }) {
-    return IconButton(
-      icon: Icon(icon, size: 18, color: color),
-      tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-      onPressed: onPressed,
+    return Container(
+      decoration: BoxDecoration(
+        color: backgroundColor ?? color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: IconButton(
+        icon: Icon(icon, size: 17, color: color),
+        tooltip: tooltip,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+        onPressed: onPressed,
+      ),
     );
   }
 

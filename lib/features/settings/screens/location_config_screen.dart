@@ -10,6 +10,8 @@ import '../../properties/models/property_model.dart';
 import '../../properties/repository/properties_repository.dart';
 import '../../properties/services/properties_service.dart';
 import '../../../core/storage/local_repositories.dart';
+import '../../../core/design_system/tokens/app_breakpoints.dart';
+import '../../../core/design_system/mobile/mobile_layout.dart';
 
 class LocationConfigScreen extends StatefulWidget {
   const LocationConfigScreen({super.key});
@@ -1809,16 +1811,22 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Section 1: Regional Zones
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: CRMSpacing.m,
+            runSpacing: CRMSpacing.s,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Regional Zones & Hierarchies', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-                  const SizedBox(height: 2),
-                  Text('Group localities into dynamic regional zones (e.g., West Ahmedabad)', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-                ],
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Regional Zones & Hierarchies', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                    const SizedBox(height: 2),
+                    Text('Group localities into dynamic regional zones (e.g., West Ahmedabad)', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                  ],
+                ),
               ),
               CRMButton(
                 label: 'Add New Zone',
@@ -1868,7 +1876,16 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                     ),
                     title: Row(
                       children: [
-                        Text(name, style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context))),
+                        Flexible(
+                          child: Text(
+                            name,
+                            style: CRMTypography.bodyMedium.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: CRMColors.textOf(context),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
@@ -1887,7 +1904,15 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                       ],
                     ),
                     subtitle: Text('$cityName • $areaCount localities assigned', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-                    trailing: Text('${z['slug'] ?? ''}', style: CRMTypography.caption.copyWith(color: CRMColors.textMutedOf(context))),
+                    trailing: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 100),
+                      child: Text(
+                        '${z['slug'] ?? ''}',
+                        style: CRMTypography.caption.copyWith(color: CRMColors.textMutedOf(context)),
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
                   ),
                 );
               },
@@ -1896,16 +1921,22 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
           const SizedBox(height: CRMSpacing.xl),
 
           // Section 2: Verified Localities & Aliases
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: CRMSpacing.m,
+            runSpacing: CRMSpacing.s,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Verified Locality Aliases', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-                  const SizedBox(height: 2),
-                  Text('Normalize spelling variations (e.g. Bodak Dev → Bodakdev, West Amdavad → West Ahmedabad)', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-                ],
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Verified Locality Aliases', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                    const SizedBox(height: 2),
+                    Text('Normalize spelling variations (e.g. Bodak Dev → Bodakdev, West Amdavad → West Ahmedabad)', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+                  ],
+                ),
               ),
               CRMButton(
                 label: 'Add Alias',
@@ -1948,12 +1979,13 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 2),
                     leading: Icon(Icons.spellcheck_rounded, size: 18, color: CRMColors.primary),
-                    title: Row(
+                    title: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
                       children: [
                         Text(alias, style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context))),
-                        const SizedBox(width: 8),
                         Icon(Icons.arrow_forward_rounded, size: 14, color: CRMColors.textSecondaryOf(context)),
-                        const SizedBox(width: 8),
                         Text(areaName, style: CRMTypography.bodyMedium.copyWith(color: CRMColors.primary, fontWeight: FontWeight.w600)),
                       ],
                     ),
@@ -1977,41 +2009,59 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
 
   @override
   Widget build(BuildContext context) {
+    final inShell = MobileShellScope.isInShell(context);
+    final isMobile = CRMBreakpoints.isPhone(context);
+
+    final tabBar = TabBar(
+      controller: _tabController,
+      isScrollable: isMobile,
+      tabAlignment: isMobile ? TabAlignment.start : null,
+      labelColor: CRMColors.primary,
+      unselectedLabelColor: CRMColors.textSecondaryOf(context),
+      indicatorColor: CRMColors.primary,
+      tabs: const [
+        Tab(icon: Icon(Icons.location_city_rounded), text: 'Cities'),
+        Tab(icon: Icon(Icons.map_outlined), text: 'Areas / Micro-markets'),
+        Tab(icon: Icon(Icons.hub_outlined), text: 'Zones & Aliases'),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text(
-          'Location Configurations',
-          style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: CRMColors.cardBgOf(context),
-        elevation: 0.5,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded, color: CRMColors.textOf(context)),
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            } else {
-              context.go('/settings');
-            }
-          },
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: CRMColors.primary,
-          unselectedLabelColor: CRMColors.textSecondaryOf(context),
-          indicatorColor: CRMColors.primary,
-          tabs: const [
-            Tab(icon: Icon(Icons.location_city_rounded), text: 'Cities'),
-            Tab(icon: Icon(Icons.map_outlined), text: 'Areas / Micro-markets'),
-            Tab(icon: Icon(Icons.hub_outlined), text: 'Zones & Aliases'),
-          ],
-        ),
-      ),
+      appBar: inShell
+          ? PreferredSize(
+              preferredSize: Size.fromHeight(tabBar.preferredSize.height),
+              child: Container(
+                color: CRMColors.cardBgOf(context),
+                child: tabBar,
+              ),
+            )
+          : AppBar(
+              title: Text(
+                'Location Configurations',
+                style: CRMTypography.sectionTitle.copyWith(
+                  color: CRMColors.textOf(context),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              backgroundColor: CRMColors.cardBgOf(context),
+              elevation: 0.5,
+              leading: IconButton(
+                icon: Icon(Icons.arrow_back_rounded, color: CRMColors.textOf(context)),
+                onPressed: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  } else {
+                    context.go('/settings');
+                  }
+                },
+              ),
+              bottom: tabBar,
+            ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Padding(
-              padding: const EdgeInsets.all(CRMSpacing.l),
+              padding: EdgeInsets.all(isMobile ? CRMSpacing.m : CRMSpacing.l),
               child: TabBarView(
                 controller: _tabController,
                 children: [

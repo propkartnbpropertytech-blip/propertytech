@@ -1048,6 +1048,79 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
   }
 
   Widget _buildTopHeader(Color cardBg, Color textColor, Color subColor, Color borderColor) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    if (isMobile) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: borderColor)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: ThemeManager().primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.dashboard_customize_outlined, color: ThemeManager().primaryColor, size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'KPI Registry & No-Code Builder',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textColor),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Centralized metrics registry and guided database mappings',
+                        style: TextStyle(fontSize: 11, color: subColor),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                if (_isSaving)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  tooltip: 'Refresh Registry',
+                  onPressed: _loadAll,
+                ),
+              ],
+            ),
+            if (_activeTabIndex == 0) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('+ Add KPI'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  onPressed: () {
+                    _resetBuilder();
+                    setState(() => _activeTabIndex = 1);
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
@@ -1292,11 +1365,13 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
     } else {
       tableWidget = SingleChildScrollView(
         scrollDirection: Axis.vertical,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 1100),
-            child: DataTable(
+        child: Scrollbar(
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 1100),
+              child: DataTable(
               columnSpacing: 18,
               headingRowColor: WidgetStateProperty.all(
                 isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
@@ -1402,8 +1477,11 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
             ),
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
+
+    final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Column(
       mainAxisSize: hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
@@ -1416,57 +1494,143 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
             color: cardBg,
             border: Border(bottom: BorderSide(color: borderColor)),
           ),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: 240,
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Search KPIs...',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    isDense: true,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 600;
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Search KPIs...',
+                        prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        isDense: true,
+                      ),
+                      onChanged: (val) {
+                        setState(() => _searchQuery = val);
+                        _loadAll();
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButton<String>(
+                            isExpanded: true,
+                            value: _selectedPageFilter,
+                            underline: const SizedBox(),
+                            items: ['All', ..._allPages].map((p) => DropdownMenuItem(value: p, child: Text(p, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() => _selectedPageFilter = val);
+                                _loadAll();
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButton<String>(
+                            isExpanded: true,
+                            value: _selectedRoleFilter,
+                            underline: const SizedBox(),
+                            items: const [
+                              DropdownMenuItem(value: 'All', child: Text('All Roles', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+                              DropdownMenuItem(value: 'Admin', child: Text('Admin', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+                              DropdownMenuItem(value: 'Telecaller', child: Text('Telecaller', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+                              DropdownMenuItem(value: 'Sales', child: Text('Sales User', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() => _selectedRoleFilter = val);
+                                _loadAll();
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }
+              return Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 240,
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Search KPIs...',
+                        prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        isDense: true,
+                      ),
+                      onChanged: (val) {
+                        setState(() => _searchQuery = val);
+                        _loadAll();
+                      },
+                    ),
                   ),
-                  onChanged: (val) {
-                    setState(() => _searchQuery = val);
-                    _loadAll();
-                  },
-                ),
-              ),
-              DropdownButton<String>(
-                value: _selectedPageFilter,
-                underline: const SizedBox(),
-                items: ['All', ..._allPages].map((p) => DropdownMenuItem(value: p, child: Text(p, style: const TextStyle(fontSize: 13)))).toList(),
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _selectedPageFilter = val);
-                    _loadAll();
-                  }
-                },
-              ),
-              DropdownButton<String>(
-                value: _selectedRoleFilter,
-                underline: const SizedBox(),
-                items: const [
-                  DropdownMenuItem(value: 'All', child: Text('All Roles', style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(value: 'Admin', child: Text('Admin', style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(value: 'Telecaller', child: Text('Telecaller', style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(value: 'Sales', child: Text('Sales User', style: TextStyle(fontSize: 13))),
+                  DropdownButton<String>(
+                    value: _selectedPageFilter,
+                    underline: const SizedBox(),
+                    items: ['All', ..._allPages].map((p) => DropdownMenuItem(value: p, child: Text(p, style: const TextStyle(fontSize: 13)))).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _selectedPageFilter = val);
+                        _loadAll();
+                      }
+                    },
+                  ),
+                  DropdownButton<String>(
+                    value: _selectedRoleFilter,
+                    underline: const SizedBox(),
+                    items: const [
+                      DropdownMenuItem(value: 'All', child: Text('All Roles', style: TextStyle(fontSize: 13))),
+                      DropdownMenuItem(value: 'Admin', child: Text('Admin', style: TextStyle(fontSize: 13))),
+                      DropdownMenuItem(value: 'Telecaller', child: Text('Telecaller', style: TextStyle(fontSize: 13))),
+                      DropdownMenuItem(value: 'Sales', child: Text('Sales User', style: TextStyle(fontSize: 13))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _selectedRoleFilter = val);
+                        _loadAll();
+                      }
+                    },
+                  ),
                 ],
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _selectedRoleFilter = val);
-                    _loadAll();
-                  }
-                },
-              ),
-            ],
+              );
+            },
           ),
         ),
+
+        if (isMobile)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            color: ThemeManager().primaryColor.withValues(alpha: 0.08),
+            child: Row(
+              children: [
+                Icon(Icons.swipe_left_rounded, size: 16, color: ThemeManager().primaryColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Swipe horizontally to view all columns & actions',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: ThemeManager().primaryColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
         // Registry Table or Empty State
         if (hasBoundedHeight)

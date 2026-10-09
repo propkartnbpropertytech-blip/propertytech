@@ -43,7 +43,7 @@ class CampaignSubshellHeader extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 24,
+                fontSize: screenWidth < 500 ? 20 : 24,
                 fontWeight: FontWeight.bold,
                 letterSpacing: -0.5,
                 color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
@@ -55,7 +55,7 @@ class CampaignSubshellHeader extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: screenWidth < 500 ? 12 : 13,
                 color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
               ),
             ),

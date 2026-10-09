@@ -2292,16 +2292,41 @@ class IntegrationService extends ChangeNotifier {
     final role = (RoleGuard.currentUser?.role ?? '').toLowerCase().trim();
     if (role != 'telecaller') return true;
     final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
-    if (myId == null || myId.isEmpty) return true;
-    if (followup.telecallerId != null && followup.telecallerId!.trim().toLowerCase() == myId) {
-      return true;
+    if (myId == null || myId.isEmpty) return false;
+
+    // 1. Direct creator check: If createdBy is present and not myId, return false
+    final creator = followup.createdBy?.trim().toLowerCase();
+    if (creator != null && creator.isNotEmpty && creator != myId) {
+      return false;
     }
+
+    // 2. Check raw_json _followup creator if present
     final local = getLeadById(followup.leadId);
-    final assigned = (local?.assignedTelecallerId ?? followup.lead?.assignedTelecallerId)
-        ?.trim()
-        .toLowerCase();
-    if (assigned == null || assigned.isEmpty) return true;
-    return assigned == myId;
+    final rawFu = local?.rawJson['_followup'];
+    if (rawFu is Map) {
+      final fuCreator = (rawFu['created_by'] ?? rawFu['interacted_by'])?.toString().trim().toLowerCase();
+      if (fuCreator != null && fuCreator.isNotEmpty && fuCreator != myId) {
+        return false;
+      }
+    }
+
+    // 3. If lead is assigned to Sales / handed to Salesperson, Telecaller must not see follow-ups created by Sales
+    final assignedSales = (local?.assignedTo ?? followup.lead?.assignedTo)?.trim();
+    if (assignedSales != null && assignedSales.isNotEmpty && assignedSales.toLowerCase() != myId && assignedSales.toLowerCase() != 'unassigned') {
+      if (creator != myId) {
+        return false;
+      }
+    }
+
+    // 4. Check telecaller_id if createdBy was missing
+    if (creator == null || creator.isEmpty) {
+      final tcId = followup.telecallerId?.trim().toLowerCase();
+      if (tcId != null && tcId.isNotEmpty && tcId != myId) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   Future<List<CampaignFollowupModel>> getUnifiedFollowups({bool forceRefresh = false, String? leadType}) async {
@@ -2334,8 +2359,22 @@ class IntegrationService extends ChangeNotifier {
           !leadFollowupIds.contains(lead.id)) {
         if (currentUser != null && currentUser.role == 'Telecaller') {
           final myId = currentUser.id.trim().toLowerCase();
+          final rawFu = lead.rawJson['_followup'];
+          String? fuCreator;
+          if (rawFu is Map) {
+            fuCreator = (rawFu['created_by'] ?? rawFu['interacted_by'] ?? rawFu['status_updated_by'])?.toString().trim().toLowerCase();
+          }
+          if (fuCreator != null && fuCreator.isNotEmpty && fuCreator != myId) {
+            continue;
+          }
+          final assignedSales = lead.assignedTo?.trim().toLowerCase();
+          if (assignedSales != null && assignedSales.isNotEmpty && assignedSales != 'unassigned' && assignedSales != myId) {
+            if (fuCreator != myId) {
+              continue;
+            }
+          }
           final assigned = lead.assignedTelecallerId?.trim().toLowerCase();
-          if (assigned != null && assigned.isNotEmpty && assigned != myId) {
+          if (assigned != null && assigned.isNotEmpty && assigned != myId && fuCreator != myId) {
             continue;
           }
         }

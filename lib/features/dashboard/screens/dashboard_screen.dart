@@ -1454,12 +1454,11 @@ class _DashboardScreenState extends State<DashboardScreen>
           cols = cards.length >= 8 ? 4 : 3;
         } else if (availableWidth >= 700) {
           cols = 3;
-        } else if (availableWidth >= 360) {
-          cols = 2;
         } else {
-          cols = 1;
+          cols = 2; // Always 2 columns on mobile screen (2 KPIs per row)
         }
 
+        final double horizontalPadding = availableWidth < 360 ? 3.0 : 5.0;
         final List<Widget> rows = [];
         for (int i = 0; i < cards.length; i += cols) {
           final rowCards = cards.sublist(i, (i + cols).clamp(0, cards.length));
@@ -1468,7 +1467,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             rowChildren.add(
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                   child: c,
                 ),
               ),
@@ -1476,10 +1475,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           }
           while (rowChildren.length < cols) {
             rowChildren.add(
-              const Expanded(
+              Expanded(
                 child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 5),
-                  child: SizedBox.shrink(),
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                  child: const SizedBox.shrink(),
                 ),
               ),
             );

@@ -31,6 +31,7 @@ class _StatCardState extends State<StatCard> {
     final isDark = ThemeManager().isDarkMode;
     final screenWidth = MediaQuery.of(context).size.width;
     final bool compact = widget.isCompact || screenWidth < 600;
+    final bool isVeryNarrow = screenWidth < 360;
 
     return Semantics(
       button: widget.onTap != null,
@@ -46,8 +47,8 @@ class _StatCardState extends State<StatCard> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: EdgeInsets.symmetric(
-            horizontal: compact ? 10 : 14,
-            vertical: compact ? 9 : 11,
+            horizontal: compact ? (isVeryNarrow ? 7 : 10) : 14,
+            vertical: compact ? (isVeryNarrow ? 8 : 9) : 11,
           ),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E293B) : Colors.white,
@@ -88,7 +89,7 @@ class _StatCardState extends State<StatCard> {
 
               // Content inside card
               Padding(
-                padding: EdgeInsets.only(left: compact ? 8 : 10),
+                padding: EdgeInsets.only(left: compact ? (isVeryNarrow ? 6 : 8) : 10),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -105,7 +106,7 @@ class _StatCardState extends State<StatCard> {
                               color: isDark
                                   ? const Color(0xFF94A3B8)
                                   : const Color(0xFF68738A),
-                              fontSize: compact ? 11 : 12,
+                              fontSize: compact ? (isVeryNarrow ? 10 : 11) : 12,
                               fontWeight: FontWeight.w500,
                               letterSpacing: -0.1,
                             ),
@@ -119,7 +120,7 @@ class _StatCardState extends State<StatCard> {
                               color: isDark
                                   ? const Color(0xFFF8FAFC)
                                   : const Color(0xFF14213D),
-                              fontSize: compact ? 18 : 22,
+                              fontSize: compact ? (isVeryNarrow ? 16 : 18) : 22,
                               fontWeight: FontWeight.bold,
                               letterSpacing: -0.6,
                               fontFeatures: const [FontFeature.tabularFigures()],
@@ -129,12 +130,12 @@ class _StatCardState extends State<StatCard> {
                       ),
                     ),
 
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
 
                     // Circular tinted icon background
                     Container(
-                      width: compact ? 32 : 38,
-                      height: compact ? 32 : 38,
+                      width: compact ? (isVeryNarrow ? 26 : 32) : 38,
+                      height: compact ? (isVeryNarrow ? 26 : 32) : 38,
                       decoration: BoxDecoration(
                         color: widget.accentColor.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
@@ -142,7 +143,7 @@ class _StatCardState extends State<StatCard> {
                       child: Icon(
                         widget.icon,
                         color: widget.accentColor,
-                        size: compact ? 16 : 19,
+                        size: compact ? (isVeryNarrow ? 14 : 16) : 19,
                       ),
                     ),
                   ],

@@ -819,7 +819,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   final List<String> _selectedConfigIds = [];
   String? _selectedCategoryId;
   String _selectedStatus = "All";
-  String _selectedUserFilterId = "All";
+  String _selectedSalesFilterId = "All";
+  List<String> _selectedTelecallerFilterIds = [];
+  String get _selectedUserFilterId => _selectedSalesFilterId;
+  set _selectedUserFilterId(String value) => _selectedSalesFilterId = value;
   String _selectedReadiness = "All";
   LeadDateFilterPreset _selectedLeadDateFilter = LeadDateFilterPreset.allTime;
   DateTime? _customStartDate;
@@ -1339,7 +1342,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _selectedConfigIds.clear();
       _selectedCategoryId = null;
       _selectedStatus = "All";
-      _selectedUserFilterId = "All";
+      _selectedSalesFilterId = "All";
+      _selectedTelecallerFilterIds.clear();
       _selectedReadiness = "All";
       _selectedLeadDateFilter = LeadDateFilterPreset.allTime;
       _customStartDate = null;
@@ -2008,12 +2012,60 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
   }
 
+  List<users_model.UserModel> _getAllKnownUsers() {
+    try {
+      final usersState = context.read<UsersBloc>().state;
+      return usersState is UsersLoaded
+          ? _mergedAssignUsers(usersState.users)
+          : _assignUsers;
+    } catch (_) {
+      return _assignUsers;
+    }
+  }
+
+  bool _matchesSalesAndTelecallerFilters(
+    RequirementModel r, {
+    required UserModel? currentUser,
+    List<users_model.UserModel>? knownUsers,
+  }) {
+    final salesFilterActive = _selectedSalesFilterId != "All" && _selectedSalesFilterId.isNotEmpty;
+    final telecallerFilterActive = _selectedTelecallerFilterIds.isNotEmpty;
+
+    if (!salesFilterActive && !telecallerFilterActive) {
+      return true;
+    }
+
+    final allKnownUsers = knownUsers ?? _getAllKnownUsers();
+
+    if (salesFilterActive) {
+      final selectedSales = allKnownUsers.firstWhereOrNull((u) => u.id == _selectedSalesFilterId);
+      if (selectedSales == null) return false;
+      final matchesSales = currentUser != null && currentUser.role == 'Telecaller'
+          ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedSales, currentUser)
+          : TeamUserVisibility.requirementBelongsToUser(r, selectedSales);
+      if (!matchesSales) return false;
+    }
+
+    if (telecallerFilterActive) {
+      final selectedTelecallers = allKnownUsers
+          .where((u) => _selectedTelecallerFilterIds.contains(u.id))
+          .toList();
+      if (selectedTelecallers.isEmpty) return false;
+      final matchesTelecaller = selectedTelecallers.any(
+        (tc) => TeamUserVisibility.requirementBelongsToUser(r, tc),
+      );
+      if (!matchesTelecaller) return false;
+    }
+
+    return true;
+  }
+
   List<RequirementModel> _getMobileFilteredRequirements(UserModel? currentUser) {
     final rawLoadedList = _cachedRequirements;
     if (rawLoadedList.isEmpty) return [];
 
     final query = _searchController.text.trim().toLowerCase();
-    final userFilterActive = _selectedUserFilterId != "All" && _selectedUserFilterId.isNotEmpty;
+    final userFilterActive = (_selectedSalesFilterId != "All" && _selectedSalesFilterId.isNotEmpty) || _selectedTelecallerFilterIds.isNotEmpty;
     final bool isWonTab = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
     final bool viewAllRejected = _activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser);
     final bool unassignFilter = !viewAllRejected &&
@@ -2021,14 +2073,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         _selectedStatus == 'Unassign' &&
         _canSeeUnassignStatusFilter(currentUser);
 
-    users_model.UserModel? selectedUser;
-    if (_activeMainTab != 'Leads Added by Me' && userFilterActive) {
-      try {
-        final usersState = context.read<UsersBloc>().state;
-        final allKnownUsers = usersState is UsersLoaded ? _mergedAssignUsers(usersState.users) : _assignUsers;
-        selectedUser = allKnownUsers.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
-      } catch (_) {}
-    }
+    final allKnownUsers = _getAllKnownUsers();
 
     final filtered = rawLoadedList.where((r) {
       if (_activeMainTab == 'Leads Added by Me') {
@@ -2132,14 +2177,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           (!isUnhandledAssigned && _selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')))));
       if (!matchesStatus) return false;
 
-      bool matchesUser = true;
-      if (_activeMainTab != 'Leads Added by Me' && userFilterActive) {
-        matchesUser = selectedUser != null &&
-            (currentUser != null && currentUser.role == 'Telecaller'
-                ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedUser, currentUser)
-                : TeamUserVisibility.requirementBelongsToUser(r, selectedUser));
+      if (_activeMainTab != 'Leads Added by Me') {
+        if (!_matchesSalesAndTelecallerFilters(r, currentUser: currentUser, knownUsers: allKnownUsers)) {
+          return false;
+        }
       }
-      if (!matchesUser) return false;
 
       if (query.isNotEmpty) {
         final clientName = r.clientName.toLowerCase();
@@ -2169,12 +2211,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
     if (_activeMainTab == 'Rejected') {
       filtered.sort((a, b) {
-        final da = _rejectedAt(a) ?? a.createdAt;
-        final db = _rejectedAt(b) ?? b.createdAt;
+        final da = _rejectedAt(a) ?? a.salesAssignedAt ?? a.createdAt;
+        final db = _rejectedAt(b) ?? b.salesAssignedAt ?? b.createdAt;
         return db.compareTo(da);
       });
     } else {
-      filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      filtered.sort((a, b) {
+        final da = a.salesAssignedAt ?? a.createdAt;
+        final db = b.salesAssignedAt ?? b.createdAt;
+        return db.compareTo(da);
+      });
     }
 
     return filtered;
@@ -3311,10 +3357,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           const SizedBox(width: CRMSpacing.s),
                         ],
                         Expanded(
-                          child: _buildUserFilterDropdown(isMobile: isMobile),
+                          child: _buildSalesFilterDropdown(isMobile: isMobile),
                         ),
                       ],
                     ),
+                    const SizedBox(height: CRMSpacing.s),
+                    _buildTelecallerFilterDropdown(isMobile: isMobile),
                     const SizedBox(height: CRMSpacing.s),
                     CRMButton(
                       label: "Clear Filters",
@@ -3367,7 +3415,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           _triggerFetch();
                         },
                       ),
-                    _buildUserFilterDropdown(isMobile: isMobile),
+                    _buildSalesFilterDropdown(isMobile: isMobile),
+                    _buildTelecallerFilterDropdown(isMobile: isMobile),
                     CRMButton(
                       label: "Clear Filters",
                       variant: CRMButtonVariant.outline,
@@ -3467,7 +3516,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   int _getLeadDateFilterCount(List<RequirementModel> baseList, LeadDateFilterPreset preset) {
-    final selectedUser = _selectedUserForDateCounts();
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
 
@@ -3496,10 +3544,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
       }
 
-      if (selectedUser != null &&
-          !(_activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser)) &&
-          !TeamUserVisibility.requirementBelongsToUser(req, selectedUser)) {
-        return false;
+      if (_activeMainTab != 'Leads Added by Me') {
+        if (!_matchesSalesAndTelecallerFilters(req, currentUser: currentUser)) {
+          return false;
+        }
       }
 
       if (_selectedCategoryId != null && req.categoryId != _selectedCategoryId) {
@@ -3793,7 +3841,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  Widget _buildUserFilterDropdown({required bool isMobile}) {
+  Widget _buildSalesFilterDropdown({required bool isMobile}) {
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
     if (currentUser == null || !TeamUserVisibility.canUseFilter(currentUser.role)) {
@@ -3805,35 +3853,35 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         final rawUsers = state is UsersLoaded
             ? _mergedAssignUsers(state.users)
             : _assignUsers;
-        final users = TeamUserVisibility.visibleUsers(
+        final salesUsers = TeamUserVisibility.visibleSalesUsers(
           users: rawUsers,
           currentRole: currentUser.role,
           currentUserId: currentUser.id,
         );
         final items = <DropdownMenuItem<String>>[
-          const DropdownMenuItem(value: 'All', child: Text('All Users')),
-          ...users.map(
+          const DropdownMenuItem(value: 'All', child: Text('All Sales')),
+          ...salesUsers.map(
             (u) => DropdownMenuItem(
               value: u.id,
               child: Text(
-                '${u.fullName} (${u.roleName})',
+                u.roleName.isNotEmpty ? '${u.fullName} (${u.roleName})' : u.fullName,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
         ];
-        final value = items.any((i) => i.value == _selectedUserFilterId)
-            ? _selectedUserFilterId
+        final value = items.any((i) => i.value == _selectedSalesFilterId)
+            ? _selectedSalesFilterId
             : 'All';
 
         return _buildDropdownFilter<String>(
-          label: 'User',
+          label: 'Sales',
           value: value,
           items: items,
           isMobile: isMobile,
           onChanged: (val) {
             setState(() {
-              _selectedUserFilterId = val ?? 'All';
+              _selectedSalesFilterId = val ?? 'All';
               _currentPage = 1;
             });
             _triggerFetch();
@@ -3842,6 +3890,54 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       },
     );
   }
+
+  Widget _buildTelecallerFilterDropdown({required bool isMobile}) {
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    if (currentUser == null || !TeamUserVisibility.canUseFilter(currentUser.role)) {
+      return const SizedBox.shrink();
+    }
+
+    return BlocBuilder<UsersBloc, UsersState>(
+      builder: (context, state) {
+        final rawUsers = state is UsersLoaded
+            ? _mergedAssignUsers(state.users)
+            : _assignUsers;
+        final telecallerUsers = TeamUserVisibility.visibleTelecallerUsers(
+          users: rawUsers,
+          currentRole: currentUser.role,
+          currentUserId: currentUser.id,
+        );
+        if (telecallerUsers.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final lookupItems = telecallerUsers.map(
+          (u) => LookupItem(id: u.id, name: u.fullName),
+        ).toList();
+
+        return SizedBox(
+          width: isMobile ? double.infinity : 200,
+          child: CRMMultiSelectDropdown(
+            label: 'Telecaller',
+            allLabel: 'All Telecallers',
+            selectedIds: _selectedTelecallerFilterIds,
+            items: lookupItems,
+            onChanged: (vals) {
+              setState(() {
+                _selectedTelecallerFilterIds = vals;
+                _currentPage = 1;
+              });
+              _triggerFetch();
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildUserFilterDropdown({required bool isMobile}) =>
+      _buildSalesFilterDropdown(isMobile: isMobile);
 
   Widget _buildDropdownFilter<T>({
     required String label,
@@ -4600,14 +4696,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   bool _isUserCreator(RequirementModel r, UserModel user) {
-    if (r.createdBy == user.id) return true;
+    if (isRequirementUserCreator(r, user)) return true;
+    final addedName = _getAddedByName(r).trim().toLowerCase();
     final uName = user.fullName.trim().toLowerCase();
-    if (uName.isNotEmpty) {
-      if (r.createdBy != null && r.createdBy!.trim().toLowerCase() == uName) return true;
-      if (r.creatorName != null && r.creatorName!.trim().toLowerCase() == uName) return true;
-    }
+    if (addedName.isNotEmpty && uName.isNotEmpty && addedName == uName) return true;
     return false;
   }
+
 
   bool _isUserAssignee(RequirementModel r, UserModel user) {
     final uName = user.fullName.trim().toLowerCase();
@@ -5450,6 +5545,74 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
   }
 
+  Widget _buildManuallyAddedButton(
+    BuildContext context, {
+    required RequirementModel req,
+    bool compact = false,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final String creatorInfo = (req.creatorName != null && req.creatorName!.trim().isNotEmpty)
+        ? req.creatorName!.trim()
+        : 'CRM';
+
+    final Color bgColor = isDark
+        ? const Color(0xFFEA580C).withValues(alpha: 0.16)
+        : const Color(0xFFFFF7ED);
+    final Color borderColor = isDark
+        ? const Color(0xFFEA580C).withValues(alpha: 0.45)
+        : const Color(0xFFFDBA74);
+    final Color textColor = isDark
+        ? const Color(0xFFFB923C)
+        : const Color(0xFFC2410C);
+    final Color iconColor = isDark
+        ? const Color(0xFFFB923C)
+        : const Color(0xFFEA580C);
+
+    return Tooltip(
+      message: 'Manually Added Lead (Created by $creatorInfo)',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+          onTap: () => _showRequirementDetailDrawer(req),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 7 : 9,
+              vertical: compact ? 3.5 : 4.5,
+            ),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+              border: Border.all(color: borderColor, width: 1),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.person_add_alt_1_rounded,
+                  size: compact ? 12 : 13,
+                  color: iconColor,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Manually Added',
+                  style: TextStyle(
+                    fontSize: compact ? 10.5 : 11.5,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatusControl(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
     if (_isLeadTransferredAway(req, currentUser)) {
       return Container(
@@ -6218,14 +6381,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   Widget _buildStatusControlWithNotes(RequirementModel req, UserModel? currentUser, {bool compact = false}) {
     final bool isClosed = _isLeadClosedOrTerminal(req);
-    final String? userNote = _getCleanNote(req);
-    final bool hasNotes = userNote != null && userNote.isNotEmpty;
 
-    return Column(
+    final statusWidget = _buildStatusControl(req, currentUser, compact: compact);
+    final statusWithNotes = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _buildStatusControl(req, currentUser, compact: compact),
+        statusWidget,
         if (!isClosed) ...[
           const SizedBox(height: 4),
           Builder(
@@ -6248,6 +6410,34 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             },
           ),
         ],
+      ],
+    );
+
+    final effectiveUser = currentUser ??
+        (() {
+          final authState = context.read<AuthBloc>().state;
+          return authState is Authenticated ? authState.user : null;
+        })();
+
+    final bool isManuallyAddedByCurrentUser =
+        effectiveUser != null &&
+        req.isManuallyAdded &&
+        _isUserCreator(req, effectiveUser);
+
+    if (!isManuallyAddedByCurrentUser) {
+      return statusWithNotes;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: _buildManuallyAddedButton(context, req: req, compact: compact),
+        ),
+        const SizedBox(width: 8),
+        statusWithNotes,
       ],
     );
   }
@@ -6338,7 +6528,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
             if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
 
-            final userFilterActive = _selectedUserFilterId != "All" && _selectedUserFilterId.isNotEmpty;
+            final userFilterActive =
+                (_selectedSalesFilterId != "All" && _selectedSalesFilterId.isNotEmpty) ||
+                _selectedTelecallerFilterIds.isNotEmpty;
             final bool viewAllRejected =
                 _activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser);
 
@@ -6390,17 +6582,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             final matchesDate = _matchesLeadDateFilter(r);
 
             bool matchesUser = true;
-            if (_activeMainTab != 'Leads Added by Me' && userFilterActive) {
-              users_model.UserModel? selectedUser;
-              try {
-                final usersState = context.read<UsersBloc>().state;
-                final allKnownUsers = usersState is UsersLoaded ? _mergedAssignUsers(usersState.users) : _assignUsers;
-                selectedUser = allKnownUsers.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
-              } catch (_) {}
-              matchesUser = selectedUser != null &&
-                  (currentUser != null && currentUser.role == 'Telecaller'
-                      ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedUser, currentUser)
-                      : TeamUserVisibility.requirementBelongsToUser(r, selectedUser));
+            if (_activeMainTab != 'Leads Added by Me') {
+              matchesUser = _matchesSalesAndTelecallerFilters(r, currentUser: currentUser);
             }
 
             bool matchesSearch = true;
@@ -6434,12 +6617,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
           if (_activeMainTab == 'Rejected') {
             requirements.sort((a, b) {
-              final da = _rejectedAt(a) ?? a.createdAt;
-              final db = _rejectedAt(b) ?? b.createdAt;
+              final da = _rejectedAt(a) ?? a.salesAssignedAt ?? a.createdAt;
+              final db = _rejectedAt(b) ?? b.salesAssignedAt ?? b.createdAt;
               return db.compareTo(da);
             });
           } else {
-            requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            requirements.sort((a, b) {
+              final da = a.salesAssignedAt ?? a.createdAt;
+              final db = b.salesAssignedAt ?? b.createdAt;
+              return db.compareTo(da);
+            });
           }
         }
 
@@ -6544,6 +6731,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               overflow: TextOverflow.ellipsis,
                               style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 10),
                             ),
+                            if (req.salesAssignedAt != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                'Assigned: ${DateFormat("dd/MM/yyyy, h:mm a").format(req.salesAssignedAt!.toLocal())}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: CRMTypography.caption.copyWith(
+                                  color: CRMColors.primaryOf(context),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                             if (req.isMetaLead) ...[
                               const SizedBox(height: 3),
                               Container(
@@ -7011,20 +7211,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               if (!matchesSpec) return false;
             }
 
-            // User filter:
-            final userFilterActive = _selectedUserFilterId != "All" && _selectedUserFilterId.isNotEmpty;
-            if (userFilterActive) {
-              users_model.UserModel? selectedUser;
-              try {
-                final usersState = context.read<UsersBloc>().state;
-                final allKnownUsers = usersState is UsersLoaded ? _mergedAssignUsers(usersState.users) : _assignUsers;
-                selectedUser = allKnownUsers.firstWhereOrNull((u) => u.id == _selectedUserFilterId);
-              } catch (_) {}
-              final matchesUser = selectedUser != null &&
-                  (currentUser?.role == 'Telecaller'
-                      ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedUser, currentUser!)
-                      : TeamUserVisibility.requirementBelongsToUser(r, selectedUser));
-              if (!matchesUser) return false;
+            // Sales & Telecaller filters:
+            final allKnownUsers = _getAllKnownUsers();
+            if (!_matchesSalesAndTelecallerFilters(r, currentUser: currentUser, knownUsers: allKnownUsers)) {
+              return false;
             }
 
             // Date filter:
@@ -7972,12 +8162,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   ),
                   const SizedBox(height: 4),
 
-                  // Second Line: Added Date & Time
+                  // Second Line: Added Date & Time & Assignment Date & Time
                   Text(
-                    dateText,
+                    req.salesAssignedAt != null
+                        ? 'Assigned On: ${DateFormat("dd MMM ''yy, h:mm a").format(req.salesAssignedAt!.toLocal())} • Added: $dateText'
+                        : dateText,
                     style: CRMTypography.caption.copyWith(
-                      color: CRMColors.textMutedOf(context),
+                      color: req.salesAssignedAt != null ? CRMColors.primaryOf(context) : CRMColors.textMutedOf(context),
                       fontSize: 12,
+                      fontWeight: req.salesAssignedAt != null ? FontWeight.w600 : FontWeight.normal,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -13170,6 +13363,23 @@ String getListingTypeLabel(RequirementModel r) {
   return 'Rent';
 }
 
+bool isRequirementUserCreator(RequirementModel r, UserModel user) {
+  if (r.createdBy == user.id) return true;
+  final uName = user.fullName.trim().toLowerCase();
+  if (uName.isNotEmpty) {
+    if (r.createdBy != null && r.createdBy!.trim().toLowerCase() == uName) return true;
+    if (r.creatorName != null && r.creatorName!.trim().toLowerCase() == uName) return true;
+  }
+  if (user.email.isNotEmpty) {
+    if (r.creatorEmail != null && r.creatorEmail!.trim().toLowerCase() == user.email.trim().toLowerCase()) return true;
+    if (r.createdBy != null && r.createdBy!.trim().toLowerCase() == user.email.trim().toLowerCase()) return true;
+  }
+  if (user.mobile != null && user.mobile!.isNotEmpty) {
+    if (r.creatorMobile != null && r.creatorMobile!.trim() == user.mobile!.trim()) return true;
+  }
+  return false;
+}
+
 void showCRMRequirementDrawer(BuildContext context, RequirementModel req) {
   AuditTelemetryService.instance.trackButtonClick(
     buttonId: 'lead_detail_drawer_open',
@@ -13467,6 +13677,13 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
     final double dialogWidth = isMobile ? width * 0.95 : width * 0.85;
     final double dialogHeight = isMobile ? height * 0.95 : height * 0.85;
 
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final bool isManuallyAddedByCurrentUser =
+        currentUser != null &&
+        req.isManuallyAdded &&
+        isRequirementUserCreator(req, currentUser);
+
     return Center(
       child: Material(
         color: Colors.transparent,
@@ -13520,13 +13737,22 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          req.clientName,
-                                          style: CRMTypography.sectionTitle.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: CRMColors.textOf(context),
-                                            fontSize: 18,
-                                          ),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.center,
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                req.clientName,
+                                                style: CRMTypography.sectionTitle.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: CRMColors.textOf(context),
+                                                  fontSize: 18,
+                                                ),
+                                              ),
+                                            ),
+                                            if (isManuallyAddedByCurrentUser)
+                                              _buildManuallyAddedPill(context),
+                                          ],
                                         ),
                                         const SizedBox(height: CRMSpacing.xs),
                                         Text(
@@ -13658,13 +13884,22 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          req.clientName,
-                                          style: CRMTypography.sectionTitle.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: CRMColors.textOf(context),
-                                            fontSize: 18,
-                                          ),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.center,
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                req.clientName,
+                                                style: CRMTypography.sectionTitle.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: CRMColors.textOf(context),
+                                                  fontSize: 18,
+                                                ),
+                                              ),
+                                            ),
+                                            if (isManuallyAddedByCurrentUser)
+                                              _buildManuallyAddedPill(context),
+                                          ],
                                         ),
                                         const SizedBox(height: CRMSpacing.xs),
                                         Text(
@@ -13873,6 +14108,48 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
     );
   }
 
+  Widget _buildManuallyAddedPill(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color bgColor = isDark
+        ? const Color(0xFFEA580C).withValues(alpha: 0.16)
+        : const Color(0xFFFFF7ED);
+    final Color borderColor = isDark
+        ? const Color(0xFFEA580C).withValues(alpha: 0.45)
+        : const Color(0xFFFDBA74);
+    final Color textColor = isDark
+        ? const Color(0xFFFB923C)
+        : const Color(0xFFC2410C);
+    final Color iconColor = isDark
+        ? const Color(0xFFFB923C)
+        : const Color(0xFFEA580C);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(CRMBorderRadius.round),
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(Icons.person_add_alt_1_rounded, size: 12, color: iconColor),
+          const SizedBox(width: 4),
+          Text(
+            'Manually Added',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: textColor,
+              letterSpacing: 0.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<Widget> _buildLeadPipelineDetailRows(RequirementModel req) {
     final assignee = (req.assigneeName ?? '').trim().isNotEmpty
         ? req.assigneeName!.trim()
@@ -13883,9 +14160,18 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
         : ((req.nextFollowupDate ?? '').trim().isNotEmpty
             ? req.nextFollowupDate!.trim()
             : '—');
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final bool isManuallyAddedByCurrentUser =
+        currentUser != null &&
+        req.isManuallyAdded &&
+        isRequirementUserCreator(req, currentUser);
+
     return [
       _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
       _buildDetailRow("Status", displayStatusLabel(req.status), Icons.flag_outlined),
+      if (isManuallyAddedByCurrentUser)
+        _buildDetailRow("Lead Type", "Manually Added", Icons.person_add_alt_1_rounded),
       _buildDetailRow("Assigned To", assignee, Icons.person_outline_rounded),
       _buildDetailRow("Follow-up", followup, Icons.event_rounded),
     ];

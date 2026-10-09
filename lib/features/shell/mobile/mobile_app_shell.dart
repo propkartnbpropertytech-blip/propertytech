@@ -10,6 +10,9 @@ import '../../../core/design_system/mobile/mobile_touch.dart';
 import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/security/role_guard.dart';
+import 'package:go_router/go_router.dart';
+import '../../requirements/screens/add_edit_requirement_screen.dart';
+import '../../integration/services/integration_service.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import 'mobile_nav_config.dart';
 
@@ -149,10 +152,11 @@ class _MobileAppShellState extends State<MobileAppShell> {
             listenable: _titleController,
             builder: (context, _) => MobileTopBar(
               title: _titleController.title ?? info.title,
-              leading: info.isSecondary
+              leading: (_titleController.showBack || info.isSecondary)
                   ? MobileTopBar.backAction(
                       context,
-                      onPressed: () => widget.onBack(info.backFallback),
+                      onPressed: _titleController.onBack ??
+                          () => widget.onBack(info.backFallback),
                     )
                   : null,
               roleControl: widget.roleControl,
@@ -212,12 +216,98 @@ class _MobileAppShellState extends State<MobileAppShell> {
           ? MobileBottomNav(
               items: tabs,
               selectedIndex: info.selectedIndex,
+              centerSlot: (RoleGuard.isSales(role) || role.toLowerCase() == 'sales' || role.toLowerCase() == 'salesperson')
+                  ? _buildSalesPlusButton(context)
+                  : null,
               onSelected: (index) {
                 final route = tabs[index].route;
                 if (location != route) widget.onNavigate(route);
               },
             )
           : null,
+    );
+  }
+
+  Widget _buildSalesPlusButton(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Create property or lead',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => _showSalesPlusMenu(context),
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFF059669),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF059669).withValues(alpha: 0.35),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.add_rounded,
+              color: Colors.white,
+              size: 26,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSalesPlusMenu(BuildContext context) {
+    MobileSheet.show(
+      context,
+      title: 'Create New',
+      child: Builder(
+        builder: (sheetContext) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            MobileListItem(
+              key: const Key('sales_add_property_action'),
+              icon: Icons.home_work_rounded,
+              iconColor: const Color(0xFF059669),
+              title: 'Add Property',
+              subtitle: 'Create a new property listing',
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.go('/properties?action=add');
+              },
+            ),
+            const SizedBox(height: 6),
+            MobileListItem(
+              key: const Key('sales_add_lead_action'),
+              icon: Icons.person_add_alt_1_rounded,
+              iconColor: const Color(0xFF2563EB),
+              title: 'Add Lead',
+              subtitle: 'Create a new requirement lead',
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                showDialog(
+                  context: context,
+                  barrierDismissible: true,
+                  builder: (dialogCtx) => AddEditRequirementScreen(
+                    onSaved: () {
+                      try {
+                        IntegrationService().fetchServerLeads(silent: true);
+                      } catch (_) {}
+                    },
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
     );
   }
 

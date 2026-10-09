@@ -341,14 +341,18 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = CRMBreakpoints.isPhone(context);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 10 : 24,
+        vertical: isMobile ? 16 : 32,
+      ),
       child: Container(
-        width: CRMBreakpoints.adaptiveWidth(context, 780),
-        height: 720,
-        padding: const EdgeInsets.all(24),
+        width: isMobile ? double.infinity : CRMBreakpoints.adaptiveWidth(context, 780),
+        height: isMobile ? MediaQuery.sizeOf(context).height * 0.92 : 720,
+        padding: EdgeInsets.all(isMobile ? 14 : 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -356,47 +360,64 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: CRMColors.primary.withValues(alpha: 0.15),
-                      child: Icon(Icons.person, color: CRMColors.primary, size: 24),
-                    ),
-                    const SizedBox(width: 14),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.telecallerName ?? _data?['profile']?['name']?.toString() ?? 'Telecaller Details',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                Expanded(
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: isMobile ? 18 : 22,
+                        backgroundColor: CRMColors.primary.withValues(alpha: 0.15),
+                        child: Icon(Icons.person, color: CRMColors.primary, size: isMobile ? 20 : 24),
+                      ),
+                      SizedBox(width: isMobile ? 10 : 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.telecallerName ?? _data?['profile']?['name']?.toString() ?? 'Telecaller Details',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: isMobile ? 15 : 18,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (_data?['profile'] != null)
+                              Text(
+                                '${_data!['profile']['email'] ?? ''} · ${_data!['profile']['phone'] ?? ''}',
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
                         ),
-                        if (_data?['profile'] != null)
-                          Text(
-                            '${_data!['profile']['email'] ?? ''} · ${_data!['profile']['phone'] ?? ''}',
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                          ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
                       icon: const Icon(Icons.refresh, size: 20),
                       tooltip: 'Refresh',
+                      padding: isMobile ? EdgeInsets.zero : null,
+                      constraints: isMobile ? const BoxConstraints() : null,
                       onPressed: _fetchDetails,
                     ),
+                    if (isMobile) const SizedBox(width: 8),
                     IconButton(
                       icon: const Icon(Icons.close, size: 20),
                       tooltip: 'Close',
+                      padding: isMobile ? EdgeInsets.zero : null,
+                      constraints: isMobile ? const BoxConstraints() : null,
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
                 ),
               ],
             ),
-            const Divider(height: 24),
+            Divider(height: isMobile ? 16 : 24),
 
             // Body
             Expanded(
@@ -413,7 +434,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                             ],
                           ),
                         )
-                      : _buildContent(isDark),
+                      : _buildContent(isDark, isMobile),
             ),
           ],
         ),
@@ -421,7 +442,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
     );
   }
 
-  Widget _buildContent(bool isDark) {
+  Widget _buildContent(bool isDark, bool isMobile) {
     final profile = Map<String, dynamic>.from(_data?['profile'] ?? {});
     final workload = Map<String, dynamic>.from(_data?['workload'] ?? {});
     final outcomes = Map<String, dynamic>.from(_data?['outcomes'] ?? {});
@@ -465,58 +486,123 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: statusColor.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: statusColor.withValues(alpha: 0.4)),
+                  if (isMobile)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: statusColor.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: statusColor.withValues(alpha: 0.4)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    isLoggedOut ? 'LOGGED OUT' : status,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: statusColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+                            Text(
+                              isLoggedOut
+                                  ? 'Offline (Logged Out)'
+                                  : (isFresh ? 'Online (Heartbeat Active)' : 'Offline / Inactive Heartbeat'),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isLoggedOut
+                                    ? const Color(0xFF64748B)
+                                    : (isFresh ? Colors.green.shade700 : Colors.grey.shade600),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Workload: $currentLoad / $capacity Leads',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ],
+                    )
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: statusColor.withValues(alpha: 0.4)),
                                 ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  isLoggedOut ? 'LOGGED OUT' : status,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      isLoggedOut ? 'LOGGED OUT' : status,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: statusColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  isLoggedOut
+                                      ? 'Offline (Logged Out)'
+                                      : (isFresh ? 'Online (Heartbeat Active)' : 'Offline / Inactive Heartbeat'),
                                   style: TextStyle(
                                     fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: statusColor,
+                                    color: isLoggedOut
+                                        ? const Color(0xFF64748B)
+                                        : (isFresh ? Colors.green.shade700 : Colors.grey.shade600),
+                                    fontWeight: FontWeight.w500,
                                   ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 10),
-                          Text(
-                            isLoggedOut
-                                ? 'Offline (Logged Out)'
-                                : (isFresh ? 'Online (Heartbeat Active)' : 'Offline / Inactive Heartbeat'),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isLoggedOut
-                                  ? const Color(0xFF64748B)
-                                  : (isFresh ? Colors.green.shade700 : Colors.grey.shade600),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        'Workload: $currentLoad / $capacity Leads',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                    ],
-                  ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Workload: $currentLoad / $capacity Leads',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ],
+                    ),
                   const SizedBox(height: 12),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(6),
@@ -534,104 +620,216 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '$availableSlots lead slots available for new allocation',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                      ),
-                      if (staleCount > 0)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.red.shade300),
+                  if (isMobile)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          '$availableSlots lead slots available for new allocation',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        ),
+                        if (staleCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade300),
+                            ),
+                            child: Text(
+                              '$staleCount Untouched (>30m) - Stale',
+                              style: TextStyle(fontSize: 11, color: Colors.red.shade800, fontWeight: FontWeight.bold),
+                            ),
                           ),
+                      ],
+                    )
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
                           child: Text(
-                            '$staleCount Untouched (>30m) - Stale',
-                            style: TextStyle(fontSize: 11, color: Colors.red.shade800, fontWeight: FontWeight.bold),
+                            '$availableSlots lead slots available for new allocation',
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                    ],
-                  ),
+                        if (staleCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade300),
+                            ),
+                            child: Text(
+                              '$staleCount Untouched (>30m) - Stale',
+                              style: TextStyle(fontSize: 11, color: Colors.red.shade800, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                      ],
+                    ),
                   const Divider(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.tune, size: 18, color: CRMColors.primary),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Max Capacity Limit',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                          const SizedBox(width: 8),
-                          InkWell(
-                            borderRadius: BorderRadius.circular(10),
-                            onTap: _savingCapacity ? null : () => _showManualCapacityInputDialog(),
-                            child: Tooltip(
-                              message: 'Click to enter custom limit (1 - 300)',
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: CRMColors.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: CRMColors.primary.withValues(alpha: 0.3)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      '$_selectedCapacity Leads',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: CRMColors.primary,
+                  if (isMobile)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Icon(Icons.tune, size: 18, color: CRMColors.primary),
+                            const Text(
+                              'Max Capacity Limit',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(10),
+                              onTap: _savingCapacity ? null : () => _showManualCapacityInputDialog(),
+                              child: Tooltip(
+                                message: 'Click to enter custom limit (1 - 300)',
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.primary.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: CRMColors.primary.withValues(alpha: 0.3)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '$_selectedCapacity Leads',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: CRMColors.primary,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Icon(Icons.edit, size: 12, color: CRMColors.primary),
-                                  ],
+                                      const SizedBox(width: 4),
+                                      Icon(Icons.edit, size: 12, color: CRMColors.primary),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          if (_selectedCapacity != _savedCapacity)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: Text(
-                                '(Unsaved: $_selectedCapacity)',
-                                style: const TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.bold),
+                          ],
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_selectedCapacity != _savedCapacity)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: Text(
+                                  '(Unsaved: $_selectedCapacity)',
+                                  style: const TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              ),
+                              onPressed: _savingCapacity || _selectedCapacity == _savedCapacity
+                                  ? null
+                                  : () => _updateCapacity(_selectedCapacity),
+                              icon: _savingCapacity
+                                  ? const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Icon(Icons.check, size: 14),
+                              label: Text(_savingCapacity ? 'Saving...' : 'Save Limit', style: const TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    )
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.tune, size: 18, color: CRMColors.primary),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Max Capacity Limit',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            const SizedBox(width: 8),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(10),
+                              onTap: _savingCapacity ? null : () => _showManualCapacityInputDialog(),
+                              child: Tooltip(
+                                message: 'Click to enter custom limit (1 - 300)',
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: CRMColors.primary.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: CRMColors.primary.withValues(alpha: 0.3)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '$_selectedCapacity Leads',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: CRMColors.primary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(Icons.edit, size: 12, color: CRMColors.primary),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            if (_selectedCapacity != _savedCapacity)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: Text(
+                                  '(Unsaved: $_selectedCapacity)',
+                                  style: const TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              ),
+                              onPressed: _savingCapacity || _selectedCapacity == _savedCapacity
+                                  ? null
+                                  : () => _updateCapacity(_selectedCapacity),
+                              icon: _savingCapacity
+                                  ? const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Icon(Icons.check, size: 14),
+                              label: Text(_savingCapacity ? 'Saving...' : 'Save Limit', style: const TextStyle(fontSize: 12)),
                             ),
-                            onPressed: _savingCapacity || _selectedCapacity == _savedCapacity
-                                ? null
-                                : () => _updateCapacity(_selectedCapacity),
-                            icon: _savingCapacity
-                                ? const SizedBox(
-                                    width: 12,
-                                    height: 12,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                  )
-                                : const Icon(Icons.check, size: 14),
-                            label: Text(_savingCapacity ? 'Saving...' : 'Save Limit', style: const TextStyle(fontSize: 12)),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                          ],
+                        ),
+                      ],
+                    ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -714,131 +912,179 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.timer_outlined, size: 18, color: CRMColors.primary),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Active Toggle & 24-Hour OFF Allowance',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
-                          ),
-                        ],
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: isToggleOn
-                              ? Colors.green.withValues(alpha: 0.15)
-                              : Colors.red.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: isToggleOn
-                                ? Colors.green.withValues(alpha: 0.4)
-                                : Colors.red.withValues(alpha: 0.4),
-                          ),
-                        ),
-                        child: Row(
+                  if (isMobile)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: isToggleOn ? Colors.green : Colors.red,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
+                            Icon(Icons.timer_outlined, size: 18, color: CRMColors.primary),
                             const SizedBox(width: 6),
-                            Text(
-                              isToggleOn ? (status == 'BREAK' ? 'ON (Auto-Break)' : 'TOGGLE ON') : 'TOGGLE OFF',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
-                                color: isToggleOn ? Colors.green.shade800 : Colors.red.shade800,
-                              ),
+                            const Text(
+                              'Active Toggle',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                             ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF0F172A) : Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                            color: isToggleOn
+                                ? Colors.green.withValues(alpha: 0.15)
+                                : Colors.red.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isToggleOn
+                                  ? Colors.green.withValues(alpha: 0.4)
+                                  : Colors.red.withValues(alpha: 0.4),
+                            ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text('When Turned OFF', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                              const SizedBox(height: 4),
-                              Text(
-                                !isToggleOn ? _formatTimestamp(manualOffStartedAt) : '— (Active Now)',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: isToggleOn ? Colors.green : Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF0F172A) : Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('How Long Remained OFF', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                              const SizedBox(height: 4),
+                              const SizedBox(width: 6),
                               Text(
-                                !isToggleOn ? _formatDuration(manualOffDurationSeconds) : '0m (Active)',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF0F172A) : Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Remaining 24h Allowance', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                              const SizedBox(height: 4),
-                              Text(
-                                isLimitExpired ? '0m (6h Expired)' : '${_formatDuration(remainingOffSeconds)} / 6h',
+                                isToggleOn ? (status == 'BREAK' ? 'ON (Auto-Break)' : 'TOGGLE ON') : 'TOGGLE OFF',
                                 style: TextStyle(
+                                  fontSize: 11,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: isLimitExpired ? Colors.red : (remainingOffSeconds < 3600 ? Colors.orange : Colors.green.shade700),
+                                  color: isToggleOn ? Colors.green.shade800 : Colors.red.shade800,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    )
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Icon(Icons.timer_outlined, size: 18, color: CRMColors.primary),
+                              const SizedBox(width: 8),
+                              const Flexible(
+                                child: Text(
+                                  'Active Toggle & 24-Hour OFF Allowance',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isToggleOn
+                                ? Colors.green.withValues(alpha: 0.15)
+                                : Colors.red.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isToggleOn
+                                  ? Colors.green.withValues(alpha: 0.4)
+                                  : Colors.red.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: isToggleOn ? Colors.green : Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                isToggleOn ? (status == 'BREAK' ? 'ON (Auto-Break)' : 'TOGGLE ON') : 'TOGGLE OFF',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isToggleOn ? Colors.green.shade800 : Colors.red.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 12),
+                  if (isMobile)
+                    Column(
+                      children: [
+                        _offAllowanceBox(
+                          title: 'When Turned OFF',
+                          value: !isToggleOn ? _formatTimestamp(manualOffStartedAt) : '— (Active Now)',
+                          isDark: isDark,
+                          isMobile: isMobile,
+                        ),
+                        const SizedBox(height: 8),
+                        _offAllowanceBox(
+                          title: 'How Long Remained OFF',
+                          value: !isToggleOn ? _formatDuration(manualOffDurationSeconds) : '0m (Active)',
+                          isDark: isDark,
+                          isMobile: isMobile,
+                        ),
+                        const SizedBox(height: 8),
+                        _offAllowanceBox(
+                          title: 'Remaining 24h Allowance',
+                          value: isLimitExpired ? '0m (6h Expired)' : '${_formatDuration(remainingOffSeconds)} / 6h',
+                          isDark: isDark,
+                          isMobile: isMobile,
+                          valueColor: isLimitExpired ? Colors.red : (remainingOffSeconds < 3600 ? Colors.orange : Colors.green.shade700),
+                        ),
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _offAllowanceBox(
+                            title: 'When Turned OFF',
+                            value: !isToggleOn ? _formatTimestamp(manualOffStartedAt) : '— (Active Now)',
+                            isDark: isDark,
+                            isMobile: false,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _offAllowanceBox(
+                            title: 'How Long Remained OFF',
+                            value: !isToggleOn ? _formatDuration(manualOffDurationSeconds) : '0m (Active)',
+                            isDark: isDark,
+                            isMobile: false,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _offAllowanceBox(
+                            title: 'Remaining 24h Allowance',
+                            value: isLimitExpired ? '0m (6h Expired)' : '${_formatDuration(remainingOffSeconds)} / 6h',
+                            isDark: isDark,
+                            isMobile: false,
+                            valueColor: isLimitExpired ? Colors.red : (remainingOffSeconds < 3600 ? Colors.orange : Colors.green.shade700),
+                          ),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -846,88 +1092,95 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
           const SizedBox(height: 16),
 
           // Row 2: Performance Summary Grid (Strictly 4 KPIs)
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _metricBox(
-                'Assigned',
-                _directory.isEmpty
-                    ? '${_data?['leadStats']?['activeAssigned'] ?? currentLeads.length}'
-                    : '${_callingQueue.length}',
-                Icons.assignment_outlined,
-                Colors.blue,
-                isDark,
-                onTap: () => _showLeadList(
-                  'Assigned now',
-                  _callingQueue,
-                  subtitle: 'New and follow-up leads still on this telecaller\'s calling queue.',
-                ),
-              ),
-              _metricBox(
-                'Overall Assigned',
-                _directory.isEmpty
-                    ? '${_data?['leadStats']?['overallAssigned'] ?? _data?['leadStats']?['totalAssigned'] ?? 0}'
-                    : '${_directory.length}',
-                Icons.history_rounded,
-                Colors.indigo,
-                isDark,
-                onTap: () => _showLeadList(
-                  'Every lead assigned to ${widget.telecallerName ?? 'this telecaller'}',
-                  _directory,
-                  subtitle: 'Current status of each lead. One row per customer.',
-                ),
-              ),
-              _metricBox(
-                'CNR',
-                '${outcomes['cnr'] ?? 0}',
-                Icons.phone_missed,
-                Colors.orange,
-                isDark,
-                onTap: () => _openTelecallerQueue('/telecaller/cnr'),
-              ),
-              _metricBox(
-                'Callbacks',
-                '${outcomes['callbacks'] ?? 0}',
-                Icons.phone_callback_rounded,
-                Colors.blue,
-                isDark,
-                onTap: () => _openTelecallerQueue('/telecaller/callbacks'),
-              ),
-              _metricBox(
-                'Assigned to Sales',
-                _directory.isEmpty ? '${outcomes['salesHandoffs'] ?? 0}' : '${_salesHandoffs.length}',
-                Icons.check_circle_outline,
-                Colors.green,
-                isDark,
-                onTap: () => _showLeadList(
-                  'Handed to sales',
-                  _salesHandoffs,
-                  subtitle: 'The lead and the sales person it was handed to.',
-                  showHandedTo: true,
-                ),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final metricWidth = isMobile
+                  ? ((constraints.maxWidth - 12) / 2).floorToDouble()
+                  : 170.0;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _metricBox(
+                    'Assigned',
+                    _directory.isEmpty
+                        ? '${_data?['leadStats']?['activeAssigned'] ?? currentLeads.length}'
+                        : '${_callingQueue.length}',
+                    Icons.assignment_outlined,
+                    Colors.blue,
+                    isDark,
+                    width: metricWidth,
+                    onTap: () => _showLeadList(
+                      'Assigned now',
+                      _callingQueue,
+                      subtitle: 'New and follow-up leads still on this telecaller\'s calling queue.',
+                    ),
+                  ),
+                  _metricBox(
+                    'Overall Assigned',
+                    _directory.isEmpty
+                        ? '${_data?['leadStats']?['overallAssigned'] ?? _data?['leadStats']?['totalAssigned'] ?? 0}'
+                        : '${_directory.length}',
+                    Icons.history_rounded,
+                    Colors.indigo,
+                    isDark,
+                    width: metricWidth,
+                    onTap: () => _showLeadList(
+                      'Every lead assigned to ${widget.telecallerName ?? 'this telecaller'}',
+                      _directory,
+                      subtitle: 'Current status of each lead. One row per customer.',
+                    ),
+                  ),
+                  _metricBox(
+                    'CNR',
+                    '${outcomes['cnr'] ?? 0}',
+                    Icons.phone_missed,
+                    Colors.orange,
+                    isDark,
+                    width: metricWidth,
+                    onTap: () => _openTelecallerQueue('/telecaller/cnr'),
+                  ),
+                  _metricBox(
+                    'Callbacks',
+                    '${outcomes['callbacks'] ?? 0}',
+                    Icons.phone_callback_rounded,
+                    Colors.blue,
+                    isDark,
+                    width: metricWidth,
+                    onTap: () => _openTelecallerQueue('/telecaller/callbacks'),
+                  ),
+                  _metricBox(
+                    'Assigned to Sales',
+                    _directory.isEmpty ? '${outcomes['salesHandoffs'] ?? 0}' : '${_salesHandoffs.length}',
+                    Icons.check_circle_outline,
+                    Colors.green,
+                    isDark,
+                    width: metricWidth,
+                    onTap: () => _showLeadList(
+                      'Handed to sales',
+                      _salesHandoffs,
+                      subtitle: 'The lead and the sales person it was handed to.',
+                      showHandedTo: true,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 24),
 
           // Section 3: Active Assigned Leads List
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Calling queue (${_directory.isEmpty ? currentLeads.length : _callingQueue.length})',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'New and follow-up leads still on My Calling Leads. CNR and Callback are counted on their own cards.',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                  ),
-                ],
+              Text(
+                'Calling queue (${_directory.isEmpty ? currentLeads.length : _callingQueue.length})',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 2),
+              const Text(
+                'New and follow-up leads still on My Calling Leads. CNR and Callback are counted on their own cards.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
               ),
             ],
           ),
@@ -986,43 +1239,65 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                       ),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: priorityColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: priorityColor.withValues(alpha: 0.4)),
-                            ),
-                            child: Text(
-                              priority,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: priorityColor,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isMobile ? 10 : 14,
+                        vertical: isMobile ? 8 : 10,
+                      ),
+                      child: isMobile
+                          ? Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
-                                    Text(
-                                      name,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: priorityColor.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: priorityColor.withValues(alpha: 0.4)),
+                                      ),
+                                      child: Text(
+                                        priority,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: priorityColor,
+                                        ),
+                                      ),
                                     ),
                                     const SizedBox(width: 8),
-                                    Text(
-                                      phone,
-                                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                    Expanded(
+                                      child: Text(
+                                        name,
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
-                                    if (isStale) ...[
-                                      const SizedBox(width: 8),
+                                    const SizedBox(width: 6),
+                                    OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      ),
+                                      onPressed: () => _reassignLead(leadId),
+                                      icon: const Icon(Icons.swap_horiz, size: 13),
+                                      label: const Text('Reassign', style: TextStyle(fontSize: 11)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    if (phone.isNotEmpty)
+                                      Text(
+                                        phone,
+                                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                                      ),
+                                    if (isStale)
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                         decoration: BoxDecoration(
@@ -1038,28 +1313,91 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                                           ),
                                         ),
                                       ),
-                                    ],
                                   ],
                                 ),
-                                const SizedBox(height: 3),
+                                const SizedBox(height: 4),
                                 Text(
                                   'Campaign: $campaign · Status: $allocStatus · Assigned: ${ageMinutes}m ago · Calls: $callAttempts',
                                   style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                                 ),
                               ],
+                            )
+                          : Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: priorityColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: priorityColor.withValues(alpha: 0.4)),
+                                  ),
+                                  child: Text(
+                                    priority,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: priorityColor,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              name,
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            phone,
+                                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                          ),
+                                          if (isStale) ...[
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: Colors.red.shade100,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                'STALE (>30m untouched)',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.red.shade900,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        'Campaign: $campaign · Status: $allocStatus · Assigned: ${ageMinutes}m ago · Calls: $callAttempts',
+                                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  ),
+                                  onPressed: () => _reassignLead(leadId),
+                                  icon: const Icon(Icons.swap_horiz, size: 14),
+                                  label: const Text('Reassign', style: TextStyle(fontSize: 12)),
+                                ),
+                              ],
                             ),
-                          ),
-                          OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            ),
-                            onPressed: () => _reassignLead(leadId),
-                            icon: const Icon(Icons.swap_horiz, size: 14),
-                            label: const Text('Reassign', style: TextStyle(fontSize: 12)),
-                          ),
-                        ],
-                      ),
                     ),
                   );
                 },
@@ -1091,40 +1429,81 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                       : (reason.isNotEmpty ? reason : 'Assigned');
 
                   return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Icon(
-                          isPeer
-                              ? Icons.swap_horiz_rounded
-                              : type.contains('RECOVERY')
-                                  ? Icons.restart_alt
-                                  : type.contains('OLD')
-                                      ? Icons.history
-                                      : Icons.arrow_forward,
-                          size: 14,
-                          color: isPeer
-                              ? const Color(0xFF0369A1)
-                              : type.contains('RECOVERY')
-                                  ? Colors.red
-                                  : CRMColors.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          label,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            detail,
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                            overflow: TextOverflow.ellipsis,
+                    padding: EdgeInsets.symmetric(vertical: isMobile ? 6 : 4),
+                    child: isMobile
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 2,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Icon(
+                                    isPeer
+                                        ? Icons.swap_horiz_rounded
+                                        : type.contains('RECOVERY')
+                                            ? Icons.restart_alt
+                                            : type.contains('OLD')
+                                                ? Icons.history
+                                                : Icons.arrow_forward,
+                                    size: 14,
+                                    color: isPeer
+                                        ? const Color(0xFF0369A1)
+                                        : type.contains('RECOVERY')
+                                            ? Colors.red
+                                            : CRMColors.primary,
+                                  ),
+                                  Text(
+                                    label,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                  ),
+                                  Text(date, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 20),
+                                child: Text(
+                                  detail,
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Icon(
+                                isPeer
+                                    ? Icons.swap_horiz_rounded
+                                    : type.contains('RECOVERY')
+                                        ? Icons.restart_alt
+                                        : type.contains('OLD')
+                                            ? Icons.history
+                                            : Icons.arrow_forward,
+                                size: 14,
+                                color: isPeer
+                                    ? const Color(0xFF0369A1)
+                                    : type.contains('RECOVERY')
+                                        ? Colors.red
+                                        : CRMColors.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                label,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  detail,
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Text(date, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                            ],
                           ),
-                        ),
-                        Text(date, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                      ],
-                    ),
                   );
                 },
               ),
@@ -1184,14 +1563,71 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
     context.go(uri.toString());
   }
 
+  Widget _offAllowanceBox({
+    required String title,
+    required String value,
+    required bool isDark,
+    required bool isMobile,
+    Color? valueColor,
+  }) {
+    if (isMobile) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              value,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: valueColor),
+            ),
+          ],
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: valueColor),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showLeadList(String title, List<Map<String, dynamic>> leads, {String? subtitle, bool showHandedTo = false}) {
+    final isMobile = CRMBreakpoints.isPhone(context);
     showDialog(
       context: context,
       builder: (ctx) {
         return AlertDialog(
           title: Text(title),
           content: SizedBox(
-            width: 520,
+            width: isMobile ? double.maxFinite : 520,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1239,52 +1675,52 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
     );
   }
 
-  Widget _metricBox(String label, String value, IconData icon, Color color, bool isDark, {VoidCallback? onTap}) {
+  Widget _metricBox(String label, String value, IconData icon, Color color, bool isDark, {VoidCallback? onTap, double? width}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-      width: 170,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
+        width: width ?? 170,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 20),
             ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  label,
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    label,
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 }

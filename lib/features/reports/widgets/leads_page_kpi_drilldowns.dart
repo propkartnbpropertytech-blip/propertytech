@@ -223,32 +223,36 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Search Bar
-              SizedBox(
-                width: 320,
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (val) => setState(() {
-                    _searchQuery = val.trim();
-                    _currentPage = 1;
-                  }),
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Search leads, phone, salesperson...',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 16),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                          )
-                        : null,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  return SizedBox(
+                    width: constraints.maxWidth < 400 ? double.infinity : 320,
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (val) => setState(() {
+                        _searchQuery = val.trim();
+                        _currentPage = 1;
+                      }),
+                      style: const TextStyle(fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: 'Search leads, phone, salesperson...',
+                        prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.close_rounded, size: 16),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: CRMSpacing.m),
 
@@ -313,8 +317,9 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
         children: [
           _buildSubtabPill(
             label: 'Picked Up',
@@ -326,7 +331,6 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
               _currentPage = 1;
             }),
           ),
-          const SizedBox(width: 8),
           _buildSubtabPill(
             label: 'Open',
             count: openCount,
@@ -387,8 +391,9 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
         children: [
           _buildSubtabPill(
             label: isReFollowup ? 'Today Re-Follow-Ups' : 'Today Follow-Ups',
@@ -400,7 +405,6 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
               _currentPage = 1;
             }),
           ),
-          const SizedBox(width: 8),
           _buildSubtabPill(
             label: isReFollowup ? 'Due Re-Follow-Ups' : 'Due Follow-Ups',
             count: dueCount,
@@ -411,7 +415,6 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
               _currentPage = 1;
             }),
           ),
-          const SizedBox(width: 8),
           _buildSubtabPill(
             label: isReFollowup ? 'Future Re-Follow-Ups' : 'Future Follow-Ups',
             count: futureCount,
@@ -591,173 +594,419 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
     final isRejectedKpi = widget.kpiType == ReportKpiType.leadsRejected;
     final isFollowupKpi = widget.kpiType == ReportKpiType.leadsFollowups || widget.kpiType == ReportKpiType.leadsReFollowups;
 
-    return Column(
-      children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            columnSpacing: 22,
-            columns: [
-              const DataColumn(label: Text('Client Details', style: TextStyle(fontWeight: FontWeight.bold))),
-              const DataColumn(label: Text('Requirement / Config', style: TextStyle(fontWeight: FontWeight.bold))),
-              const DataColumn(label: Text('Assigned Salesperson', style: TextStyle(fontWeight: FontWeight.bold))),
-              if (isFollowupKpi) ...[
-                const DataColumn(label: Text('Follow-Up Date/Time', style: TextStyle(fontWeight: FontWeight.bold))),
-                const DataColumn(label: Text('Follow-Up Remark', style: TextStyle(fontWeight: FontWeight.bold))),
-              ],
-              if (isRejectedKpi) ...[
-                const DataColumn(label: Text('Rejection Reason / Status', style: TextStyle(fontWeight: FontWeight.bold))),
-                const DataColumn(label: Text('Rejection Remark', style: TextStyle(fontWeight: FontWeight.bold))),
-              ],
-              if (!isFollowupKpi && !isRejectedKpi)
-                const DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
-              const DataColumn(label: Text('Date / Time', style: TextStyle(fontWeight: FontWeight.bold))),
-            ],
-            rows: pagedLeads.map((req) {
-              final dateStr = DateFormat('dd MMM yyyy, hh:mm a').format(req.createdAt);
-              final followupDateStr = req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty
-                  ? (DateTime.tryParse(req.nextFollowupDate!.trim()) != null
-                      ? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.parse(req.nextFollowupDate!.trim()))
-                      : req.nextFollowupDate!)
-                  : 'Pending';
+    final isDark = ThemeManager().isDarkMode;
 
-              // Extract reason from status e.g. "Rejected (Budget Mismatch)" -> "Budget Mismatch"
-              String rejectionReason = 'Rejected';
-              if (req.status.contains('(') && req.status.contains(')')) {
-                rejectionReason = req.status.substring(req.status.indexOf('(') + 1, req.status.indexOf(')'));
-              }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 650;
 
-              final salesperson = (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty)
-                  ? req.assigneeName!.trim()
-                  : ((req.assignedTo != null && req.assignedTo!.trim().isNotEmpty)
-                      ? req.assignedTo!.trim()
-                      : 'Unassigned');
-
-              return DataRow(
-                cells: [
-                  // Client Details
-                  DataCell(
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(req.clientName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        Text(req.clientMobile.isEmpty ? 'No Phone' : req.clientMobile, style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context))),
-                      ],
-                    ),
-                  ),
-
-                  // Requirement / Config
-                  DataCell(
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          req.configurationName ?? (req.categoryName.isNotEmpty ? req.categoryName : 'Residential'),
-                          style: const TextStyle(fontSize: 12.5),
-                        ),
-                        if (req.areaNames.isNotEmpty)
-                          Text(
-                            req.areaNames.join(', '),
-                            style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
-                          ),
-                      ],
-                    ),
-                  ),
-
-                  // Assigned Salesperson
-                  DataCell(
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        salesperson,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF7C3AED)),
-                      ),
-                    ),
-                  ),
-
-                  // Follow-Up Specifics
-                  if (isFollowupKpi) ...[
-                    DataCell(Text(followupDateStr, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                    DataCell(
-                      Container(
-                        constraints: const BoxConstraints(maxWidth: 220),
-                        child: Text(req.remarks ?? (req.notes ?? 'Scheduled follow-up'), style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
-                      ),
-                    ),
-                  ],
-
-                  // Rejection Specifics
-                  if (isRejectedKpi) ...[
-                    DataCell(
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFDC2626).withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(rejectionReason, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
-                      ),
-                    ),
-                    DataCell(
-                      Container(
-                        constraints: const BoxConstraints(maxWidth: 220),
-                        child: Text(req.remarks ?? 'Rejected lead', style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
-                      ),
-                    ),
-                  ],
-
-                  // Default Status Badge
-                  if (!isFollowupKpi && !isRejectedKpi)
-                    DataCell(
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: _getLeadsStatusColor(req.status).withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(req.status, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _getLeadsStatusColor(req.status))),
-                      ),
-                    ),
-
-                  // Date / Time
-                  DataCell(Text(dateStr, style: const TextStyle(fontSize: 12))),
+        Widget contentWidget;
+        if (isMobile) {
+          contentWidget = Column(
+            children: pagedLeads
+                .map((req) => _buildMobileLeadCard(context, req, isFollowupKpi, isRejectedKpi, isDark))
+                .toList(),
+          );
+        } else {
+          contentWidget = SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              columnSpacing: 22,
+              columns: [
+                const DataColumn(label: Text('Client Details', style: TextStyle(fontWeight: FontWeight.bold))),
+                const DataColumn(label: Text('Requirement / Config', style: TextStyle(fontWeight: FontWeight.bold))),
+                const DataColumn(label: Text('Assigned Salesperson', style: TextStyle(fontWeight: FontWeight.bold))),
+                if (isFollowupKpi) ...[
+                  const DataColumn(label: Text('Follow-Up Date/Time', style: TextStyle(fontWeight: FontWeight.bold))),
+                  const DataColumn(label: Text('Follow-Up Remark', style: TextStyle(fontWeight: FontWeight.bold))),
                 ],
-              );
-            }).toList(),
-          ),
-        ),
-        const SizedBox(height: CRMSpacing.m),
+                if (isRejectedKpi) ...[
+                  const DataColumn(label: Text('Rejection Reason / Status', style: TextStyle(fontWeight: FontWeight.bold))),
+                  const DataColumn(label: Text('Rejection Remark', style: TextStyle(fontWeight: FontWeight.bold))),
+                ],
+                if (!isFollowupKpi && !isRejectedKpi)
+                  const DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
+                const DataColumn(label: Text('Date / Time', style: TextStyle(fontWeight: FontWeight.bold))),
+              ],
+              rows: pagedLeads.map((req) {
+                final dateStr = DateFormat('dd MMM yyyy, hh:mm a').format(req.createdAt);
+                final followupDateStr = req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty
+                    ? (DateTime.tryParse(req.nextFollowupDate!.trim()) != null
+                        ? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.parse(req.nextFollowupDate!.trim()))
+                        : req.nextFollowupDate!)
+                    : 'Pending';
 
-        // Pagination
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Showing ${((_currentPage - 1) * _rowsPerPage) + 1} - ${(_currentPage * _rowsPerPage).clamp(1, filtered.length)} of ${filtered.length} leads',
-              style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                // Extract reason from status e.g. "Rejected (Budget Mismatch)" -> "Budget Mismatch"
+                String rejectionReason = 'Rejected';
+                if (req.status.contains('(') && req.status.contains(')')) {
+                  rejectionReason = req.status.substring(req.status.indexOf('(') + 1, req.status.indexOf(')'));
+                }
+
+                final salesperson = (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty)
+                    ? req.assigneeName!.trim()
+                    : ((req.assignedTo != null && req.assignedTo!.trim().isNotEmpty)
+                        ? req.assignedTo!.trim()
+                        : 'Unassigned');
+
+                return DataRow(
+                  cells: [
+                    // Client Details
+                    DataCell(
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(req.clientName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          Text(req.clientMobile.isEmpty ? 'No Phone' : req.clientMobile, style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context))),
+                        ],
+                      ),
+                    ),
+
+                    // Requirement / Config
+                    DataCell(
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            req.configurationName ?? (req.categoryName.isNotEmpty ? req.categoryName : 'Residential'),
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                          if (req.areaNames.isNotEmpty)
+                            Text(
+                              req.areaNames.join(', '),
+                              style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
+                            ),
+                        ],
+                      ),
+                    ),
+
+                    // Assigned Salesperson
+                    DataCell(
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          salesperson,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF7C3AED)),
+                        ),
+                      ),
+                    ),
+
+                    // Follow-Up Specifics
+                    if (isFollowupKpi) ...[
+                      DataCell(Text(followupDateStr, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
+                      DataCell(
+                        Container(
+                          constraints: const BoxConstraints(maxWidth: 220),
+                          child: Text(req.remarks ?? (req.notes ?? 'Scheduled follow-up'), style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                        ),
+                      ),
+                    ],
+
+                    // Rejection Specifics
+                    if (isRejectedKpi) ...[
+                      DataCell(
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDC2626).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(rejectionReason, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                        ),
+                      ),
+                      DataCell(
+                        Container(
+                          constraints: const BoxConstraints(maxWidth: 220),
+                          child: Text(req.remarks ?? 'Rejected lead', style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                        ),
+                      ),
+                    ],
+
+                    // Default Status Badge
+                    if (!isFollowupKpi && !isRejectedKpi)
+                      DataCell(
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: _getLeadsStatusColor(req.status).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(req.status, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _getLeadsStatusColor(req.status))),
+                        ),
+                      ),
+
+                    // Date / Time
+                    DataCell(Text(dateStr, style: const TextStyle(fontSize: 12))),
+                  ],
+                );
+              }).toList(),
             ),
-            Row(
+          );
+        }
+
+        return Column(
+          children: [
+            contentWidget,
+            const SizedBox(height: CRMSpacing.m),
+
+            // Pagination
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left_rounded),
-                  onPressed: _currentPage > 1 ? () => setState(() => _currentPage--) : null,
+                Text(
+                  'Showing ${((_currentPage - 1) * _rowsPerPage) + 1} - ${(_currentPage * _rowsPerPage).clamp(1, filtered.length)} of ${filtered.length} leads',
+                  style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
                 ),
-                Text('Page $_currentPage of $totalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right_rounded),
-                  onPressed: _currentPage < totalPages ? () => setState(() => _currentPage++) : null,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left_rounded),
+                      onPressed: _currentPage > 1 ? () => setState(() => _currentPage--) : null,
+                    ),
+                    Text('Page $_currentPage of $totalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right_rounded),
+                      onPressed: _currentPage < totalPages ? () => setState(() => _currentPage++) : null,
+                    ),
+                  ],
                 ),
               ],
             ),
           ],
-        ),
-      ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileLeadCard(
+    BuildContext context,
+    RequirementModel req,
+    bool isFollowupKpi,
+    bool isRejectedKpi,
+    bool isDark,
+  ) {
+    final dateStr = DateFormat('dd MMM yyyy, hh:mm a').format(req.createdAt);
+    final followupDateStr = req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty
+        ? (DateTime.tryParse(req.nextFollowupDate!.trim()) != null
+            ? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.parse(req.nextFollowupDate!.trim()))
+            : req.nextFollowupDate!)
+        : 'Pending';
+
+    String rejectionReason = 'Rejected';
+    if (req.status.contains('(') && req.status.contains(')')) {
+      rejectionReason = req.status.substring(req.status.indexOf('(') + 1, req.status.indexOf(')'));
+    }
+
+    final salesperson = (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty)
+        ? req.assigneeName!.trim()
+        : ((req.assignedTo != null && req.assignedTo!.trim().isNotEmpty)
+            ? req.assignedTo!.trim()
+            : 'Unassigned');
+
+    final configText = req.configurationName ?? (req.categoryName.isNotEmpty ? req.categoryName : 'Residential');
+    final areaText = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row 1: Client Name + Status Badge
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  req.clientName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (isRejectedKpi)
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDC2626).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      rejectionReason,
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFDC2626)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+              else if (!isFollowupKpi)
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: _getLeadsStatusColor(req.status).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      req.status,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _getLeadsStatusColor(req.status)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+
+          // Row 2: Phone & Config
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (req.clientMobile.isNotEmpty)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.phone_outlined, size: 12, color: CRMColors.textSecondaryOf(context)),
+                    const SizedBox(width: 3),
+                    Text(
+                      req.clientMobile,
+                      style: TextStyle(fontSize: 11.5, color: CRMColors.textSecondaryOf(context)),
+                    ),
+                  ],
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  configText,
+                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+                ),
+              ),
+              if (areaText != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.location_on_outlined, size: 12, color: CRMColors.textSecondaryOf(context)),
+                    const SizedBox(width: 2),
+                    Text(
+                      areaText,
+                      style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Row 3: Salesperson + Date
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.person_rounded, size: 13, color: Color(0xFF7C3AED)),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          salesperson,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF7C3AED)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                dateStr,
+                style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
+              ),
+            ],
+          ),
+
+          // Optional Follow-Up Specifics
+          if (isFollowupKpi) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D9488).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.event_repeat_rounded, size: 13, color: Color(0xFF0D9488)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Follow-Up: $followupDateStr',
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF0D9488)),
+                        ),
+                        if (req.remarks != null && req.remarks!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            req.remarks!,
+                            style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Optional Rejection Specifics
+          if (isRejectedKpi && (req.remarks != null && req.remarks!.trim().isNotEmpty)) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Remark: ${req.remarks}',
+              style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ],
+      ),
     );
   }
 

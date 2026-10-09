@@ -75,7 +75,6 @@ class _SyncDebugScreenState extends State<SyncDebugScreen> {
         return CRMColors.warning;
       case SyncState.disconnected:
       case SyncState.offline:
-      default:
         return CRMColors.danger;
     }
   }
@@ -93,7 +92,6 @@ class _SyncDebugScreenState extends State<SyncDebugScreen> {
       case SyncState.offline:
         return 'Offline';
       case SyncState.disconnected:
-      default:
         return 'Disconnected';
     }
   }
@@ -209,6 +207,8 @@ class _SyncDebugScreenState extends State<SyncDebugScreen> {
                               subtitle: Text(
                                 'IsarRead: ${isarReadMs}ms | Network: ${networkMs}ms | IsarWrite: ${isarWriteMs}ms',
                                 style: CRMTypography.caption.copyWith(color: CRMColors.textSecondary),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                               trailing: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -263,8 +263,10 @@ class _SyncDebugScreenState extends State<SyncDebugScreen> {
         onBack: () {
           if (Navigator.of(context).canPop()) {
             Navigator.of(context).pop();
+          } else if (context.canPop()) {
+            context.pop();
           } else {
-            context.go('/settings');
+            context.go('/more');
           }
         },
         onRefresh: _loadMetrics,

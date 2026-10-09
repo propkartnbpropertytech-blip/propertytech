@@ -8,18 +8,19 @@ class TeamUserVisibility {
     return r == 'admin' || r == 'super admin' || r == 'telecaller';
   }
 
-  static bool _isSalesRole(String roleName) {
+  static bool isSalesRole(String roleName) {
     final r = roleName.toLowerCase();
     return r.contains('sales') || r.contains('executive') || r.contains('agent') || r.contains('advisor');
   }
 
-  static bool _isTelecallerRole(String roleName) {
+  static bool isTelecallerRole(String roleName) {
     return roleName.toLowerCase().contains('telecaller');
   }
 
-  static bool _isAdminRole(String roleName) {
+  static bool isAdminRole(String roleName) {
     return roleName.toLowerCase() == 'admin';
   }
+
 
   static List<UserModel> visibleUsers({
     required List<UserModel> users,
@@ -31,32 +32,67 @@ class TeamUserVisibility {
     return active.where((u) {
       final r = u.roleName;
       if (role == 'super admin') {
-        return _isAdminRole(r) || _isTelecallerRole(r) || _isSalesRole(r);
+        return isAdminRole(r) || isTelecallerRole(r) || isSalesRole(r);
       }
       if (role == 'admin') {
-        return _isTelecallerRole(r) || _isSalesRole(r);
+        return isTelecallerRole(r) || isSalesRole(r);
       }
       if (role == 'telecaller') {
         if (u.id == currentUserId) return false;
-        return _isSalesRole(r);
+        return isSalesRole(r);
       }
       return false;
     }).toList()
       ..sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
   }
 
+  static List<UserModel> visibleSalesUsers({
+    required List<UserModel> users,
+    required String? currentRole,
+    required String currentUserId,
+  }) {
+    final all = visibleUsers(users: users, currentRole: currentRole, currentUserId: currentUserId);
+    return all.where((u) => isSalesRole(u.roleName)).toList();
+  }
+
+  static List<UserModel> visibleTelecallerUsers({
+    required List<UserModel> users,
+    required String? currentRole,
+    required String currentUserId,
+  }) {
+    final role = (currentRole ?? '').trim().toLowerCase();
+    if (role == 'telecaller') {
+      return const [];
+    }
+    final active = users.where((u) => u.isActive).toList();
+    return active.where((u) => isTelecallerRole(u.roleName)).toList()
+      ..sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+  }
+
   static bool _matchesPerson(String? value, dynamic user) {
     if (value == null || value.trim().isEmpty || user == null) return false;
     final v = value.trim().toLowerCase();
-    if (v == 'unassigned') return false;
-    final id = (user.id ?? '').toString().toLowerCase();
+    if (v == 'unassigned' || v == 'null') return false;
+    final id = (user.id ?? '').toString().trim().toLowerCase();
+    if (id.isNotEmpty && v == id) return true;
     final name = (user is UserModel
             ? user.fullName
             : (user.fullName ?? user.name ?? ''))
         .toString()
         .trim()
         .toLowerCase();
-    return v == id || (name.isNotEmpty && v == name);
+    if (name.isNotEmpty) {
+      if (v == name) return true;
+      final cleanV = v.replaceAll(RegExp(r'\s*\([^)]*\)'), '').trim();
+      if (cleanV == name) return true;
+      if (cleanV.isNotEmpty && (cleanV.contains(name) || name.contains(cleanV))) return true;
+    }
+    final email = (user is UserModel ? user.email : user.email?.toString() ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (email.isNotEmpty && v == email) return true;
+    return false;
   }
 
   static bool telecallerLeadSentToSalesperson(
@@ -104,21 +140,70 @@ class TeamUserVisibility {
     if (_matchesPerson(req.createdBy, user) || _matchesPerson(req.creatorName, user)) {
       return true;
     }
-    final history = req.metaCustomFields?['assignment_history'];
-    if (history is List) {
-      for (final item in history) {
-        if (item is Map) {
-          final id = item['user_id']?.toString();
-          final name = item['user_name']?.toString();
-          final byId = item['assigned_by']?.toString();
-          final byName = item['assigned_by_name']?.toString();
-          if (_matchesPerson(id, user) ||
-              _matchesPerson(name, user) ||
-              _matchesPerson(byId, user) ||
-              _matchesPerson(byName, user)) {
-            return true;
+    if (_matchesPerson(req.assignedTelecallerId, user)) {
+      return true;
+    }
+    final meta = req.metaCustomFields;
+    if (meta != null) {
+      final keysToCheck = [
+        'assigned_telecaller_id',
+        'assigned_telecaller_name',
+        '_assigned_telecaller_id',
+        '_assigned_telecaller_name',
+        'telecaller_id',
+        'telecaller_name',
+        'telecaller_by',
+        'telecaller_by_id',
+        'telecaller',
+        'rejected_by',
+        'rejected_by_id',
+        'rejected_by_name',
+        'rejected_by_telecaller',
+        'handled_by',
+        'handled_by_id',
+        'handled_by_name',
+        'sales_user_id',
+        'sales_user_name',
+        'handled_by_sales_id',
+        'sales_handled_by',
+      ];
+      for (final key in keysToCheck) {
+        final val = meta[key]?.toString();
+        if (_matchesPerson(val, user)) {
+          return true;
+        }
+      }
+      final history = meta['assignment_history'];
+      if (history is List) {
+        for (final item in history) {
+          if (item is Map) {
+            final id = item['user_id']?.toString();
+            final name = item['user_name']?.toString();
+            final byId = item['assigned_by']?.toString();
+            final byName = item['assigned_by_name']?.toString();
+            if (_matchesPerson(id, user) ||
+                _matchesPerson(name, user) ||
+                _matchesPerson(byId, user) ||
+                _matchesPerson(byName, user)) {
+              return true;
+            }
           }
         }
+      }
+    }
+    final uName = user.fullName.trim().toLowerCase();
+    if (uName.isNotEmpty && uName.length >= 3) {
+      if (req.creatorName != null && req.creatorName!.trim().toLowerCase().contains(uName)) {
+        return true;
+      }
+      if (req.assigneeName != null && req.assigneeName!.trim().toLowerCase().contains(uName)) {
+        return true;
+      }
+      if (req.remarks != null && req.remarks!.toLowerCase().contains(uName)) {
+        return true;
+      }
+      if (req.notes != null && req.notes!.toLowerCase().contains(uName)) {
+        return true;
       }
     }
     return false;

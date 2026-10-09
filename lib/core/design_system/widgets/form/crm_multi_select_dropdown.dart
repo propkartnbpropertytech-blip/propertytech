@@ -9,6 +9,7 @@ class CRMMultiSelectDropdown extends StatefulWidget {
   final List<String> selectedIds;
   final List<LookupItem> items;
   final ValueChanged<List<String>> onChanged;
+  final String? allLabel;
 
   const CRMMultiSelectDropdown({
     Key? key,
@@ -16,6 +17,7 @@ class CRMMultiSelectDropdown extends StatefulWidget {
     required this.selectedIds,
     required this.items,
     required this.onChanged,
+    this.allLabel,
   }) : super(key: key);
 
   @override
@@ -205,7 +207,7 @@ class _CRMMultiSelectDropdownState extends State<CRMMultiSelectDropdown> {
       final match = widget.items.firstWhere((item) => item.id == id, orElse: () => LookupItem(id: id, name: id));
       return match.name;
     }).toList();
-    final displayText = displayTexts.isNotEmpty ? displayTexts.join(', ') : 'All ${widget.label}';
+    final displayText = displayTexts.isNotEmpty ? displayTexts.join(', ') : (widget.allLabel ?? 'All ${widget.label}');
 
     return CompositedTransformTarget(
       link: _layerLink,

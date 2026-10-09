@@ -720,6 +720,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     final String? defaultAssigneeName = widget.requirement?.assigneeName ??
         (!isAdminOrTelecaller && currentUser != null ? currentUser.fullName : null);
 
+    final bool isCreatingNew = widget.requirement == null || widget.requirement!.id.isEmpty;
+    final bool isPreviouslyManual = widget.requirement?.isManuallyAdded == true;
+    final bool shouldMarkManual = isCreatingNew || isPreviouslyManual;
+
     final req = RequirementModel(
       id: widget.requirement?.id ?? '',
       clientName: _nameController.text.trim(),
@@ -742,7 +746,9 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       areaNames: areaNames,
       remarks: _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
       notes: widget.requirement?.notes,
-      leadSource: _selectedLeadSource,
+      leadSource: (_selectedLeadSource != null && _selectedLeadSource!.trim().isNotEmpty)
+          ? _selectedLeadSource
+          : (isCreatingNew ? 'Manual' : widget.requirement?.leadSource),
       referralName: _selectedLeadSource?.toLowerCase() == 'referral' ? _referralNameController.text.trim() : null,
       status: widget.requirement?.status ?? _selectedStatus,
       createdAt: widget.requirement?.createdAt ?? DateTime.now(),
@@ -764,6 +770,11 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       metaAdName: widget.requirement?.metaAdName,
       metaCustomFields: {
         ...(widget.requirement?.metaCustomFields ?? {}),
+        if (shouldMarkManual) 'is_manually_added': true,
+        if (isCreatingNew) 'created_via': 'add_lead',
+        if (isCreatingNew) 'entry_source': 'manual',
+        if (isCreatingNew && currentUser?.role != null)
+          'created_by_role': currentUser!.role,
         if (_selectedAreaIds.isNotEmpty) 'match_engine_status': 'READY',
         if (isAllAreasSelected) 'is_all_areas': true,
         if (!isAllAreasSelected && widget.requirement?.metaCustomFields?['is_all_areas'] == true) 'is_all_areas': false,

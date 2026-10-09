@@ -91,16 +91,31 @@ class MobileShellScope extends InheritedWidget {
 class MobileTitleController extends ChangeNotifier {
   Object? _owner;
   String? _title;
+  bool _showBack = false;
+  VoidCallback? _onBack;
   bool _disposed = false;
 
   String? get title => _title;
+  bool get showBack => _showBack;
+  VoidCallback? get onBack => _onBack;
 
   /// Claims and releases arrive after a frame, possibly after the shell is
   /// gone; they are ignored once disposed.
-  void claim(Object owner, String title) {
-    if (_disposed || (identical(_owner, owner) && _title == title)) return;
+  void claim(
+    Object owner,
+    String title, {
+    bool showBack = false,
+    VoidCallback? onBack,
+  }) {
+    if (_disposed ||
+        (identical(_owner, owner) &&
+            _title == title &&
+            _showBack == showBack &&
+            _onBack == onBack)) return;
     _owner = owner;
     _title = title;
+    _showBack = showBack;
+    _onBack = onBack;
     notifyListeners();
   }
 
@@ -108,6 +123,8 @@ class MobileTitleController extends ChangeNotifier {
     if (_disposed || !identical(_owner, owner)) return;
     _owner = null;
     _title = null;
+    _showBack = false;
+    _onBack = null;
     notifyListeners();
   }
 

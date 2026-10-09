@@ -97,6 +97,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   bool _archiveTabOnly = false;
   final Set<String> _archivedPropertyIds = {};
   String? _selectedStatusFilter;
+  String? _selectedFurnishingFilter;
   bool _isMobileFiltersExpanded = false;
   bool _noImagesOnly = false;
   String? _imageFilter; // null, 'with_images', 'no_images'
@@ -2188,8 +2189,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Builder(
-                      builder: (context) {
+                    LayoutBuilder(
+                      builder: (context, rowConstraints) {
                         final titleBlock = Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -2266,20 +2267,34 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                   ),
                                 ],
                               ),
-                              child: Text(
-                                "ID : ${p.propertyCode}",
-                                style: TextStyle(
-                                  color: CRMColors.primaryOf(context),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.5,
-                                ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    "ID : ",
+                                    style: TextStyle(
+                                      color: CRMColors.primaryOf(context),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  Text(
+                                    p.propertyCode,
+                                    style: TextStyle(
+                                      color: CRMColors.primaryOf(context),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         );
 
-                        if (isNarrow) {
+                        if (isNarrow || rowConstraints.maxWidth < 450) {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -3957,11 +3972,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   }
                 }
 
-                final bool isWide = width >= 800;
+                final bool isWide = width >= 1100;
                 final isRent = _activeListingTab == 'Rent';
                 final statusItems = isRent
                     ? ['Available', 'Rented Out', 'To Be Available']
                     : ['Available', 'Sold Out'];
+                const furnishedItems = ['Unfurnished', 'Semi Furnished', 'Fully Furnished'];
 
                 if (isWide) {
                   return Row(
@@ -4001,6 +4017,25 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                             });
                             _loadProperties();
                           },
+                        ),
+                      ),
+                      const SizedBox(width: CRMSpacing.m),
+                      Expanded(
+                        child: _buildDropdown(
+                          label: 'Furnished',
+                          value: _selectedFurnishingFilter,
+                          items: furnishedItems
+                              .map((val) => DropdownMenuItem<String>(
+                                  value: val, child: Text(val)))
+                              .toList(),
+                          onChanged: (val) {
+                            setState(() {
+                              _selectedFurnishingFilter = val;
+                              _currentPage = 0;
+                            });
+                            _loadProperties();
+                          },
+                          width: double.infinity,
                         ),
                       ),
                       const SizedBox(width: CRMSpacing.m),
@@ -4070,7 +4105,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     ],
                   );
                 } else {
-                  final double columnWidth = width < 500 ? width : (width - CRMSpacing.m) / 2;
+                  final double columnWidth = width < 500
+                      ? width
+                      : (width < 800
+                          ? (width - CRMSpacing.m) / 2
+                          : (width - CRMSpacing.m * 2) / 3);
                   return Wrap(
                     spacing: CRMSpacing.m,
                     runSpacing: CRMSpacing.m,
@@ -4109,6 +4148,22 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                             _loadProperties();
                           },
                         ),
+                      ),
+                      _buildDropdown(
+                        label: 'Furnished',
+                        value: _selectedFurnishingFilter,
+                        items: furnishedItems
+                            .map((val) => DropdownMenuItem<String>(
+                                value: val, child: Text(val)))
+                            .toList(),
+                        onChanged: (val) {
+                          setState(() {
+                            _selectedFurnishingFilter = val;
+                            _currentPage = 0;
+                          });
+                          _loadProperties();
+                        },
+                        width: columnWidth,
                       ),
                       SizedBox(
                         width: columnWidth,
@@ -4223,13 +4278,16 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               color: _isMobileFiltersExpanded ? Colors.white : CRMColors.primaryOf(context),
             ),
             const SizedBox(width: CRMSpacing.s),
-            Text(
-              _isMobileFiltersExpanded
-                  ? "Hide Filters"
-                  : (activeFiltersCount > 0 ? "Show Search Filters ($activeFiltersCount)" : "Show Search Filters"),
-              style: CRMTypography.bodyMedium.copyWith(
-                color: _isMobileFiltersExpanded ? Colors.white : CRMColors.textOf(context),
-                fontWeight: FontWeight.bold,
+            Flexible(
+              child: Text(
+                _isMobileFiltersExpanded
+                    ? "Hide Filters"
+                    : (activeFiltersCount > 0 ? "Show Search Filters ($activeFiltersCount)" : "Show Search Filters"),
+                overflow: TextOverflow.ellipsis,
+                style: CRMTypography.bodyMedium.copyWith(
+                  color: _isMobileFiltersExpanded ? Colors.white : CRMColors.textOf(context),
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
@@ -4462,6 +4520,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       _selectedVerification = null;
       _activeListingTab = 'Rent';
       _selectedPriceSortOrRange = null;
+      _selectedFurnishingFilter = null;
       _minPrice = null;
       _maxPrice = null;
       _currentPage = 0;
@@ -5699,6 +5758,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       if (!matchesBhk) return false;
     }
 
+    final matchesFurnished = _matchesFurnishing(p, _selectedFurnishingFilter, metadata);
+    if (!matchesFurnished) return false;
+
     bool matchesNoImages = true;
     if (_imageFilter == 'with_images') {
       matchesNoImages = p.images.isNotEmpty;
@@ -5711,10 +5773,58 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final matchesDate = _matchesPropertyDateFilterWithPreset(p, datePreset);
 
     if (isDirectMatch && matchesSearch) {
-      return matchesBhk && matchesMyAdded && matchesArchive && matchesDate;
+      return matchesFurnished && matchesBhk && matchesMyAdded && matchesArchive && matchesDate;
     }
 
     return matchesDate;
+  }
+
+  bool _matchesFurnishing(
+    PropertyModel p,
+    String? selectedFurnishing,
+    PropertyMetadataModel? metadata,
+  ) {
+    if (selectedFurnishing == null ||
+        selectedFurnishing.trim().isEmpty ||
+        selectedFurnishing.toLowerCase() == 'all' ||
+        selectedFurnishing.toLowerCase() == 'all furnished') {
+      return true;
+    }
+
+    String? name = p.furnishingTypeName;
+    if ((name == null || name.trim().isEmpty) && metadata != null && p.furnishingTypeId != null) {
+      try {
+        final item = metadata.furnishings.firstWhere(
+          (f) => f.id == p.furnishingTypeId,
+          orElse: () => LookupItem(id: '', name: ''),
+        );
+        if (item.name.isNotEmpty) {
+          name = item.name;
+        }
+      } catch (_) {}
+    }
+
+    if (name == null || name.trim().isEmpty) {
+      return false;
+    }
+
+    final lowerName = name.trim().toLowerCase().replaceAll('-', ' ');
+    final lowerTarget = selectedFurnishing.trim().toLowerCase().replaceAll('-', ' ');
+
+    if (lowerName == lowerTarget) {
+      return true;
+    }
+
+    if (lowerTarget == 'unfurnished') {
+      return lowerName.contains('unfurnish');
+    } else if (lowerTarget == 'semi furnished') {
+      return lowerName.contains('semi');
+    } else if (lowerTarget == 'fully furnished') {
+      return lowerName.contains('full') ||
+          (lowerName.contains('furnish') && !lowerName.contains('un') && !lowerName.contains('semi'));
+    }
+
+    return false;
   }
 
   int _getPropertyDateFilterCount(
@@ -5972,6 +6082,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     int count = 0;
     if (_activeBhkFilter != null && _activeBhkFilter != 'All' && _activeBhkFilter!.isNotEmpty) count++;
     if (_selectedPriceSortOrRange != null && _selectedPriceSortOrRange != 'default') count++;
+    if (_selectedFurnishingFilter != null && _selectedFurnishingFilter != 'All' && _selectedFurnishingFilter!.isNotEmpty) count++;
     return count;
   }
 
@@ -6010,6 +6121,24 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 }).toList(),
               ),
               const SizedBox(height: 16),
+              const Text('Furnished', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: ['All', 'Unfurnished', 'Semi Furnished', 'Fully Furnished'].map((f) {
+                  final selected = (_selectedFurnishingFilter ?? 'All') == f;
+                  return ChoiceChip(
+                    label: Text(f),
+                    selected: selected,
+                    onSelected: (val) {
+                      setSheetState(() => _selectedFurnishingFilter = f == 'All' ? null : f);
+                      setState(() => _selectedFurnishingFilter = f == 'All' ? null : f);
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
               const Text('Price Sorting', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               const SizedBox(height: 8),
               Wrap(
@@ -6039,6 +6168,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               setState(() {
                 _activeBhkFilter = 'All';
                 _selectedPriceSortOrRange = null;
+                _selectedFurnishingFilter = null;
                 _searchController.clear();
               });
               Navigator.pop(context);
@@ -6090,8 +6220,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         child: SingleChildScrollView(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(
-            horizontal: CRMSpacing.m,
+          padding: EdgeInsets.symmetric(
+            horizontal: MediaQuery.of(context).size.width <= 360 ? 10 : CRMSpacing.m,
             vertical: CRMSpacing.m,
           ),
           child: Column(
@@ -6102,7 +6232,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Container(
-                    width: 165,
+                    width: MediaQuery.of(context).size.width <= 360 ? 136 : 155,
                     height: 36,
                     padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
@@ -6136,7 +6266,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: CRMColors.primaryOf(context),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                     ),

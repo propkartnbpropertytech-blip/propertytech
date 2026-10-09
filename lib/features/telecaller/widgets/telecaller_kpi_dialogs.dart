@@ -494,39 +494,48 @@ class _TelecallerKpiLeadsDialogState extends State<TelecallerKpiLeadsDialog> {
         vertical: isPhone ? 16 : 28,
       ),
       child: Container(
-        width: 780,
-        height: 680,
-        padding: const EdgeInsets.all(20),
+        width: isPhone ? double.infinity : 780,
+        height: isPhone ? MediaQuery.sizeOf(context).height * 0.90 : 680,
+        padding: EdgeInsets.all(isPhone ? 14 : 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // 1. Header
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: primaryColor.withValues(alpha: isDark ? 0.2 : 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(Icons.leaderboard_rounded, color: primaryColor, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
+            isPhone
+                ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        widget.title,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : const Color(0xFF1E293B),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: primaryColor.withValues(alpha: isDark ? 0.2 : 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(Icons.leaderboard_rounded, color: primaryColor, size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              widget.title,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : const Color(0xFF1E293B),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            tooltip: 'Close',
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 4),
                       Wrap(
                         spacing: 6,
                         runSpacing: 4,
@@ -580,15 +589,95 @@ class _TelecallerKpiLeadsDialogState extends State<TelecallerKpiLeadsDialog> {
                         ],
                       ),
                     ],
+                  )
+                : Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: primaryColor.withValues(alpha: isDark ? 0.2 : 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.leaderboard_rounded, color: primaryColor, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.title,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : const Color(0xFF1E293B),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 3),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    'Date: ${widget.dateFilter}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? Colors.grey.shade300 : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    'Type: ${widget.leadType}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? Colors.grey.shade300 : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                ),
+                                if (widget.salesUserName != null && widget.salesUserName!.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEFF6FF),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'Salesperson: ${widget.salesUserName}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF2563EB),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  tooltip: 'Close',
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
             const SizedBox(height: 14),
 
             // 2. Search & Info Bar
@@ -824,9 +913,9 @@ class _TelecallerSalesUsersDialogState extends State<TelecallerSalesUsersDialog>
         vertical: isPhone ? 16 : 28,
       ),
       child: Container(
-        width: 600,
-        height: 580,
-        padding: const EdgeInsets.all(20),
+        width: isPhone ? double.infinity : 600,
+        height: isPhone ? MediaQuery.sizeOf(context).height * 0.85 : 580,
+        padding: EdgeInsets.all(isPhone ? 14 : 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1243,86 +1332,169 @@ class _TelecallerFollowupsDialogState extends State<TelecallerFollowupsDialog> {
     final upcomingCount = allScoped.where((f) => f.isFuture).length;
     final overdueCount = allScoped.where((f) => f.isPast && !f.isToday).length;
 
+    final isPhone = MediaQuery.sizeOf(context).width < 600;
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isPhone ? 10 : 16,
+        vertical: isPhone ? 14 : 24,
+      ),
       backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       child: Container(
-        width: 720,
-        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
+        width: isPhone ? double.infinity : 720,
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * (isPhone ? 0.90 : 0.85)),
         child: Column(
           children: [
             // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF3C7),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.schedule_rounded, color: Color(0xFFD97706), size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
+              padding: EdgeInsets.fromLTRB(isPhone ? 14 : 20, isPhone ? 14 : 18, isPhone ? 12 : 16, 12),
+              child: isPhone
+                  ? Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            const Text(
-                              'Follow-Up Leads',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFEF3C7),
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              child: Text(
-                                '${filtered.length}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFFD97706),
-                                ),
+                              child: const Icon(Icons.schedule_rounded, color: Color(0xFFD97706), size: 22),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  const Flexible(
+                                    child: Text(
+                                      'Follow-Up Leads',
+                                      style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEF3C7),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      '${filtered.length}',
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFFD97706),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 20),
+                              onPressed: () => Navigator.of(context).pop(),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 4),
                         Text(
                           'Showing scheduled follow-ups matching active filters (${widget.leadType} leads)',
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 11.5,
                             color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
                           ),
                         ),
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF2563EB),
+                              padding: EdgeInsets.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              context.go('/campaign/leads?view=followups');
+                            },
+                            icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                            label: const Text('Open in My Calling Leads', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.schedule_rounded, color: Color(0xFFD97706), size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Text(
+                                    'Follow-Up Leads',
+                                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEF3C7),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      '${filtered.length}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFFD97706),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Showing scheduled follow-ups matching active filters (${widget.leadType} leads)',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF2563EB),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          ),
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            context.go('/campaign/leads?view=followups');
+                          },
+                          icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                          label: const Text('Open in My Calling Leads', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
                       ],
                     ),
-                  ),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF2563EB),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    ),
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      context.go('/campaign/leads?view=followups');
-                    },
-                    icon: const Icon(Icons.open_in_new_rounded, size: 15),
-                    label: const Text('Open in My Calling Leads', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 20),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
             ),
             const Divider(height: 1),
 
@@ -1734,53 +1906,66 @@ class _TelecallerOpenLeadsDialogState extends State<TelecallerOpenLeadsDialog> {
         vertical: isPhone ? 16 : 28,
       ),
       child: Container(
-        width: 820,
-        height: 700,
-        padding: const EdgeInsets.all(20),
+        width: isPhone ? double.infinity : 820,
+        height: isPhone ? MediaQuery.sizeOf(context).height * 0.90 : 700,
+        padding: EdgeInsets.all(isPhone ? 14 : 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Header
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF3B82F6).withValues(alpha: isDark ? 0.2 : 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.folder_open_rounded, color: Color(0xFF3B82F6), size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
+            isPhone
+                ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          Text(
-                            'Open Leads',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF3B82F6).withValues(alpha: isDark ? 0.2 : 0.1),
+                              borderRadius: BorderRadius.circular(10),
                             ),
+                            child: const Icon(Icons.folder_open_rounded, color: Color(0xFF3B82F6), size: 22),
                           ),
                           const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(12),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    'Open Leads',
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '${_allOpenLeads.length} Leads',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF2563EB),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            child: Text(
-                              '${_allOpenLeads.length} Leads',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF2563EB),
-                              ),
-                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            tooltip: 'Close',
+                            onPressed: () => Navigator.of(context).pop(),
                           ),
                         ],
                       ),
@@ -1788,32 +1973,102 @@ class _TelecallerOpenLeadsDialogState extends State<TelecallerOpenLeadsDialog> {
                       Text(
                         'Untouched leads waiting for interaction (${widget.leadType} leads)',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11.5,
                           color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
                         ),
                       ),
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF2563EB),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            context.go('/campaign/leads');
+                          },
+                          icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                          label: const Text('Open in My Calling Leads', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3B82F6).withValues(alpha: isDark ? 0.2 : 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.folder_open_rounded, color: Color(0xFF3B82F6), size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  'Open Leads',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '${_allOpenLeads.length} Leads',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF2563EB),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Untouched leads waiting for interaction (${widget.leadType} leads)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          context.go('/campaign/leads');
+                        },
+                        icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                        label: const Text('Open in My Calling Leads', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
                     ],
                   ),
-                ),
-                TextButton.icon(
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF2563EB),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    context.go('/campaign/leads');
-                  },
-                  icon: const Icon(Icons.open_in_new_rounded, size: 15),
-                  label: const Text('Open in My Calling Leads', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  tooltip: 'Close',
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
             const SizedBox(height: 14),
 
             // Search bar
@@ -2069,97 +2324,182 @@ class _TelecallerArchiveLeadsDialogState extends State<TelecallerArchiveLeadsDia
         vertical: isPhone ? 16 : 28,
       ),
       child: Container(
-        width: 820,
-        height: 700,
-        padding: const EdgeInsets.all(20),
+        width: isPhone ? double.infinity : 820,
+        height: isPhone ? MediaQuery.sizeOf(context).height * 0.90 : 700,
+        padding: EdgeInsets.all(isPhone ? 14 : 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Header
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF64748B).withValues(alpha: isDark ? 0.2 : 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.archive_outlined, color: Color(0xFF64748B), size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
+            isPhone
+                ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          Text(
-                            'Archived Leads',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF64748B).withValues(alpha: isDark ? 0.2 : 0.1),
+                              borderRadius: BorderRadius.circular(10),
                             ),
+                            child: const Icon(Icons.archive_outlined, color: Color(0xFF64748B), size: 22),
                           ),
                           const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF64748B).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(12),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    'Archived Leads',
+                                    style: TextStyle(
+                                      fontSize: 16.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF64748B).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$totalCombined Total',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF475569),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            child: Text(
-                              '$totalCombined Total',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF475569),
-                              ),
-                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            tooltip: 'Close',
+                            onPressed: () => Navigator.of(context).pop(),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 4),
                       Text(
                         'Combined archive of Property Listing and Requirement Leads',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11.5,
                           color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
                         ),
                       ),
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF2563EB),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            final view = _tabController.index == 0 ? 'archive_listed' : 'archive_requirements';
+                            context.go('/campaign/leads?view=$view');
+                          },
+                          icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                          label: const Text('Open in My Calling Leads', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF64748B).withValues(alpha: isDark ? 0.2 : 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.archive_outlined, color: Color(0xFF64748B), size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  'Archived Leads',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF64748B).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$totalCombined Total',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF475569),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Combined archive of Property Listing and Requirement Leads',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          final view = _tabController.index == 0 ? 'archive_listed' : 'archive_requirements';
+                          context.go('/campaign/leads?view=$view');
+                        },
+                        icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                        label: const Text('Open in My Calling Leads', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
                     ],
                   ),
-                ),
-                TextButton.icon(
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF2563EB),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    final view = _tabController.index == 0 ? 'archive_listed' : 'archive_requirements';
-                    context.go('/campaign/leads?view=$view');
-                  },
-                  icon: const Icon(Icons.open_in_new_rounded, size: 15),
-                  label: const Text('Open in My Calling Leads', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  tooltip: 'Close',
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
             const SizedBox(height: 12),
 
             // TabBar with 2 tabs
             TabBar(
               controller: _tabController,
+              isScrollable: isPhone,
               labelColor: primaryColor,
               unselectedLabelColor: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
               indicatorColor: primaryColor,
-              labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
-              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13.5),
+              labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: isPhone ? 12.5 : 13.5),
+              unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500, fontSize: isPhone ? 12.5 : 13.5),
               tabs: [
                 Tab(
                   child: Row(
@@ -2167,7 +2507,7 @@ class _TelecallerArchiveLeadsDialogState extends State<TelecallerArchiveLeadsDia
                     children: [
                       const Icon(Icons.home_work_outlined, size: 16),
                       const SizedBox(width: 6),
-                      Text('Property Listing Leads (${allListing.length})'),
+                      Text(isPhone ? 'Listing (${allListing.length})' : 'Property Listing Leads (${allListing.length})'),
                     ],
                   ),
                 ),
@@ -2177,7 +2517,7 @@ class _TelecallerArchiveLeadsDialogState extends State<TelecallerArchiveLeadsDia
                     children: [
                       const Icon(Icons.person_search_outlined, size: 16),
                       const SizedBox(width: 6),
-                      Text('Requirement Leads (${allRequirement.length})'),
+                      Text(isPhone ? 'Requirement (${allRequirement.length})' : 'Requirement Leads (${allRequirement.length})'),
                     ],
                   ),
                 ),

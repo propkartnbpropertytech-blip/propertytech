@@ -46,26 +46,40 @@ Widget _buildDrilldownHeader({
     builder: (context, constraints) {
       final isMobile = constraints.maxWidth < 650;
       if (isMobile) {
+        final isVerySmall = constraints.maxWidth < 420;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: -0.4,
+            if (isVerySmall) ...[
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              const SizedBox(height: 6),
+              badge,
+            ] else ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: -0.4,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                badge,
-              ],
-            ),
+                  const SizedBox(width: 8),
+                  badge,
+                ],
+              ),
+            ],
             const SizedBox(height: 6),
             Text(
               subtitle,
@@ -321,35 +335,38 @@ class _NewOpenLeadsDrilldownViewState extends State<NewOpenLeadsDrilldownView> w
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildSubTabButton(
-                  context,
-                  label: 'Property Listing Leads — New',
-                  count: _selectedSourceIndex == 0
-                      ? metaData.propertyListing
-                      : (_selectedSourceIndex == 1 ? housingData.propertyListing : webhookData.propertyListing),
-                  isSelected: _selectedTypeIndex == 0,
-                  onTap: () {
-                    setState(() => _selectedTypeIndex = 0);
-                    _fetchLeads();
-                  },
-                ),
-                const SizedBox(width: 6),
-                _buildSubTabButton(
-                  context,
-                  label: 'Requirement Leads — New',
-                  count: _selectedSourceIndex == 0
-                      ? metaData.requirement
-                      : (_selectedSourceIndex == 1 ? housingData.requirement : webhookData.requirement),
-                  isSelected: _selectedTypeIndex == 1,
-                  onTap: () {
-                    setState(() => _selectedTypeIndex = 1);
-                    _fetchLeads();
-                  },
-                ),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildSubTabButton(
+                    context,
+                    label: 'Property Listing Leads — New',
+                    count: _selectedSourceIndex == 0
+                        ? metaData.propertyListing
+                        : (_selectedSourceIndex == 1 ? housingData.propertyListing : webhookData.propertyListing),
+                    isSelected: _selectedTypeIndex == 0,
+                    onTap: () {
+                      setState(() => _selectedTypeIndex = 0);
+                      _fetchLeads();
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  _buildSubTabButton(
+                    context,
+                    label: 'Requirement Leads — New',
+                    count: _selectedSourceIndex == 0
+                        ? metaData.requirement
+                        : (_selectedSourceIndex == 1 ? housingData.requirement : webhookData.requirement),
+                    isSelected: _selectedTypeIndex == 1,
+                    onTap: () {
+                      setState(() => _selectedTypeIndex = 1);
+                      _fetchLeads();
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: CRMSpacing.m),
@@ -366,32 +383,33 @@ class _NewOpenLeadsDrilldownViewState extends State<NewOpenLeadsDrilldownView> w
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Search Input
-              SizedBox(
-                width: 320,
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (val) => setState(() {
-                    _searchQuery = val.trim();
-                    _currentPage = 1;
-                  }),
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Search new leads by name, phone...',
-                    hintStyle: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 16),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                          )
-                        : null,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              LayoutBuilder(
+                builder: (context, constraints) => SizedBox(
+                  width: constraints.maxWidth < 500 ? double.infinity : 320,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (val) => setState(() {
+                      _searchQuery = val.trim();
+                      _currentPage = 1;
+                    }),
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Search new leads by name, phone...',
+                      hintStyle: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 16),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            )
+                          : null,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                 ),
               ),
@@ -528,14 +546,18 @@ class _NewOpenLeadsDrilldownViewState extends State<NewOpenLeadsDrilldownView> w
   }
 
   Widget _buildPaginationFooter(BuildContext context, int totalCount, int totalPages) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         Text(
           'Showing ${((_currentPage - 1) * _rowsPerPage) + 1} - ${(_currentPage * _rowsPerPage).clamp(1, totalCount)} of $totalCount leads',
           style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
         ),
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
               icon: const Icon(Icons.chevron_left_rounded),
@@ -749,35 +771,38 @@ class _CnrLeadsDrilldownViewState extends State<CnrLeadsDrilldownView> {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildTypeTab(
-                context,
-                label: 'Property Listing Leads',
-                count: _selectedSourceIndex == 0
-                    ? metaData.propertyListing
-                    : (_selectedSourceIndex == 1 ? housingData.propertyListing : webhookData.propertyListing),
-                isSelected: _selectedTypeIndex == 0,
-                onTap: () {
-                  setState(() => _selectedTypeIndex = 0);
-                  _fetchLeads();
-                },
-              ),
-              const SizedBox(width: 6),
-              _buildTypeTab(
-                context,
-                label: 'Requirement Leads',
-                count: _selectedSourceIndex == 0
-                    ? metaData.requirement
-                    : (_selectedSourceIndex == 1 ? housingData.requirement : webhookData.requirement),
-                isSelected: _selectedTypeIndex == 1,
-                onTap: () {
-                  setState(() => _selectedTypeIndex = 1);
-                  _fetchLeads();
-                },
-              ),
-            ],
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildTypeTab(
+                  context,
+                  label: 'Property Listing Leads',
+                  count: _selectedSourceIndex == 0
+                      ? metaData.propertyListing
+                      : (_selectedSourceIndex == 1 ? housingData.propertyListing : webhookData.propertyListing),
+                  isSelected: _selectedTypeIndex == 0,
+                  onTap: () {
+                    setState(() => _selectedTypeIndex = 0);
+                    _fetchLeads();
+                  },
+                ),
+                const SizedBox(width: 6),
+                _buildTypeTab(
+                  context,
+                  label: 'Requirement Leads',
+                  count: _selectedSourceIndex == 0
+                      ? metaData.requirement
+                      : (_selectedSourceIndex == 1 ? housingData.requirement : webhookData.requirement),
+                  isSelected: _selectedTypeIndex == 1,
+                  onTap: () {
+                    setState(() => _selectedTypeIndex = 1);
+                    _fetchLeads();
+                  },
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -793,21 +818,23 @@ class _CnrLeadsDrilldownViewState extends State<CnrLeadsDrilldownView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 320,
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (val) => setState(() {
-                    _searchQuery = val.trim();
-                    _currentPage = 1;
-                  }),
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Search CNR leads or remarks...',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              LayoutBuilder(
+                builder: (context, constraints) => SizedBox(
+                  width: constraints.maxWidth < 500 ? double.infinity : 320,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (val) => setState(() {
+                      _searchQuery = val.trim();
+                      _currentPage = 1;
+                    }),
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Search CNR leads or remarks...',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                 ),
               ),
@@ -900,14 +927,18 @@ class _CnrLeadsDrilldownViewState extends State<CnrLeadsDrilldownView> {
   }
 
   Widget _buildPaginationRow(BuildContext context, int totalCount, int totalPages) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         Text(
           'Showing ${((_currentPage - 1) * _rowsPerPage) + 1} - ${(_currentPage * _rowsPerPage).clamp(1, totalCount)} of $totalCount leads',
           style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
         ),
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
               icon: const Icon(Icons.chevron_left_rounded),
@@ -1121,35 +1152,38 @@ class _CallbackLeadsDrilldownViewState extends State<CallbackLeadsDrilldownView>
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildCallbackTypeTab(
-                context,
-                label: 'Property Listing Leads',
-                count: _selectedSourceIndex == 0
-                    ? metaData.propertyListing
-                    : (_selectedSourceIndex == 1 ? housingData.propertyListing : webhookData.propertyListing),
-                isSelected: _selectedTypeIndex == 0,
-                onTap: () {
-                  setState(() => _selectedTypeIndex = 0);
-                  _fetchLeads();
-                },
-              ),
-              const SizedBox(width: 6),
-              _buildCallbackTypeTab(
-                context,
-                label: 'Requirement Leads',
-                count: _selectedSourceIndex == 0
-                    ? metaData.requirement
-                    : (_selectedSourceIndex == 1 ? housingData.requirement : webhookData.requirement),
-                isSelected: _selectedTypeIndex == 1,
-                onTap: () {
-                  setState(() => _selectedTypeIndex = 1);
-                  _fetchLeads();
-                },
-              ),
-            ],
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildCallbackTypeTab(
+                  context,
+                  label: 'Property Listing Leads',
+                  count: _selectedSourceIndex == 0
+                      ? metaData.propertyListing
+                      : (_selectedSourceIndex == 1 ? housingData.propertyListing : webhookData.propertyListing),
+                  isSelected: _selectedTypeIndex == 0,
+                  onTap: () {
+                    setState(() => _selectedTypeIndex = 0);
+                    _fetchLeads();
+                  },
+                ),
+                const SizedBox(width: 6),
+                _buildCallbackTypeTab(
+                  context,
+                  label: 'Requirement Leads',
+                  count: _selectedSourceIndex == 0
+                      ? metaData.requirement
+                      : (_selectedSourceIndex == 1 ? housingData.requirement : webhookData.requirement),
+                  isSelected: _selectedTypeIndex == 1,
+                  onTap: () {
+                    setState(() => _selectedTypeIndex = 1);
+                    _fetchLeads();
+                  },
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -1165,21 +1199,23 @@ class _CallbackLeadsDrilldownViewState extends State<CallbackLeadsDrilldownView>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 320,
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (val) => setState(() {
-                    _searchQuery = val.trim();
-                    _currentPage = 1;
-                  }),
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Search Callback leads or remarks...',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              LayoutBuilder(
+                builder: (context, constraints) => SizedBox(
+                  width: constraints.maxWidth < 500 ? double.infinity : 320,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (val) => setState(() {
+                      _searchQuery = val.trim();
+                      _currentPage = 1;
+                    }),
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Search Callback leads or remarks...',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                 ),
               ),
@@ -1272,14 +1308,18 @@ class _CallbackLeadsDrilldownViewState extends State<CallbackLeadsDrilldownView>
   }
 
   Widget _buildCallbackPaginationRow(BuildContext context, int totalCount, int totalPages) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         Text(
           'Showing ${((_currentPage - 1) * _rowsPerPage) + 1} - ${(_currentPage * _rowsPerPage).clamp(1, totalCount)} of $totalCount leads',
           style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
         ),
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
               icon: const Icon(Icons.chevron_left_rounded),
@@ -1452,21 +1492,23 @@ class _CampaignFollowupsDrilldownViewState extends State<CampaignFollowupsDrilld
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 320,
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (val) => setState(() {
-                    _searchQuery = val.trim();
-                    _currentPage = 1;
-                  }),
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Search follow-ups or telecaller...',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              LayoutBuilder(
+                builder: (context, constraints) => SizedBox(
+                  width: constraints.maxWidth < 500 ? double.infinity : 320,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (val) => setState(() {
+                      _searchQuery = val.trim();
+                      _currentPage = 1;
+                    }),
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Search follow-ups or telecaller...',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                 ),
               ),
@@ -1522,14 +1564,18 @@ class _CampaignFollowupsDrilldownViewState extends State<CampaignFollowupsDrilld
                 ),
               if (!_isLoading && filteredLeads.isNotEmpty) ...[
                 const SizedBox(height: CRMSpacing.m),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     Text(
                       'Showing ${((_currentPage - 1) * _rowsPerPage) + 1} - ${(_currentPage * _rowsPerPage).clamp(1, filteredLeads.length)} of ${filteredLeads.length} leads',
                       style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
                     ),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
                           icon: const Icon(Icons.chevron_left_rounded),
@@ -1746,21 +1792,23 @@ class _NotInterestedLeadsDrilldownViewState extends State<NotInterestedLeadsDril
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 320,
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (val) => setState(() {
-                    _searchQuery = val.trim();
-                    _currentPage = 1;
-                  }),
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Search Not Interested leads...',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              LayoutBuilder(
+                builder: (context, constraints) => SizedBox(
+                  width: constraints.maxWidth < 500 ? double.infinity : 320,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (val) => setState(() {
+                      _searchQuery = val.trim();
+                      _currentPage = 1;
+                    }),
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Search Not Interested leads...',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                 ),
               ),
@@ -1818,14 +1866,18 @@ class _NotInterestedLeadsDrilldownViewState extends State<NotInterestedLeadsDril
                 ),
               if (!_isLoading && filteredLeads.isNotEmpty) ...[
                 const SizedBox(height: CRMSpacing.m),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     Text(
                       'Showing ${((_currentPage - 1) * _rowsPerPage) + 1} - ${(_currentPage * _rowsPerPage).clamp(1, filteredLeads.length)} of ${filteredLeads.length} leads',
                       style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
                     ),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
                           icon: const Icon(Icons.chevron_left_rounded),
@@ -2029,15 +2081,15 @@ class _SalesAssignedPickedUpDrilldownViewState extends State<SalesAssignedPicked
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isCompact = constraints.maxWidth < 650;
+                  final titleWidget = Text(
                     '$_selectedTelecallerName — Assigned Leads (${filteredLeads.length})',
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(
-                    width: 300,
+                  );
+                  final searchWidget = SizedBox(
+                    width: isCompact ? double.infinity : 300,
                     child: TextField(
                       controller: _searchController,
                       onChanged: (val) => setState(() {
@@ -2053,8 +2105,27 @@ class _SalesAssignedPickedUpDrilldownViewState extends State<SalesAssignedPicked
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                     ),
-                  ),
-                ],
+                  );
+
+                  if (isCompact) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        titleWidget,
+                        const SizedBox(height: 10),
+                        searchWidget,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      titleWidget,
+                      searchWidget,
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: CRMSpacing.m),
               if (_isLoading)
@@ -2158,14 +2229,18 @@ class _SalesAssignedPickedUpDrilldownViewState extends State<SalesAssignedPicked
                 ),
               if (!_isLoading && filteredLeads.isNotEmpty) ...[
                 const SizedBox(height: CRMSpacing.m),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     Text(
                       'Showing ${((_currentPage - 1) * _rowsPerPage) + 1} - ${(_currentPage * _rowsPerPage).clamp(1, filteredLeads.length)} of ${filteredLeads.length} leads',
                       style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
                     ),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
                           icon: const Icon(Icons.chevron_left_rounded),

@@ -21,10 +21,17 @@ class TelecallerCallbacksScreen extends StatelessWidget {
   final String? telecallerId;
   final String? telecallerName;
   final String? initialSearch;
-  const TelecallerCallbacksScreen({super.key, this.telecallerId, this.telecallerName, this.initialSearch});
+  final TelecallerCallbacksBloc? bloc;
+  const TelecallerCallbacksScreen({super.key, this.telecallerId, this.telecallerName, this.initialSearch, this.bloc});
 
   @override
   Widget build(BuildContext context) {
+    if (bloc != null) {
+      return BlocProvider.value(
+        value: bloc!,
+        child: _TelecallerCallbacksView(initialSearch: initialSearch, focusName: telecallerName),
+      );
+    }
     return BlocProvider(
       create: (_) => TelecallerCallbacksBloc(telecallerId: telecallerId)
         ..add(const TelecallerCallbacksRequested()),
@@ -158,6 +165,9 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
   String _source = 'All';
   DateTimeRange? _range;
   String _section = 'Requirement';
+  int _mobilePage = 1;
+  int _mobilePageSize = 10;
+  final ScrollController _mobileScrollController = ScrollController();
 
   @override
   void initState() {
@@ -171,6 +181,7 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
 
   @override
   void dispose() {
+    _mobileScrollController.dispose();
     for (final c in _tabSearchControllers.values) {
       c.dispose();
     }
@@ -759,254 +770,788 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
     TextEditingController currentSearchController,
   ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currentQuery = (_tabSearchQueries[_selectedTab] ?? '').trim();
+    final horizontal = MobileLayout.horizontalPaddingOf(context);
+
+    final totalFiltered = filteredItems.length;
+    final totalPages = totalFiltered == 0 ? 1 : (totalFiltered / _mobilePageSize).ceil();
+    final currentPage = _mobilePage.clamp(1, totalPages);
+    final startIndex = (currentPage - 1) * _mobilePageSize;
+    final endIndex = (startIndex + _mobilePageSize).clamp(0, totalFiltered);
+    final paginatedItems = totalFiltered == 0 ? <dynamic>[] : filteredItems.sublist(startIndex, endIndex);
 
     return MobileScreenScaffold(
       title: 'Callbacks',
       scrollable: false,
-      header: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Filter Tabs: All, Today, Due, Future
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildMobileTabChip('All', 'all', totalCount),
-                const SizedBox(width: 8),
-                _buildMobileTabChip('Today', 'today', todayCount),
-                const SizedBox(width: 8),
-                _buildMobileTabChip('Due', 'due', dueCount),
-                const SizedBox(width: 8),
-                _buildMobileTabChip('Future', 'future', futureCount),
-              ],
+      showBack: (widget.focusName ?? '').trim().isNotEmpty,
+      onBack: (widget.focusName ?? '').trim().isNotEmpty
+          ? () => context.go('/admin/lead-allocation')
+          : null,
+      body: RefreshIndicator(
+        onRefresh: () async => _fetchFromBloc(),
+        child: ListView(
+          controller: _mobileScrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.fromLTRB(horizontal, 12, horizontal, 24),
+          children: [
+            CRMPageHeader(
+              title: 'Callbacks',
+              benefit: (widget.focusName ?? '').trim().isEmpty
+                  ? 'Call Back leads leave My Calling Leads. Follow up stays there.'
+                  : 'Call Back leads for ${widget.focusName}. Follow ups stay on My Calling Leads.',
+              trailing: (widget.focusName ?? '').trim().isEmpty
+                  ? null
+                  : TextButton.icon(
+                      onPressed: () => context.go('/admin/lead-allocation'),
+                      icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                      label: const Text('Lead Allocation'),
+                    ),
             ),
-          ),
-          const SizedBox(height: 10),
+            const SizedBox(height: 12),
 
-          // Section Switch: Requirement vs Property Listing
-          Row(
-            children: [
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  selected: _section != 'Property Listing',
-                  label: 'Requirement leads ($requirementCount)',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => setState(() => _section = 'Requirement'),
-                    child: Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: _section != 'Property Listing'
-                            ? CRMColors.primary
-                            : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'Requirement ($requirementCount)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+            // Filter Tabs: All, Today, Due, Future
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildMobileTabChip('All', 'all', totalCount),
+                  const SizedBox(width: 8),
+                  _buildMobileTabChip('Today', 'today', todayCount),
+                  const SizedBox(width: 8),
+                  _buildMobileTabChip('Due', 'due', dueCount),
+                  const SizedBox(width: 8),
+                  _buildMobileTabChip('Future', 'future', futureCount),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Section Switch: Requirement vs Property Listing
+            Row(
+              children: [
+                Expanded(
+                  child: Semantics(
+                    button: true,
+                    selected: _section != 'Property Listing',
+                    label: 'Requirement leads ($requirementCount)',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() {
+                        _section = 'Requirement';
+                        _mobilePage = 1;
+                      }),
+                      child: Container(
+                        height: 40,
+                        decoration: BoxDecoration(
                           color: _section != 'Property Listing'
-                              ? Colors.white
-                              : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                              ? const Color(0xFF2563EB)
+                              : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.center,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'Requirement ($requirementCount)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _section != 'Property Listing'
+                                    ? Colors.white
+                                    : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Semantics(
+                    button: true,
+                    selected: _section == 'Property Listing',
+                    label: 'Property Listing leads ($listingCount)',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() {
+                        _section = 'Property Listing';
+                        _mobilePage = 1;
+                      }),
+                      child: Container(
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _section == 'Property Listing'
+                              ? const Color(0xFF2563EB)
+                              : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.center,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'Property Listing ($listingCount)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _section == 'Property Listing'
+                                    ? Colors.white
+                                    : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // Search Field (48px height)
+            SizedBox(
+              height: 48,
+              child: TextField(
+                key: ValueKey('mobile_callback_search_$_selectedTab'),
+                controller: currentSearchController,
+                decoration: InputDecoration(
+                  hintText: 'Search ${_getTabDisplayName(_selectedTab)} by name, phone, remarks',
+                  hintStyle: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                  ),
+                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                  suffixIcon: currentSearchController.text.isNotEmpty
+                      ? IconButton(
+                          tooltip: 'Clear search',
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          onPressed: () {
+                            currentSearchController.clear();
+                            setState(() {
+                              _tabSearchQueries[_selectedTab] = '';
+                              _mobilePage = 1;
+                            });
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                  ),
+                ),
+                onChanged: (val) {
+                  setState(() {
+                    _tabSearchQueries[_selectedTab] = val;
+                    _mobilePage = 1;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Filter Controls: Source Dropdown & Date Range Picker
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  // Source Selector Dropdown
+                  Container(
+                    height: 38,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _source != 'All'
+                            ? const Color(0xFF2563EB)
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                      ),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _source,
+                        isDense: true,
+                        icon: const Icon(Icons.arrow_drop_down_rounded, size: 20),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                        ),
+                        dropdownColor: isDark ? const Color(0xFF1E2430) : Colors.white,
+                        items: const [
+                          DropdownMenuItem(value: 'All', child: Text('All sources')),
+                          DropdownMenuItem(value: 'META', child: Text('Meta')),
+                          DropdownMenuItem(value: 'HOUSING', child: Text('Housing')),
+                        ],
+                        onChanged: (val) {
+                          if (val == null) return;
+                          setState(() {
+                            _source = val;
+                            _mobilePage = 1;
+                          });
+                          _fetchFromBloc();
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Date Range Button
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      final picked = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(2024),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                        initialDateRange: _range,
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          _range = picked;
+                          _mobilePage = 1;
+                        });
+                        _fetchFromBloc();
+                      }
+                    },
+                    child: Container(
+                      height: 38,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: _range != null
+                            ? const Color(0xFF2563EB).withValues(alpha: 0.1)
+                            : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC)),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _range != null
+                              ? const Color(0xFF2563EB)
+                              : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.date_range_rounded,
+                            size: 16,
+                            color: _range != null ? const Color(0xFF2563EB) : (isDark ? Colors.white70 : const Color(0xFF64748B)),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _range == null
+                                ? 'Date range'
+                                : '${DateFormat('dd MMM').format(_range!.start)} – ${DateFormat('dd MMM').format(_range!.end)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _range != null ? const Color(0xFF2563EB) : (isDark ? Colors.white70 : const Color(0xFF334155)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Clear dates if active
+                  if (_range != null) ...[
+                    const SizedBox(width: 6),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () {
+                        setState(() {
+                          _range = null;
+                          _mobilePage = 1;
+                        });
+                        _fetchFromBloc();
+                      },
+                      child: Container(
+                        height: 38,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.close_rounded, size: 14, color: Color(0xFFEF4444)),
+                            SizedBox(width: 4),
+                            Text(
+                              'Clear dates',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFFEF4444),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Content: Loading, Error, Empty, or Cards + Pagination
+            if (state.loading && state.items.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: MobileLoadingState(),
+              )
+            else if (state.error != null && state.items.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 40),
+                child: MobileErrorState(onRetry: _fetchFromBloc),
+              )
+            else if (filteredItems.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: MobileEmptyState(
+                  icon: currentQuery.isNotEmpty ? Icons.search_off_rounded : Icons.event_available_rounded,
+                  title: currentQuery.isNotEmpty
+                      ? 'No matching callbacks'
+                      : 'No ${_getTabDisplayName(_selectedTab)} scheduled',
+                  description: currentQuery.isNotEmpty
+                      ? 'Try searching with a different client name, phone number, or remark.'
+                      : 'Leads marked Call Back leave My Calling Leads and appear in this ${_section == 'Property Listing' ? 'listing' : 'requirement'} table.',
+                ),
+              )
+            else ...[
+              for (final raw in paginatedItems)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _buildMobileCallbackCard(context, raw, isDark),
+                ),
+              _buildMobilePagination(
+                context,
+                totalFiltered: totalFiltered,
+                totalPages: totalPages,
+                currentPage: currentPage,
+                startIndex: startIndex,
+                endIndex: endIndex,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileCallbackCard(BuildContext context, dynamic raw, bool isDark) {
+    final item = Map<String, dynamic>.from(raw as Map);
+    final leadId = _campaignLeadId(item);
+    final cached = IntegrationService().getLeadById(leadId);
+    final clientName = resolveLeadClientName(item, cachedLead: cached);
+    final phone = (cached?.getStringValue('phone_number').isNotEmpty == true
+        ? cached!.getStringValue('phone_number')
+        : (item['mobile'] ?? item['sanitized_phone'] ?? item['phone'] ?? '')).toString();
+    final scheduledAtRaw = (cached?.callbackScheduledAt != null
+        ? cached!.callbackScheduledAt!.toIso8601String()
+        : (item['scheduled_at']?.toString() ?? ''));
+    final remarks = (cached?.callbackRemarks != null && cached!.callbackRemarks!.isNotEmpty
+        ? cached.callbackRemarks!
+        : (item['remarks'] ?? '').toString());
+    final overdue = _isDueCallback(item);
+    final formattedTime = _formatScheduledTime(scheduledAtRaw);
+    final source = (item['source'] ?? cached?.source ?? '').toString();
+
+    return KeyedSubtree(
+      key: ValueKey<Object>(leadId),
+      child: MobileCard(
+        onTap: () {
+          _showLeadDetailsModal(
+            context,
+            leadId: leadId,
+            fallbackData: item,
+            fallbackLead: item['lead'] is Map ? Map<String, dynamic>.from(item['lead'] as Map) : null,
+            onOutcomeUpdated: () {
+              _fetchFromBloc();
+            },
+          );
+        },
+        leading: CircleAvatar(
+          radius: 18,
+          backgroundColor: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+          child: Text(
+            clientName.isNotEmpty ? clientName[0].toUpperCase() : 'C',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: Color(0xFF2563EB),
+            ),
+          ),
+        ),
+        title: clientName.isNotEmpty ? clientName : 'Lead',
+        subtitle: phone.isNotEmpty ? phone : null,
+        status: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: overdue
+                ? const Color(0xFFEF4444).withValues(alpha: 0.12)
+                : const Color(0xFF3B82F6).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: overdue
+                  ? const Color(0xFFEF4444).withValues(alpha: 0.3)
+                  : const Color(0xFF3B82F6).withValues(alpha: 0.25),
+            ),
+          ),
+          child: Text(
+            overdue ? 'Due / Missed' : 'Callback',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: overdue ? const Color(0xFFDC2626) : const Color(0xFF2563EB),
+            ),
+          ),
+        ),
+        metadata: [
+          formattedTime,
+          if (source.isNotEmpty) source.toUpperCase(),
+        ],
+        footer: Row(
+          children: [
+            if (remarks.isNotEmpty)
+              Expanded(
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.notes_rounded,
+                      size: 14,
+                      color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        remarks,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.grey.shade400 : const Color(0xFF475569),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              const Spacer(),
+            const SizedBox(width: 8),
+
+            // Not Interested Button
+            Semantics(
+              button: true,
+              label: 'Mark $clientName as Not Interested',
+              child: Tooltip(
+                message: 'Not Interested',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _handleNotInterested(
+                    context,
+                    leadId: leadId,
+                    unifiedLeadId: item['id']?.toString(),
+                    clientName: clientName,
+                    phone: phone,
+                    onDone: () {
+                      context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(leadId));
+                      if (item['id'] != null) {
+                        context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(item['id'].toString()));
+                      }
+                      _fetchFromBloc();
+                    },
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.25)),
+                    ),
+                    child: const Icon(
+                      Icons.thumb_down_alt_rounded,
+                      size: 18,
+                      color: Color(0xFFEF4444),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Call Phone Button
+            if (phone.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Semantics(
+                button: true,
+                label: 'Call $clientName',
+                child: Tooltip(
+                  message: 'Call Phone',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _handleStartCall(context, leadId, phone),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.25)),
+                      ),
+                      child: const Icon(
+                        Icons.call_rounded,
+                        size: 18,
+                        color: Color(0xFF10B981),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+
+            const SizedBox(width: 8),
+            // Outcome Button
+            Semantics(
+              button: true,
+              label: 'Record outcome for $clientName',
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.bolt_rounded, size: 16),
+                label: const Text('Outcome'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF3B82F6),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  minimumSize: const Size(0, 36),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => _handleOutcome(
+                  context,
+                  leadId,
+                  () {
+                    context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(leadId));
+                    _fetchFromBloc();
+                  },
+                  clientName: clientName,
+                  isPropertyListing: _section == 'Property Listing',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _goToMobilePage(int page, int totalPages) {
+    final target = page.clamp(1, totalPages);
+    if (target != _mobilePage) {
+      setState(() {
+        _mobilePage = target;
+      });
+      if (_mobileScrollController.hasClients) {
+        _mobileScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    }
+  }
+
+  void _onMobilePageSizeChanged(int newSize) {
+    setState(() {
+      _mobilePageSize = newSize;
+      _mobilePage = 1;
+    });
+    if (_mobileScrollController.hasClients) {
+      _mobileScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  Widget _buildMobilePagination(
+    BuildContext context, {
+    required int totalFiltered,
+    required int totalPages,
+    required int currentPage,
+    required int startIndex,
+    required int endIndex,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final from = totalFiltered == 0 ? 0 : startIndex + 1;
+    final to = endIndex;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2430) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  'Showing $from–$to of $totalFiltered callbacks',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  selected: _section == 'Property Listing',
-                  label: 'Property Listing leads ($listingCount)',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => setState(() => _section = 'Property Listing'),
-                    child: Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: _section == 'Property Listing'
-                            ? CRMColors.primary
-                            : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'Property Listing ($listingCount)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _section == 'Property Listing'
-                              ? Colors.white
-                              : (isDark ? Colors.white70 : const Color(0xFF475569)),
-                        ),
-                      ),
+              Container(
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                  ),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    value: _mobilePageSize,
+                    isDense: true,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
                     ),
+                    dropdownColor: isDark ? const Color(0xFF1E2430) : Colors.white,
+                    items: const [
+                      DropdownMenuItem(value: 10, child: Text('10 / page')),
+                      DropdownMenuItem(value: 25, child: Text('25 / page')),
+                      DropdownMenuItem(value: 50, child: Text('50 / page')),
+                    ],
+                    onChanged: (val) {
+                      if (val == null) return;
+                      _onMobilePageSizeChanged(val);
+                    },
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-
-          // Search Field (48px height)
-          SizedBox(
-            height: 48,
-            child: TextField(
-              key: ValueKey('mobile_callback_search_$_selectedTab'),
-              controller: currentSearchController,
-              decoration: InputDecoration(
-                hintText: 'Search ${_getTabDisplayName(_selectedTab)}...',
-                hintStyle: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
-                ),
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                suffixIcon: currentSearchController.text.isNotEmpty
-                    ? IconButton(
-                        tooltip: 'Clear search',
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        onPressed: () {
-                          currentSearchController.clear();
-                          setState(() {
-                            _tabSearchQueries[_selectedTab] = '';
-                          });
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
-                ),
+          Center(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Semantics(
+                    button: true,
+                    label: 'First page',
+                    child: IconButton(
+                      tooltip: 'First page',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: currentPage <= 1
+                          ? null
+                          : () => _goToMobilePage(1, totalPages),
+                      icon: const Icon(Icons.first_page_rounded, size: 20),
+                    ),
+                  ),
+                  Semantics(
+                    button: true,
+                    label: 'Previous page',
+                    child: IconButton(
+                      tooltip: 'Previous page',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: currentPage <= 1
+                          ? null
+                          : () => _goToMobilePage(currentPage - 1, totalPages),
+                      icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                      ),
+                    ),
+                    child: Text(
+                      'Page $currentPage of $totalPages',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Semantics(
+                    button: true,
+                    label: 'Next page',
+                    child: IconButton(
+                      tooltip: 'Next page',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: currentPage >= totalPages
+                          ? null
+                          : () => _goToMobilePage(currentPage + 1, totalPages),
+                      icon: const Icon(Icons.chevron_right_rounded, size: 20),
+                    ),
+                  ),
+                  Semantics(
+                    button: true,
+                    label: 'Last page',
+                    child: IconButton(
+                      tooltip: 'Last page',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: currentPage >= totalPages
+                          ? null
+                          : () => _goToMobilePage(totalPages, totalPages),
+                      icon: const Icon(Icons.last_page_rounded, size: 20),
+                    ),
+                  ),
+                ],
               ),
-              onChanged: (val) {
-                setState(() {
-                  _tabSearchQueries[_selectedTab] = val;
-                });
-              },
             ),
           ),
         ],
-      ),
-      body: MobileList<dynamic>(
-        items: filteredItems,
-        keyOf: (item) => _campaignLeadId(item),
-        isLoading: state.loading && state.items.isEmpty,
-        hasError: state.error != null && state.items.isEmpty,
-        onRetry: () {
-          context.read<TelecallerCallbacksBloc>().add(
-            TelecallerCallbacksRequested(
-              source: _source,
-              from: _range?.start.toIso8601String(),
-              to: _range?.end.toIso8601String(),
-            ),
-          );
-        },
-        onRefresh: () async {
-          context.read<TelecallerCallbacksBloc>().add(
-            TelecallerCallbacksRequested(
-              source: _source,
-              from: _range?.start.toIso8601String(),
-              to: _range?.end.toIso8601String(),
-            ),
-          );
-        },
-        emptyState: const MobileEmptyState(
-          icon: Icons.event_available_rounded,
-          title: 'No Callbacks',
-          description: 'No callback leads scheduled for this filter.',
-        ),
-        itemBuilder: (context, raw) {
-          final leadId = _campaignLeadId(raw);
-          final cached = IntegrationService().getLeadById(leadId);
-          final name = resolveLeadClientName(raw, cachedLead: cached);
-          final phone = (raw['sanitized_phone'] ?? raw['phone'] ?? cached?.getStringValue('phone_number') ?? '').toString();
-          final scheduledAt = _parseScheduledTime(raw);
-          final remarks = (raw['remarks'] ?? '').toString();
-          final isOverdue = _isDueCallback(raw);
-          final source = (raw['source'] ?? cached?.source ?? '').toString();
-
-          final timeText = scheduledAt != null
-              ? DateFormat('EEE, d MMM • h:mm a').format(scheduledAt)
-              : 'No time set';
-
-          return MobileCard(
-            title: name.isNotEmpty ? name : 'Lead',
-            subtitle: phone.isNotEmpty ? phone : null,
-            status: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: isOverdue
-                    ? const Color(0xFFFEE2E2)
-                    : const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                isOverdue ? 'Overdue' : 'Callback',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: isOverdue ? const Color(0xFFDC2626) : const Color(0xFF2563EB),
-                ),
-              ),
-            ),
-            metadata: [
-              timeText,
-              if (source.isNotEmpty) source,
-              if (remarks.isNotEmpty) remarks,
-            ],
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (phone.isNotEmpty)
-                  Semantics(
-                    button: true,
-                    label: 'Call $name',
-                    child: IconButton(
-                      icon: const Icon(Icons.phone_forwarded_rounded, color: Color(0xFF059669), size: 22),
-                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                      tooltip: 'Call client',
-                      onPressed: () => _handleStartCall(context, leadId, phone),
-                    ),
-                  ),
-                Semantics(
-                  button: true,
-                  label: 'Record outcome for $name',
-                  child: IconButton(
-                    icon: const Icon(Icons.bolt_rounded, color: Color(0xFF2563EB), size: 24),
-                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                    tooltip: 'Record outcome',
-                    onPressed: () {
-                      MobileTelecallerOutcomeSheet.show(
-                        context: context,
-                        leadId: leadId,
-                        clientName: name,
-                        phone: phone,
-                        initialType: TelecallerOutcomeType.callback,
-                        onDone: () {
-                          context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(leadId));
-                          context.read<TelecallerCallbacksBloc>().add(const TelecallerCallbacksRequested());
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
       ),
     );
   }
@@ -1022,7 +1567,10 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
       label: '$label callbacks ($count)',
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => setState(() => _selectedTab = value),
+        onTap: () => setState(() {
+          _selectedTab = value;
+          _mobilePage = 1;
+        }),
         child: Container(
           constraints: const BoxConstraints(minHeight: 40),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1236,6 +1784,28 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Source & Date Range Filters
+          _LeadQueueFilters(
+            initialSearch: _query,
+            onChanged: ({search, source, range}) {
+              setState(() => _query = search ?? '');
+              final nextSource = source ?? 'All';
+              final sameSource = nextSource == _loadedSource;
+              final sameRange = range?.start == _loadedRange?.start && range?.end == _loadedRange?.end;
+              if (sameSource && sameRange) return;
+              _loadedSource = nextSource;
+              _loadedRange = range;
+              context.read<TelecallerCnrBloc>().add(
+                TelecallerCnrRequested(
+                  source: nextSource,
+                  from: range?.start.toIso8601String(),
+                  to: range?.end.toIso8601String(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+
           // Section Switch
           Row(
             children: [
@@ -1256,14 +1826,17 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       alignment: Alignment.center,
-                      child: Text(
-                        'Requirement ($requirementCount)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _section != 'Property Listing'
-                              ? Colors.white
-                              : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Requirement ($requirementCount)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _section != 'Property Listing'
+                                ? Colors.white
+                                : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                          ),
                         ),
                       ),
                     ),
@@ -1288,14 +1861,17 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       alignment: Alignment.center,
-                      child: Text(
-                        'Property Listing ($listingCount)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _section == 'Property Listing'
-                              ? Colors.white
-                              : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Property Listing ($listingCount)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _section == 'Property Listing'
+                                ? Colors.white
+                                : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                          ),
                         ),
                       ),
                     ),
@@ -1303,47 +1879,6 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-
-          // Search Field
-          SizedBox(
-            height: 48,
-            child: TextField(
-              key: const ValueKey('mobile_cnr_search'),
-              controller: TextEditingController(text: _query)..selection = TextSelection.collapsed(offset: _query.length),
-              decoration: InputDecoration(
-                hintText: 'Search CNR leads...',
-                hintStyle: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
-                ),
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                suffixIcon: _query.isNotEmpty
-                    ? IconButton(
-                        tooltip: 'Clear search',
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        onPressed: () {
-                          setState(() => _query = '');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
-                ),
-              ),
-              onChanged: (val) {
-                setState(() => _query = val);
-              },
-            ),
           ),
         ],
       ),
@@ -1374,6 +1909,15 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
           return MobileCard(
             title: name.isNotEmpty ? name : 'Lead',
             subtitle: phone.isNotEmpty ? phone : null,
+            onTap: () => _showLeadDetailsModal(
+              context,
+              leadId: leadId,
+              fallbackLead: raw is Map<String, dynamic> ? raw : null,
+              onOutcomeUpdated: () {
+                context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
+                context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+              },
+            ),
             status: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(

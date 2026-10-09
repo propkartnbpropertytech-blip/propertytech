@@ -265,7 +265,7 @@ class MobileNavConfig {
             id: 'queue',
             label: 'Calling queue',
             icon: Icons.phone_in_talk_outlined,
-            route: '/campaign/leads',
+            route: '/campaign/meta',
           ),
           MobileMoreEntry(
             id: 'connections',
@@ -362,6 +362,29 @@ class MobileNavConfig {
         title: tabs[tabIndex].label,
         isSecondary: false,
         backFallback: homeRoute,
+      );
+    }
+
+    if (location == '/settings/location-config' ||
+        location.startsWith('/settings/location-config/')) {
+      final moreIndex = tabs.indexWhere((t) => t.id == 'more');
+      return MobileLocationInfo(
+        selectedIndex: moreIndex,
+        title: 'Location Config',
+        isSecondary: true,
+        backFallback: '/settings',
+      );
+    }
+
+    if (location.startsWith('/campaign/meta') ||
+        location.startsWith('/campaign/leads') ||
+        location.startsWith('/campaign/housing')) {
+      final moreIndex = tabs.indexWhere((t) => t.id == 'more');
+      return MobileLocationInfo(
+        selectedIndex: moreIndex,
+        title: 'Calling queue',
+        isSecondary: true,
+        backFallback: moreRoute,
       );
     }
 

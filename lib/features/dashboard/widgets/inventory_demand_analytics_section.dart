@@ -275,7 +275,6 @@ class _InventoryDemandAnalyticsSectionState
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(10),
@@ -290,168 +289,277 @@ class _InventoryDemandAnalyticsSectionState
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 1. Data Quality & Reconciliation Strip
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.verified_rounded,
-                  size: 16,
-                  color: Color(0xFF10B981),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Data Quality & Reconciliation:',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '$totalLeads Total Leads (100% Accounted)',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 4,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF64748B) : const Color(0xFFCBD5E1),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '$mappedLeads Mapped (${mappedPct.toStringAsFixed(0)}%)',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF0D9488),
-                ),
-              ),
-              const Spacer(),
-              // Clickable Unknown Area Pill
-              if (unknownLeads > 0)
-                Tooltip(
-                  message: 'Click to inspect and clean $unknownLeads broad/unmapped leads',
-                  child: InkWell(
-                    onTap: () => _openLeadsDrilldown(
-                      areaId: 'unknown',
-                      areaName: 'Unknown / Broad Area',
-                    ),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.2 : 0.12),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: const Color(0xFFF59E0B).withValues(alpha: 0.5),
-                        ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isMobile = constraints.maxWidth < 750;
+          final isVeryNarrow = constraints.maxWidth < 360;
+
+          final unknownPill = unknownLeads > 0
+              ? ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                  child: Tooltip(
+                    message: 'Click to inspect and clean $unknownLeads broad/unmapped leads',
+                    child: InkWell(
+                      onTap: () => _openLeadsDrilldown(
+                        areaId: 'unknown',
+                        areaName: 'Unknown / Broad Area',
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.help_outline_rounded,
-                            size: 13,
-                            color: Color(0xFFD97706),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.2 : 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.5),
                           ),
-                          const SizedBox(width: 5),
-                          Text(
-                            '$unknownLeads Broad / Unmapped (${unknownPct.toStringAsFixed(0)}%) • Click to Inspect',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.help_outline_rounded,
+                              size: 13,
                               color: Color(0xFFD97706),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                isVeryNarrow
+                                    ? '$unknownLeads Broad (${unknownPct.toStringAsFixed(0)}%) • Inspect'
+                                    : (isMobile
+                                        ? '$unknownLeads Broad / Unmapped (${unknownPct.toStringAsFixed(0)}%) • Inspect'
+                                        : '$unknownLeads Broad / Unmapped (${unknownPct.toStringAsFixed(0)}%) • Click to Inspect'),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFD97706),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
+                )
+              : null;
+
+          final leadSourcesContent = [
+            Text(
+              'Lead Sources:',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+              ),
+            ),
+            _buildSourceLegendChip('META', _localityData.leadSources['META'] ?? 0, const Color(0xFF1877F2), isDark),
+            _buildSourceLegendChip('HOUSING', _localityData.leadSources['HOUSING'] ?? 0, const Color(0xFFE11D48), isDark),
+            _buildSourceLegendChip('WEBHOOK', _localityData.leadSources['WEBHOOK'] ?? 0, const Color(0xFF8B5CF6), isDark),
+            _buildSourceLegendChip('MANUAL', _localityData.leadSources['MANUAL'] ?? 0, const Color(0xFF10B981), isDark),
+          ];
+
+          final inventoryStatusContent = [
+            Text(
+              'Inventory (${widget.businessType}):',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+              ),
+            ),
+            _buildStatusLegendChip('Available', _localityData.totalInventory, const Color(0xFF2563EB), isDark),
+            _buildStatusLegendChip('Rented Out', _localityData.totalRentedOut, const Color(0xFFD97706), isDark),
+            _buildStatusLegendChip('Sold Out', _localityData.totalSoldOut, const Color(0xFFDC2626), isDark),
+            _buildStatusLegendChip('Total', _localityData.totalProperties, const Color(0xFF475569), isDark, statusParam: 'All'),
+          ];
+
+          return Padding(
+            padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+              // 1. Data Quality & Reconciliation Strip
+              if (isMobile)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.verified_rounded,
+                            size: 16,
+                            color: Color(0xFF10B981),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Data Quality & Reconciliation:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '$totalLeads Total Leads (100% Accounted)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                    Text(
+                      '•  $mappedLeads Mapped (${mappedPct.toStringAsFixed(0)}%)',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF0D9488),
+                      ),
+                    ),
+                    if (unknownPill != null) unknownPill,
+                  ],
+                )
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.verified_rounded,
+                        size: 16,
+                        color: Color(0xFF10B981),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Data Quality & Reconciliation:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$totalLeads Total Leads (100% Accounted)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF64748B) : const Color(0xFFCBD5E1),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$mappedLeads Mapped (${mappedPct.toStringAsFixed(0)}%)',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF0D9488),
+                      ),
+                    ),
+                    const Spacer(),
+                    if (unknownPill != null) unknownPill,
+                  ],
+                ),
+              const SizedBox(height: 10),
+              Divider(
+                height: 1,
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+              ),
+              const SizedBox(height: 10),
+              // 2. Persistent Legends: Sources and Inventory
+              if (isMobile)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: leadSourcesContent,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: inventoryStatusContent,
+                    ),
+                  ],
+                )
+              else
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  alignment: WrapAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        leadSourcesContent[0],
+                        const SizedBox(width: 8),
+                        leadSourcesContent[1],
+                        const SizedBox(width: 6),
+                        leadSourcesContent[2],
+                        const SizedBox(width: 6),
+                        leadSourcesContent[3],
+                        const SizedBox(width: 6),
+                        leadSourcesContent[4],
+                      ],
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        inventoryStatusContent[0],
+                        const SizedBox(width: 8),
+                        inventoryStatusContent[1],
+                        const SizedBox(width: 6),
+                        inventoryStatusContent[2],
+                        const SizedBox(width: 6),
+                        inventoryStatusContent[3],
+                        const SizedBox(width: 6),
+                        inventoryStatusContent[4],
+                      ],
+                    ),
+                  ],
                 ),
             ],
           ),
-          const SizedBox(height: 10),
-          Divider(
-            height: 1,
-            color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-          ),
-          const SizedBox(height: 10),
-          // 2. Persistent Legends: Sources and Inventory
-          Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            alignment: WrapAlignment.spaceBetween,
-            children: [
-              // Lead Sources
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Lead Sources:',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _buildSourceLegendChip('META', _localityData.leadSources['META'] ?? 0, const Color(0xFF1877F2), isDark),
-                  const SizedBox(width: 6),
-                  _buildSourceLegendChip('HOUSING', _localityData.leadSources['HOUSING'] ?? 0, const Color(0xFFE11D48), isDark),
-                  const SizedBox(width: 6),
-                  _buildSourceLegendChip('WEBHOOK', _localityData.leadSources['WEBHOOK'] ?? 0, const Color(0xFF8B5CF6), isDark),
-                  const SizedBox(width: 6),
-                  _buildSourceLegendChip('MANUAL', _localityData.leadSources['MANUAL'] ?? 0, const Color(0xFF10B981), isDark),
-                ],
-              ),
-              // Inventory Statuses
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Inventory (${widget.businessType}):',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _buildStatusLegendChip('Available', _localityData.totalInventory, const Color(0xFF2563EB), isDark),
-                  const SizedBox(width: 6),
-                  _buildStatusLegendChip('Rented Out', _localityData.totalRentedOut, const Color(0xFFD97706), isDark),
-                  const SizedBox(width: 6),
-                  _buildStatusLegendChip('Sold Out', _localityData.totalSoldOut, const Color(0xFFDC2626), isDark),
-                  const SizedBox(width: 6),
-                  _buildStatusLegendChip('Total', _localityData.totalProperties, const Color(0xFF475569), isDark, statusParam: 'All'),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+        );
+      },
+    ),
+  );
+}
 
   Widget _buildSourceLegendChip(String sourceKey, int count, Color color, bool isDark) {
     return Tooltip(
@@ -2542,55 +2650,11 @@ class _InventoryDemandAnalyticsSectionState
         mainAxisSize: MainAxisSize.min,
         children: [
           // Header + Segmented Toggle
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  isListing
-                      ? Icons.sell_outlined
-                      : Icons.person_search_outlined,
-                  size: 18,
-                  color: accentColor,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Lead Area Demand',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? const Color(0xFFF8FAFC)
-                            : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      isListing
-                          ? 'Localities with top seller/landlord listings'
-                          : 'Localities with top buyer/tenant requirements',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Segmented Toggle
-              Container(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 500;
+
+              final toggleWidget = Container(
                 height: 30,
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
@@ -2633,8 +2697,78 @@ class _InventoryDemandAnalyticsSectionState
                     ),
                   ],
                 ),
-              ),
-            ],
+              );
+
+              final titleContent = Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      isListing
+                          ? Icons.sell_outlined
+                          : Icons.person_search_outlined,
+                      size: 18,
+                      color: accentColor,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Lead Area Demand',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: isDark
+                                ? const Color(0xFFF8FAFC)
+                                : const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isListing
+                              ? 'Localities with top seller/landlord listings'
+                              : 'Localities with top buyer/tenant requirements',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    titleContent,
+                    const SizedBox(height: 10),
+                    toggleWidget,
+                  ],
+                );
+              } else {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: titleContent),
+                    const SizedBox(width: 12),
+                    toggleWidget,
+                  ],
+                );
+              }
+            },
           ),
           const SizedBox(height: 12),
 

@@ -770,10 +770,10 @@ class _PropertyListingLeadsViewState extends State<PropertyListingLeadsView> {
                 children: [
                   Text(
                     title,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 11,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                       color: isSelected ? color : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
                     ),
@@ -1027,10 +1027,10 @@ class _RequirementLeadsViewState extends State<RequirementLeadsView> {
                 children: [
                   Text(
                     title,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 11,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                       color: isSelected ? color : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
                     ),
@@ -1724,68 +1724,141 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Table Toolbar
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (val) {
-                      setState(() {
-                        _searchQuery = val;
-                        _page = 0;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      hintText: 'Search leads by customer, phone, status, or assignee...',
-                      hintStyle: TextStyle(
-                        fontSize: 13,
-                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+          LayoutBuilder(
+            builder: (context, boxConstraints) {
+              final isNarrow = boxConstraints.maxWidth < 450;
+              if (isNarrow) {
+                return Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _searchController,
+                        onChanged: (val) {
+                          setState(() {
+                            _searchQuery = val;
+                            _page = 0;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Search leads...',
+                          hintStyle: TextStyle(
+                            fontSize: 12.5,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                          ),
+                          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _page = 0;
+                                    });
+                                  },
+                                )
+                              : null,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                        ),
                       ),
-                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 16),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() {
-                                  _searchQuery = '';
-                                  _page = 0;
-                                });
-                              },
-                            )
-                          : null,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(
-                          color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${filtered.length} Leads',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.refresh_rounded, size: 20),
+                            tooltip: 'Refresh Leads',
+                            onPressed: _fetchLeads,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (val) {
+                          setState(() {
+                            _searchQuery = val;
+                            _page = 0;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Search leads by customer, phone, status, or assignee...',
+                          hintStyle: TextStyle(
+                            fontSize: 13,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                          ),
+                          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _page = 0;
+                                    });
+                                  },
+                                )
+                              : null,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded),
+                      tooltip: 'Refresh Leads',
+                      onPressed: _fetchLeads,
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${filtered.length} Leads',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                IconButton(
-                  icon: const Icon(Icons.refresh_rounded),
-                  tooltip: 'Refresh Leads',
-                  onPressed: _fetchLeads,
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${filtered.length} Leads',
-                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
           const Divider(height: 1),
 
@@ -1814,8 +1887,21 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
               ),
             )
           else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile = constraints.maxWidth < 650;
+                if (isMobile) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Column(
+                      children: pageLeads
+                          .map((lead) => _buildMobileLeadItem(context, lead, isDark, primaryColor))
+                          .toList(),
+                    ),
+                  );
+                }
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
               child: DataTable(
                 headingRowColor: WidgetStateProperty.all(
                   isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
@@ -1933,15 +2019,20 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
                   );
                 }).toList(),
               ),
-            ),
+            );
+          },
+        ),
 
           // Pagination Bar
           if (totalPages > 1) ...[
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
                 children: [
                   Text(
                     'Showing ${startIdx + 1}–${(startIdx + _pageSize).clamp(0, filtered.length)} of ${filtered.length}',
@@ -1951,6 +2042,7 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
                     ),
                   ),
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
                         icon: const Icon(Icons.chevron_left_rounded),
@@ -1968,6 +2060,122 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
                   ),
                 ],
               ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileLeadItem(
+    BuildContext context,
+    BusinessInsightLead lead,
+    bool isDark,
+    Color primaryColor,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  lead.customerName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _buildStageBadge(lead.stage, lead.rejectionReason),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (lead.phone.isNotEmpty)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.phone_outlined, size: 12, color: CRMColors.textSecondaryOf(context)),
+                    const SizedBox(width: 3),
+                    Text(
+                      lead.phone,
+                      style: TextStyle(fontSize: 11.5, color: CRMColors.textSecondaryOf(context)),
+                    ),
+                  ],
+                ),
+              _buildSourceBadge(lead.source),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  lead.leadType,
+                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+                ),
+              ),
+            ],
+          ),
+          if ((lead.telecallerName != null && lead.telecallerName!.isNotEmpty) ||
+              (lead.salespersonName != null && lead.salespersonName!.isNotEmpty)) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                if (lead.telecallerName != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.headset_mic_rounded, size: 12, color: primaryColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        lead.telecallerName!,
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                if (lead.salespersonName != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.person_rounded, size: 12, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 4),
+                      Text(
+                        lead.salespersonName!,
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ],
+          if ((widget.kpi == 'not_interested' || widget.kpi == 'rejected') &&
+              ((lead.notInterestedRemark != null && lead.notInterestedRemark!.isNotEmpty) ||
+               (lead.rejectionReason != null && lead.rejectionReason!.isNotEmpty))) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Remark: ${lead.notInterestedRemark ?? lead.rejectionReason}',
+              style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ],

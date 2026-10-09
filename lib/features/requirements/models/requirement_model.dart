@@ -51,6 +51,7 @@ class RequirementModel {
   final Map<String, dynamic>? metaCustomFields;
   final String? leadQuality;
   final String? assignedTelecallerId;
+  final DateTime? salesAssignedAt;
 
   RequirementModel({
     required this.id,
@@ -103,11 +104,86 @@ class RequirementModel {
     this.metaCustomFields,
     this.leadQuality,
     this.assignedTelecallerId,
+    this.salesAssignedAt,
   });
 
   bool get isMetaLead => metaLeadId != null && metaLeadId!.isNotEmpty;
   String? get metaCampaignDisplayName => metaCampaignName ?? metaCampaignId;
   String? get metaAdDisplayName => metaAdName ?? metaAdId;
+
+  /// Returns true if this lead was manually created via "+ Add Lead" by a Salesperson, Telecaller, or Admin.
+  bool get isManuallyAdded {
+    // 1. Automated integration exclusion:
+    // If it has an external Meta Lead ID, Housing sync Lead ID, or Campaign integration info, it is NOT manually added.
+    if (isMetaLead ||
+        (metaLeadId != null && metaLeadId!.trim().isNotEmpty) ||
+        (metaCampaignId != null && metaCampaignId!.trim().isNotEmpty) ||
+        (metaCampaignName != null && metaCampaignName!.trim().isNotEmpty) ||
+        (metaPageId != null && metaPageId!.trim().isNotEmpty) ||
+        (metaFormId != null && metaFormId!.trim().isNotEmpty) ||
+        (metaAdId != null && metaAdId!.trim().isNotEmpty) ||
+        (metaAdName != null && metaAdName!.trim().isNotEmpty)) {
+      return false;
+    }
+
+    // Exclude automated pipelines (Webhook API, CSV/Batch imports, bots)
+    final src = leadSource?.trim().toLowerCase();
+    if (src != null && src.isNotEmpty) {
+      if (src == 'webhook api' ||
+          src == 'webhook' ||
+          src == 'api' ||
+          src.contains('webhook') ||
+          src.contains('campaign') ||
+          src.contains('sync') ||
+          src.contains('csv') ||
+          src.contains('excel') ||
+          src.contains('import') ||
+          src.contains('bot')) {
+        return false;
+      }
+    }
+
+    // Exclude external integration custom fields (Meta form/ad/campaign, Housing flat_id, webhook source)
+    if (metaCustomFields != null) {
+      final customSource = metaCustomFields!['source']?.toString().toLowerCase();
+      if (customSource != null &&
+          (customSource == 'webhook' ||
+           customSource == 'api' ||
+           customSource.contains('webhook') ||
+           customSource.contains('meta') ||
+           customSource.contains('facebook'))) {
+        return false;
+      }
+      if (metaCustomFields!['flat_id'] != null ||
+          metaCustomFields!['form_id'] != null ||
+          metaCustomFields!['ad_id'] != null ||
+          metaCustomFields!['campaign_id'] != null) {
+        return false;
+      }
+    }
+
+    // 2. Explicit manual flag set by "+ Add Lead" form:
+    if (metaCustomFields != null) {
+      final flag = metaCustomFields!['is_manually_added'];
+      if (flag == true || flag == 'true' || flag == 1) return true;
+      final createdVia = metaCustomFields!['created_via']?.toString().toLowerCase();
+      if (createdVia == 'add_lead' || createdVia == 'manual') return true;
+      final entrySource = metaCustomFields!['entry_source']?.toString().toLowerCase();
+      if (entrySource == 'manual') return true;
+    }
+
+    // 3. Any lead created directly in CRM (by Admin, Sales, Telecaller) with no automated integration IDs
+    if (createdBy != null && createdBy!.trim().isNotEmpty) {
+      return true;
+    }
+    if (creatorName != null &&
+        creatorName!.trim().isNotEmpty &&
+        creatorName!.trim().toLowerCase() != 'system') {
+      return true;
+    }
+
+    return false;
+  }
 
   String? get leadSourceDisplay {
     if (isMetaLead) {
@@ -531,6 +607,26 @@ class RequirementModel {
                       json['metaCustomFields']['telecaller_by'])
                   : null))
           ?.toString(),
+      salesAssignedAt: () {
+        final raw = json['salesAssignedAt'] ??
+            json['sales_assigned_at'] ??
+            json['assignedAt'] ??
+            json['assigned_at'] ??
+            (json['meta_custom_fields'] is Map
+                ? (json['meta_custom_fields']['sales_assigned_at'] ??
+                    json['meta_custom_fields']['telecaller_assigned_at'] ??
+                    json['meta_custom_fields']['assigned_at'])
+                : null) ??
+            (json['metaCustomFields'] is Map
+                ? (json['metaCustomFields']['sales_assigned_at'] ??
+                    json['metaCustomFields']['telecaller_assigned_at'] ??
+                    json['metaCustomFields']['assigned_at'])
+                : null);
+        if (raw != null && raw.toString().trim().isNotEmpty) {
+          return DateTime.tryParse(raw.toString().trim());
+        }
+        return null;
+      }(),
     );
   }
 
@@ -585,6 +681,8 @@ class RequirementModel {
       'lead_quality': leadQuality,
       'assigned_telecaller_id': assignedTelecallerId,
       'assignedTelecallerId': assignedTelecallerId,
+      'sales_assigned_at': salesAssignedAt?.toIso8601String(),
+      'salesAssignedAt': salesAssignedAt?.toIso8601String(),
     };
   }
 

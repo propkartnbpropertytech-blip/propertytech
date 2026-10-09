@@ -859,12 +859,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Icon(Icons.cloud_done_rounded, size: 14, color: thresholdColor),
                 const SizedBox(width: 4),
-                Text(
-                  '$currentScore% Minimum (Team)',
-                  style: TextStyle(
-                    color: thresholdColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
+                Flexible(
+                  child: Text(
+                    '$currentScore% Minimum (Team)',
+                    style: TextStyle(
+                      color: thresholdColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -923,25 +927,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Match Threshold Cutoff',
-                          style: CRMTypography.bodyMedium.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: CRMColors.textOf(context),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Match Threshold Cutoff',
+                            style: CRMTypography.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: CRMColors.textOf(context),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Properties scoring below this percentage will not qualify as matched listings',
-                          style: CRMTypography.caption.copyWith(
-                            color: CRMColors.textSecondaryOf(context),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Properties scoring below this percentage will not qualify as matched listings',
+                            style: CRMTypography.caption.copyWith(
+                              color: CRMColors.textSecondaryOf(context),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: CRMSpacing.s),
                     Text(
                       '$currentScore%',
                       style: TextStyle(
@@ -995,18 +1002,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
 
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('10% (Permissive)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
-                      Text('40% (Flexible)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
-                      Text('60% (Balanced)', style: CRMTypography.caption.copyWith(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primary)),
-                      Text('80% (Strict)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
-                      Text('100% (Exact)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
-                    ],
-                  ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 450;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(isNarrow ? '10%' : '10% (Permissive)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                          Text(isNarrow ? '40%' : '40% (Flexible)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                          Text(isNarrow ? '60%' : '60% (Balanced)', style: CRMTypography.caption.copyWith(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primary)),
+                          Text(isNarrow ? '80%' : '80% (Strict)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                          Text(isNarrow ? '100%' : '100% (Exact)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: CRMSpacing.l),
 
@@ -1453,6 +1465,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             fontWeight: FontWeight.bold,
             fontSize: 13,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ),
       child: Padding(
@@ -1508,25 +1522,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Images (0–100)',
-                      style: CRMTypography.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: CRMColors.textOf(context),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Images (0–100)',
+                        style: CRMTypography.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: CRMColors.textOf(context),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Default: 30 images. Applies to Add Property after Save Changes.',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.textSecondaryOf(context),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Default: 30 images. Applies to Add Property after Save Changes.',
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(width: CRMSpacing.s),
                 Text(
                   '$imageCount',
                   style: TextStyle(
@@ -1561,25 +1578,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Videos (0–20)',
-                      style: CRMTypography.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: CRMColors.textOf(context),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Videos (0–20)',
+                        style: CRMTypography.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: CRMColors.textOf(context),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Default: 5 videos. Applies to Add Property after Save Changes.',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.textSecondaryOf(context),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Default: 5 videos. Applies to Add Property after Save Changes.',
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(width: CRMSpacing.s),
                 Text(
                   '$videoCount',
                   style: TextStyle(
