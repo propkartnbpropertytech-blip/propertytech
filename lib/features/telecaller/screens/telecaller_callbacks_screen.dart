@@ -15,7 +15,6 @@ import '../bloc/telecaller_list_bloc.dart';
 import '../data/telecaller_repository.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
-import '../widgets/mobile_telecaller_outcome_sheet.dart';
 
 class TelecallerCallbacksScreen extends StatelessWidget {
   final String? telecallerId;
@@ -1776,207 +1775,181 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
     int listingCount,
   ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final horizontal = MobileLayout.horizontalPaddingOf(context);
 
     return MobileScreenScaffold(
       title: 'CNR / Retry',
       scrollable: false,
-      header: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Source & Date Range Filters
-          _LeadQueueFilters(
-            initialSearch: _query,
-            onChanged: ({search, source, range}) {
-              setState(() => _query = search ?? '');
-              final nextSource = source ?? 'All';
-              final sameSource = nextSource == _loadedSource;
-              final sameRange = range?.start == _loadedRange?.start && range?.end == _loadedRange?.end;
-              if (sameSource && sameRange) return;
-              _loadedSource = nextSource;
-              _loadedRange = range;
-              context.read<TelecallerCnrBloc>().add(
-                TelecallerCnrRequested(
-                  source: nextSource,
-                  from: range?.start.toIso8601String(),
-                  to: range?.end.toIso8601String(),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
-
-          // Section Switch
-          Row(
-            children: [
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  selected: _section != 'Property Listing',
-                  label: 'Requirement leads ($requirementCount)',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => setState(() => _section = 'Requirement'),
-                    child: Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: _section != 'Property Listing'
-                            ? CRMColors.primary
-                            : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      alignment: Alignment.center,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          'Requirement ($requirementCount)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _section != 'Property Listing'
-                                ? Colors.white
-                                : (isDark ? Colors.white70 : const Color(0xFF475569)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  selected: _section == 'Property Listing',
-                  label: 'Property Listing leads ($listingCount)',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => setState(() => _section = 'Property Listing'),
-                    child: Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: _section == 'Property Listing'
-                            ? CRMColors.primary
-                            : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      alignment: Alignment.center,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          'Property Listing ($listingCount)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _section == 'Property Listing'
-                                ? Colors.white
-                                : (isDark ? Colors.white70 : const Color(0xFF475569)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: MobileList<dynamic>(
-        items: filteredItems,
-        keyOf: (item) => _campaignLeadId(item),
-        isLoading: state.loading && state.items.isEmpty,
-        hasError: state.error != null && state.items.isEmpty,
-        onRetry: () {
-          context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
-        },
+      showBack: (widget.focusName ?? '').trim().isNotEmpty,
+      onBack: (widget.focusName ?? '').trim().isNotEmpty
+          ? () => context.go('/admin/lead-allocation')
+          : null,
+      body: RefreshIndicator(
         onRefresh: () async {
           context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
         },
-        emptyState: const MobileEmptyState(
-          icon: Icons.phone_callback_rounded,
-          title: 'No CNR Leads',
-          description: 'Leads marked as Customer Not Received will appear here for retry attempts.',
-        ),
-        itemBuilder: (context, raw) {
-          final leadId = _campaignLeadId(raw);
-          final cached = IntegrationService().getLeadById(leadId);
-          final name = resolveLeadClientName(raw, cachedLead: cached);
-          final phone = (raw['sanitized_phone'] ?? raw['phone'] ?? cached?.getStringValue('phone_number') ?? '').toString();
-          final source = (raw['source'] ?? cached?.source ?? '').toString();
-          final leadAttempts = int.tryParse((raw['call_attempt_count'] ?? 0).toString()) ?? 1;
-
-          return MobileCard(
-            title: name.isNotEmpty ? name : 'Lead',
-            subtitle: phone.isNotEmpty ? phone : null,
-            onTap: () => _showLeadDetailsModal(
-              context,
-              leadId: leadId,
-              fallbackLead: raw is Map<String, dynamic> ? raw : null,
-              onOutcomeUpdated: () {
-                context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
-                context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.fromLTRB(horizontal, 12, horizontal, 24),
+          children: [
+            CRMPageHeader(
+              title: 'CNR / Retry',
+              benefit: (widget.focusName ?? '').trim().isEmpty
+                  ? 'CNR leads leave My Calling Leads and stay here for retry.'
+                  : 'CNR leads for ${widget.focusName}. They are not on My Calling Leads.',
+              trailing: (widget.focusName ?? '').trim().isEmpty
+                  ? null
+                  : TextButton.icon(
+                      onPressed: () => context.go('/admin/lead-allocation'),
+                      icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                      label: const Text('Lead Allocation'),
+                    ),
+            ),
+            const SizedBox(height: 12),
+            _LeadQueueFilters(
+              initialSearch: _query,
+              onChanged: ({search, source, range}) {
+                setState(() => _query = search ?? '');
+                final nextSource = source ?? 'All';
+                final sameSource = nextSource == _loadedSource;
+                final sameRange = range?.start == _loadedRange?.start && range?.end == _loadedRange?.end;
+                if (sameSource && sameRange) return;
+                _loadedSource = nextSource;
+                _loadedRange = range;
+                context.read<TelecallerCnrBloc>().add(
+                  TelecallerCnrRequested(
+                    source: nextSource,
+                    from: range?.start.toIso8601String(),
+                    to: range?.end.toIso8601String(),
+                  ),
+                );
               },
             ),
-            status: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                'Attempt #$leadAttempts',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFFD97706),
-                ),
-              ),
-            ),
-            metadata: [
-              'CNR / Retry',
-              if (source.isNotEmpty) source,
-            ],
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
+            const SizedBox(height: 8),
+            Row(
               children: [
-                if (phone.isNotEmpty)
-                  Semantics(
+                Expanded(
+                  child: Semantics(
                     button: true,
-                    label: 'Retry calling $name',
-                    child: IconButton(
-                      icon: const Icon(Icons.phone_forwarded_rounded, color: Color(0xFF059669), size: 22),
-                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                      tooltip: 'Retry call',
-                      onPressed: () => _handleStartCall(context, leadId, phone),
+                    selected: _section != 'Property Listing',
+                    label: 'Requirement leads ($requirementCount)',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _section = 'Requirement'),
+                      child: Container(
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _section != 'Property Listing'
+                              ? CRMColors.primary
+                              : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.center,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            'Requirement ($requirementCount)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _section != 'Property Listing'
+                                  ? Colors.white
+                                  : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                Semantics(
-                  button: true,
-                  label: 'Record outcome for $name',
-                  child: IconButton(
-                    icon: const Icon(Icons.bolt_rounded, color: Color(0xFF2563EB), size: 24),
-                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                    tooltip: 'Record outcome',
-                    onPressed: () {
-                      MobileTelecallerOutcomeSheet.show(
-                        context: context,
-                        leadId: leadId,
-                        clientName: name,
-                        phone: phone,
-                        initialType: TelecallerOutcomeType.cnr,
-                        onDone: () {
-                          context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
-                          context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
-                        },
-                      );
-                    },
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Semantics(
+                    button: true,
+                    selected: _section == 'Property Listing',
+                    label: 'Property Listing leads ($listingCount)',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _section = 'Property Listing'),
+                      child: Container(
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _section == 'Property Listing'
+                              ? CRMColors.primary
+                              : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.center,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            'Property Listing ($listingCount)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _section == 'Property Listing'
+                                  ? Colors.white
+                                  : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
-          );
-        },
+            const SizedBox(height: 12),
+            if (state.error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Could not load CNR leads. Refresh the page.',
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+            if (state.loading && state.items.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (filteredItems.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(32),
+                alignment: Alignment.center,
+                child: Column(
+                  children: [
+                    Icon(Icons.phone_callback_rounded, size: 48, color: isDark ? Colors.grey.shade600 : Colors.grey.shade400),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No CNR leads pending retry.',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Leads marked as Customer Not Received will appear here for retry attempts.',
+                      style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade500 : Colors.grey.shade500),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              )
+            else
+              for (final raw in filteredItems)
+                _CnrCard(
+                  key: ValueKey(_campaignLeadId(raw is Map ? raw : {})),
+                  lead: Map<String, dynamic>.from(raw as Map),
+                  onOutcomeRecorded: () {
+                    context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                  },
+                ),
+          ],
+        ),
       ),
     );
   }
@@ -1985,7 +1958,7 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
 class _CnrCard extends StatefulWidget {
   final Map<String, dynamic> lead;
   final VoidCallback onOutcomeRecorded;
-  const _CnrCard({required this.lead, required this.onOutcomeRecorded});
+  const _CnrCard({super.key, required this.lead, required this.onOutcomeRecorded});
 
   @override
   State<_CnrCard> createState() => _CnrCardState();
@@ -2003,7 +1976,10 @@ class _CnrCardState extends State<_CnrCard> {
 
   Future<void> _load() async {
     try {
-      final history = await TelecallerRepository().callHistory(widget.lead['id'].toString());
+      final leadId = _campaignLeadId(widget.lead).isNotEmpty
+          ? _campaignLeadId(widget.lead)
+          : widget.lead['id']?.toString() ?? '';
+      final history = await TelecallerRepository().callHistory(leadId);
       if (mounted) setState(() { _history = history; _loaded = true; });
     } catch (_) {
       if (mounted) setState(() => _loaded = true);
@@ -2016,6 +1992,9 @@ class _CnrCardState extends State<_CnrCard> {
     final cached = IntegrationService().getLeadById(leadId);
     final name = resolveLeadClientName(widget.lead, cachedLead: cached);
     final phone = (widget.lead['sanitized_phone'] ?? widget.lead['phone'] ?? cached?.getStringValue('phone_number') ?? '').toString();
+    final source = (widget.lead['source'] ?? cached?.source ?? '').toString();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MobileLayout.isMobileShell(MediaQuery.sizeOf(context).width);
 
     int historyMax = 0;
     for (final h in _history) {
@@ -2026,6 +2005,203 @@ class _CnrCardState extends State<_CnrCard> {
     }
     final leadAttempts = int.tryParse((widget.lead['call_attempt_count'] ?? 0).toString()) ?? 0;
     final attempts = [leadAttempts, historyMax, _history.length, 1].reduce(math.max);
+
+    if (isMobile) {
+      return Card(
+        elevation: 0,
+        margin: const EdgeInsets.only(bottom: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: const Color(0xFFD97706).withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              leading: CircleAvatar(
+                radius: 18,
+                backgroundColor: const Color(0xFFD97706).withValues(alpha: 0.12),
+                child: const Icon(Icons.phone_missed_rounded, color: Color(0xFFD97706), size: 18),
+              ),
+              title: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      name,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Attempt #$attempts',
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
+                    ),
+                  ),
+                ],
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        phone.isNotEmpty ? phone : 'No phone recorded',
+                        style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (source.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05)),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          source.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              children: [
+                if (!_loaded) const LinearProgressIndicator(),
+                if (_loaded && _history.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text('No call history recorded yet.', style: TextStyle(fontSize: 12)),
+                  ),
+                for (final h in _history)
+                  ListTile(
+                    dense: true,
+                    title: Text(
+                      'Attempt ${(h as Map)['attempt_number']} — ${h['outcome']}',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      '${h['remarks'] ?? 'No remarks'} · ${h['created_at'] ?? ''}',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ),
+              ],
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                children: [
+                  Semantics(
+                    button: true,
+                    label: 'Not interested for $name',
+                    child: IconButton(
+                      tooltip: 'Not Interested',
+                      icon: const Icon(Icons.thumb_down_alt_rounded, size: 20, color: Color(0xFFEF4444)),
+                      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                      padding: EdgeInsets.zero,
+                      onPressed: () => _handleNotInterested(
+                        context,
+                        leadId: leadId,
+                        unifiedLeadId: widget.lead['id']?.toString(),
+                        clientName: name,
+                        phone: phone,
+                        onDone: () {
+                          context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
+                          if (widget.lead['id'] != null) {
+                            context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(widget.lead['id'].toString()));
+                          }
+                          context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                          _load();
+                          widget.onOutcomeRecorded();
+                        },
+                      ),
+                    ),
+                  ),
+                  Semantics(
+                    button: true,
+                    label: 'View full lead details for $name',
+                    child: IconButton(
+                      tooltip: 'View Full Lead Details',
+                      icon: const Icon(Icons.info_outline_rounded, size: 20, color: Color(0xFF3B82F6)),
+                      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                      padding: EdgeInsets.zero,
+                      onPressed: () {
+                        _showLeadDetailsModal(
+                          context,
+                          leadId: leadId,
+                          fallbackLead: widget.lead,
+                          onOutcomeUpdated: () {
+                            context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
+                            context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                            widget.onOutcomeRecorded();
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  const Spacer(),
+                  Semantics(
+                    button: true,
+                    label: 'Retry calling $name',
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.call_rounded, size: 16),
+                      label: const Text('Retry'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF10B981),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      ),
+                      onPressed: () => _handleStartCall(context, leadId, phone),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Semantics(
+                    button: true,
+                    label: 'Record outcome for $name',
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.bolt_rounded, size: 15),
+                      label: const Text('Outcome'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFD97706),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: () => _handleOutcome(
+                        context,
+                        leadId,
+                        () {
+                          context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
+                          context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                          _load();
+                          widget.onOutcomeRecorded();
+                        },
+                        clientName: name,
+                        isPropertyListing: queueLeadType(widget.lead) == 'Property Listing',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Card(
       elevation: 0,

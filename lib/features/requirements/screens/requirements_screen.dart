@@ -768,6 +768,7 @@ class RequirementsScreen extends StatefulWidget {
   final String? initialSubTab;
   final String? initialGroup;
   final String? initialStatus;
+  final String? initialSection;
 
   const RequirementsScreen({
     super.key,
@@ -775,6 +776,7 @@ class RequirementsScreen extends StatefulWidget {
     this.initialSubTab,
     this.initialGroup,
     this.initialStatus,
+    this.initialSection,
   });
 
   @override
@@ -832,6 +834,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   DateTime? _reqFollowupDateFilter = DateTime.now();
   String _selectedFollowupSubTab = "Today"; // "Today", "Due", "Future"
   String _selectedMainFollowupSection = "Follow ups"; // "Follow ups" or "Site Visit Scheduled"
+
+  String _normalizeFollowupSubTab(String val) {
+    final l = val.toLowerCase();
+    if (l == 'due') return 'Due';
+    if (l == 'today') return 'Today';
+    if (l == 'future') return 'Future';
+    if (l == 'all' || l == 'allclients' || l == 'all_clients') return 'AllClients';
+    return val;
+  }
   final Set<String> _selectedFollowupClientKeys = {};
   int _currentPage = 1;
   int _requirementsPerPage = 10;
@@ -947,14 +958,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       }
     }
     if (widget.initialSubTab != null && widget.initialSubTab!.isNotEmpty) {
-      _selectedFollowupSubTab = widget.initialSubTab!;
+      _selectedFollowupSubTab = _normalizeFollowupSubTab(widget.initialSubTab!);
     }
     if (widget.initialGroup != null && widget.initialGroup!.isNotEmpty) {
       final g = widget.initialGroup!.toLowerCase();
       _salesLeadGroupFilter = (g == 'all' || g == 'active' || g == 'my_active_leads') ? 'all' : widget.initialGroup!;
     }
     if (widget.initialStatus != null && widget.initialStatus!.isNotEmpty) {
-      _selectedStatus = widget.initialStatus!;
+      _selectedStatus = widget.initialStatus!.toLowerCase() == 'all' ? 'All' : widget.initialStatus!;
+    }
+    if (widget.initialSection != null && widget.initialSection!.isNotEmpty) {
+      final secLower = widget.initialSection!.toLowerCase();
+      _selectedMainFollowupSection = (secLower == 'site visit scheduled' || secLower == 'site-visits' || secLower == 'site_visits')
+          ? 'Site Visit Scheduled'
+          : 'Follow ups';
     }
     _refreshFollowupsFuture(force: true);
     _requirementsStreamSub = RepositoryCoordinator().requirementsStream.listen((_) {
@@ -992,24 +1009,42 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         final tabParam = uri.queryParameters['tab'];
         if (tabParam != null) {
           final tabLower = tabParam.toLowerCase();
+          final authState = context.read<AuthBloc>().state;
+          final currentUser = authState is Authenticated ? authState.user : null;
+          final isAdminOrSuperAdmin = currentUser != null &&
+              (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
+          String? targetTab;
           if (tabLower == 'follow-ups' || tabLower == 'followups') {
-            final authState = context.read<AuthBloc>().state;
-            final currentUser = authState is Authenticated ? authState.user : null;
             if (currentUser?.role != 'Telecaller') {
-              if (_activeMainTab != 'Follow-ups') {
-                setState(() {
-                  _activeMainTab = 'Follow-ups';
-                });
-                _refreshFollowupsFuture();
-              }
+              targetTab = 'Follow-ups';
+            }
+          } else if (tabLower == 'my won' || tabLower == 'won') {
+            targetTab = isAdminOrSuperAdmin ? 'Won' : 'My Won';
+          } else if (tabLower == 'rejected') {
+            targetTab = 'Rejected';
+          } else if (tabLower == 'leads added by me' || tabLower == 'added') {
+            targetTab = 'Leads Added by Me';
+          } else if (tabLower == 'leads') {
+            targetTab = 'Leads';
+          }
+          if (targetTab != null && targetTab != _activeMainTab) {
+            setState(() {
+              _activeMainTab = targetTab!;
+            });
+            if (targetTab == 'Follow-ups') {
+              _refreshFollowupsFuture();
+            } else {
+              _triggerFetch();
             }
           }
         }
         final subTabParam = uri.queryParameters['subTab'];
         if (subTabParam != null && subTabParam.isNotEmpty) {
-          if (_selectedFollowupSubTab != subTabParam) {
+          final targetSubTab = _normalizeFollowupSubTab(subTabParam);
+          if (_selectedFollowupSubTab != targetSubTab) {
             setState(() {
-              _selectedFollowupSubTab = subTabParam;
+              _selectedFollowupSubTab = targetSubTab;
+              _currentFollowupPage = 1;
             });
           }
         }
@@ -1025,9 +1060,22 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
         final statusParam = uri.queryParameters['status'];
         if (statusParam != null && statusParam.isNotEmpty) {
-          if (_selectedStatus != statusParam) {
+          final normalizedStatus = statusParam.toLowerCase() == 'all' ? 'All' : statusParam;
+          if (_selectedStatus != normalizedStatus) {
             setState(() {
-              _selectedStatus = statusParam;
+              _selectedStatus = normalizedStatus;
+            });
+          }
+        }
+        final sectionParam = uri.queryParameters['section'];
+        if (sectionParam != null && sectionParam.isNotEmpty) {
+          final secLower = sectionParam.toLowerCase();
+          final targetSection = (secLower == 'site visit scheduled' || secLower == 'site-visits' || secLower == 'site_visits')
+              ? 'Site Visit Scheduled'
+              : 'Follow ups';
+          if (_selectedMainFollowupSection != targetSection) {
+            setState(() {
+              _selectedMainFollowupSection = targetSection;
             });
           }
         }
@@ -1126,8 +1174,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (widget.initialSubTab != oldWidget.initialSubTab &&
         widget.initialSubTab != null &&
         widget.initialSubTab!.isNotEmpty) {
+      final targetSubTab = _normalizeFollowupSubTab(widget.initialSubTab!);
       setState(() {
-        _selectedFollowupSubTab = widget.initialSubTab!;
+        _selectedFollowupSubTab = targetSubTab;
+        _currentFollowupPage = 1;
       });
     }
     if (widget.initialGroup != oldWidget.initialGroup &&
@@ -1141,8 +1191,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (widget.initialStatus != oldWidget.initialStatus &&
         widget.initialStatus != null &&
         widget.initialStatus!.isNotEmpty) {
+      final normalizedStatus = widget.initialStatus!.toLowerCase() == 'all' ? 'All' : widget.initialStatus!;
       setState(() {
-        _selectedStatus = widget.initialStatus!;
+        _selectedStatus = normalizedStatus;
+      });
+    }
+    if (widget.initialSection != oldWidget.initialSection &&
+        widget.initialSection != null &&
+        widget.initialSection!.isNotEmpty) {
+      final secLower = widget.initialSection!.toLowerCase();
+      setState(() {
+        _selectedMainFollowupSection = (secLower == 'site visit scheduled' || secLower == 'site-visits' || secLower == 'site_visits')
+            ? 'Site Visit Scheduled'
+            : 'Follow ups';
       });
     }
   }
@@ -1185,10 +1246,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
       }
       final subTabParam = uri.queryParameters['subTab'];
-      if (subTabParam != null && subTabParam.isNotEmpty && subTabParam != _selectedFollowupSubTab) {
-        setState(() {
-          _selectedFollowupSubTab = subTabParam;
-        });
+      if (subTabParam != null && subTabParam.isNotEmpty) {
+        final targetSubTab = _normalizeFollowupSubTab(subTabParam);
+        if (_selectedFollowupSubTab != targetSubTab) {
+          setState(() {
+            _selectedFollowupSubTab = targetSubTab;
+            _currentFollowupPage = 1;
+          });
+        }
       }
       final groupParam = uri.queryParameters['group'];
       if (groupParam != null && groupParam.isNotEmpty) {
@@ -1201,10 +1266,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
       }
       final statusParam = uri.queryParameters['status'];
-      if (statusParam != null && statusParam.isNotEmpty && statusParam != _selectedStatus) {
-        setState(() {
-          _selectedStatus = statusParam;
-        });
+      if (statusParam != null && statusParam.isNotEmpty) {
+        final normalizedStatus = statusParam.toLowerCase() == 'all' ? 'All' : statusParam;
+        if (_selectedStatus != normalizedStatus) {
+          setState(() {
+            _selectedStatus = normalizedStatus;
+          });
+        }
       }
       final modeParam = uri.queryParameters['mode'];
       if (modeParam != null && modeParam.isNotEmpty) {
@@ -1215,10 +1283,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
       }
       final sectionParam = uri.queryParameters['section'];
-      if (sectionParam != null && (sectionParam == 'Site Visit Scheduled' || sectionParam == 'Follow ups')) {
-        setState(() {
-          _selectedMainFollowupSection = sectionParam;
-        });
+      if (sectionParam != null && sectionParam.isNotEmpty) {
+        final secLower = sectionParam.toLowerCase();
+        final targetSection = (secLower == 'site visit scheduled' || secLower == 'site-visits' || secLower == 'site_visits')
+            ? 'Site Visit Scheduled'
+            : 'Follow ups';
+        if (_selectedMainFollowupSection != targetSection) {
+          setState(() {
+            _selectedMainFollowupSection = targetSection;
+          });
+        }
       }
       _checkAutoOpenRequirement();
     } catch (_) {}

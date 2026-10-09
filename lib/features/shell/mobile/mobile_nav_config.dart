@@ -145,7 +145,7 @@ class MobileNavConfig {
         _home,
         MobileNavItem(
           id: 'queue',
-          label: 'Queue',
+          label: 'My Calling',
           icon: Icons.phone_in_talk_outlined,
           selectedIcon: Icons.phone_in_talk_rounded,
           route: '/campaign/leads',

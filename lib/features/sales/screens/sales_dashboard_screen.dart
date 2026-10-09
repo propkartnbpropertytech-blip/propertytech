@@ -241,7 +241,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     'Active Leads',
                     '$activeLeadsCount',
                     Icons.assignment_outlined,
-                    '/requirements',
+                    '/requirements?tab=leads&group=all&status=All&mode=${_isRentMode ? 'rent' : 'resale'}',
                     accentColor: const Color(0xFF8B5CF6),
                   ),
                   _clickableKpi(
@@ -249,7 +249,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     'Deals Won',
                     '$dealsWonCount',
                     Icons.emoji_events_outlined,
-                    '/requirements?status=Won',
+                    '/requirements?tab=won&status=All&mode=${_isRentMode ? 'rent' : 'resale'}',
                     accentColor: const Color(0xFFF59E0B),
                   ),
                   _clickableKpi(
@@ -257,7 +257,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     'Assigned Leads',
                     '$assignedLeadsCount',
                     Icons.assignment_ind_rounded,
-                    '/requirements?group=assigned',
+                    '/requirements?tab=leads&group=assigned&status=All&mode=${_isRentMode ? 'rent' : 'resale'}',
                     accentColor: const Color(0xFF06B6D4),
                   ),
                   _clickableKpi(
@@ -265,7 +265,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     'New Leads',
                     '$newLeadsCount',
                     Icons.fiber_new_rounded,
-                    '/requirements?status=New',
+                    '/requirements?tab=leads&group=all&status=New&mode=${_isRentMode ? 'rent' : 'resale'}',
                     accentColor: const Color(0xFFEC4899),
                   ),
                   _clickableKpi(
@@ -273,7 +273,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     'Follow-ups Due',
                     '$dueFollowupsCount',
                     Icons.event_busy_rounded,
-                    '/requirements?tab=follow-ups',
+                    '/requirements?tab=follow-ups&section=Follow%20ups&subTab=Due&mode=${_isRentMode ? 'rent' : 'resale'}',
                     accentColor: const Color(0xFFEF4444),
                   ),
                   _clickableKpi(
@@ -281,7 +281,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     'Active Follow-ups\n(Today + Future)',
                     '$activeFollowupsCount',
                     Icons.event_note_rounded,
-                    '/requirements?tab=follow-ups',
+                    '/requirements?tab=follow-ups&section=Follow%20ups&subTab=Today&mode=${_isRentMode ? 'rent' : 'resale'}',
                     accentColor: const Color(0xFF6366F1),
                   ),
                 ],
@@ -482,42 +482,42 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                 title: 'Active Leads',
                 value: '$activeLeadsCount',
                 icon: Icons.assignment_outlined,
-                route: '/requirements',
+                route: '/requirements?tab=leads&group=all&status=All&mode=${_isRentMode ? 'rent' : 'resale'}',
                 color: const Color(0xFF8B5CF6),
               ),
               _buildMobileKpiCard(
                 title: 'Deals Won',
                 value: '$dealsWonCount',
                 icon: Icons.emoji_events_outlined,
-                route: '/requirements?status=Won',
+                route: '/requirements?tab=won&status=All&mode=${_isRentMode ? 'rent' : 'resale'}',
                 color: const Color(0xFFF59E0B),
               ),
               _buildMobileKpiCard(
                 title: 'Assigned Leads',
                 value: '$assignedLeadsCount',
                 icon: Icons.assignment_ind_rounded,
-                route: '/requirements?group=assigned',
+                route: '/requirements?tab=leads&group=assigned&status=All&mode=${_isRentMode ? 'rent' : 'resale'}',
                 color: const Color(0xFF06B6D4),
               ),
               _buildMobileKpiCard(
                 title: 'New Leads',
                 value: '$newLeadsCount',
                 icon: Icons.fiber_new_rounded,
-                route: '/requirements?status=New',
+                route: '/requirements?tab=leads&group=all&status=New&mode=${_isRentMode ? 'rent' : 'resale'}',
                 color: const Color(0xFFEC4899),
               ),
               _buildMobileKpiCard(
                 title: 'Follow-ups Due',
                 value: '$dueFollowupsCount',
                 icon: Icons.event_busy_rounded,
-                route: '/requirements?tab=follow-ups',
+                route: '/requirements?tab=follow-ups&section=Follow%20ups&subTab=Due&mode=${_isRentMode ? 'rent' : 'resale'}',
                 color: const Color(0xFFEF4444),
               ),
               _buildMobileKpiCard(
                 title: 'Active Follow-ups',
                 value: '$activeFollowupsCount',
                 icon: Icons.event_note_rounded,
-                route: '/requirements?tab=follow-ups',
+                route: '/requirements?tab=follow-ups&section=Follow%20ups&subTab=Today&mode=${_isRentMode ? 'rent' : 'resale'}',
                 color: const Color(0xFF6366F1),
               ),
             ],
@@ -561,7 +561,10 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => context.go(route),
+          onTap: () {
+            ThemeManager().setRentMode(_isRentMode);
+            context.go(route);
+          },
           borderRadius: BorderRadius.circular(12),
           child: Ink(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1235,21 +1238,30 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                                 ],
                               ),
                               const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(Icons.calendar_today_outlined, size: 12, color: Colors.grey.shade500),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${parsedDate != null ? DateFormat('EEE, d MMM • h:mm a').format(parsedDate) : 'Today'} · $propertyTitle',
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                                  ),
-                                  if (mobile.isNotEmpty) ...[
-                                    const SizedBox(width: 10),
-                                    Icon(Icons.phone_outlined, size: 12, color: Colors.grey.shade500),
-                                    const SizedBox(width: 4),
-                                    Text(mobile, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                                  ],
-                                ],
+                              LayoutBuilder(
+                                builder: (context, itemConstraints) {
+                                  final showMobileText = itemConstraints.maxWidth >= 320 && mobile.isNotEmpty;
+                                  return Row(
+                                    children: [
+                                      Icon(Icons.calendar_today_outlined, size: 12, color: Colors.grey.shade500),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          '${parsedDate != null ? DateFormat('EEE, d MMM • h:mm a').format(parsedDate) : 'Today'} · $propertyTitle',
+                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (showMobileText) ...[
+                                        const SizedBox(width: 8),
+                                        Icon(Icons.phone_outlined, size: 12, color: Colors.grey.shade500),
+                                        const SizedBox(width: 4),
+                                        Text(mobile, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                      ],
+                                    ],
+                                  );
+                                },
                               ),
                               if (remarks.isNotEmpty) ...[
                                 const SizedBox(height: 4),
@@ -1268,18 +1280,29 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                           children: [
                             if (mobile.isNotEmpty) ...[
                               IconButton(
-                                icon: const Icon(Icons.phone_forwarded, size: 18, color: Color(0xFF059669)),
+                                icon: const Icon(Icons.phone_forwarded, size: 17, color: Color(0xFF059669)),
                                 tooltip: 'Call client',
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                padding: EdgeInsets.zero,
                                 onPressed: () => _launchPhoneCall(mobile),
                               ),
+                              const SizedBox(width: 2),
                               IconButton(
-                                icon: const Icon(Icons.chat_outlined, size: 18, color: Color(0xFF25D366)),
+                                icon: const Icon(Icons.chat_outlined, size: 17, color: Color(0xFF25D366)),
                                 tooltip: 'WhatsApp',
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                padding: EdgeInsets.zero,
                                 onPressed: () => _launchWhatsAppMessage(mobile),
                               ),
+                              const SizedBox(width: 2),
                             ],
                             IconButton(
                               icon: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(minWidth: 26, minHeight: 32),
+                              padding: EdgeInsets.zero,
                               onPressed: () => context.go('/requirements?tab=follow-ups'),
                             ),
                           ],
@@ -1291,39 +1314,78 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
               ),
               if (currentItems.length > _followupsPerPage) ...[
                 const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Showing ${startIndex + 1}–${min(startIndex + _followupsPerPage, currentItems.length)} of ${currentItems.length} items',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                    Row(
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 440;
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        Flexible(
+                          child: Text(
+                            'Showing ${startIndex + 1}–${min(startIndex + _followupsPerPage, currentItems.length)} of ${currentItems.length} items',
+                            style: TextStyle(fontSize: isNarrow ? 11.5 : 12, color: Colors.grey),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          onPressed: currentPage > 1 ? () => setState(() => _followupsPage = currentPage - 1) : null,
-                          icon: const Icon(Icons.chevron_left, size: 16),
-                          label: const Text('Previous', style: TextStyle(fontSize: 12)),
                         ),
                         const SizedBox(width: 8),
-                        Text('Page $currentPage of $safeTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        if (isNarrow)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  minimumSize: const Size(0, 30),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                ),
+                                onPressed: currentPage > 1 ? () => setState(() => _followupsPage = currentPage - 1) : null,
+                                child: const Icon(Icons.chevron_left, size: 16),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                child: Text('$currentPage / $safeTotalPages', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                              ),
+                              OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  minimumSize: const Size(0, 30),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                ),
+                                onPressed: currentPage < safeTotalPages ? () => setState(() => _followupsPage = currentPage + 1) : null,
+                                child: const Icon(Icons.chevron_right, size: 16),
+                              ),
+                            ],
+                          )
+                        else
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: currentPage > 1 ? () => setState(() => _followupsPage = currentPage - 1) : null,
+                                icon: const Icon(Icons.chevron_left, size: 16),
+                                label: const Text('Previous', style: TextStyle(fontSize: 12)),
+                              ),
+                              const SizedBox(width: 8),
+                              Text('Page $currentPage of $safeTotalPages', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: currentPage < safeTotalPages ? () => setState(() => _followupsPage = currentPage + 1) : null,
+                                icon: const Icon(Icons.chevron_right, size: 16),
+                                label: const Text('Next', style: TextStyle(fontSize: 12)),
+                              ),
+                            ],
                           ),
-                          onPressed: currentPage < safeTotalPages ? () => setState(() => _followupsPage = currentPage + 1) : null,
-                          icon: const Icon(Icons.chevron_right, size: 16),
-                          label: const Text('Next', style: TextStyle(fontSize: 12)),
-                        ),
                       ],
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ],
             ],

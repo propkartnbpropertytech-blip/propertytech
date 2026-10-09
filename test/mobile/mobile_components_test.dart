@@ -53,11 +53,11 @@ void main() {
         isSemantics(isSelected: true, isButton: true),
       );
       expect(
-        tester.getSemantics(find.bySemanticsLabel('Queue')),
+        tester.getSemantics(find.bySemanticsLabel('My Calling')),
         isSemantics(isSelected: false, isButton: true),
       );
 
-      for (final label in ['Home', 'Queue', 'Callbacks', 'CNR', 'More']) {
+      for (final label in ['Home', 'My Calling', 'Callbacks', 'CNR', 'More']) {
         final size = tester.getSize(find.bySemanticsLabel(label));
         expect(size.width, greaterThanOrEqualTo(48), reason: label);
         expect(size.height, greaterThanOrEqualTo(48), reason: label);

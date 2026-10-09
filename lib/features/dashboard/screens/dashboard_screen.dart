@@ -1097,7 +1097,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         final availableWidth = constraints.maxWidth;
         final int cols;
         if (maxCols != null && maxCols == 2) {
-          cols = availableWidth >= 440 ? 2 : 1;
+          cols = availableWidth >= 260 ? 2 : 1;
         } else if (maxCols != null) {
           if (availableWidth >= 1050) {
             cols = math.min(maxCols, cards.length >= 8 ? 4 : 3);

@@ -707,7 +707,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ? rawVersion
                   : AppConstants.appVersion;
               final rawBuild = snapshot.data?.buildNumber;
-              final buildNumber = (rawBuild != null && rawBuild.isNotEmpty && rawBuild != '1' && rawBuild != '3' && rawBuild != '6' && rawBuild != '7' && rawBuild != '8' && rawBuild != '9')
+              final buildNumber = (rawBuild != null && rawBuild.isNotEmpty && rawBuild != '1' && rawBuild != '3' && rawBuild != '6' && rawBuild != '7' && rawBuild != '8' && rawBuild != '9' && rawBuild != '14')
                   ? rawBuild
                   : AppConstants.buildNumber;
 

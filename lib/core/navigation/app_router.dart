@@ -369,6 +369,7 @@ class AppRouter {
               final group = state.uri.queryParameters['group'];
               final status = state.uri.queryParameters['status'];
               final mode = state.uri.queryParameters['mode'];
+              final section = state.uri.queryParameters['section'];
               if (mode != null && mode.isNotEmpty) {
                 ThemeManager().setRentMode(mode.toLowerCase() == 'rent');
               }
@@ -379,6 +380,7 @@ class AppRouter {
                   initialSubTab: subTab,
                   initialGroup: group,
                   initialStatus: status,
+                  initialSection: section,
                 ),
               );
             },
