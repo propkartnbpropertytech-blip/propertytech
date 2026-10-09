@@ -97,7 +97,7 @@ class TeamUserVisibility {
 
   static bool telecallerLeadSentToSalesperson(
     RequirementModel req,
-    UserModel salesperson,
+    dynamic salesperson,
     dynamic currentTelecaller,
   ) {
     final isAssignedToSales = _matchesPerson(req.assignedTo, salesperson) ||
@@ -133,7 +133,7 @@ class TeamUserVisibility {
     return createdByMe || tcMatches || historyMatches || isAssignedToSales;
   }
 
-  static bool requirementBelongsToUser(RequirementModel req, UserModel user) {
+  static bool requirementBelongsToUser(RequirementModel req, dynamic user) {
     if (_matchesPerson(req.assignedTo, user) || _matchesPerson(req.assigneeName, user)) {
       return true;
     }
@@ -191,7 +191,12 @@ class TeamUserVisibility {
         }
       }
     }
-    final uName = user.fullName.trim().toLowerCase();
+    final uName = (user is UserModel
+            ? user.fullName
+            : (user?.fullName ?? user?.name ?? ''))
+        .toString()
+        .trim()
+        .toLowerCase();
     if (uName.isNotEmpty && uName.length >= 3) {
       if (req.creatorName != null && req.creatorName!.trim().toLowerCase().contains(uName)) {
         return true;

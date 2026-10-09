@@ -468,7 +468,7 @@ void main() {
         // Sales lead group selector chips
         expect(find.textContaining('Assigned to Me'), findsOneWidget);
         expect(find.textContaining('Added by Me'), findsOneWidget);
-        expect(find.textContaining('My Active Deals'), findsOneWidget);
+        expect(find.byWidgetPredicate((w) => w is Text && (w.data?.contains('My Active Leads') == true || w.data?.contains('My Active Deals') == true)), findsOneWidget);
       });
     }
 

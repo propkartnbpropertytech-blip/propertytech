@@ -2999,6 +2999,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.filter_list_rounded,
@@ -3006,13 +3007,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               color: _isMobileFiltersExpanded ? Colors.white : CRMColors.primaryOf(context),
             ),
             const SizedBox(width: CRMSpacing.s),
-            Text(
-              _isMobileFiltersExpanded
-                  ? "Hide Filters"
-                  : (activeCount > 0 ? "Show Search Filters ($activeCount)" : "Show Search Filters"),
-              style: CRMTypography.bodyMedium.copyWith(
-                color: _isMobileFiltersExpanded ? Colors.white : CRMColors.textOf(context),
-                fontWeight: FontWeight.bold,
+            Flexible(
+              child: Text(
+                _isMobileFiltersExpanded
+                    ? "Hide Filters"
+                    : (activeCount > 0 ? "Show Search Filters ($activeCount)" : "Show Search Filters"),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: CRMTypography.bodyMedium.copyWith(
+                  color: _isMobileFiltersExpanded ? Colors.white : CRMColors.textOf(context),
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
